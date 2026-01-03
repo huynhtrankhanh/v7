@@ -7,41 +7,92 @@ This document explains how user input is converted into final Vietnamese text us
 Unlike many standard LLMs that use Byte-Pair Encoding (BPE), `v7gpt` uses a **Vietnamese syllable-based tokenization**.
 
 *   **Vocabulary**: The vocabulary consists of approximately 17,789 tokens, representing complete Vietnamese words/syllables plus a padding token.
-*   **Mapping**: Each token maps to a specific integer. The tokenizer maintains mappings for:
-    *   Word to Integer (`enum.json`)
-    *   Integer to Word (`renum.json`)
-    *   Integer to Consonant-Rhyme-Tone (CRT) decomposition (`renum_crt.json`)
+*   **Mapping**: The tokenizer maintains mappings loaded from JSON files. This is defined in `ai/tokenizer.py` (lines 14-23):
 
-This approach allows the model to operate directly at the level of meaningful Vietnamese linguistic units.
+    ```python
+    with open(enum_path, 'r', encoding='utf-8') as f:
+        self.enum: dict[str, int] = json.load(f)
+    with open(renum_path, 'r', encoding='utf-8') as f:
+        self.renum: dict[int, str] = json.load(f)
+    with open(renum_crt_path, 'r', encoding='utf-8') as f:
+        self.renum_crt: list[tuple[str, str, int]] = json.load(f)
+    ```
+
+    *   `enum.json`: Word to Integer
+    *   `renum.json`: Integer to Word
+    *   `renum_crt.json`: Integer to Consonant-Rhyme-Tone (CRT) decomposition
 
 ## User Input Processing
 
-When a user types input (e.g., `xin chaof` for "xin chào"):
+When a user types input (e.g., `xin chaof` for "xin chào"), it is processed in `imethod/v7ai.py`.
 
-1.  **Parsing**: The input string is separated into segments based on tone markers and other rules.
-2.  **Constraint Extraction**: Each segment is analyzed to determine the constraints for Consonant, Rhyme, and Tone (CRT). This creates a set of "Matching Triplets" that the generated text must satisfy.
+1.  **Parsing**: The input string is separated into segments based on tone markers. This uses `seperate_raws` inherited from `imethod/v7.py` (lines 135-141):
+    ```python
+    pattern = r'[a-zA-Z{}]+(?:\d|$)'.format(re.escape(self.end_of_rhyme))
+    raws = re.findall(pattern, raws)
+    ```
+
+2.  **Constraint Extraction**: Each segment is analyzed to determine the constraints for Consonant, Rhyme, and Tone (CRT). This happens in `predict` within `imethod/v7ai.py` (lines 68-69):
+    ```python
+    raws_parts = [self.parse(raw.lower()) for raw in raws]
+    CRsTs = [self.find(raw_parts) for raw_parts in raws_parts]
+    ```
+    This creates a set of "Matching Triplets" (`CRsTs`) that the generated text must satisfy.
 
 ## Generation Strategy
 
-The model does not use complex search algorithms like Beam Search. Instead, it employs a **Greedy Search with Constraints** strategy.
+The model does not use complex search algorithms like Beam Search. Instead, it employs a **Greedy Search with Constraints** strategy. This logic is implemented in `imethod/v7ai.py`.
 
 ### The Process
 
-The generation process iterates through each segment of the user input:
+The core logic resides in `top_1_predict` in `imethod/v7ai.py`.
 
-1.  **Context**: The process starts with a context (defaulting to "tôi" if empty).
-2.  **Prediction**: The LLM predicts the probability distribution for the next token based on the current context.
+1.  **Context**: The process starts with a context (defaulting to "tôi" if empty) (lines 64-65).
+2.  **Prediction**: The LLM predicts the probability distribution for the next token based on the current context. It calls `next` from `ai/utils.py` (lines 9-27), which returns sorted indices of logits:
+    ```python
+    # From ai/utils.py
+    logits = model(tokens)[0]
+    logits = logits[:, -1, :]
+    sorted_indices = torch.argsort(logits, dim=-1, descending=True)
+    ```
+
 3.  **Filtering & Selection**:
-    *   The predicted tokens are sorted by probability in descending order.
-    *   The system iterates through this sorted list and selects the **first token** that satisfies the constraints derived from the user's input for the current position.
-    *   **Constraints**: The candidate word must match the required Consonant, Rhyme, and Tone.
+    *   The system iterates through the sorted predictions and selects the first token that satisfies the constraints.
+    *   This is shown in `imethod/v7ai.py` (lines 118-124):
+    ```python
+    prediction = next(self.model, [context])[0]
+    prediction.remove(0)
+
+    for triplet, word in zip(tokenizer.triplets(prediction), tokenizer.detokenize(prediction)):
+        if self.accept(triplet, CRsT, word, vni_tones):
+            context += ' ' + word
+            current_result.append(word)
+            break
+    ```
+    *   **Constraints**: The `accept` method (lines 37-59 in `imethod/v7ai.py`) verifies if the candidate matches the user's input rule:
+    ```python
+    if tone != tone_rule:
+        return False
+    if rhyme not in rhymes_rule:
+        return False
+    # ... consonant checks ...
+    ```
+
 4.  **Update**: The selected word is appended to the context, and the process repeats for the next input segment.
 
 ### Final Word Handling
 
-For the final segment of the input, the process is slightly different to offer suggestions:
-*   Instead of picking just one word, the system collects up to a limit (e.g., 36) of valid candidates from the sorted prediction list.
-*   These candidates form the list of possible phrases presented to the user.
+For the final segment of the input, the process collects multiple candidates to offer suggestions. This is also in `top_1_predict` (lines 129-136):
+
+```python
+LIMIT = 36
+results: List[Phrase] = []
+for triplet, word in zip(tokenizer.triplets(prediction), tokenizer.detokenize(prediction)):
+    if len(results) >= LIMIT:
+        break
+    if self.accept(triplet, CRsTs[-1], word, vni_tones):
+        results.append(' '.join(current_result + [word]))
+```
 
 ### Why this strategy?
 
