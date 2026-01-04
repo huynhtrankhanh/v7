@@ -1,4 +1,5 @@
-from v7 import Syllable, SyllableTemplate, predict, load_model, tokenizer
+from v7 import Syllable, CompleteSyllableTemplate, PartialSyllableTemplate, predict, load_model, tokenizer
+import os
 
 def main():
     # Load model
@@ -7,58 +8,61 @@ def main():
         model = load_model("checkpoints/v7gpt-1.3.pth")
     except Exception as e:
         print(f"Error loading model: {e}")
+        print("Please ensure 'checkpoints/v7gpt-1.3.pth' exists.")
         return
 
-    # Define Context: "xin"
-    # Tokenizer: xin: ['x', 'in', 0]
-    context_syl = Syllable(consonant='x', rhyme='in', tone=0)
-    context = [context_syl]
+    # Scenario: Predict "hôm nay trời đẹp" (Today the weather is beautiful)
+    # Context: "hôm"
+    # Templates for: "nay", "trời", "đẹp"
 
-    print(f"Context: {context}")
+    # 1. Context: "hôm"
+    # Tokenizer check: 'hôm' -> c='h', r='ôm', t=0
+    context = [Syllable(consonant='h', rhyme='ôm', tone=0)]
+    print(f"Context: {[s.to_str() for s in context]}")
 
-    # Let's try to predict "xin chào các bạn"
-    # Tokenizer values:
-    # chào: ['ch', 'ao', 2]
-    # các: ['k', 'ang', 6]
-    # bạn: ['b', 'an', 5]
+    # 2. Define Templates
+    templates = []
 
-    templates = [
-        SyllableTemplate(consonant='ch', rhyme='ao', tone=2), # chào
-        SyllableTemplate(consonant='k', rhyme='ang', tone=6), # các (internal: k, ang, 6)
-        SyllableTemplate(consonant='b', rhyme='an', tone=5)   # bạn
-    ]
+    # Word 1: "nay" -> target is (n, ay, 0)
+    # Use Partial: consonant='n', rhyme starts with 'a', tone=0
+    templates.append(PartialSyllableTemplate(
+        consonant='n',
+        rhyme_first_letter='a',
+        tone=0
+    ))
 
-    print("Predicting 'xin chào các bạn'...")
+    # Word 2: "trời" -> target is (tr, ơi, 2)
+    # Use Complete: must be exactly "trời"
+    # 'trời' -> c='tr', r='ơi', t=2
+    syl_troi = Syllable(consonant='tr', rhyme='ơi', tone=2)
+    templates.append(CompleteSyllableTemplate(syllable=syl_troi))
+
+    # Word 3: "đẹp" -> target is (đ, em, 7)
+    # Use Partial: c='đ', rhyme_start='e', tone=7
+    templates.append(PartialSyllableTemplate(
+        consonant='đ',
+        rhyme_first_letter='e',
+        tone=7
+    ))
+
+    print("\nPredicting 'hôm nay trời đẹp' with mixed templates...")
+    print("Template 1 (Partial): c='n', r_start='a', t=0")
+    print("Template 2 (Complete): 'trời'")
+    print("Template 3 (Partial): c='đ', r_start='e', t=7")
+
+    # Predict
     results = predict(context, templates, model, beam_width=5)
 
-    print("Results:")
-    for syl in results:
-        print(syl)
+    print("\nResults:")
+    if not results:
+        print("No matching sequence found.")
+    else:
+        for i, syl in enumerate(results):
+            print(f"Word {i+1}: {syl.to_str()} (Internal: {syl})")
 
-
-    # Let's try another one with wildcards
-    print("\nPredicting 'hôm nay trời đẹp' with wildcards...")
-    # Context: "hôm"
-    # Tokenizer: hôm: ['h', 'ôm', 0]
-    context2 = [Syllable(consonant='h', rhyme='ôm', tone=0)]
-
-    # Template: "nay" (n, ay, 0), "trời" (tr, ơi, 2), "đẹp" (đ, em, 7)
-    # Tokenizer values:
-    # nay: ['n', 'ay', 0]
-    # trời: ['tr', 'ơi', 2]
-    # đẹp: ['đ', 'em', 7]
-
-    # Use wildcard for rhyme of "nay" -> n, None, 0
-
-    templates2 = [
-        SyllableTemplate(consonant='n', rhyme=None, tone=0),   # nay
-        SyllableTemplate(consonant='tr', rhyme='ơi', tone=2), # trời
-        SyllableTemplate(consonant='đ', rhyme='em', tone=7)    # đẹp (internal: đ, em, 7)
-    ]
-
-    results2 = predict(context2, templates2, model, beam_width=5)
-    for syl in results2:
-        print(syl)
+    # Construct full sentence
+    full_sentence = [s.to_str() for s in context] + [s.to_str() for s in results]
+    print(f"\nFull Sentence: {' '.join(full_sentence)}")
 
 if __name__ == "__main__":
     main()
