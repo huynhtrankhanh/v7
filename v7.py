@@ -1,0 +1,190 @@
+import torch
+import torch.nn.functional as F
+from dataclasses import dataclass
+from typing import List, Optional, Union
+import math
+
+from ai.model import GPT, GPTConfig
+from ai.tokenizer import tokenizer, Triplet
+from ai.configs import MODEL_SIZES, DEVICE, MAX_SEQUENCE_LEN, BASE_MODEL_CHECKPOINT_PATH
+from utils.preprocess import standardize_data
+
+# Data Structures
+@dataclass
+class Syllable:
+    consonant: str
+    rhyme: str
+    tone: int
+
+    def __str__(self):
+        # This is a rough reconstruction, mostly for debugging
+        return f"{self.consonant}{self.rhyme}{self.tone}"
+
+    @staticmethod
+    def from_triplet(t: Triplet):
+        return Syllable(consonant=t.consonant, rhyme=t.rhyme, tone=t.tone)
+
+@dataclass
+class SyllableTemplate:
+    consonant: Optional[str] = None
+    rhyme: Optional[str] = None
+    tone: Optional[int] = None
+
+    def matches(self, s: Syllable) -> bool:
+        if self.consonant is not None and s.consonant != self.consonant:
+            return False
+        if self.rhyme is not None and s.rhyme != self.rhyme:
+            return False
+        if self.tone is not None and s.tone != self.tone:
+            return False
+        return True
+
+# Functions
+
+def load_model(path: str = BASE_MODEL_CHECKPOINT_PATH, model_size: str = 'base') -> GPT:
+    """Loads the GPT model."""
+    config = GPTConfig(**MODEL_SIZES[model_size])
+    model = GPT(config)
+
+    # Load checkpoint
+    if not path:
+        raise ValueError("Checkpoint path must be provided")
+
+    print(f"Loading model from {path}...")
+    checkpoint = torch.load(path, map_location=torch.device(DEVICE))
+
+    state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
+
+    # Clean up state dict keys
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_key = key.replace('module.', '')
+        new_state_dict[new_key] = value
+
+    model.load_state_dict(new_state_dict)
+    model.to(DEVICE)
+    model.eval()
+    return model
+
+def predict(context: List[Syllable], template: List[SyllableTemplate], model: GPT, beam_width: int = 10) -> List[Syllable]:
+    """
+    Predicts the next syllables based on context and templates using beam search.
+    """
+    context_tokens = []
+
+    # Use tokenizer's optimized lookup
+    for syl in context:
+        key = (syl.consonant, syl.rhyme, syl.tone)
+        token_id = tokenizer.crt_to_token_id.get(key)
+
+        if token_id is not None:
+            context_tokens.append(token_id)
+        else:
+            print(f"Warning: Could not find token for syllable {syl}")
+            # If we skip, the context might be broken.
+            # But GPT needs tokens.
+            # We could try to map to something close or just ignore.
+            continue
+
+    # Run beam search
+    result_tokens = beam_search(model, context_tokens, template, beam_width)
+
+    # Convert result tokens to Syllables
+    result_syllables = []
+    for token_id in result_tokens:
+        t = tokenizer.renum_triplet[token_id]
+        if t:
+            result_syllables.append(Syllable.from_triplet(t))
+        else:
+            # Should not happen for valid tokens
+            result_syllables.append(Syllable(consonant="", rhyme="", tone=0))
+
+    return result_syllables
+
+def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableTemplate], beam_width: int) -> List[int]:
+    """
+    Performs beam search to find the sequence of tokens that best matches the templates.
+    """
+    # Start with the context
+    # Beam state: (sequence_of_tokens, score)
+    # We only care about the *generated* part matching the templates.
+
+    # Initial beam
+    beams = [(context_tokens, 0.0)] # List of (tokens, log_prob)
+
+    for i, template in enumerate(templates):
+        new_beams = []
+
+        for seq, score in beams:
+            # Prepare input
+            # We only need the last context_len tokens, but model handles it?
+            # Model config says block_size. We should truncate.
+            input_seq = seq[-model.config.block_size:]
+            if not input_seq: # Handle empty context case if possible (though model needs start token usually?)
+                 # If empty context, maybe start with padding or something?
+                 # Usually context has at least SOS token.
+                 # But if user provides empty list, we might have issues.
+                 # Let's assume context is not empty or model handles it.
+                 pass
+
+            input_tensor = torch.tensor([input_seq], dtype=torch.long, device=DEVICE)
+
+            with torch.no_grad():
+                logits, _ = model(input_tensor)
+                # Get logits for the last token
+                next_token_logits = logits[0, -1, :] # (Vocab_size)
+
+                # Log softmax
+                next_token_probs = F.log_softmax(next_token_logits, dim=-1)
+
+                # Filter candidates based on template
+                # Optimization: Iterate over vocab is fast enough (~17k), but we can optimize.
+                # Since we mask based on template, pre-computing masks for common templates?
+                # No, templates are dynamic.
+
+                valid_indices = []
+                for token_id, t in enumerate(tokenizer.renum_triplet):
+                    if token_id == tokenizer.PADDING_TOKEN_INDEX: continue
+                    if not t: continue
+
+                    # Optimization: Check attributes directly on Triplet to avoid creating Syllable object?
+                    # But template.matches takes Syllable.
+                    # Let's unpack Triplet to check.
+
+                    # Check match
+                    # Inline match logic for speed?
+                    matches = True
+                    if template.consonant is not None and t.consonant != template.consonant: matches = False
+                    elif template.rhyme is not None and t.rhyme != template.rhyme: matches = False
+                    elif template.tone is not None and t.tone != template.tone: matches = False
+
+                    if matches:
+                        valid_indices.append(token_id)
+
+                if not valid_indices:
+                    continue
+
+                valid_tensor = torch.tensor(valid_indices, device=DEVICE)
+                valid_probs = next_token_probs[valid_tensor]
+
+                # Get top-k from valid ones
+                k = min(beam_width, len(valid_indices))
+                top_k_vals, top_k_inds = torch.topk(valid_probs, k)
+
+                for val, ind in zip(top_k_vals, top_k_inds):
+                    token_id = valid_indices[ind.item()]
+                    new_beams.append((seq + [token_id], score + val.item()))
+
+        # Keep top beam_width beams globally
+        new_beams.sort(key=lambda x: x[1], reverse=True)
+        beams = new_beams[:beam_width]
+
+        if not beams:
+            break
+
+    if not beams:
+        return []
+
+    best_seq = beams[0][0]
+    # Return only the generated part
+    return best_seq[len(context_tokens):]
