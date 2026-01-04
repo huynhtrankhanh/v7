@@ -14,19 +14,24 @@ def getVietnameseTextFrom_vndictyaml(verbosity=0):
     '''
     Returns words seperated by \\n
     '''
-    with open('dictionaries/vn.dict.yaml', 'r') as yaml:
-        lines = yaml.readlines()[:]
-        
-        lines = [reduce(lambda word1, word2: word1 + ' ' + word2, line.split()[:int((len(line.split())) / 2)], ' ')
-                for line in lines]
-        
-        text = reduce(lambda line1, line2: line1.strip().lower() + '\n' + line2.strip().lower(), lines)
-        
-        if verbosity >= 1:
-            print(len(text))
-            print(len(seperate_words(text)))
+    # Note: dictionaries/vn.dict.yaml might have been removed or not needed.
+    # Leaving logic but might fail if file missing.
+    try:
+        with open('dictionaries/vn.dict.yaml', 'r') as yaml:
+            lines = yaml.readlines()[:]
 
-    return text
+            lines = [reduce(lambda word1, word2: word1 + ' ' + word2, line.split()[:int((len(line.split())) / 2)], ' ')
+                    for line in lines]
+
+            text = reduce(lambda line1, line2: line1.strip().lower() + '\n' + line2.strip().lower(), lines)
+
+            if verbosity >= 1:
+                print(len(text))
+                print(len(seperate_words(text)))
+
+        return text
+    except FileNotFoundError:
+        return ""
 
 def get_object_size(obj):
     """
@@ -68,19 +73,8 @@ def count_lines(file_path):
         line_count = sum(1 for line in file)
     return line_count
 
-def get_words_line_by_line(path):
-    from .vietnamese import Vietnamese
-    with open(path, 'r') as file:
-        for line in file:
-            line = standardize_data(line)
-            words = []
-            for word in line.split():
-                cf, rf, t = Vietnamese.analyze(word)
-                if rf is None:
-                    continue
-                else:
-                    words.append(word)
-            yield words
+# Removed get_words_line_by_line as it depends on deleted Vietnamese class
+# and doesn't seem to be used in the core library v7.py
 
 def get_line_by_line(path):
     with open(path, 'r') as file:
