@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from dataclasses import dataclass
 from typing import List, Optional, Union
 import math
+from abc import ABC, abstractmethod
 
 from ai.model import GPT, GPTConfig
 from ai.tokenizer import tokenizer, Triplet
@@ -20,22 +21,44 @@ class Syllable:
         # This is a rough reconstruction, mostly for debugging
         return f"{self.consonant}{self.rhyme}{self.tone}"
 
+    def to_str(self) -> str:
+        """Converts Syllable to its string representation using the tokenizer."""
+        key = (self.consonant, self.rhyme, self.tone)
+        token_id = tokenizer.crt_to_token_id.get(key)
+        if token_id is not None:
+             return tokenizer.renum.get(token_id, "")
+        return str(self)
+
     @staticmethod
     def from_triplet(t: Triplet):
         return Syllable(consonant=t.consonant, rhyme=t.rhyme, tone=t.tone)
 
+class SyllableTemplate(ABC):
+    @abstractmethod
+    def matches(self, s: Syllable) -> bool:
+        pass
+
 @dataclass
-class SyllableTemplate:
-    consonant: Optional[str] = None
-    rhyme: Optional[str] = None
-    tone: Optional[int] = None
+class CompleteSyllableTemplate(SyllableTemplate):
+    syllable: Syllable # Represents a complete syllable
 
     def matches(self, s: Syllable) -> bool:
-        if self.consonant is not None and s.consonant != self.consonant:
+        return (self.syllable.consonant == s.consonant and
+                self.syllable.rhyme == s.rhyme and
+                self.syllable.tone == s.tone)
+
+@dataclass
+class PartialSyllableTemplate(SyllableTemplate):
+    consonant: str
+    rhyme_first_letter: str
+    tone: int
+
+    def matches(self, s: Syllable) -> bool:
+        if s.consonant != self.consonant:
             return False
-        if self.rhyme is not None and s.rhyme != self.rhyme:
+        if s.tone != self.tone:
             return False
-        if self.tone is not None and s.tone != self.tone:
+        if not s.rhyme.startswith(self.rhyme_first_letter):
             return False
         return True
 
@@ -137,12 +160,12 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
                     if token_id == tokenizer.PADDING_TOKEN_INDEX: continue
                     if not t: continue
 
-                    matches = True
-                    if template.consonant is not None and t.consonant != template.consonant: matches = False
-                    elif template.rhyme is not None and t.rhyme != template.rhyme: matches = False
-                    elif template.tone is not None and t.tone != template.tone: matches = False
+                    # Convert triplet to syllable to check with template matches method
+                    # Optimization: maybe create Syllable only if needed or reuse logic?
+                    # Since SyllableTemplate expects Syllable, we must provide it.
+                    s = Syllable.from_triplet(t)
 
-                    if matches:
+                    if template.matches(s):
                         valid_indices.append(token_id)
 
                 if not valid_indices:
