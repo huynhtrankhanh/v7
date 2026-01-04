@@ -120,12 +120,6 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
             # We only need the last context_len tokens, but model handles it?
             # Model config says block_size. We should truncate.
             input_seq = seq[-model.config.block_size:]
-            if not input_seq: # Handle empty context case if possible (though model needs start token usually?)
-                 # If empty context, maybe start with padding or something?
-                 # Usually context has at least SOS token.
-                 # But if user provides empty list, we might have issues.
-                 # Let's assume context is not empty or model handles it.
-                 pass
 
             input_tensor = torch.tensor([input_seq], dtype=torch.long, device=DEVICE)
 
@@ -138,21 +132,11 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
                 next_token_probs = F.log_softmax(next_token_logits, dim=-1)
 
                 # Filter candidates based on template
-                # Optimization: Iterate over vocab is fast enough (~17k), but we can optimize.
-                # Since we mask based on template, pre-computing masks for common templates?
-                # No, templates are dynamic.
-
                 valid_indices = []
                 for token_id, t in enumerate(tokenizer.renum_triplet):
                     if token_id == tokenizer.PADDING_TOKEN_INDEX: continue
                     if not t: continue
 
-                    # Optimization: Check attributes directly on Triplet to avoid creating Syllable object?
-                    # But template.matches takes Syllable.
-                    # Let's unpack Triplet to check.
-
-                    # Check match
-                    # Inline match logic for speed?
                     matches = True
                     if template.consonant is not None and t.consonant != template.consonant: matches = False
                     elif template.rhyme is not None and t.rhyme != template.rhyme: matches = False
