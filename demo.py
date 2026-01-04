@@ -4,8 +4,13 @@ import os
 def main():
     # Load model
     # Ensure checkpoints/v7gpt-1.3.pth exists
+    model_path = "checkpoints/v7gpt-1.3.pth"
+    if not os.path.exists(model_path):
+        print(f"Warning: {model_path} not found. Using checkpoints/dummy.pth")
+        model_path = "checkpoints/dummy.pth"
+
     try:
-        model = load_model("checkpoints/v7gpt-1.3.pth")
+        model = load_model(model_path)
     except Exception as e:
         print(f"Error loading model: {e}")
         print("Please ensure 'checkpoints/v7gpt-1.3.pth' exists.")
@@ -51,7 +56,7 @@ def main():
     print("Template 3 (Partial): c='đ', r_start='e', t=7")
 
     # Predict
-    results = predict(context, templates, model, beam_width=5)
+    results = predict(context, templates, model, beam_width=50)
 
     print("\nResults:")
     if not results:
