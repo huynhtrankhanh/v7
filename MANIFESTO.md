@@ -19,3 +19,5 @@
 * Document your design decisions.
 
 * You have to download the AI model because it's not included in the repo. But at the same time, you are not allowed to commit the downloaded AI model to the repository as Git can't track very large files.
+
+* Include a demo that calls the library to produce a coherent Vietnamese sentence from a list of SyllableTemplates.
