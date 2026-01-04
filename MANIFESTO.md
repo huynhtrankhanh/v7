@@ -5,3 +5,7 @@
   ```
   predict(context: Syllables[], template: SyllableTemplate[]) -> Syllables[]
   ```
+
+* Only LLM inference is supported. The dictionary based inference code must be deleted.
+
+* All UI code must be deleted. All keyboard capture code must be deleted.
