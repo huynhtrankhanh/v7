@@ -1,6 +1,15 @@
 import re
 from functools import reduce
 import sys
+import unicodedata
+
+def remove_diacritics(text: str) -> str:
+    """
+    Removes diacritics from a string.
+    """
+    normalized = unicodedata.normalize('NFD', text)
+    result = "".join(c for c in normalized if unicodedata.category(c) != 'Mn')
+    return unicodedata.normalize('NFC', result).replace('đ', 'd').replace('Đ', 'D')
 
 def seperate_words(paragraph):
     # Define the regular expression pattern to split the paragraph into words

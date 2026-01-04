@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from ai.model import GPT, GPTConfig
 from ai.tokenizer import tokenizer, Triplet
 from ai.configs import MODEL_SIZES, DEVICE, MAX_SEQUENCE_LEN, BASE_MODEL_CHECKPOINT_PATH
-from utils.preprocess import standardize_data
+from utils.preprocess import standardize_data, remove_diacritics
 
 # Data Structures
 @dataclass
@@ -58,7 +58,13 @@ class PartialSyllableTemplate(SyllableTemplate):
             return False
         if s.tone != self.tone:
             return False
-        if not s.rhyme.startswith(self.rhyme_first_letter):
+
+        # Normalize rhyme to remove diacritics before checking
+        normalized_rhyme = remove_diacritics(s.rhyme)
+        # Also normalize the template letter just in case
+        normalized_template_letter = remove_diacritics(self.rhyme_first_letter)
+
+        if not normalized_rhyme.startswith(normalized_template_letter):
             return False
         return True
 
