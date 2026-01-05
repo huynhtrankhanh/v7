@@ -9,6 +9,8 @@ from ai.model import GPT, GPTConfig
 from ai.tokenizer import tokenizer, Triplet
 from ai.configs import MODEL_SIZES, DEVICE, MAX_SEQUENCE_LEN, BASE_MODEL_CHECKPOINT_PATH
 from utils.preprocess import standardize_data, remove_diacritics
+from utils.regex_gen import generate_regex_from_strings
+import re
 
 # Data Structures
 @dataclass
@@ -38,6 +40,11 @@ class SyllableTemplate(ABC):
     def matches(self, s: Syllable) -> bool:
         pass
 
+    @abstractmethod
+    def get_regex(self) -> str:
+        """Returns a regex string that matches the string representation of any syllable matching this template."""
+        pass
+
 @dataclass
 class CompleteSyllableTemplate(SyllableTemplate):
     syllable: Syllable # Represents a complete syllable
@@ -46,6 +53,9 @@ class CompleteSyllableTemplate(SyllableTemplate):
         return (self.syllable.consonant == s.consonant and
                 self.syllable.rhyme == s.rhyme and
                 self.syllable.tone == s.tone)
+
+    def get_regex(self) -> str:
+        return re.escape(self.syllable.to_str())
 
 @dataclass
 class PartialSyllableTemplate(SyllableTemplate):
@@ -67,6 +77,21 @@ class PartialSyllableTemplate(SyllableTemplate):
         if not normalized_rhyme.startswith(normalized_template_letter):
             return False
         return True
+
+    def get_regex(self) -> str:
+        matching_strings = []
+        for i, t in enumerate(tokenizer.renum_triplet):
+            if i == tokenizer.PADDING_TOKEN_INDEX or t is None:
+                continue
+
+            s = Syllable.from_triplet(t)
+            if self.matches(s):
+                # We use the string representation from the tokenizer
+                text = tokenizer.renum.get(i)
+                if text:
+                    matching_strings.append(text)
+
+        return generate_regex_from_strings(matching_strings)
 
 # Functions
 
