@@ -29,3 +29,6 @@ build/
 
 # Env
 v7/
+
+# Testing
+.hypothesis/
