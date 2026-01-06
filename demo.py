@@ -1,73 +1,88 @@
-from v7 import Syllable, CompleteSyllableTemplate, PartialSyllableTemplate, predict, load_model, tokenizer
-import os
+from v7 import PartialSyllableTemplate
+from ai.tokenizer import tokenizer
+
+def parse_v7_string(v7_string: str):
+    """
+    Parses a v7 string (compact format: consonant + rhyme_start + tone)
+    into a list of PartialSyllableTemplate.
+
+    Example: na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
+    """
+    # Get all valid consonants from the tokenizer
+    # And allow 'dd' as an alias for 'đ'
+    valid_consonants_map = {}
+    for t in tokenizer.renum_triplet:
+        if t:
+            valid_consonants_map[t.consonant] = t.consonant
+
+    valid_consonants_map['dd'] = 'đ'
+
+    # Sort keys by length descending
+    sorted_keys = sorted(valid_consonants_map.keys(), key=len, reverse=True)
+
+    templates = []
+    i = 0
+    n = len(v7_string)
+
+    while i < n:
+        # 1. Match Consonant
+        matched_key = None
+        for key in sorted_keys:
+            if v7_string.startswith(key, i):
+                matched_key = key
+                i += len(key)
+                break
+
+        if matched_key is None:
+            raise ValueError(f"Could not parse consonant at index {i}: {v7_string[i:]}")
+
+        consonant = valid_consonants_map[matched_key]
+
+        # 2. Match Rhyme Start Letter (1 char)
+        if i >= n:
+            raise ValueError("Unexpected end of string while looking for rhyme start")
+        rhyme_start = v7_string[i]
+        i += 1
+
+        # 3. Match Tone (1 char, digit)
+        if i >= n:
+            raise ValueError("Unexpected end of string while looking for tone")
+        tone_char = v7_string[i]
+        if not tone_char.isdigit():
+             raise ValueError(f"Expected digit for tone at index {i}, got {tone_char}")
+        tone = int(tone_char)
+        i += 1
+
+        templates.append(PartialSyllableTemplate(
+            consonant=consonant,
+            rhyme_first_letter=rhyme_start,
+            tone=tone
+        ))
+
+    return templates
 
 def main():
-    # Load model
-    # Ensure checkpoints/v7gpt-1.3.pth exists
-    model_path = "checkpoints/v7gpt-1.3.pth"
-    if not os.path.exists(model_path):
-        print(f"Warning: {model_path} not found. Using checkpoints/dummy.pth")
-        model_path = "checkpoints/dummy.pth"
+    v7_input = "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7"
+    print(f"Input v7 string: {v7_input}")
 
     try:
-        model = load_model(model_path)
-    except Exception as e:
-        print(f"Error loading model: {e}")
-        print("Please ensure 'checkpoints/v7gpt-1.3.pth' exists.")
+        templates = parse_v7_string(v7_input)
+    except ValueError as e:
+        print(f"Error parsing input: {e}")
         return
 
-    # Scenario: Predict "hôm nay trời đẹp" (Today the weather is beautiful)
-    # Context: "hôm"
-    # Templates for: "nay", "trời", "đẹp"
+    print(f"Parsed {len(templates)} templates.")
 
-    # 1. Context: "hôm"
-    # Tokenizer check: 'hôm' -> c='h', r='ôm', t=0
-    context = [Syllable(consonant='h', rhyme='ôm', tone=0)]
-    print(f"Context: {[s.to_str() for s in context]}")
+    print("\nGenerating regex constraints:")
+    regexes = []
+    for idx, t in enumerate(templates):
+        regex = t.get_regex()
+        regexes.append(regex)
+        print(f"Word {idx+1}: {regex}")
 
-    # 2. Define Templates
-    templates = []
-
-    # Word 1: "nay" -> target is (n, ay, 0)
-    # Use Partial: consonant='n', rhyme starts with 'a', tone=0
-    templates.append(PartialSyllableTemplate(
-        consonant='n',
-        rhyme_first_letter='a',
-        tone=0
-    ))
-
-    # Word 2: "trời" -> target is (tr, ơi, 2)
-    # Use Complete: must be exactly "trời"
-    # 'trời' -> c='tr', r='ơi', t=2
-    syl_troi = Syllable(consonant='tr', rhyme='ơi', tone=2)
-    templates.append(CompleteSyllableTemplate(syllable=syl_troi))
-
-    # Word 3: "đẹp" -> target is (đ, em, 7)
-    # Use Partial: c='đ', rhyme_start='e', tone=7
-    templates.append(PartialSyllableTemplate(
-        consonant='đ',
-        rhyme_first_letter='e',
-        tone=7
-    ))
-
-    print("\nPredicting 'hôm nay trời đẹp' with mixed templates...")
-    print("Template 1 (Partial): c='n', r_start='a', t=0")
-    print("Template 2 (Complete): 'trời'")
-    print("Template 3 (Partial): c='đ', r_start='e', t=7")
-
-    # Predict
-    results = predict(context, templates, model, beam_width=50)
-
-    print("\nResults:")
-    if not results:
-        print("No matching sequence found.")
-    else:
-        for i, syl in enumerate(results):
-            print(f"Word {i+1}: {syl.to_str()} (Internal: {syl})")
-
-    # Construct full sentence
-    full_sentence = [s.to_str() for s in context] + [s.to_str() for s in results]
-    print(f"\nFull Sentence: {' '.join(full_sentence)}")
+    full_sentence_regex = r"\s+".join(regexes)
+    print("\nFull Sentence Regex:")
+    print(full_sentence_regex)
 
 if __name__ == "__main__":
     main()
