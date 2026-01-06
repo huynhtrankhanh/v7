@@ -34,11 +34,6 @@ def parse_v7_string(v7_string: str):
                 break
 
         if matched_key is None:
-            # Handle case where consonant might be empty (if supported) or error
-            # If the syllable starts with a vowel, the consonant is empty string.
-            # But the v7 string seems to explicit consonants.
-            # If empty consonant is valid and in map (key ""), it would be last in sorted list.
-            # Let's check if next char is a digit or rhyme start.
             raise ValueError(f"Could not parse consonant at index {i}: {v7_string[i:]}")
 
         consonant = valid_consonants_map[matched_key]
@@ -79,9 +74,15 @@ def main():
     print(f"Parsed {len(templates)} templates.")
 
     print("\nGenerating regex constraints:")
+    regexes = []
     for idx, t in enumerate(templates):
         regex = t.get_regex()
+        regexes.append(regex)
         print(f"Word {idx+1}: {regex}")
+
+    full_sentence_regex = r"\s+".join(regexes)
+    print("\nFull Sentence Regex:")
+    print(full_sentence_regex)
 
 if __name__ == "__main__":
     main()
