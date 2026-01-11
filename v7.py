@@ -60,7 +60,7 @@ class CompleteSyllableTemplate(SyllableTemplate):
 @dataclass
 class PartialSyllableTemplate(SyllableTemplate):
     consonant: str
-    rhyme_first_letter: str
+    rhyme_first_letter: Union[str, List[str]]
     tone: int
 
     def matches(self, s: Syllable) -> bool:
@@ -71,12 +71,19 @@ class PartialSyllableTemplate(SyllableTemplate):
 
         # Normalize rhyme to remove diacritics before checking
         normalized_rhyme = remove_diacritics(s.rhyme)
-        # Also normalize the template letter just in case
-        normalized_template_letter = remove_diacritics(self.rhyme_first_letter)
 
-        if not normalized_rhyme.startswith(normalized_template_letter):
-            return False
-        return True
+        # Handle multiple letters
+        templates = self.rhyme_first_letter
+        if isinstance(templates, str):
+            templates = [templates]
+
+        # Check if matches any
+        for tmpl in templates:
+            normalized_template_letter = remove_diacritics(tmpl)
+            if normalized_rhyme.startswith(normalized_template_letter):
+                return True
+
+        return False
 
     def get_regex(self) -> str:
         matching_strings = []
