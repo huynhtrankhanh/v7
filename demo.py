@@ -56,18 +56,20 @@ def main():
     print("Template 3 (Partial): c='đ', r_start='e', t=7")
 
     # Predict
-    results = predict(context, templates, model, beam_width=50)
+    candidates = predict(context, templates, model, beam_width=50, num_candidates=7)
 
-    print("\nResults:")
-    if not results:
+    print(f"\nResults ({len(candidates)} candidates):")
+    if not candidates:
         print("No matching sequence found.")
     else:
-        for i, syl in enumerate(results):
-            print(f"Word {i+1}: {syl.to_str()} (Internal: {syl})")
+        for idx, results in enumerate(candidates):
+            print(f"\nCandidate {idx+1}:")
+            for i, syl in enumerate(results):
+                print(f"  Word {i+1}: {syl.to_str()} (Internal: {syl})")
 
-    # Construct full sentence
-    full_sentence = [s.to_str() for s in context] + [s.to_str() for s in results]
-    print(f"\nFull Sentence: {' '.join(full_sentence)}")
+            # Construct full sentence
+            full_sentence = [s.to_str() for s in context] + [s.to_str() for s in results]
+            print(f"  Full Sentence: {' '.join(full_sentence)}")
 
 if __name__ == "__main__":
     main()

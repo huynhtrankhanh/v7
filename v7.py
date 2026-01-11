@@ -127,7 +127,7 @@ def load_model(path: str = BASE_MODEL_CHECKPOINT_PATH, model_size: str = 'base')
     model.eval()
     return model
 
-def predict(context: List[Syllable], template: List[SyllableTemplate], model: GPT, beam_width: int = 10) -> List[Syllable]:
+def predict(context: List[Syllable], template: List[SyllableTemplate], model: GPT, beam_width: int = 10, num_candidates: int = 1) -> List[List[Syllable]]:
     """
     Predicts the next syllables based on context and templates using beam search.
     """
@@ -148,21 +148,24 @@ def predict(context: List[Syllable], template: List[SyllableTemplate], model: GP
             continue
 
     # Run beam search
-    result_tokens = beam_search(model, context_tokens, template, beam_width)
+    result_tokens_list = beam_search(model, context_tokens, template, beam_width, num_candidates)
 
-    # Convert result tokens to Syllables
-    result_syllables = []
-    for token_id in result_tokens:
-        t = tokenizer.renum_triplet[token_id]
-        if t:
-            result_syllables.append(Syllable.from_triplet(t))
-        else:
-            # Should not happen for valid tokens
-            result_syllables.append(Syllable(consonant="", rhyme="", tone=0))
+    candidates = []
+    for result_tokens in result_tokens_list:
+        # Convert result tokens to Syllables
+        result_syllables = []
+        for token_id in result_tokens:
+            t = tokenizer.renum_triplet[token_id]
+            if t:
+                result_syllables.append(Syllable.from_triplet(t))
+            else:
+                # Should not happen for valid tokens
+                result_syllables.append(Syllable(consonant="", rhyme="", tone=0))
+        candidates.append(result_syllables)
 
-    return result_syllables
+    return candidates
 
-def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableTemplate], beam_width: int) -> List[int]:
+def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableTemplate], beam_width: int, num_candidates: int = 1) -> List[List[int]]:
     """
     Performs beam search to find the sequence of tokens that best matches the templates.
     """
@@ -230,6 +233,5 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
     if not beams:
         return []
 
-    best_seq = beams[0][0]
-    # Return only the generated part
-    return best_seq[len(context_tokens):]
+    # Return top num_candidates generated parts
+    return [seq[len(context_tokens):] for seq, score in beams[:num_candidates]]
