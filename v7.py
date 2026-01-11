@@ -147,6 +147,10 @@ def predict(context: List[Syllable], template: List[SyllableTemplate], model: GP
             # We could try to map to something close or just ignore.
             continue
 
+    # If context is empty, start with padding token
+    if not context_tokens:
+        context_tokens = [tokenizer.PADDING_TOKEN_INDEX]
+
     # Run beam search
     result_tokens_list = beam_search(model, context_tokens, template, beam_width, num_candidates)
 
@@ -160,7 +164,7 @@ def predict(context: List[Syllable], template: List[SyllableTemplate], model: GP
                 result_syllables.append(Syllable.from_triplet(t))
             else:
                 # Should not happen for valid tokens
-                result_syllables.append(Syllable(consonant="", rhyme="", tone=0))
+                pass
         candidates.append(result_syllables)
 
     return candidates
@@ -175,6 +179,9 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
 
     # Initial beam
     beams = [(context_tokens, 0.0)] # List of (tokens, log_prob)
+
+    # Track the start index of the generated part
+    start_gen_idx = len(context_tokens)
 
     for i, template in enumerate(templates):
         new_beams = []
@@ -234,4 +241,5 @@ def beam_search(model: GPT, context_tokens: List[int], templates: List[SyllableT
         return []
 
     # Return top num_candidates generated parts
-    return [seq[len(context_tokens):] for seq, score in beams[:num_candidates]]
+    # Exclude the context (including the padding token if we added it)
+    return [seq[start_gen_idx:] for seq, score in beams[:num_candidates]]
