@@ -1,21 +1,10 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import re
-import json
-import os
 
 from ai.tokenizer import tokenizer, Triplet
 from utils.preprocess import remove_diacritics
 from utils.regex_gen import generate_regex_from_strings
-
-# Load precomputed regexes
-PRECOMPUTED_REGEXES = {}
-try:
-    regex_path = os.path.join(os.path.dirname(__file__), "ai", "generated_regexes.json")
-    with open(regex_path, "r", encoding="utf-8") as f:
-        PRECOMPUTED_REGEXES = json.load(f)
-except Exception as e:
-    print(f"Warning: Could not load precomputed regexes from {regex_path}: {e}")
 
 # Data Structures
 @dataclass
@@ -84,14 +73,6 @@ class PartialSyllableTemplate(SyllableTemplate):
         return True
 
     def get_regex(self) -> str:
-        # Normalize template letter for lookup key
-        normalized_template_letter = remove_diacritics(self.rhyme_first_letter)
-        key = f"{self.consonant}_{normalized_template_letter}_{self.tone}"
-
-        if key in PRECOMPUTED_REGEXES:
-            return PRECOMPUTED_REGEXES[key]
-
-        # Fallback to dynamic generation if not found (shouldn't happen for valid vocab inputs)
         matching_strings = []
         for i, t in enumerate(tokenizer.renum_triplet):
             if i == tokenizer.PADDING_TOKEN_INDEX or t is None:
