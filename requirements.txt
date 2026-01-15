@@ -1,2 +1,0 @@
-pynput==1.7.6
-pydantic==2.8.2
