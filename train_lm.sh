@@ -10,8 +10,8 @@ else
 fi
 
 # 2. Train KenLM
-echo "Training KenLM (5-gram)..."
-./kenlm/build/bin/lmplz -o 5 < data/corpus.tok > lm.arpa
+echo "Training KenLM (3-gram)..."
+./kenlm/build/bin/lmplz -o 3 < data/corpus.tok > lm.arpa
 
 # 3. Binarize
 echo "Binarizing model..."
