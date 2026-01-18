@@ -1,16 +1,168 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-
-# Checkpoints
-checkpoints/common.json
-checkpoints/freq-transformer.txt
-checkpoints/*.pth
-
 *.py[cod]
-.DS_Store
-.vscode
+*$py.class
 
-# Data
-data
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a standalone easy_install,
+#  for example or through a setup.py script, or as part of a frozen
+#  application.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypotheses/
+.pytest_cache/
+pytestdebuglog.txt
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+#   For a library or package, you might want to ignore these files since the Python version
+#   is usually managed by the user. However, for a project/app, it might be fine to include them.
+# .python-version
+
+# pipenv
+#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
+#   However, in case you'd like to ignore it, uncomment the following line:
+# .Pipfile.lock
+
+# poetry
+#   Similar to Pipenv, see https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
+# poetry.lock
+
+# pdm
+#   Similar to Pipenv, see https://pdm.fming.dev/#use-pdm-in-a-project
+.pdm.toml
+.pdm-python
+.pdm-build/
+
+# PEP 582; used by e.g. github.com/fannheyward/coc-pyright
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+# Root-level venv files detected in project
+bin/
+include/
+lib/
+lib64/
+lib64
+share/
+pyvenv.cfg
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# OS X
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Project specific ignores
+data/
 testlog.txt
 assets/record
 profile*
@@ -18,14 +170,22 @@ history/
 */deprecated/
 misc/
 test/
-.env
-
-# Test
 *.ig.*
 
-# App
-dist/
-build/
+# Checkpoints
+checkpoints/*.pth
+checkpoints/*.bak
+# Keep specific json checkpoints if needed, but often they are large or local
+# checkpoints/*.json 
 
-# Env
-v7/
+# Rust / Cargo
+inference-rs/target/
+**/*.rs.bk
+
+# KenLM
+kenlm/
+*.arpa
+*.binary
+lm.arpa
+lm.binary
+

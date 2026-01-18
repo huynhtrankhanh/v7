@@ -114,3 +114,24 @@ To run the app in AI Mode, follow these steps:
     ```bash
     python main.py
     ```
+
+## Rust Inference (Experimental)
+
+For faster inference, you can use the Rust implementation included in `inference-rs`. This version uses KenLM and beam search for high-performance candidate generation.
+
+1. Build the Rust project:
+    ```bash
+    cd inference-rs
+    cargo build --release
+    ```
+2. Run inference:
+    ```bash
+    cargo run --release -- "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7"
+    ```
+   
+   Or run the binary directly:
+    ```bash
+    ./target/release/inference-rs "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7"
+    ```
+
+   **Note:** You need `lm.binary` (KenLM model) and `ai/generated_regexes.json` in the working directory or specified paths.
