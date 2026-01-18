@@ -11,10 +11,10 @@ fi
 
 # 2. Train KenLM
 echo "Training KenLM (3-gram)..."
-./kenlm/build/bin/lmplz -o 3 < data/corpus.tok > lm.arpa
+./kenlm/build/bin/lmplz -o 3 --prune 0 0 1 < data/corpus.tok > lm.arpa
 
 # 3. Binarize
 echo "Binarizing model..."
-./kenlm/build/bin/build_binary lm.arpa lm.binary
+./kenlm/build/bin/build_binary -a 256 -q 8 trie lm.arpa lm.binary
 
 echo "Done. Model saved to lm.binary"
