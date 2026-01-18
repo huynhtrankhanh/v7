@@ -1,0 +1,17 @@
+# Ignore everything by default
+*
+
+# Unignore the specific directories we need
+!ai/
+!inference-rs/
+
+# Unignore build configuration files
+!Dockerfile
+!docker-compose.yml
+!.dockerignore
+
+# Explicitly ignore unwanted files within the allowed directories
+ai/__pycache__/
+inference-rs/target/
+inference-rs/**/*.rs.bk
+*.swp
