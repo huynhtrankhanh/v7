@@ -110,9 +110,9 @@ Top results:
 
 ## V7 Input Format: Deep Dive
 
-The V7 format is a highly compressed phonetic coding system. Unlike standard Telex, it requires precise adherence to specific mapping rules for consonants, rhymes, and tones.
+The V7 format is a highly compressed phonetic coding system. Unlike standard Telex, it requires precise adherence to specific mapping rules for consonants, rimes, and tones.
 
-**Structure:** `[Consonant][RhymeStart][Tone]`
+**Structure:** `[Consonant][RimeStart][Tone]`
 
 ### 1. Consonants
 The input string must start with a valid consonant code. The parser matches the **longest** valid consonant code.
@@ -130,11 +130,12 @@ The input string must start with a valid consonant code. The parser matches the 
 
 **Standard Consonants:** `b`, `ch`, `h`, `kh`, `l`, `m`, `n`, `nh`, `p`, `ph`, `r`, `s`, `t`, `th`, `tr`, `v`, `x`.
 
-### 2. Rhyme Start
+### 2. Rime Start
 This is the **single character** that immediately follows the consonant.
-*   It is strictly the **first letter** of the rhyme part of the word.
-*   **Example:** For "quyết" (qu + yết), the consonant is `w` (qu) and the rhyme starts with `y`. -> `w` + `y`...
-*   **Example:** For "anh" (vowel start + anh), the consonant is `0`, rhyme starts with `a`. -> `0` + `a`...
+*   It corresponds to the first letter of the rime, **normalized** to its base Latin vowel (removing diacritics).
+*   **Normalization Rule:** `ă`, `â`, `a` -> `a`; `ê`, `e` -> `e`; `ô`, `ơ`, `o` -> `o`; `ư`, `u` -> `u`; `i` -> `i`; `y` -> `y`.
+*   **Example:** For "trời" (tr + ời), the consonant is `tr`. The rime starts with `ơ`. Normalized: `o`. Input: `tro`.
+*   **Example:** For "lắm" (l + ắm), the consonant is `l`. The rime starts with `ă`. Normalized: `a`. Input: `la`.
 
 ### 3. Tones (0-7)
 Tones are represented by digits. The mapping is crucial and depends on whether the syllable ends with a **stop consonant** (`c`, `ch`, `p`, `t`).
@@ -156,11 +157,11 @@ These syllables can *only* carry Sắc or Nặng tones. V7 separates them to imp
 
 | Word | Decomposition | V7 Code | Notes |
 | :--- | :--- | :--- | :--- |
-| **nay** | `n` + `ay` + Ngang | `na0` | `n` matches `n`, `a` is rhyme start, `0` is tone. |
-| **trời** | `tr` + `ời` + Huyền | `tro2` | `tr` matches `tr`, `o` is rhyme start (`ơ` input as `o`), `2` is tone. |
-| **đẹp** | `đ` + `ẹp` + Nặng (Stop) | `dde7` | `dd` matches `đ`, `e` is rhyme start, `7` is stop-tone Nặng. |
-| **lắm** | `l` + `ắm` + Sắc | `la1` | `l` matches `l`, `a` is rhyme start (`ă` -> `a`), `1` is tone. |
-| **quốc** | `qu` + `ốc` + Sắc (Stop) | `wo6` | `w` matches `qu`, `o` is rhyme start (`ố` -> `o`), `6` is stop-tone Sắc. |
-| **anh** | `(none)` + `anh` + Ngang | `0a0` | `0` is empty consonant, `a` is rhyme start. |
-| **nghiêng** | `ngh` + `iêng` + Ngang | `ngi0` | `ng` maps `ng/ngh`, `i` is rhyme start. |
-| **giữa** | `gi` + `ữa` + Ngã | `zu4` | `z` matches `gi`, `u` is rhyme start (`ư` -> `u`). |
+| **nay** | `n` + `ay` + Ngang | `na0` | `n` matches `n`, `a` is rime start, `0` is tone. |
+| **trời** | `tr` + `ời` + Huyền | `tro2` | `tr` matches `tr`, `o` is rime start (`ơ` -> `o`), `2` is tone. |
+| **đẹp** | `đ` + `ẹp` + Nặng (Stop) | `dde7` | `dd` matches `đ`, `e` is rime start, `7` is stop-tone Nặng. |
+| **lắm** | `l` + `ắm` + Sắc | `la1` | `l` matches `l`, `a` is rime start (`ă` -> `a`), `1` is tone. |
+| **quốc** | `qu` + `ốc` + Sắc (Stop) | `wo6` | `w` matches `qu`, `o` is rime start (`ố` -> `o`), `6` is stop-tone Sắc. |
+| **anh** | `(none)` + `anh` + Ngang | `0a0` | `0` is empty consonant, `a` is rime start. |
+| **nghiêng** | `ngh` + `iêng` + Ngang | `ngi0` | `ng` maps `ng/ngh`, `i` is rime start. |
+| **giữa** | `gi` + `ữa` + Ngã | `zu4` | `z` matches `gi`, `u` is rime start (`ư` -> `u`). |

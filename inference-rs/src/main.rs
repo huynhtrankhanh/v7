@@ -80,7 +80,7 @@ fn remove_diacritics(text: &str) -> String {
 #[derive(Debug)]
 struct PartialSyllableTemplate {
     consonant: String,
-    rhyme_first_letter: char,
+    rime_first_letter: char,
     tone: i32,
 }
 
@@ -110,7 +110,7 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
         };
 
         let mut chars_iter = current_slice.chars();
-        let rhyme_start = chars_iter.next().ok_or_else(|| anyhow::anyhow!("Unexpected end looking for rhyme start"))?;
+        let rime_start = chars_iter.next().ok_or_else(|| anyhow::anyhow!("Unexpected end looking for rime start"))?;
         current_slice = chars_iter.as_str();
 
         let mut chars_iter = current_slice.chars();
@@ -120,7 +120,7 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 
         templates.push(PartialSyllableTemplate {
             consonant,
-            rhyme_first_letter: rhyme_start,
+            rime_first_letter: rime_start,
             tone,
         });
     }
@@ -137,8 +137,8 @@ struct BeamNode<'a> {
 }
 
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
-    let norm_rhyme_start = remove_diacritics(&template.rhyme_first_letter.to_string());
-    let key = format!("{}_{}_{}", template.consonant, norm_rhyme_start, template.tone);
+    let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
+    let key = format!("{}_{}_{}", template.consonant, norm_rime_start, template.tone);
     tokenizer.candidates_index.get(&key)
 }
 
