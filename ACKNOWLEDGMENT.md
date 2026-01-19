@@ -8,6 +8,8 @@ While the implementation in this repository has diverged significantly from the 
 
 The original V7 project is licensed under the Apache License, Version 2.0.
 
+```
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -184,3 +186,4 @@ The original V7 project is licensed under the Apache License, Version 2.0.
       of your accepting any such warranty or additional liability.
 
    END OF TERMS AND CONDITIONS
+```
