@@ -28,7 +28,7 @@ struct Tokenizer {
 
 impl Tokenizer {
     fn new(root: &Path) -> Result<Self> {
-        let regex_path = root.join("ai/generated_regexes.json");
+        let regex_path = root.join("./generated_regexes.json");
         let regex_file = File::open(&regex_path).context("Failed to open generated_regexes.json")?;
         let regex_map: HashMap<String, String> = serde_json::from_reader(BufReader::new(regex_file))?;
         
