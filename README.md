@@ -165,3 +165,11 @@ These syllables can *only* carry Sắc or Nặng tones. V7 separates them to imp
 | **anh** | `(none)` + `anh` + Ngang | `0a0` | `0` is empty consonant, `a` is rime start. |
 | **nghiêng** | `ngh` + `iêng` + Ngang | `ngi0` | `ng` maps `ng/ngh`, `i` is rime start. |
 | **giữa** | `gi` + `ữa` + Ngã | `zu4` | `z` matches `gi`, `u` is rime start (`ư` -> `u`), `4` is tone. |
+
+## License
+
+This project is licensed under the [0BSD License](LICENSE).
+
+## Acknowledgments
+
+This project was originally inspired by the [v7](https://github.com/ducngg/v7) repository. While the current codebase represents a significant divergence in implementation and approach, we acknowledge the instrumental role of the original project in the development of this engine. See `ACKNOWLEDGMENT.md` for more details and the original license.
