@@ -11,6 +11,7 @@ This project implements the `v7` Vietnamese input method, designed to be a faste
 - `ng`: Represents `ng` and `ngh`.
 - `z`: Represents `gi`. (e.g., `z6` → `giúp`, `giết`)
 - `dd`: Represents `đ` (Telex style). (e.g., `dd4` → `đã`, `đỗ`)
+- `w`: Represents `qu`.
 
 ### Tones (VNI Style)
 The system uses an 8-tone system (compatible with standard 6-tone analysis):
