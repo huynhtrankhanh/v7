@@ -136,7 +136,7 @@ This is the **single character** that immediately follows the consonant.
 *   **Example:** For "quyết" (qu + yết), the consonant is `w` (qu) and the rhyme starts with `y`. -> `w` + `y`...
 *   **Example:** For "anh" (vowel start + anh), the consonant is `0`, rhyme starts with `a`. -> `0` + `a`...
 
-### 3. Tones (0-9)
+### 3. Tones (0-7)
 Tones are represented by digits. The mapping is crucial and depends on whether the syllable ends with a **stop consonant** (`c`, `ch`, `p`, `t`).
 
 **Open/Nasal Syllables (ending in vowel, m, n, ng, nh):**
