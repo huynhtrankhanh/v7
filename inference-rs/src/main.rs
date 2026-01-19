@@ -74,7 +74,7 @@ fn remove_diacritics(text: &str) -> String {
         .collect();
         
     let result: String = without_marks.nfc().collect();
-    result.replace('đ', "d").replace('Đ', "D")
+    result.replace('đ', "d").replace('Đ', "D").replace('y', "i").replace('Y', "I")
 }
 
 #[derive(Debug)]

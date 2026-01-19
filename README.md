@@ -133,9 +133,9 @@ The input string must start with a valid consonant code. The parser matches the 
 ### 2. Rime Start
 This is the **single character** that immediately follows the consonant.
 *   It corresponds to the first letter of the rime, **normalized** to its base Latin vowel (removing diacritics).
-*   **Normalization Rule:** `ă`, `â`, `a` -> `a`; `ê`, `e` -> `e`; `ô`, `ơ`, `o` -> `o`; `ư`, `u` -> `u`; `i` -> `i`; `y` -> `y`.
-*   **Example:** For "trời" (tr + ời), the consonant is `tr`. The rime starts with `ơ`. Normalized: `o`. Input: `tro`.
-*   **Example:** For "lắm" (l + ắm), the consonant is `l`. The rime starts with `ă`. Normalized: `a`. Input: `la`.
+*   **Normalization Rule:** `ă`, `â`, `a` -> `a`; `ê`, `e` -> `e`; `ô`, `ơ`, `o` -> `o`; `ư`, `u` -> `u`; `i`, `y` -> `i`. (Note: Both `i` and `y` are normalized to `i`).
+*   **Example:** For "quyết" (qu + yết), the consonant is `w` (qu). The rime starts with `y`. Normalized: `i`. Input: `wi`.
+*   **Example:** For "anh" (vowel start + anh), the consonant is `0`, rime starts with `a`. Normalized: `a`. Input: `0a`.
 
 ### 3. Tones (0-7)
 Tones are represented by digits. The mapping is crucial and depends on whether the syllable ends with a **stop consonant** (`c`, `ch`, `p`, `t`).
@@ -164,4 +164,4 @@ These syllables can *only* carry Sắc or Nặng tones. V7 separates them to imp
 | **quốc** | `qu` + `ốc` + Sắc (Stop) | `wo6` | `w` matches `qu`, `o` is rime start (`ố` -> `o`), `6` is stop-tone Sắc. |
 | **anh** | `(none)` + `anh` + Ngang | `0a0` | `0` is empty consonant, `a` is rime start. |
 | **nghiêng** | `ngh` + `iêng` + Ngang | `ngi0` | `ng` maps `ng/ngh`, `i` is rime start. |
-| **giữa** | `gi` + `ữa` + Ngã | `zu4` | `z` matches `gi`, `u` is rime start (`ư` -> `u`). |
+| **giữa** | `gi` + `ữa` + Ngã | `zu4` | `z` matches `gi`, `u` is rime start (`ư` -> `u`), `4` is tone. |
