@@ -74,7 +74,7 @@ To understand the historical significance of these two repositories, we must pla
 ### 6.1. The Context: The "Keystroke Limit" of Vietnamese
 For decades, Vietnamese typing has been dominated by **TELEX** and **VNI**. While effective, these methods are deterministic and verbose.
 *   To type "trường" (school) in TELEX: `t-r-u-o-w-n-g-f` (8 keystrokes).
-*   To type "trường" in V7: `tr0` (3 keystrokes).
+*   To type "trường" in V7: `tru2` (4 keystrokes).
 
 The "Holy Grail" of Vietnamese typing has always been a system that approaches the speed of speaking or thinking, often called "Stenography" (Tốc ký).
 
