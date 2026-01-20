@@ -188,4 +188,4 @@ This project is licensed under the [0BSD License](LICENSE).
 
 ## Acknowledgments
 
-This project was originally inspired by the [v7](https://github.com/ducngg/v7) repository. While the current codebase represents a significant divergence in implementation and approach, we acknowledge the instrumental role of the original project in the development of this engine. See `ACKNOWLEDGMENT.md` for more details and the original license.
+This project was originally inspired by the [v7](https://github.com/ducngg/v7) repository. While the current codebase represents a significant divergence in implementation and approach, we acknowledge the instrumental role of the original project in the development of this engine. See `ACKNOWLEDGMENTS.md` for more details and the original license.
