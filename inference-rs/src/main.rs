@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::{Result, Context};
 use unicode_normalization::UnicodeNormalization;
 use clap::Parser;
+use regex::Regex;
 
 mod kenlm;
 mod regex_enum;
@@ -77,6 +78,16 @@ fn remove_diacritics(text: &str) -> String {
     result.replace('đ', "d").replace('Đ', "D").replace('y', "i").replace('Y', "I")
 }
 
+fn purify(text: &str) -> Vec<String> {
+    let lower = text.to_lowercase();
+    // Keep only letters (\p{L}) and whitespace (\s).
+    // Python logic: [^\w\s] -> space, and [\d_] -> space.
+    // Effectively keeps only letters.
+    let re = Regex::new(r"[^\p{L}\s]").unwrap();
+    let cleaned = re.replace_all(&lower, " ");
+    cleaned.split_whitespace().map(|s| s.to_string()).collect()
+}
+
 #[derive(Debug)]
 struct PartialSyllableTemplate {
     consonant: String,
@@ -129,11 +140,19 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 }
 
 #[derive(Debug, Clone)]
+struct IslandState {
+    score: f32,
+    state: kenlm::State,
+    history: Vec<Vec<String>>, // List of decoded texts for V7 islands encountered so far
+}
+
+#[derive(Debug, Clone)]
 struct BeamNode<'a> {
     score: f32,
     state: kenlm::State,
     word: &'a str,
     parent_idx: Option<usize>,
+    origin_idx: usize, // Index into incoming_states
 }
 
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
@@ -142,20 +161,33 @@ fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokeniz
     tokenizer.candidates_index.get(&key)
 }
 
-fn beam_search<'a>(templates: &[PartialSyllableTemplate], tokenizer: &'a Tokenizer, model: &kenlm::Model, beam_width: usize) -> Vec<(f32, Vec<String>, kenlm::State)> {
-    let initial_state = model.begin_sentence_state();
-    
-    // Beam history: stores each step's surviving nodes
+fn beam_search_v7_island<'a>(
+    templates: &[PartialSyllableTemplate],
+    tokenizer: &'a Tokenizer,
+    model: &kenlm::Model,
+    beam_width: usize,
+    incoming_states: &[IslandState],
+) -> Vec<IslandState> {
+    // Initialize beam from incoming states
+    let mut current_beam: Vec<BeamNode<'a>> = incoming_states.iter().enumerate().map(|(i, s)| {
+        BeamNode {
+            score: s.score,
+            state: s.state.clone(),
+            word: "",
+            parent_idx: None,
+            origin_idx: i,
+        }
+    }).collect();
+
+    // Limit initial beam if incoming_states is too large (though unusual)
+    if current_beam.len() > beam_width {
+        current_beam.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        current_beam.truncate(beam_width);
+    }
+
     let mut history: Vec<Vec<BeamNode<'a>>> = Vec::with_capacity(templates.len() + 1);
-    
-    // Initial beam
-    history.push(vec![BeamNode {
-        score: 0.0,
-        state: initial_state,
-        word: "",
-        parent_idx: None,
-    }]);
-    
+    history.push(current_beam);
+
     for template in templates {
         let candidates_opt = get_candidates(template, tokenizer);
         
@@ -176,38 +208,40 @@ fn beam_search<'a>(templates: &[PartialSyllableTemplate], tokenizer: &'a Tokeniz
         }
 
         let prev_beam = history.last().unwrap();
-        let mut next_candidates: Vec<(f32, usize, &'a str, kenlm::State)> = Vec::with_capacity(prev_beam.len() * candidate_data.len());
+        // We might explore up to prev_beam.len() * candidate_data.len() nodes.
+        let mut next_candidates: Vec<(f32, usize, usize, &'a str, kenlm::State)> = Vec::with_capacity(prev_beam.len() * candidate_data.len());
 
         for (parent_idx, node) in prev_beam.iter().enumerate() {
             for (word_str, word_idx, penalty) in &candidate_data {
                 if *penalty < -1.0 && *word_str == "<?>" {
-                     next_candidates.push((node.score + penalty, parent_idx, *word_str, node.state.clone()));
+                     next_candidates.push((node.score + penalty, parent_idx, node.origin_idx, *word_str, node.state.clone()));
                      continue;
                 }
 
                 let (lm_score, new_state) = model.score_index(&node.state, *word_idx);
                 let total_score = node.score + lm_score + penalty;
                 
-                next_candidates.push((total_score, parent_idx, *word_str, new_state));
+                next_candidates.push((total_score, parent_idx, node.origin_idx, *word_str, new_state));
             }
         }
         
         // Keep top K
         next_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
         
-        let next_beam: Vec<BeamNode<'a>> = next_candidates.into_iter().take(beam_width).map(|(s, p, w, st)| {
+        let next_beam: Vec<BeamNode<'a>> = next_candidates.into_iter().take(beam_width).map(|(s, p, o, w, st)| {
             BeamNode {
                 score: s,
                 state: st,
                 word: w,
                 parent_idx: Some(p),
+                origin_idx: o,
             }
         }).collect();
         
         history.push(next_beam);
     }
     
-    // Reconstruct paths for the last beam
+    // Reconstruct paths
     let last_beam = history.last().unwrap();
     let mut results = Vec::new();
     
@@ -215,7 +249,7 @@ fn beam_search<'a>(templates: &[PartialSyllableTemplate], tokenizer: &'a Tokeniz
         let mut words = Vec::new();
         let mut current_step = history.len() - 1;
         
-        // Collect words backwards
+        // Collect words backwards for this island
         words.push(node.word.to_string());
         
         let mut parent_idx = node.parent_idx;
@@ -229,7 +263,16 @@ fn beam_search<'a>(templates: &[PartialSyllableTemplate], tokenizer: &'a Tokeniz
         }
         
         words.reverse();
-        results.push((node.score, words, node.state.clone()));
+        
+        // Combine with history from origin
+        let mut new_history = incoming_states[node.origin_idx].history.clone();
+        new_history.push(words);
+        
+        results.push(IslandState {
+            score: node.score,
+            state: node.state.clone(),
+            history: new_history,
+        });
     }
     
     results
@@ -245,20 +288,81 @@ fn main() -> Result<()> {
     eprintln!("Loading model from {}...", args.model_path);
     let model = kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?;
     
-    eprintln!("Input: {}", args.v7_string);
-    let templates = parse_v7_string(&args.v7_string, &tokenizer)?;
-    eprintln!("Parsed {} templates.", templates.len());
-    
-    eprintln!("Running Beam Search...");
+    // Determine input mode
+    let (is_islands_mode, islands) = match serde_json::from_str::<Vec<String>>(&args.v7_string) {
+        Ok(parsed) => {
+            eprintln!("Mode: Fixed Text Islands (JSON detected)");
+            (true, parsed)
+        },
+        Err(_) => {
+            eprintln!("Mode: Single V7 String (Legacy)");
+            // Mimic island structure: Empty fixed text -> V7 string
+            (false, vec!["".to_string(), args.v7_string.clone()])
+        }
+    };
+
+    if islands.is_empty() {
+        // Should catch empty array case
+        eprintln!("Error: Input islands array is empty.");
+        return Ok(());
+    }
+
     let start_time = std::time::Instant::now();
-    let best_beams = beam_search(&templates, &tokenizer, &model, 100);
+
+    // Initial state
+    let mut current_states = vec![IslandState {
+        score: 0.0,
+        state: model.begin_sentence_state(),
+        history: Vec::new(),
+    }];
+    
+    let beam_width = 100;
+
+    for (i, segment) in islands.iter().enumerate() {
+        if i % 2 == 0 {
+            // Fixed Text Island
+            if segment.is_empty() {
+                continue;
+            }
+            let purified_words = purify(segment);
+            // Deterministic update for all current states
+            for state in &mut current_states {
+                for word in &purified_words {
+                    let (lm_score, new_st) = model.score(&state.state, word);
+                    state.score += lm_score;
+                    state.state = new_st;
+                }
+            }
+        } else {
+            // V7 Code Island
+            eprintln!("Decoding V7 island: {}", segment);
+            let templates = parse_v7_string(segment, &tokenizer)?;
+            current_states = beam_search_v7_island(&templates, &tokenizer, &model, beam_width, &current_states);
+        }
+    }
+    
     let duration = start_time.elapsed();
     
-    println!("Top results:");
-    for (i, (score, words, _)) in best_beams.iter().take(5).enumerate() {
-        println!("{}. [{:.4}] {}", i + 1, score, words.join(" "));
+    // Sort final results
+    current_states.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    
+    if is_islands_mode {
+        // New JSON Output
+        let candidates: Vec<Vec<String>> = current_states.into_iter().take(beam_width).map(|s| {
+            // Flatten the word lists for each island into strings
+            s.history.into_iter().map(|words| words.join(" ")).collect()
+        }).collect();
+        println!("{}", serde_json::to_string(&candidates)?);
+    } else {
+        // Old Legacy Output
+        println!("Top results:");
+        for (i, state) in current_states.iter().take(5).enumerate() {
+            // Flatten all history (should be just one island)
+            let full_text = state.history.iter().flatten().cloned().collect::<Vec<String>>().join(" ");
+            println!("{}. [{:.4}] {}", i + 1, state.score, full_text);
+        }
+        println!("\nInference time: {}ms", duration.as_millis());
     }
-    println!("\nInference time: {}ms", duration.as_millis());
 
     Ok(())
 }
