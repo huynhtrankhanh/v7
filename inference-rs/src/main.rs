@@ -353,6 +353,7 @@ fn main() -> Result<()> {
             s.history.into_iter().map(|words| words.join(" ")).collect()
         }).collect();
         println!("{}", serde_json::to_string(&candidates)?);
+        println!("\nInference time: {}ms", duration.as_millis());
     } else {
         // Old Legacy Output
         println!("Top results:");
