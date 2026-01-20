@@ -1,13 +1,16 @@
-**Wow, we have such a fascinating repository!**
+**inference-rs should support two modes:**
 
-But the repository is also full of fluff. It is a fork of the v7 repository by Nguyễn Phan Trí Đức, but as the repository evolved, the code that is actually being run is no longer a direct derivative of the original code. The general idea lives on, but most of the original code was already deleted.
+* Inference with no fixed text: just `inference-rs [v7 code]`, which is the current behavior
+* Inference with **FIXED TEXT ISLANDS:**
+  A JSON array of strings is passed as the parameter.
+  ```
+  inference-rs ["đây là ", "mo7ka1zi2ddo1ra6", "kì lạ"]
+  ```
+  The first element is a fixed text island, the second element is an island of v7 code needing to be expanded, the third element is a fixed text island, and so forth. They alternate.
 
-This is now a cleanup effort.
+  **The first element is always a fixed text island.** If there is no fixed text island at the beginning, supply an empty string as the first element.
 
-* Delete the archive_scripts and the checkpoints, tests, utils folder
-* Move generated_regexes.json out of the ai folder and delete the ai folder
-* Delete all Python files except preprocess_corpus.py
-* Delete all .md files except README_KENLM.md and MANIFESTO.md
-* Write a new README.md that explains how the system works, and the input format
-* If the remaining code still depends on the deleted files, in the Pull Request description please say so
-* You don't have to test the code. This is just cleanup work.
+
+  **Inference strategy:** This is a modification of the existing beam search code. However, as there are **fixed text islands**, which can contain punctuation or numbers, which are not recognized by the model, the whole thing has to be purified using the exact same logic as the preprocess_corpus.py. After that the inference process can start.
+
+  **Output:** Multiple candidates. Each candidate is an array of predicted text of v7 islands. Fixed text islands don't need to be outputted.
