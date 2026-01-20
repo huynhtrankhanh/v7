@@ -67,6 +67,39 @@ Despite using a simpler statistical model (3-gram) compared to the original's De
 | **Word Validation** | `Vietnamese.isVietnamese(word)` checks against allowed rhyme families. | `kenlm` model probability determines validity/likelihood. |
 | **Input Parsing** | Iterative/State-based processing (in `imethod/`). | Regex-like greedy string splitting. |
 
+## 6. Historical Significance
+
+To understand the historical significance of these two repositories, we must place them in the broader context of **Vietnamese Input Methods (IMEs)** and the evolution of **Predictive Text Entry**.
+
+### 6.1. The Context: The "Keystroke Limit" of Vietnamese
+For decades, Vietnamese typing has been dominated by **TELEX** and **VNI**. While effective, these methods are deterministic and verbose.
+*   To type "trường" (school) in TELEX: `t-r-u-o-w-n-g-f` (8 keystrokes).
+*   To type "trường" in V7: `tr0` (3 keystrokes).
+
+The "Holy Grail" of Vietnamese typing has always been a system that approaches the speed of speaking or thinking, often called "Stenography" (Tốc ký).
+
+### 6.2. `ducngg/v7` (The Original): The Conceptual Pioneer
+**Significance: The Invention of the V7 Standard & Academic Validation**
+
+*   **The "Protocol":** This repository defined the **V7 Specification**. It invented the rules that map complex Vietnamese syllables into strict `[Consonant][RimeStart][Tone]` triplets. This is a linguistic breakthrough in how to compress Vietnamese without losing too much information.
+*   **The AI Bridge:** It was one of the first open attempts to apply **Generative AI (GPT)** specifically to Vietnamese shorthand. By treating the input method as a "translation" problem (from "V7 code" to "Vietnamese"), it moved the field away from simple dictionary lookups to context-aware decoding.
+*   **Academic Milestone:** As noted in its README, this work resulted in an **IJCAI 2025** paper. This validates the V7 method not just as a hobby project, but as a scientifically significant contribution to Natural Language Processing (NLP).
+
+### 6.3. The Rewrite (This Repository): The Engineering Catalyst
+**Significance: The Proof of Practicality & Democratization**
+
+*   **Solving the "Latency Barrier":** The original Python/GPT implementation, while smart, is inherently heavy. A keyboard needs to respond in milliseconds. The rewrite proves that V7 is not just a theoretical concept but a **practical reality**. By achieving high accuracy with **Statistical NLP (KenLM)** and **Rust**, it demonstrated that you don't need a GPU to type fast.
+*   **Algorithmic Superiority:** It historically proved that for *constrained* search spaces (like an Input Method), classical algorithms (Beam Search + N-Grams) can actually outperform modern Deep Learning (Greedy GPT) in both speed and accuracy. This is a significant case study in the "Old AI vs. New AI" engineering debate.
+*   **Portability:** By creating a standalone binary, this repository paves the way for V7 to be integrated into operating systems (Windows, macOS, Linux, Android) without requiring users to be Python developers. It marks the transition from "Lab Experiment" to "Consumer Product".
+
+### Summary Table
+
+| Feature | `ducngg/v7` (Original) | `huynhtrankhanh/v7` (Rewrite) |
+| :--- | :--- | :--- |
+| **Role** | **The Inventor** | **The Industrializer** |
+| **Contribution** | Created the V7 mapping rules; proved the concept using Generative AI. | Proved the method is viable for real-world, low-latency usage; optimized the algorithms. |
+| **Legacy** | Will be cited as the origin of the method and the academic foundation. | Will likely be the reference implementation for actual software keyboards used by people. |
+
 ## Conclusion
 
 This repository represents a **high-performance, compiled port** of the V7 input method. It trades the flexibility and runtime-generation of the original Python code for the speed and portability of a Rust binary backed by static N-gram models. It is a distinct software product derived from the same underlying theoretical method.
