@@ -92,20 +92,36 @@ Run the training script. This will:
 ### 3. Run Inference
 Use the compiled Rust binary to decode V7 strings. The binary expects `generated_regexes.json` and `lm.binary` to be in the current working directory.
 
-```bash
-./inference-rs/target/release/inference-rs [v7_string] --model_path lm.binary
-```
+#### Input Modes
 
-**Example:**
+The engine supports two modes of operation:
+
+**A. Legacy Mode (Single String)**
+Pass a single raw V7 string. The engine will decode it as a standalone sentence.
+
 ```bash
 ./inference-rs/target/release/inference-rs na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
 ```
 
-**Output:**
+**B. Fixed Text Islands Mode (JSON)**
+Pass a JSON array of strings to interleave existing fixed text with V7 code islands. This is ideal for editing within existing sentences, as the fixed text provides context for the prediction.
+
+**Format:** `["Fixed Text", "V7 Code", "Fixed Text", "V7 Code", ...]`
+*   The array **must** start with a Fixed Text element (use an empty string `""` if there is no preceding text).
+*   **Alternating structure:** Even indices are Fixed Text, odd indices are V7 Code.
+*   **Context Propagation:** The engine "reads" the fixed text to update its internal state, ensuring that subsequent V7 predictions are contextually appropriate. Fixed text is automatically "purified" (punctuation removed) to match the model's training data.
+
+**Example:**
+```bash
+# Context: "hôm nay " -> Prediction for "tro2" -> Context " rất " -> Prediction for "dde7"
+./inference-rs/target/release/inference-rs '["hôm nay ", "tro2", " rất ", "dde7"]'
 ```
-Top results:
-1. [-27.8713] nay trời đẹp lắm nhưng mà khi trời mưa thì nó rất mệt
-...
+
+**Output (JSON Mode):**
+Returns a JSON array of candidate lists. Each list contains the predicted text for the corresponding V7 island.
+
+```json
+[["trời","tròn",...], ["đẹp","đến",...]]
 ```
 
 ## V7 Input Format: Deep Dive
