@@ -543,5 +543,6 @@ const processWord = (x: string): string | undefined => {
         const { a, b, c } = helpers(outlineB);
         return c(1, "E") + c(0, "U") + a(4, "F") + b(2, "R") + a(3, "P") + b(1, "B") + a(2, "L") + b(0, "G") + a(0, "T") + a(1, "S");
     })();
-    return leftHand + "*" + rightHand;
+    const overallOutline = leftHand + "*" + rightHand + (outlineA.vowel === "u" ? "D" : "") + (outlineB.vowel === "u" ? "Z" : "");
+    if (overallOutline === "*") return "#STKPWHR";
 }
