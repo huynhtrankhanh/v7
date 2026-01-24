@@ -340,8 +340,7 @@ function handleChord(stroke) {
         }
     }
 
-    const cleanStroke = stroke.replace("-", "");
-    const parsed = parse(cleanStroke);
+    const parsed = parse(stroke);
     if (parsed) {
         const text = assemble(parsed);
         saveState();
