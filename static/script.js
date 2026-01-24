@@ -395,6 +395,18 @@ function getCommonPrefix(strings) {
             if (prefix === "") return "";
         }
     }
+    
+    // Truncate to last space to ensure full syllables
+    if (prefix.length > 0 && prefix.length < strings[0].length) {
+        const lastSpace = prefix.lastIndexOf(" ");
+        if (lastSpace !== -1) {
+            prefix = prefix.substring(0, lastSpace + 1);
+        } else {
+            // No space found, so no common word prefix
+            prefix = "";
+        }
+    }
+    
     return prefix;
 }
 
@@ -423,35 +435,40 @@ function updateDisplay() {
 
     candArea.innerHTML = "";
     if (state.candidates.length > 0) {
-        const chords = ["TK", "PW", "HR", "-FR", "-PB"];
-        
         // Calculate common prefix for top 5 candidates
         const visibleCandidates = state.candidates.slice(0, 5);
         const candStrings = visibleCandidates.map(c => c.filter(s => s.length > 0).join(" ") || " ");
         const prefix = getCommonPrefix(candStrings);
+
+        // Check if candidates are short enough for horizontal display
+        let maxRemainingLength = 0;
+        for (const s of candStrings) {
+            maxRemainingLength = Math.max(maxRemainingLength, s.length - prefix.length);
+        }
+        
+        // Threshold: e.g. 15 chars
+        if (maxRemainingLength < 15) {
+            candArea.classList.add("horizontal");
+        } else {
+            candArea.classList.remove("horizontal");
+        }
 
         for (let i = 0; i < visibleCandidates.length; i++) {
             const div = document.createElement("div");
             div.className = "candidate";
             
             let textHtml = candStrings[i];
-            // Only hide prefix if it's substantial (e.g. > 10 chars) to avoid flickering for short words?
-            // User said "hiding common prefix with [...]".
-            // If prefix is "he", replacing with "[...]" takes more space.
-            // Let's assume we always hide it if length > 0, or maybe length > 5?
-            // The prompt implies managing size.
-            // I'll stick to always hiding if length > 0, but maybe check if prefix is actually long enough to warrant it.
-            // But strict adherence: "hiding common prefix".
             if (prefix.length > 0) {
                  const suffix = candStrings[i].substring(prefix.length);
                  textHtml = `<span class="common-prefix">[...]</span>${suffix}`;
             }
 
-            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${textHtml}</span>`;
+            div.innerHTML = `<span class="candidate-text">${textHtml}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }
     } else {
+        candArea.classList.remove("horizontal");
         const div = document.createElement("div");
         div.className = "candidate";
         div.style.cursor = "default";
