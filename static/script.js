@@ -345,9 +345,10 @@ function handleChord(stroke) {
         const text = assemble(parsed);
         saveState();
         if (state.islands.length % 2 === 0) {
-             state.islands.push(text + " ");
+             state.islands.push(text);
         } else {
-             state.islands[state.islands.length - 1] += text + " ";
+             const current = state.islands[state.islands.length - 1];
+             state.islands[state.islands.length - 1] = current + (current.length > 0 ? " " : "") + text;
         }
         runInference();
         return;
@@ -375,7 +376,7 @@ function selectCandidate(index) {
     if (!state.candidates[index]) return;
     const chosenText = state.candidates[index].filter(s => s.length > 0).join(" ");
     saveState();
-    state.islands = [chosenText + " "];
+    state.islands = [chosenText];
     state.candidates = [];
     updateDisplay();
 }
@@ -414,7 +415,7 @@ function updateDisplay() {
         text = state.candidates[0].filter(s => s.length > 0).join(" ");
     } else {
         // Fallback: Show all islands, wrapping V7 codes in brackets
-        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join("");
+        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
     }
     
     // Remove the initial placeholder if it exists
