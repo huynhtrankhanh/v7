@@ -189,3 +189,5 @@ kenlm/
 lm.arpa
 lm.binary
 
+# Node
+node_modules/

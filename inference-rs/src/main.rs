@@ -3,10 +3,18 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::sync::Arc;
 use anyhow::{Result, Context};
 use unicode_normalization::UnicodeNormalization;
 use clap::Parser;
 use regex::Regex;
+use axum::{
+    extract::{State, Json},
+    routing::{get, post},
+    Router,
+};
+use tower_http::services::ServeDir;
+use serde::{Deserialize, Serialize};
 
 mod kenlm;
 mod regex_enum;
@@ -14,11 +22,20 @@ mod regex_enum;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(default_value = "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7")]
-    v7_string: String,
+    /// The V7 string to infer. If not provided and not in server mode, uses a default test string.
+    v7_string: Option<String>,
     
     #[arg(long, default_value = "lm.binary")]
     model_path: String,
+
+    #[arg(long)]
+    server: bool,
+
+    #[arg(long, default_value = "3000")]
+    port: u16,
+
+    #[arg(long, default_value = "static")]
+    static_dir: String,
 }
 
 struct Tokenizer {
@@ -278,37 +295,12 @@ fn beam_search_v7_island<'a>(
     results
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-    let root = Path::new(".");
-    
-    eprintln!("Loading tokenizer (from regexes)...");
-    let tokenizer = Tokenizer::new(root)?;
-    
-    eprintln!("Loading model from {}...", args.model_path);
-    let model = kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?;
-    
-    // Determine input mode
-    let (is_islands_mode, islands) = match serde_json::from_str::<Vec<String>>(&args.v7_string) {
-        Ok(parsed) => {
-            eprintln!("Mode: Fixed Text Islands (JSON detected)");
-            (true, parsed)
-        },
-        Err(_) => {
-            eprintln!("Mode: Single V7 String (Legacy)");
-            // Mimic island structure: Empty fixed text -> V7 string
-            (false, vec!["".to_string(), args.v7_string.clone()])
-        }
-    };
-
-    if islands.is_empty() {
-        // Should catch empty array case
-        eprintln!("Error: Input islands array is empty.");
-        return Ok(());
-    }
-
-    let start_time = std::time::Instant::now();
-
+fn perform_inference(
+    islands: &[String],
+    tokenizer: &Tokenizer,
+    model: &kenlm::Model,
+    beam_width: usize,
+) -> Result<Vec<Vec<String>>> {
     // Initial state
     let mut current_states = vec![IslandState {
         score: 0.0,
@@ -316,12 +308,14 @@ fn main() -> Result<()> {
         history: Vec::new(),
     }];
     
-    let beam_width = 100;
-
     for (i, segment) in islands.iter().enumerate() {
         if i % 2 == 0 {
             // Fixed Text Island
             if segment.is_empty() {
+                // We still need to record empty history for this island to maintain alignment
+                 for state in &mut current_states {
+                     state.history.push(Vec::new());
+                 }
                 continue;
             }
             let purified_words = purify(segment);
@@ -332,35 +326,130 @@ fn main() -> Result<()> {
                     state.score += lm_score;
                     state.state = new_st;
                 }
+                state.history.push(purified_words.clone());
             }
         } else {
             // V7 Code Island
-            eprintln!("Decoding V7 island: {}", segment);
-            let templates = parse_v7_string(segment, &tokenizer)?;
-            current_states = beam_search_v7_island(&templates, &tokenizer, &model, beam_width, &current_states);
+            // eprintln!("Decoding V7 island: {}", segment);
+            let templates = parse_v7_string(segment, tokenizer)?;
+            current_states = beam_search_v7_island(&templates, tokenizer, model, beam_width, &current_states);
         }
     }
-    
-    let duration = start_time.elapsed();
     
     // Sort final results
     current_states.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     
-    if is_islands_mode {
-        // New JSON Output
-        let candidates: Vec<Vec<String>> = current_states.into_iter().take(beam_width).map(|s| {
-            // Flatten the word lists for each island into strings
-            s.history.into_iter().map(|words| words.join(" ")).collect()
-        }).collect();
-        println!("{}", serde_json::to_string(&candidates)?);
-        println!("\nInference time: {}ms", duration.as_millis());
+    let candidates: Vec<Vec<String>> = current_states.into_iter().take(beam_width).map(|s| {
+        // Flatten the word lists for each island into strings
+        s.history.into_iter().map(|words| words.join(" ")).collect()
+    }).collect();
+    
+    Ok(candidates)
+}
+
+struct AppState {
+    tokenizer: Tokenizer,
+    model: kenlm::Model,
+}
+
+#[derive(Deserialize)]
+struct InferRequest {
+    islands: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct InferResponse {
+    candidates: Vec<Vec<String>>,
+}
+
+async fn infer_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<InferRequest>,
+) -> Json<InferResponse> {
+    // Basic validation
+    if payload.is_empty() {
+        return Json(InferResponse { candidates: vec![] });
+    }
+
+    match perform_inference(&payload.islands, &state.tokenizer, &state.model, 100) {
+        Ok(candidates) => Json(InferResponse { candidates }),
+        Err(e) => {
+            eprintln!("Inference error: {}", e);
+            Json(InferResponse { candidates: vec![] })
+        }
+    }
+}
+
+impl InferRequest {
+    fn is_empty(&self) -> bool {
+        self.islands.is_empty()
+    }
+}
+
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let args = Args::parse();
+    let root = Path::new(".");
+    
+    eprintln!("Loading tokenizer (from regexes)...");
+    let tokenizer = Tokenizer::new(root)?;
+    
+    eprintln!("Loading model from {}...", args.model_path);
+    let model = kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?;
+
+    if args.server {
+        let app_state = Arc::new(AppState {
+            tokenizer,
+            model,
+        });
+
+        let app = Router::new()
+            .route("/infer", post(infer_handler))
+            .nest_service("/", ServeDir::new(&args.static_dir))
+            .with_state(app_state);
+
+        let addr = format!("0.0.0.0:{}", args.port);
+        eprintln!("Listening on {}", addr);
+        let listener = tokio::net::TcpListener::bind(&addr).await?;
+        axum::serve(listener, app).await?;
+
     } else {
-        // Old Legacy Output
-        println!("Top results:");
-        for (i, state) in current_states.iter().take(5).enumerate() {
-            // Flatten all history (should be just one island)
-            let full_text = state.history.iter().flatten().cloned().collect::<Vec<String>>().join(" ");
-            println!("{}. [{:.4}] {}", i + 1, state.score, full_text);
+        // Legacy CLI Mode
+        let input = args.v7_string.unwrap_or_else(|| "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7".to_string());
+        
+        // Determine input mode
+        let (is_islands_mode, islands) = match serde_json::from_str::<Vec<String>>(&input) {
+            Ok(parsed) => {
+                eprintln!("Mode: Fixed Text Islands (JSON detected)");
+                (true, parsed)
+            },
+            Err(_) => {
+                eprintln!("Mode: Single V7 String (Legacy)");
+                // Mimic island structure: Empty fixed text -> V7 string
+                (false, vec!["".to_string(), input.clone()])
+            }
+        };
+
+        if islands.is_empty() {
+            eprintln!("Error: Input islands array is empty.");
+            return Ok(());
+        }
+
+        let start_time = std::time::Instant::now();
+        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
+        let duration = start_time.elapsed();
+
+        if is_islands_mode {
+            println!("{}", serde_json::to_string(&candidates)?);
+        } else {
+             println!("Top results:");
+             for (i, parts) in candidates.iter().take(5).enumerate() {
+                 let full_text = parts.join(" ");
+                 // Note: perform_inference returns candidates[i] as a list of strings (one per island).
+                 // In legacy mode (["", "v7"]), parts[0] is "", parts[1] is the decoded text.
+                 println!("{}. {}", i + 1, full_text.trim());
+             }
         }
         println!("\nInference time: {}ms", duration.as_millis());
     }

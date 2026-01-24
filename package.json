@@ -1,0 +1,12 @@
+{
+  "name": "v7-web-test",
+  "version": "1.0.0",
+  "description": "Puppeteer tests for Inference RS Web Demo",
+  "main": "tests/web_test.js",
+  "scripts": {
+    "test": "node tests/web_test.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.36.0"
+  }
+}

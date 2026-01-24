@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inference RS Web Demo</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f0f0f0;
+        }
+        #text-display {
+            flex-grow: 1;
+            padding: 20px;
+            padding-bottom: 200px; /* Space for candidates */
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 1.2rem;
+            line-height: 1.5;
+            background-color: white;
+        }
+        #candidate-area {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #e0e0e0;
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            height: 180px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .candidate {
+            padding: 8px 12px;
+            background-color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+        }
+        .candidate:hover {
+            background-color: #d0d0ff;
+        }
+        .candidate-chord {
+            font-family: monospace;
+            color: #666;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        .candidate-text {
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="text-display">Type with your steno keyboard...</div>
+    <div id="candidate-area">
+        <div class="candidate">Candidates will appear here...</div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
