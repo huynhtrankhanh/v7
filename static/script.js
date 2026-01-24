@@ -14,12 +14,12 @@ const vowelMap = {
 };
 
 const finalMap = {
-    "FP": "j", "F": "w", "P": "p", "R": "t", "BG": "c", "RB": "ch",
-    "PB": "nh", "L": "n", "PL": "m", "G": "ng",
+    "FP": "j", "F": "w", "P": "p", "R": "t", "FR": "c", "RB": "ch",
+    "PB": "nh", "L": "n", "PL": "m", "B": "ng",
 };
 
 const toneMap = {
-    "T": "sắc", "S": "huyền", "D": "hỏi", "TS": "ngã", "Z": "nặng",
+    "T": "sắc", "S": "huyền", "G": "hỏi", "TS": "ngã", "GS": "nặng",
 };
 
 const toneAccents = {
@@ -83,53 +83,59 @@ function parse(stroke) {
     if (onGlide) currentStroke = currentStroke.substring(1);
 
     let initialConsonant = "";
-    let foundInitial = false;
-    // Sort by length desc
-    const initialKeys = Object.keys(stenographyMap).sort((a, b) => b.length - a.length);
-    for (const key of initialKeys) {
-        if (currentStroke.startsWith(key)) {
-            initialConsonant = stenographyMap[key];
-            currentStroke = currentStroke.substring(key.length);
-            foundInitial = true;
+    let survived = false;
+    
+    // Match Initial Consonant (4 -> 1)
+    for (let length = 4; length > 0; length--) {
+        if (length > currentStroke.length) continue;
+        const candidate = currentStroke.substring(0, length);
+        if (stenographyMap[candidate] !== undefined) {
+            initialConsonant = stenographyMap[candidate];
+            currentStroke = currentStroke.substring(length);
+            survived = true;
             break;
         }
     }
 
     let vowel = "";
-    let foundVowel = false;
-    const vowelKeys = Object.keys(vowelMap).sort((a, b) => b.length - a.length);
-    for (const key of vowelKeys) {
-        if (currentStroke.startsWith(key)) {
-            vowel = vowelMap[key];
-            currentStroke = currentStroke.substring(key.length);
-            foundVowel = true;
+    survived = false;
+    // Match Vowel (4 -> 1)
+    for (let length = 4; length > 0; length--) {
+        if (length > currentStroke.length) continue;
+        const candidate = currentStroke.substring(0, length);
+        if (vowelMap[candidate] !== undefined) {
+            vowel = vowelMap[candidate];
+            currentStroke = currentStroke.substring(length);
+            survived = true;
             break;
         }
     }
-    if (!foundVowel) return null;
+    if (!survived) return null;
 
     let finalConsonant = "";
-    const finalKeys = Object.keys(finalMap).sort((a, b) => b.length - a.length);
-    for (const key of finalKeys) {
-        if (currentStroke.startsWith(key)) {
-            finalConsonant = finalMap[key];
-            currentStroke = currentStroke.substring(key.length);
+    // Match Final Consonant (2 -> 1)
+    for (let length = 2; length > 0; length--) {
+        if (length > currentStroke.length) continue;
+        const candidate = currentStroke.substring(0, length);
+        if (finalMap[candidate] !== undefined) {
+            finalConsonant = finalMap[candidate];
+            currentStroke = currentStroke.substring(length);
+            survived = true;
             break;
         }
     }
-    if (!finalConsonant) finalConsonant = "";
 
     let tone = "";
+    survived = currentStroke.length === 0;
     if (currentStroke.length > 0) {
         if (toneMap[currentStroke] !== undefined) {
             tone = toneMap[currentStroke];
             currentStroke = "";
-        } else {
-            return null;
+            survived = true;
         }
     }
 
-    if (currentStroke.length !== 0) return null;
+    if (!survived) return null;
 
     return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
 }
@@ -137,15 +143,19 @@ function parse(stroke) {
 function assemble(parsed) {
     const initial = () => {
         const f = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
-        switch (parsed.initialConsonant) {
-            case "ng/ngh": return (parsed.onGlide || f) ? "ng" : "ngh";
-            case "g": return (parsed.onGlide || f) ? "g" : "gh";
-            case "gi": return (!parsed.onGlide && parsed.vowel === "i") ? "g" : "gi";
-            case "c":
-                if (parsed.onGlide) return "q";
-                return f ? "c" : "k";
-            default: return parsed.initialConsonant;
+        if (parsed.initialConsonant === "ng/ngh") {
+            return (parsed.onGlide || f) ? "ng" : "ngh";
         }
+        if (parsed.initialConsonant === "g") {
+            return (parsed.onGlide || f) ? "g" : "gh";
+        }
+        if (parsed.initialConsonant === "gi") {
+            return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
+        }
+        if (parsed.initialConsonant === "c") {
+            return parsed.onGlide ? "q" : (f ? "c" : "k");
+        }
+        return parsed.initialConsonant;
     };
 
     const middle = () => {
@@ -158,6 +168,7 @@ function assemble(parsed) {
                 if (parsed.finalConsonant === "") return toneAccents["i"][parsed.tone] + "a";
                 return "y" + toneAccents["ê"][parsed.tone];
             }
+            // Has initial consonant
             if (parsed.onGlide) {
                 if (parsed.finalConsonant === "") return "uy" + toneAccents["a"][parsed.tone];
                 return "uy" + toneAccents["ê"][parsed.tone];
@@ -187,10 +198,8 @@ function assemble(parsed) {
             return toneAccents["i"][parsed.tone];
         }
         if (parsed.vowel === "ă" && ["w", "j"].includes(parsed.finalConsonant)) {
-            return (parsed.onGlide
-                ? (parsed.initialConsonant === "c" ? "u" : "o")
-                : ""
-            ) + toneAccents["a"][parsed.tone];
+            const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
+            return prefix + toneAccents["a"][parsed.tone];
         }
         if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide) {
             return "u" + toneAccents[parsed.vowel][parsed.tone];
@@ -208,17 +217,24 @@ function assemble(parsed) {
 
     const final = () => {
         if (parsed.finalConsonant === "w") {
-            return ["iê/ia", "ư", "ê", "u", "ă", "â", "i"].includes(parsed.vowel) ? "u" : "o";
+            if (["iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i"].includes(parsed.vowel)) {
+                return "u";
+            }
+            return "o";
         }
         if (parsed.finalConsonant === "j") {
-            return ["ă", "â"].includes(parsed.vowel) ? "y" : "i";
+            if (["ă", "â"].includes(parsed.vowel)) {
+                return "y";
+            }
+            return "i";
         }
         return parsed.finalConsonant;
     };
 
+    const text = initial() + middle() + final();
     return parsed.capitalize 
-        ? (initial() + middle() + final()).charAt(0).toUpperCase() + (initial() + middle() + final()).slice(1)
-        : initial() + middle() + final();
+        ? text.charAt(0).toUpperCase() + text.slice(1)
+        : text;
 }
 
 // --- V7 Decoding ---

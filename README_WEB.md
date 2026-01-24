@@ -50,6 +50,80 @@ The demo uses a QWERTY-to-Steno mapping:
 | `N` | `E` | `Space` | `*` |
 | `M` | `U` | | |
 
+## Stenography Rules
+
+The system parses strokes greedily in the following order: **Initial Consonant** (longest match) -> **Vowel** (longest match) -> **Final Consonant** (longest match) -> **Tone** (remaining keys).
+
+If a stroke cannot be parsed according to these rules, it is **ignored**. An ignored stroke does not change the internal state or the text buffer, and it does not affect the parsing of subsequent strokes.
+
+### 1. Initial Consonants (Left Hand)
+
+| Steno Keys | Sound | Steno Keys | Sound |
+| :--- | :--- | :--- | :--- |
+| `PW` | b | `TPH` | n |
+| `K` | c | `TPR` | nh |
+| `KH` | ch | `TPW` | ng/ngh |
+| `KWR` | d | `P` | p |
+| `TK` | đ | `R` | r |
+| `TP` | ph | `KP` | s |
+| `TKPW` | g/gh | `T` | t |
+| `H` | h | `TH` | th |
+| `KWH` | gi | `TR` | tr |
+| `KHR` | kh | `W` | v |
+| `HR` | l | `WR` | x |
+| `PH` | m | | |
+
+*   **Orthography Rules:**
+    *   `TPW` (`ng`): Automatically becomes `ngh` when followed by front vowels (`i`, `e`, `ê`).
+    *   `TKPW` (`g`): Automatically becomes `gh` when followed by front vowels.
+    *   `K` (`c`): Automatically becomes `k` when followed by front vowels, or `q` if the "on-glide" (S key) is present.
+
+### 2. Vowels (Thumbs)
+
+| Steno Keys | Sound | Steno Keys | Sound |
+| :--- | :--- | :--- | :--- |
+| `A` | a | `OEU` | iê/ia |
+| `AE` | ă | `AEU` | ua/uô |
+| `AO` | â | `AOE` | ưa/ươ |
+| `E` | e | `AOU` | ư |
+| `AU` | ê | `OU` | ơ |
+| `EU` | i | `OE` | ô |
+| `O` | o | `AOEU` | y |
+| `U` | u | | |
+
+### 3. Final Consonants (Right Hand)
+
+| Steno Keys | Sound | Steno Keys | Sound |
+| :--- | :--- | :--- | :--- |
+| `FP` | j (i/y) | `RB` | ch |
+| `F` | w (u/o) | `PB` | nh |
+| `P` | p | `L` | n |
+| `R` | t | `PL` | m |
+| `FR` | c | `B` | ng |
+
+*   **Orthography Rules:**
+    *   `F` (`w`): Becomes `u` (e.g., *sau*) or `o` (e.g., *sao*) depending on the preceding vowel.
+    *   `FP` (`j`): Becomes `y` (e.g., *tay*) or `i` (e.g., *tai*) depending on the preceding vowel.
+
+### 4. Tones (Right Hand - Remaining Keys)
+
+Tones are determined by the remaining keys after matching the final consonant.
+
+| Steno Keys | Tone | Diacritic | Example |
+| :--- | :--- | :--- | :--- |
+| *(None)* | Ngang | (none) | ma |
+| `T` | Sắc | Acute (´) | má |
+| `S` | Huyền | Grave (`) | mà |
+| `G` | Hỏi | Hook (?) | mả |
+| `TS` | Ngã | Tilde (~) | mã |
+| `GS` | Nặng | Dot (.) | mạ |
+
+### 5. On-Glide (S-)
+The Left `S` key (mapped to `A` on QWERTY) can act as an "on-glide" modifier if it's not part of another valid initial consonant sequence. It typically introduces a medial `u` or `o` sound (e.g., *hoa*, *tuân*) or modifies `c` to `q` (e.g., *qua*).
+
+### 6. Capitalization (#)
+The `#` key (mapped to `Q` on QWERTY) capitalizes the first letter of the resulting syllable.
+
 ## Usage
 
 ### Syllable Entry (Fixed Text)
