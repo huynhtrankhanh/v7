@@ -353,7 +353,8 @@ function updateDisplay() {
         // Preview top candidate
         text = state.candidates[0].join(" ");
     } else {
-        text = state.islands.filter((_, i) => i % 2 === 0).join(" ");
+        // Fallback: Show all islands, wrapping V7 codes in brackets
+        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join("");
     }
     
     display.textContent = text;
