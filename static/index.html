@@ -17,7 +17,6 @@
         #text-display {
             flex-grow: 1;
             padding: 20px;
-            padding-bottom: 220px; /* Space for candidates */
             overflow-y: auto;
             white-space: pre-wrap;
             font-size: 1.5rem; /* Larger font for readability */
@@ -26,20 +25,17 @@
             box-sizing: border-box;
         }
         #candidate-area {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
             background-color: #f8f8f8;
             padding: 15px;
             border-top: 2px solid #ddd;
-            height: 200px;
+            max-height: 40vh; /* Max 40% of viewport */
             overflow-y: auto;
             display: flex;
             flex-direction: column;
             gap: 8px;
             box-sizing: border-box;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+            flex-shrink: 0;
         }
         .candidate {
             padding: 12px 16px;
@@ -67,14 +63,16 @@
             flex-grow: 1;
             font-size: 1.1rem;
         }
+        .common-prefix {
+            color: #999;
+            opacity: 0.6;
+        }
         @media (max-width: 600px) {
             #text-display {
                 font-size: 1.2rem;
                 padding: 15px;
-                padding-bottom: 180px;
             }
             #candidate-area {
-                height: 160px;
                 padding: 10px;
             }
             .candidate {

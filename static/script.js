@@ -386,6 +386,18 @@ function selectCandidate(index) {
     updateDisplay();
 }
 
+function getCommonPrefix(strings) {
+    if (strings.length === 0) return "";
+    let prefix = strings[0];
+    for (let i = 1; i < strings.length; i++) {
+        while (strings[i].indexOf(prefix) !== 0) {
+            prefix = prefix.substring(0, prefix.length - 1);
+            if (prefix === "") return "";
+        }
+    }
+    return prefix;
+}
+
 function updateDisplay() {
     const display = document.getElementById("text-display");
     const candArea = document.getElementById("candidate-area");
@@ -412,10 +424,30 @@ function updateDisplay() {
     candArea.innerHTML = "";
     if (state.candidates.length > 0) {
         const chords = ["TK", "PW", "HR", "-FR", "-PB"];
-        for (let i = 0; i < Math.min(state.candidates.length, 5); i++) {
+        
+        // Calculate common prefix for top 5 candidates
+        const visibleCandidates = state.candidates.slice(0, 5);
+        const candStrings = visibleCandidates.map(c => c.filter(s => s.length > 0).join(" ") || " ");
+        const prefix = getCommonPrefix(candStrings);
+
+        for (let i = 0; i < visibleCandidates.length; i++) {
             const div = document.createElement("div");
             div.className = "candidate";
-            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${state.candidates[i].filter(s => s.length > 0).join(" ") || " "}</span>`;
+            
+            let textHtml = candStrings[i];
+            // Only hide prefix if it's substantial (e.g. > 10 chars) to avoid flickering for short words?
+            // User said "hiding common prefix with [...]".
+            // If prefix is "he", replacing with "[...]" takes more space.
+            // Let's assume we always hide it if length > 0, or maybe length > 5?
+            // The prompt implies managing size.
+            // I'll stick to always hiding if length > 0, but maybe check if prefix is actually long enough to warrant it.
+            // But strict adherence: "hiding common prefix".
+            if (prefix.length > 0) {
+                 const suffix = candStrings[i].substring(prefix.length);
+                 textHtml = `<span class="common-prefix">[...]</span>${suffix}`;
+            }
+
+            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${textHtml}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }
