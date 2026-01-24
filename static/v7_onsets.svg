@@ -1,0 +1,290 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .label { font-family: sans-serif; font-size: 16px; font-weight: bold; fill: #333; text-anchor: middle; }
+      .bit-dot { r: 8; stroke: #888; stroke-width: 1; fill: #FFF; }
+      .bit-active { fill: #FFB7B2; stroke: #E57373; }
+      .bit-label { font-size: 10px; fill: #666; text-anchor: middle; }
+      .group-box { fill: #F9F9F9; rx: 10; ry: 10; stroke: #EEE; stroke-width: 1; }
+    </style>
+  </defs>
+  
+  <text x="400" y="30" class="label" style="font-size: 24px;">V7 Consonant Bitmasks (Mirrored)</text>
+  <text x="400" y="55" class="label" style="font-size: 14px; fill: #666;">Dots represent keys: 1(#/-T), 2(S/-S), 4(T/-L), 8(P/-P), 16(H/-F)</text>
+
+  <!-- Macro to generate a consonant block -->
+  <!-- We'll programmatically generate the content below in the tool logic? No, must write full SVG here. -->
+  <!-- I will manually layout the grid based on my knowledge of the map. -->
+  
+  <!-- Grid layout: 6 columns, ~4 rows. -->
+  <!-- Col width: 130. Row height: 100. -->
+  
+  <!-- b (11 = 1+2+8) -->
+  <g transform="translate(50, 80)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">b</text>
+    <!-- Bits: 1, 2, 4, 8, 16. Layout: 1(TopL), 4(TopM), 8(TopR), 16(TopFarR)? No. -->
+    <!-- Left Hand layout: # (Q), T (W), P (E), H (R) [Top Row] -->
+    <!--                   S (A) [Home Row] -->
+    <!-- Let's visualize relative positions roughly -->
+    <circle cx="20" cy="45" class="bit-dot bit-active" /><!-- 1 (#) -->
+    <circle cx="45" cy="45" class="bit-dot" /><!-- 4 (T) -->
+    <circle cx="70" cy="45" class="bit-dot bit-active" /><!-- 8 (P) -->
+    <circle cx="95" cy="45" class="bit-dot" /><!-- 16 (H) -->
+    <circle cx="30" cy="65" class="bit-dot bit-active" /><!-- 2 (S) -->
+  </g>
+
+  <!-- k (5 = 1+4) -->
+  <g transform="translate(180, 80)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">k (c)</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- d (29 = 1+4+8+16) -->
+  <g transform="translate(310, 80)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">d</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- dd (7 = 1+2+4) -->
+  <g transform="translate(440, 80)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">đ</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- g (15 = 1+2+4+8) -->
+  <g transform="translate(570, 80)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">g</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- h (16) -->
+  <g transform="translate(50, 170)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">h</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- z (30 = 2+4+8+16) -->
+  <g transform="translate(180, 170)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">z (gi)</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- kh (23 = 1+2+4+16) -->
+  <g transform="translate(310, 170)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">kh</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- l (19 = 1+2+16) -->
+  <g transform="translate(440, 170)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">l</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- m (24 = 8+16) -->
+  <g transform="translate(570, 170)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">m</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- n (28 = 4+8+16) -->
+  <g transform="translate(50, 260)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">n</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- nh (31 = ALL) -->
+  <g transform="translate(180, 260)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">nh</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- ng (13 = 1+4+8) -->
+  <g transform="translate(310, 260)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">ng</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- p (8) -->
+  <g transform="translate(440, 260)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">p</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- r (17 = 1+16) -->
+  <g transform="translate(570, 260)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">r</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- s (14 = 2+4+8) -->
+  <g transform="translate(50, 350)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">s</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- t (4) -->
+  <g transform="translate(180, 350)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">t</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- th (20 = 4+16) -->
+  <g transform="translate(310, 350)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">th</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- tr (21 = 1+4+16) -->
+  <g transform="translate(440, 350)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">tr</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- v (9 = 1+8) -->
+  <g transform="translate(570, 350)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">v</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+
+  <!-- w (3 = 1+2) -->
+  <g transform="translate(50, 440)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">w (qu)</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+  <!-- x (25 = 1+8+16) -->
+  <g transform="translate(180, 440)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">x</text>
+    <circle cx="20" cy="45" class="bit-dot bit-active" />
+    <circle cx="45" cy="45" class="bit-dot" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+  
+  <!-- ph (12 = 4+8) -->
+  <g transform="translate(310, 440)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">ph</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot bit-active" />
+    <circle cx="95" cy="45" class="bit-dot" />
+    <circle cx="30" cy="65" class="bit-dot" />
+  </g>
+  
+  <!-- ch (22 = 2+4+16) -->
+  <g transform="translate(440, 440)">
+    <rect x="0" y="0" width="120" height="80" class="group-box"/>
+    <text x="60" y="25" class="label">ch</text>
+    <circle cx="20" cy="45" class="bit-dot" />
+    <circle cx="45" cy="45" class="bit-dot bit-active" />
+    <circle cx="70" cy="45" class="bit-dot" />
+    <circle cx="95" cy="45" class="bit-dot bit-active" />
+    <circle cx="30" cy="65" class="bit-dot bit-active" />
+  </g>
+
+</svg>

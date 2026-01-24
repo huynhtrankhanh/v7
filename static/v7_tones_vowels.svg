@@ -1,0 +1,118 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .label { font-family: sans-serif; font-size: 16px; font-weight: bold; fill: #333; text-anchor: middle; }
+      .bit-dot { r: 8; stroke: #888; stroke-width: 1; fill: #FFF; }
+      .bit-active-tone { fill: #AEC6CF; stroke: #7986CB; }
+      .bit-active-vowel { fill: #77DD77; stroke: #66BB6A; }
+      .group-box { fill: #F9F9F9; rx: 10; ry: 10; stroke: #EEE; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <text x="200" y="30" class="label" style="font-size: 20px;">V7 Tones (Mirrored)</text>
+  <text x="600" y="30" class="label" style="font-size: 20px;">V7 Vowels (Mirrored)</text>
+
+  <!-- Tones Grid (2 columns, 4 rows) -->
+  <g transform="translate(20, 50)">
+    <!-- Ngang (0) -->
+    <g transform="translate(0, 0)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Ngang (0)</text>
+      <circle cx="65" cy="40" class="bit-dot" /><!-- K -->
+      <circle cx="85" cy="40" class="bit-dot" /><!-- W -->
+      <circle cx="105" cy="40" class="bit-dot" /><!-- R -->
+    </g>
+    <!-- Sắc (1) -->
+    <g transform="translate(180, 0)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Sắc (1)</text>
+      <circle cx="65" cy="40" class="bit-dot bit-active-tone" /><!-- K -->
+      <circle cx="85" cy="40" class="bit-dot" /><!-- W -->
+      <circle cx="105" cy="40" class="bit-dot" /><!-- R -->
+    </g>
+    <!-- Huyền (2) -->
+    <g transform="translate(0, 70)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Huyền (2)</text>
+      <circle cx="65" cy="40" class="bit-dot" />
+      <circle cx="85" cy="40" class="bit-dot bit-active-tone" /><!-- W -->
+      <circle cx="105" cy="40" class="bit-dot" />
+    </g>
+    <!-- Ngã (4) -->
+    <g transform="translate(180, 70)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Ngã (4)</text>
+      <circle cx="65" cy="40" class="bit-dot bit-active-tone" /><!-- K -->
+      <circle cx="85" cy="40" class="bit-dot bit-active-tone" /><!-- W -->
+      <circle cx="105" cy="40" class="bit-dot" />
+    </g>
+    <!-- Hỏi (3) -->
+    <g transform="translate(0, 140)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Hỏi (3)</text>
+      <circle cx="65" cy="40" class="bit-dot" />
+      <circle cx="85" cy="40" class="bit-dot" />
+      <circle cx="105" cy="40" class="bit-dot bit-active-tone" /><!-- R -->
+    </g>
+    <!-- Sắc Stop (6) -->
+    <g transform="translate(180, 140)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Sắc Stop (6)</text>
+      <circle cx="65" cy="40" class="bit-dot bit-active-tone" /><!-- K -->
+      <circle cx="85" cy="40" class="bit-dot" />
+      <circle cx="105" cy="40" class="bit-dot bit-active-tone" /><!-- R -->
+    </g>
+    <!-- Nặng (5) -->
+    <g transform="translate(0, 210)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Nặng (5)</text>
+      <circle cx="65" cy="40" class="bit-dot" />
+      <circle cx="85" cy="40" class="bit-dot bit-active-tone" /><!-- W -->
+      <circle cx="105" cy="40" class="bit-dot bit-active-tone" /><!-- R -->
+    </g>
+    <!-- Nặng Stop (7) -->
+    <g transform="translate(180, 210)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">Nặng Stop (7)</text>
+      <circle cx="65" cy="40" class="bit-dot bit-active-tone" />
+      <circle cx="85" cy="40" class="bit-dot bit-active-tone" />
+      <circle cx="105" cy="40" class="bit-dot bit-active-tone" />
+    </g>
+  </g>
+
+  <!-- Vowels Grid -->
+  <g transform="translate(420, 50)">
+    <!-- a (1) -->
+    <g transform="translate(0, 0)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">a (1)</text>
+      <circle cx="75" cy="40" class="bit-dot bit-active-vowel" /><!-- A -->
+      <circle cx="95" cy="40" class="bit-dot" /><!-- O -->
+    </g>
+    <!-- o (2) -->
+    <g transform="translate(180, 0)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">o (2)</text>
+      <circle cx="75" cy="40" class="bit-dot" />
+      <circle cx="95" cy="40" class="bit-dot bit-active-vowel" /><!-- O -->
+    </g>
+    <!-- i (3) -->
+    <g transform="translate(0, 70)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">i (3)</text>
+      <circle cx="75" cy="40" class="bit-dot bit-active-vowel" />
+      <circle cx="95" cy="40" class="bit-dot bit-active-vowel" />
+    </g>
+    <!-- e/u (0) -->
+    <g transform="translate(180, 70)">
+      <rect width="170" height="60" class="group-box"/>
+      <text x="85" y="20" class="label">e/u (0)</text>
+      <circle cx="75" cy="40" class="bit-dot" />
+      <circle cx="95" cy="40" class="bit-dot" />
+    </g>
+  </g>
+  
+  <text x="400" y="350" class="label" style="font-size: 14px; font-weight: normal; fill: #666;">
+    Note: Right hand patterns use -G, -B, -R (Tone) and U, E (Vowel).
+  </text>
+</svg>

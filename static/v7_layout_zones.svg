@@ -1,0 +1,124 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .key { rx: 10; ry: 10; stroke: #888; stroke-width: 2; fill: #FFF; }
+      .label { font-family: sans-serif; font-size: 14px; fill: #555; font-weight: bold; text-anchor: middle; }
+      .sub { font-size: 10px; fill: #888; }
+      /* Zones */
+      .zone-left-cons { fill: #FFB7B2; } /* Pastel Red */
+      .zone-left-tone { fill: #AEC6CF; } /* Pastel Blue */
+      .zone-left-vowel { fill: #77DD77; } /* Pastel Green */
+      
+      .zone-right-cons { fill: #FFB7B2; opacity: 0.8; } /* Mirrored Red */
+      .zone-right-tone { fill: #AEC6CF; opacity: 0.8; } /* Mirrored Blue */
+      .zone-right-vowel { fill: #77DD77; opacity: 0.8; } /* Mirrored Green */
+      
+      .title { font-family: sans-serif; font-size: 24px; font-weight: bold; fill: #333; }
+      .legend-box { rx: 5; ry: 5; stroke: none; }
+      .legend-text { font-family: sans-serif; font-size: 14px; fill: #333; }
+    </style>
+  </defs>
+
+  <text x="400" y="30" class="title" text-anchor="middle">V7 Island Layout: Zones (Mirrored)</text>
+
+  <!-- Left Hand -->
+  <g transform="translate(50, 60)">
+    <!-- Q (#) Cons -->
+    <rect x="0" y="0" width="60" height="60" class="key zone-left-cons" />
+    <text x="30" y="25" class="label">Q<tspan x="30" dy="20" class="sub"># (1)</tspan></text>
+    
+    <!-- A (S-) Cons -->
+    <rect x="20" y="70" width="60" height="60" class="key zone-left-cons" />
+    <text x="50" y="95" class="label">A<tspan x="50" dy="20" class="sub">S (2)</tspan></text>
+
+    <!-- W (T-) Cons -->
+    <rect x="70" y="0" width="60" height="60" class="key zone-left-cons" />
+    <text x="100" y="25" class="label">W<tspan x="100" dy="20" class="sub">T (4)</tspan></text>
+
+    <!-- E (P-) Cons -->
+    <rect x="140" y="0" width="60" height="60" class="key zone-left-cons" />
+    <text x="170" y="25" class="label">E<tspan x="170" dy="20" class="sub">P (8)</tspan></text>
+
+    <!-- R (H-) Cons -->
+    <rect x="210" y="0" width="60" height="60" class="key zone-left-cons" />
+    <text x="240" y="25" class="label">R<tspan x="240" dy="20" class="sub">H (16)</tspan></text>
+
+    <!-- S (K-) Tone -->
+    <rect x="90" y="70" width="60" height="60" class="key zone-left-tone" />
+    <text x="120" y="95" class="label">S<tspan x="120" dy="20" class="sub">K (1)</tspan></text>
+
+    <!-- D (W-) Tone -->
+    <rect x="160" y="70" width="60" height="60" class="key zone-left-tone" />
+    <text x="190" y="95" class="label">D<tspan x="190" dy="20" class="sub">W (2)</tspan></text>
+
+    <!-- F (R-) Tone -->
+    <rect x="230" y="70" width="60" height="60" class="key zone-left-tone" />
+    <text x="260" y="95" class="label">F<tspan x="260" dy="20" class="sub">R (4)</tspan></text>
+
+    <!-- C (A) Vowel -->
+    <rect x="160" y="140" width="60" height="60" class="key zone-left-vowel" />
+    <text x="190" y="165" class="label">C<tspan x="190" dy="20" class="sub">A (1)</tspan></text>
+
+    <!-- V (O) Vowel -->
+    <rect x="230" y="140" width="60" height="60" class="key zone-left-vowel" />
+    <text x="260" y="165" class="label">V<tspan x="260" dy="20" class="sub">O (2)</tspan></text>
+  </g>
+
+  <!-- Separator -->
+  <line x1="400" y1="60" x2="400" y2="250" stroke="#DDD" stroke-width="2" stroke-dasharray="5,5" />
+
+  <!-- Right Hand (Mirrored) -->
+  <g transform="translate(450, 60)">
+    <!-- U (-F) Cons (Bit 16) -->
+    <rect x="0" y="0" width="60" height="60" class="key zone-right-cons" />
+    <text x="30" y="25" class="label">U<tspan x="30" dy="20" class="sub">-F (16)</tspan></text>
+
+    <!-- I (-P) Cons (Bit 8) -->
+    <rect x="70" y="0" width="60" height="60" class="key zone-right-cons" />
+    <text x="100" y="25" class="label">I<tspan x="100" dy="20" class="sub">-P (8)</tspan></text>
+
+    <!-- O (-L) Cons (Bit 4) -->
+    <rect x="140" y="0" width="60" height="60" class="key zone-right-cons" />
+    <text x="170" y="25" class="label">O<tspan x="170" dy="20" class="sub">-L (4)</tspan></text>
+
+    <!-- P (-T) Cons (Bit 1) -->
+    <rect x="210" y="0" width="60" height="60" class="key zone-right-cons" />
+    <text x="240" y="25" class="label">P<tspan x="240" dy="20" class="sub">-T (1)</tspan></text>
+    
+    <!-- ; (-S) Cons (Bit 2) -->
+    <rect x="230" y="70" width="60" height="60" class="key zone-right-cons" />
+    <text x="260" y="95" class="label">;<tspan x="260" dy="20" class="sub">-S (2)</tspan></text>
+
+    <!-- J (-R) Tone -->
+    <rect x="20" y="70" width="60" height="60" class="key zone-right-tone" />
+    <text x="50" y="95" class="label">J<tspan x="50" dy="20" class="sub">-R (4)</tspan></text>
+
+    <!-- K (-B) Tone -->
+    <rect x="90" y="70" width="60" height="60" class="key zone-right-tone" />
+    <text x="120" y="95" class="label">K<tspan x="120" dy="20" class="sub">-B (2)</tspan></text>
+
+    <!-- L (-G) Tone -->
+    <rect x="160" y="70" width="60" height="60" class="key zone-right-tone" />
+    <text x="190" y="95" class="label">L<tspan x="190" dy="20" class="sub">-G (1)</tspan></text>
+
+    <!-- N (E) Vowel -->
+    <rect x="20" y="140" width="60" height="60" class="key zone-right-vowel" />
+    <text x="50" y="165" class="label">N<tspan x="50" dy="20" class="sub">E (2)</tspan></text>
+
+    <!-- M (U) Vowel -->
+    <rect x="90" y="140" width="60" height="60" class="key zone-right-vowel" />
+    <text x="120" y="165" class="label">M<tspan x="120" dy="20" class="sub">U (1)</tspan></text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(50, 300)">
+    <rect x="0" y="0" width="20" height="20" class="legend-box zone-left-cons"/>
+    <text x="30" y="15" class="legend-text">Consonant (Onset)</text>
+    
+    <rect x="200" y="0" width="20" height="20" class="legend-box zone-left-tone"/>
+    <text x="230" y="15" class="legend-text">Tone</text>
+    
+    <rect x="400" y="0" width="20" height="20" class="legend-box zone-left-vowel"/>
+    <text x="430" y="15" class="legend-text">Vowel (Rime Start)</text>
+  </g>
+</svg>

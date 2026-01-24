@@ -132,17 +132,26 @@ A V7 Island allows encoding two syllables in a single stroke by using the keyboa
 
 **Structure:** `[Left Syllable] [Separator] [Right Syllable]`
 
-Each syllable is encoded using 3 components: **Consonant**, **Vowel**, and **Tone**.
+#### Keyboard Zones (Mirrored Layout)
 
-#### Left Syllable Encoding
-*   **Consonant (5 bits):** Sum of keys: `#`(1), `S`(2), `T`(4), `P`(8), `H`(16).
-*   **Tone (3 bits):** Sum of keys: `K`(1), `W`(2), `R`(4).
-*   **Vowel (2 bits):** Sum of keys: `A`(1), `O`(2).
+The V7 layout is designed to be **perfectly mirrored** between the left and right hands.
 
-#### Right Syllable Encoding
-*   **Consonant (5 bits):** Sum of keys: `-T`(1), `-S`(2), `-L`(4), `-P`(8), `-F`(16).
-*   **Tone (3 bits):** Sum of keys: `-G`(1), `-B`(2), `-R`(4).
-*   **Vowel (2 bits):** Sum of keys: `U`(1), `E`(2).
+![V7 Layout Zones](static/v7_layout_zones.svg)
+
+*   **Left Hand:** Uses the standard QWERTY keys `Q, W, E, R, A` for consonants, `S, D, F` for tones, and `C, V` for vowels.
+*   **Right Hand:** Mirrors the left hand using `P, O, I, U, ;` for consonants, `L, K, J` for tones, and `N, M` for vowels.
+
+#### Consonant Patterns (Onsets)
+
+The following patterns show which keys to press for each consonant. The dots represent the relative positions of the 5 consonant keys for each hand.
+
+![V7 Consonant Bitmasks](static/v7_onsets.svg)
+
+#### Tone and Vowel Patterns
+
+Tones use 3 bits (3 keys), while vowels use 2 bits (2 keys).
+
+![V7 Tones and Vowels](static/v7_tones_vowels.svg)
 
 #### Component Mappings
 
