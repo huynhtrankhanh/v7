@@ -224,7 +224,15 @@ function assemble(parsed) {
 // --- V7 Decoding ---
 
 function getV7FromStroke(stroke) {
-    const parts = stroke.split("*");
+    let parts;
+    if (stroke.includes("*")) {
+        parts = stroke.split("*");
+    } else if (stroke.includes("-")) {
+        parts = stroke.split("-");
+    } else {
+        return null;
+    }
+
     if (parts.length !== 2) return null;
     const leftKeys = parts[0];
     const rightSide = parts[1];
@@ -292,14 +300,14 @@ function handleChord(stroke) {
     
     // Check Selection
     if (state.candidates.length > 0) {
-        const candIndex = { "TK": 0, "PW": 1, "HR": 2, "FR": 3, "PB": 4 }[stroke];
+        const candIndex = { "TK": 0, "PW": 1, "HR": 2, "-FR": 3, "-PB": 4 }[stroke];
         if (candIndex !== undefined) {
             selectCandidate(candIndex);
             return;
         }
     }
 
-    if (stroke.includes("*")) {
+    if (stroke.includes("*") || stroke.includes("-")) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
             saveState();
@@ -359,13 +367,20 @@ function updateDisplay() {
     let text = "";
     if (state.candidates.length > 0) {
         // Preview top candidate
-        text = state.candidates[0].join(" ");
+        text = state.candidates[0].join("");
     } else {
         // Fallback: Show all islands, wrapping V7 codes in brackets
         text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join("");
     }
     
-    display.textContent = text;
+    // Remove the initial placeholder if it exists
+    if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
+        display.textContent = "Start typing with your steno keyboard...";
+        display.style.color = "#999";
+    } else {
+        display.textContent = text;
+        display.style.color = "#000";
+    }
     display.scrollTop = display.scrollHeight;
 
     candArea.innerHTML = "";
@@ -374,12 +389,16 @@ function updateDisplay() {
         for (let i = 0; i < Math.min(state.candidates.length, 5); i++) {
             const div = document.createElement("div");
             div.className = "candidate";
-            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${state.candidates[i].join(" ")}</span>`;
+            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${state.candidates[i].join("") || " "}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }
     } else {
-        candArea.innerHTML = '<div class="candidate">No candidates</div>';
+        const div = document.createElement("div");
+        div.className = "candidate";
+        div.style.cursor = "default";
+        div.innerHTML = '<span class="candidate-text" style="color: #999; text-align: center;">No candidates</span>';
+        candArea.appendChild(div);
     }
 }
 
@@ -422,9 +441,60 @@ document.addEventListener("keyup", (e) => {
     if (heldKeys.size === 0 && strokeKeys.size > 0) {
         // Serialize Stroke
         const order = ["#", "S-", "T-", "K-", "P-", "W-", "H-", "R-", "A", "O", "*", "E", "U", "-F", "-R", "-P", "-B", "-L", "-G", "-T", "-S", "-D", "-Z"];
+        const middleKeys = ["A", "O", "*", "E", "U"];
+        const hasMiddle = middleKeys.some(k => strokeKeys.has(k));
+        
         let strokeStr = "";
         for (const k of order) {
-            if (strokeKeys.has(k)) strokeStr += k.replace("-", "");
+             if (k === "E" && !hasMiddle) { // Insert '-' before right side keys start (which is around where E/U are)
+                 // actually standard steno notation puts hyphen where the vowel would be.
+                 // In our order list, A O * E U are the vowels/middle.
+                 // If none of them are present, we insert hyphen after O and before E?
+                 // Wait, the logic is: if no vowels/star, then hyphen separates left from right.
+                 // Let's just insert it once at the correct position.
+                 // The loop iterates in order.
+                 // We can insert it when we reach the first "right-side" key if we haven't seen a middle key.
+                 // Right side keys: -F, -R, -P, -B, -L, -G, -T, -S, -D, -Z.
+                 // Also E and U are vowels but often on right hand side physically but logically middle.
+                 // But wait, our `order` has E and U after *.
+                 // If we have no middle keys (A, O, *, E, U), we need a hyphen.
+                 // Where? Before the first right-side key.
+                 // Right side keys in `order`: -F, -R ...
+                 // So if we are at -F (or later) and we haven't printed any middle keys, print -.
+                 // BUT we need to print it only once.
+             }
+        }
+        
+        // Simpler approach:
+        strokeStr = "";
+        let insertedHyphen = false;
+        const rightStart = order.indexOf("-F"); // Index of first right-side consonant
+        
+        for (let i = 0; i < order.length; i++) {
+            const k = order[i];
+            
+            // Logic to insert hyphen if missing middle keys
+            if (!hasMiddle && !insertedHyphen && i >= rightStart) {
+                 // Check if we actually have any right side keys to print, 
+                 // OR if we just need to indicate separation.
+                 // Steno rules: TPH-LG. 
+                 // If we just have TPH, it is TPH. 
+                 // If we have LG, it is -LG.
+                 // So if we are traversing and we hit a right-side key that is present,
+                 // and we haven't seen middle keys, we must have a hyphen before it.
+                 // BUT if we have NO left keys, does it matter? Yes -LG.
+                 
+                 // So, if we are at a right side key, and it is present, and !hasMiddle, 
+                 // we prepend hyphen if not already added.
+                 if (strokeKeys.has(k)) {
+                     strokeStr += "-";
+                     insertedHyphen = true;
+                 }
+            }
+            
+            if (strokeKeys.has(k)) {
+                strokeStr += k.replace("-", "");
+            }
         }
         
         handleChord(strokeStr);

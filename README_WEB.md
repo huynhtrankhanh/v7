@@ -1,46 +1,78 @@
-# Inference RS Web Demo
+# V7 Web Demo Documentation
 
-This is a web-based stenography demo for the V7 inference engine.
+This document describes the implementation and usage of the V7 Text Prediction Engine web demo.
 
-## Prerequisites
+## Overview
 
-- Rust (Cargo)
-- A V7 language model binary (`lm.binary`)
-- `generated_regexes.json` in the root directory.
+The web demo provides a real-time stenographic input interface for the V7 inference engine. It is designed to be used with a QWERTY keyboard mapped to a stenographic layout, or a dedicated steno machine configured as a QWERTY keyboard.
 
-## Running the Server
+## Key Features
 
-1. Build the project:
-   ```bash
-   cd inference-rs
-   cargo build --release
-   ```
+- **Real-time Inference:** Decodes V7 code islands in context with fixed text islands.
+- **Ambiguity Management:** Presents up to 5 candidates for V7 islands.
+- **Seamless Mode Switching:** Automatically switches between fully specified syllables (fixed text) and partially specified V7 islands based on the input chord.
+- **History & Undo:** Supports undoing the last action (syllable entry, V7 island entry, or candidate selection) using the `*` key.
+- **Mobile Friendly:** Optimized for display on mobile devices with external keyboards.
 
-2. Run the server:
-   ```bash
-   ./target/release/inference-rs --server --port 3000 --static-dir ../static --model-path ../lm.binary
-   ```
-   (Adjust paths as necessary).
+## Getting Started
 
-3. Open your browser at `http://localhost:3000`.
+### Prerequisites
 
-## Using the Demo
+- Build the Rust inference engine: `cd inference-rs && cargo build --release`.
+- Ensure `lm.binary` and `generated_regexes.json` are in the project root.
 
-- **Typing:** Use your keyboard (mapped to Steno layout) to type syllables.
-  - **Fixed Text:** Type standard steno strokes for single syllables.
-  - **V7 Code:** Type steno strokes involving the Spacebar (`*`) to input partial 2-syllable codes.
-- **Candidates:** When V7 codes are input, candidates will appear at the bottom.
-- **Selection:** Select a candidate by clicking or using selection chords:
-  - `TK` -> Candidate 1
-  - `PW` -> Candidate 2
-  - `HR` -> Candidate 3
-  - `-FR` (Right F + Right R) -> Candidate 4
-  - `-PB` (Right P + Right B) -> Candidate 5
-- **Undo:** Press Spacebar (`*`) alone to undo the last stroke.
+### Running the Server
 
-## How it Works
+Start the inference engine in server mode:
 
-The frontend (`static/script.js`) captures QWERTY key events and maps them to Stenography keys. It maintains a state of "Islands" (Fixed Text or V7 Codes).
-- **Fixed Text:** Parsed directly in the browser using `parse` and `assemble` functions.
-- **V7 Codes:** Decoded in the browser from steno strokes into V7 format (Consonant + Vowel + Tone).
-- **Inference:** The frontend sends the list of islands to the backend (`/infer`). The backend uses KenLM and Beam Search to find the most likely Vietnamese sentences matching the islands.
+```bash
+./inference-rs/target/release/inference-rs --server --port 3000 --static-dir static
+```
+
+Access the demo at `http://localhost:3000`.
+
+## Stenographic Layout
+
+The demo uses a QWERTY-to-Steno mapping:
+
+| QWERTY | Steno | QWERTY | Steno |
+| :--- | :--- | :--- | :--- |
+| `Q` | `#` | `U` | `-F` |
+| `A` | `S-` | `J` | `-R` |
+| `W` | `T-` | `I` | `-P` |
+| `S` | `K-` | `K` | `-B` |
+| `E` | `P-` | `O` | `-L` |
+| `D` | `W-` | `L` | `-G` |
+| `R` | `H-` | `P` | `-T` |
+| `F` | `R-` | `;` | `-S` |
+| `C` | `A` | `T, G` | `-D` |
+| `V` | `O` | `Y, H` | `-Z` |
+| `N` | `E` | `Space` | `*` |
+| `M` | `U` | | |
+
+## Usage
+
+### Syllable Entry (Fixed Text)
+Most common Vietnamese syllables can be fully specified using standard steno chords. These are immediately converted to text and added to the sentence.
+
+### V7 Island Entry
+A V7 island represents two syllables partially specified. A stroke that includes a separator (`*` or `-`) and doesn't match a fully specified syllable will be treated as a V7 island. The engine will infer the best candidates based on the current context.
+
+### Candidate Selection
+When candidates are displayed, use the following chords to select one:
+- `TK`: Candidate 1
+- `PW`: Candidate 2
+- `HR`: Candidate 3
+- `-FR`: Candidate 4
+- `-PB`: Candidate 5
+
+Selecting a candidate collapses the ambiguity and merges it into the fixed text context.
+
+### Undo
+The `*` key (Spacebar) by itself undoes the previous stroke.
+
+## Implementation Details
+
+- **Frontend:** Written in vanilla JavaScript (`static/script.js`). Uses `fetch` to communicate with the `/infer` endpoint.
+- **Backend:** The Rust binary `inference-rs` serves static files from `static/` and handles API requests using the `axum` framework.
+- **Inference Mode:** Utilizes the "Fixed Text Islands" mode of the inference engine to provide context-aware predictions.

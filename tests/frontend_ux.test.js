@@ -54,25 +54,12 @@ describe('V7 Frontend UX', () => {
     test('updateDisplay shows top candidate when candidates exist', () => {
         const mockState = {
             islands: ["Hello ", "na0"],
-            candidates: [
-                ["Hello ", "nay"],
-                ["Hello ", "này"]
-            ]
+            candidates: [["Hello ", "nay"]]
         };
-        
         window.setState(mockState);
         window.updateDisplay();
-        
         const display = document.getElementById("text-display");
-        // candidates[0].join(" ") -> "Hello  nay" (if space is in string)
-        // Wait, server returns ["Hello ", "nay"]?
-        // Let's check logic: candidates[0].join(" ")
-        // If islands are ["Hello ", "na0"], server returns list of strings for each island?
-        // "Hello ", "nay".
-        // Join " " -> "Hello  nay".
-        
-        // Let's assume standard behavior.
         const content = display.textContent;
-        expect(content).toBe("Hello  nay");
+        expect(content).toBe("Hello nay");
     });
 });
