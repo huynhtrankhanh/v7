@@ -210,7 +210,7 @@ Tones use 3 bits (3 keys), while vowels use 2 bits (2 keys).
 
 The system automatically distinguishes between two input modes based on the `*` (Spacebar) key:
 
-1.  **Single Syllable Mode:** Type your stroke **WITHOUT** holding down the `*` key. (Hyphens are ignored in this mode).
+1.  **Single Syllable Mode:** Type your stroke **WITHOUT** holding down the `*` key.
 2.  **V7 Island Mode (Two Syllables):** Type your stroke **WHILE HOLDING DOWN** the `*` key.
 
 ---
