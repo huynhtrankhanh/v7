@@ -73,6 +73,12 @@ const vowelIntMap = {
 
 function parse(stroke) {
     let currentStroke = stroke;
+    let capitalize = false;
+    if (currentStroke.startsWith("#")) {
+        capitalize = true;
+        currentStroke = currentStroke.substring(1);
+    }
+
     const onGlide = currentStroke.startsWith("S");
     if (onGlide) currentStroke = currentStroke.substring(1);
 
@@ -125,7 +131,7 @@ function parse(stroke) {
 
     if (currentStroke.length !== 0) return null;
 
-    return { onGlide, initialConsonant, vowel, finalConsonant, tone };
+    return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
 }
 
 function assemble(parsed) {
@@ -210,7 +216,9 @@ function assemble(parsed) {
         return parsed.finalConsonant;
     };
 
-    return initial() + middle() + final();
+    return parsed.capitalize 
+        ? (initial() + middle() + final()).charAt(0).toUpperCase() + (initial() + middle() + final()).slice(1)
+        : initial() + middle() + final();
 }
 
 // --- V7 Decoding ---

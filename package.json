@@ -9,7 +9,9 @@
     "test:stress": "node tests/stress_test.js",
     "test:ux": "jest tests/frontend_ux.test.js",
     "test:invalid-stroke": "jest tests/frontend_invalid_stroke.test.js",
-    "test:e2e-jsdom": "jest tests/e2e_jsdom.test.js"
+    "test:e2e-jsdom": "jest tests/e2e_jsdom.test.js",
+    "test:torture": "jest tests/e2e_torture.test.js",
+    "test:caps": "jest tests/frontend_caps.test.js"
   },
   "dependencies": {
     "puppeteer": "^24.36.0"
