@@ -1,0 +1,185 @@
+<svg width="800" height="350" viewBox="0 0 800 350" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .key { rx: 10; ry: 10; stroke: #888; stroke-width: 2; }
+      .text-q { font-family: sans-serif; font-size: 14px; fill: #666; font-weight: bold; }
+      .text-s { font-family: sans-serif; font-size: 20px; fill: #333; font-weight: bold; }
+      .row-1 { fill: #FFD1DC; } /* Pastel Pink */
+      .row-2 { fill: #C1E1C1; } /* Pastel Green */
+      .row-3 { fill: #AEC6CF; } /* Pastel Blue */
+      .row-space { fill: #FDFD96; } /* Pastel Yellow */
+      .label-box { fill: #FFF; opacity: 0.7; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="800" height="350" fill="#F9F9F9" rx="20" ry="20"/>
+
+  <!-- Row 1 -->
+  <!-- Q(#) -->
+  <g transform="translate(20, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">Q</text>
+    <text x="30" y="45" class="text-s">#</text>
+  </g>
+  <!-- W(T-) -->
+  <g transform="translate(90, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">W</text>
+    <text x="30" y="45" class="text-s">T-</text>
+  </g>
+  <!-- E(P-) -->
+  <g transform="translate(160, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">E</text>
+    <text x="30" y="45" class="text-s">P-</text>
+  </g>
+  <!-- R(H-) -->
+  <g transform="translate(230, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">R</text>
+    <text x="30" y="45" class="text-s">H-</text>
+  </g>
+  <!-- T(-D) -->
+  <g transform="translate(300, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">T</text>
+    <text x="30" y="45" class="text-s">-D</text>
+  </g>
+  <!-- Y(-Z) -->
+  <g transform="translate(370, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">Y</text>
+    <text x="30" y="45" class="text-s">-Z</text>
+  </g>
+  <!-- U(-F) -->
+  <g transform="translate(440, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">U</text>
+    <text x="30" y="45" class="text-s">-F</text>
+  </g>
+  <!-- I(-P) -->
+  <g transform="translate(510, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">I</text>
+    <text x="30" y="45" class="text-s">-P</text>
+  </g>
+  <!-- O(-L) -->
+  <g transform="translate(580, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">O</text>
+    <text x="30" y="45" class="text-s">-L</text>
+  </g>
+  <!-- P(-T) -->
+  <g transform="translate(650, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">P</text>
+    <text x="30" y="45" class="text-s">-T</text>
+  </g>
+  <!-- [(-D) -->
+  <g transform="translate(720, 20)">
+    <rect class="key row-1" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">[</text>
+    <text x="30" y="45" class="text-s">-D</text>
+  </g>
+
+  <!-- Row 2 -->
+  <!-- A(S-) -->
+  <g transform="translate(40, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">A</text>
+    <text x="30" y="45" class="text-s">S-</text>
+  </g>
+  <!-- S(K-) -->
+  <g transform="translate(110, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">S</text>
+    <text x="30" y="45" class="text-s">K-</text>
+  </g>
+  <!-- D(W-) -->
+  <g transform="translate(180, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">D</text>
+    <text x="30" y="45" class="text-s">W-</text>
+  </g>
+  <!-- F(R-) -->
+  <g transform="translate(250, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">F</text>
+    <text x="30" y="45" class="text-s">R-</text>
+  </g>
+  <!-- G(-D) -->
+  <g transform="translate(320, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">G</text>
+    <text x="30" y="45" class="text-s">-D</text>
+  </g>
+  <!-- H(-Z) -->
+  <g transform="translate(390, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">H</text>
+    <text x="30" y="45" class="text-s">-Z</text>
+  </g>
+  <!-- J(-R) -->
+  <g transform="translate(460, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">J</text>
+    <text x="30" y="45" class="text-s">-R</text>
+  </g>
+  <!-- K(-B) -->
+  <g transform="translate(530, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">K</text>
+    <text x="30" y="45" class="text-s">-B</text>
+  </g>
+  <!-- L(-G) -->
+  <g transform="translate(600, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">L</text>
+    <text x="30" y="45" class="text-s">-G</text>
+  </g>
+  <!-- ;(-S) -->
+  <g transform="translate(670, 90)">
+    <rect class="key row-2" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">;</text>
+    <text x="30" y="45" class="text-s">-S</text>
+  </g>
+
+  <!-- Row 3 - Vowels -->
+  <!-- C(A) -->
+  <g transform="translate(180, 160)">
+    <rect class="key row-3" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">C</text>
+    <text x="30" y="45" class="text-s">A</text>
+  </g>
+  <!-- V(O) -->
+  <g transform="translate(250, 160)">
+    <rect class="key row-3" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">V</text>
+    <text x="30" y="45" class="text-s">O</text>
+  </g>
+  
+  <!-- N(E) -->
+  <g transform="translate(460, 160)">
+    <rect class="key row-3" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">N</text>
+    <text x="30" y="45" class="text-s">E</text>
+  </g>
+  <!-- M(U) -->
+  <g transform="translate(530, 160)">
+    <rect class="key row-3" width="60" height="60"/>
+    <text x="10" y="20" class="text-q">M</text>
+    <text x="30" y="45" class="text-s">U</text>
+  </g>
+
+  <!-- Space (*) -->
+  <g transform="translate(320, 230)">
+    <rect class="key row-space" width="130" height="60"/>
+    <text x="10" y="20" class="text-q">Space</text>
+    <text x="65" y="45" class="text-s" text-anchor="middle">*</text>
+  </g>
+
+  <!-- Cute decorative elements -->
+  <circle cx="750" cy="300" r="30" fill="#FFB7B2" opacity="0.5"/>
+  <circle cx="50" cy="300" r="20" fill="#B5EAD7" opacity="0.5"/>
+</svg>

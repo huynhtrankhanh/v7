@@ -35,6 +35,8 @@ Access the demo at `http://localhost:3000`.
 
 The demo uses a QWERTY-to-Steno mapping:
 
+![Steno Keyboard Layout](static/keyboard.svg)
+
 | QWERTY | Steno | QWERTY | Steno |
 | :--- | :--- | :--- | :--- |
 | `Q` | `#` | `U` | `-F` |
@@ -123,6 +125,75 @@ The Left `S` key (mapped to `A` on QWERTY) can act as an "on-glide" modifier if 
 
 ### 6. Capitalization (#)
 The `#` key (mapped to `Q` on QWERTY) capitalizes the first letter of the resulting syllable.
+
+### 7. V7 Island Rules (Two-Syllable Islands)
+
+A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. The stroke must be separated by `*` (Space) or `-`.
+
+**Structure:** `[Left Syllable] [Separator] [Right Syllable]`
+
+Each syllable is encoded using 3 components: **Consonant**, **Vowel**, and **Tone**.
+
+#### Left Syllable Encoding
+*   **Consonant (5 bits):** Sum of keys: `#`(1), `S`(2), `T`(4), `P`(8), `H`(16).
+*   **Tone (3 bits):** Sum of keys: `K`(1), `W`(2), `R`(4).
+*   **Vowel (2 bits):** Sum of keys: `A`(1), `O`(2).
+
+#### Right Syllable Encoding
+*   **Consonant (5 bits):** Sum of keys: `-T`(1), `-S`(2), `-L`(4), `-P`(8), `-F`(16).
+*   **Tone (3 bits):** Sum of keys: `-G`(1), `-B`(2), `-R`(4).
+*   **Vowel (2 bits):** Sum of keys: `U`(1), `E`(2).
+
+#### Component Mappings
+
+#### Consonants
+| Consonant | Left Hand Keys | Right Hand Keys |
+| :--- | :--- | :--- |
+| **0** | `(None)` | `(None)` |
+| **b** | `# + S + P` | `-T + -S + -P` |
+| **ch** | `S + T + H` | `-S + -L + -F` |
+| **d** | `# + T + P + H` | `-T + -L + -P + -F` |
+| **dd** | `# + S + T` | `-T + -S + -L` |
+| **g** | `# + S + T + P` | `-T + -S + -L + -P` |
+| **h** | `H` | `-F` |
+| **k** | `# + T` | `-T + -L` |
+| **kh** | `# + S + T + H` | `-T + -S + -L + -F` |
+| **l** | `# + S + H` | `-T + -S + -F` |
+| **m** | `P + H` | `-P + -F` |
+| **n** | `T + P + H` | `-L + -P + -F` |
+| **ng** | `# + T + P` | `-T + -L + -P` |
+| **nh** | `# + S + T + P + H` | `-T + -S + -L + -P + -F` |
+| **p** | `P` | `-P` |
+| **ph** | `T + P` | `-L + -P` |
+| **r** | `# + H` | `-T + -F` |
+| **s** | `S + T + P` | `-S + -L + -P` |
+| **t** | `T` | `-L` |
+| **th** | `T + H` | `-L + -F` |
+| **tr** | `# + T + H` | `-T + -L + -F` |
+| **v** | `# + P` | `-T + -P` |
+| **w** | `# + S` | `-T + -S` |
+| **x** | `# + P + H` | `-T + -P + -F` |
+| **z** | `S + T + P + H` | `-S + -L + -P + -F` |
+
+#### Vowels
+| Vowel | Left Hand Keys | Right Hand Keys | Notes |
+| :--- | :--- | :--- | :--- |
+| **a** | `A` | `U` |  |
+| **o** | `O` | `E` |  |
+| **i** | `A + O` | `U + E` |  |
+| **e/u** | `(None)` | `(None)` | Default `e`. Becomes `u` if `-D` (Left) or `-Z` (Right) is pressed. |
+
+#### Tones
+| Tone | Left Hand Keys | Right Hand Keys |
+| :--- | :--- | :--- |
+| **Ngang** (0) | `(None)` | `(None)` |
+| **Sắc** (1) | `K` | `-G` |
+| **Huyền** (2) | `W` | `-B` |
+| **Ngã** (4) | `K + W` | `-G + -B` |
+| **Hỏi** (3) | `R` | `-R` |
+| **Sắc (Stop)** (6) | `K + R` | `-G + -R` |
+| **Nặng** (5) | `W + R` | `-B + -R` |
+| **Nặng (Stop)** (7) | `K + W + R` | `-G + -B + -R` |
 
 ## Usage
 
