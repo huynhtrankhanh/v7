@@ -39,14 +39,15 @@ const toneAccents = {
 
 // Maps for V7 Decoding
 const consonantIntMap = {};
+consonantIntMap[0] = "0";
 consonantIntMap[2 * 4 + 3] = "b";
-consonantIntMap[1 * 4 + 1] = "c";
+consonantIntMap[1 * 4 + 1] = "k";
 consonantIntMap[7 * 4 + 1] = "d";
-consonantIntMap[1 * 4 + 3] = "đ";
+consonantIntMap[1 * 4 + 3] = "dd";
 consonantIntMap[3 * 4 + 0] = "ph";
 consonantIntMap[3 * 4 + 3] = "g";
 consonantIntMap[4 * 4 + 0] = "h";
-consonantIntMap[7 * 4 + 2] = "gi";
+consonantIntMap[7 * 4 + 2] = "z";
 consonantIntMap[5 * 4 + 3] = "kh";
 consonantIntMap[4 * 4 + 3] = "l";
 consonantIntMap[6 * 4 + 0] = "m";
@@ -61,7 +62,7 @@ consonantIntMap[5 * 4 + 0] = "th";
 consonantIntMap[5 * 4 + 1] = "tr";
 consonantIntMap[2 * 4 + 1] = "v";
 consonantIntMap[6 * 4 + 1] = "x";
-consonantIntMap[3] = "qu";
+consonantIntMap[3] = "w";
 consonantIntMap[5 * 4 + 2] = "ch";
 
 const vowelIntMap = {
