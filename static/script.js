@@ -248,14 +248,8 @@ function remapTone(t) {
 }
 
 function getV7FromStroke(stroke) {
-    let parts;
-    if (stroke.includes("*")) {
-        parts = stroke.split("*");
-    } else if (stroke.includes("-")) {
-        parts = stroke.split("-");
-    } else {
-        return null;
-    }
+    if (!stroke.includes("*")) return null;
+    const parts = stroke.split("*");
 
     if (parts.length !== 2) return null;
     const leftKeys = parts[0];
@@ -331,7 +325,7 @@ function handleChord(stroke) {
         }
     }
 
-    if (stroke.includes("*") || stroke.includes("-")) {
+    if (stroke.includes("*")) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
             saveState();
@@ -346,7 +340,8 @@ function handleChord(stroke) {
         }
     }
 
-    const parsed = parse(stroke);
+    const cleanStroke = stroke.replace("-", "");
+    const parsed = parse(cleanStroke);
     if (parsed) {
         const text = assemble(parsed);
         saveState();

@@ -128,9 +128,9 @@ The `#` key (mapped to `Q` on QWERTY) capitalizes the first letter of the result
 
 ### 7. V7 Island Rules (Two-Syllable Islands)
 
-A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. The stroke must be separated by `*` (Space) or `-`.
+A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. **V7 mode is exclusively activated by holding down the `*` (Spacebar) key while entering the stroke.** Strokes containing only a `-` separator will be treated as single syllables.
 
-**Structure:** `[Left Syllable] [Separator] [Right Syllable]`
+**Structure:** `[Left Syllable]*[Right Syllable]`
 
 #### Keyboard Zones (Mirrored Layout)
 
@@ -210,7 +210,7 @@ Tones use 3 bits (3 keys), while vowels use 2 bits (2 keys).
 
 The system automatically distinguishes between two input modes based on the `*` (Spacebar) key:
 
-1.  **Single Syllable Mode:** Type your stroke **WITHOUT** holding down the `*` key.
+1.  **Single Syllable Mode:** Type your stroke **WITHOUT** holding down the `*` key. (Hyphens are ignored in this mode).
 2.  **V7 Island Mode (Two Syllables):** Type your stroke **WHILE HOLDING DOWN** the `*` key.
 
 ---
