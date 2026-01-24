@@ -5,7 +5,8 @@
   "main": "tests/web_test.js",
   "scripts": {
     "test": "jest",
-    "test:e2e": "node tests/web_test.js"
+    "test:e2e": "node tests/web_test.js",
+    "test:stress": "node tests/stress_test.js"
   },
   "dependencies": {
     "puppeteer": "^24.36.0"
