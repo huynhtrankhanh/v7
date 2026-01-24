@@ -484,7 +484,7 @@ const qwertyToUnique = {
     "c": "A", "v": "O",
     "n": "E", "m": "U",
     "u": "-F", "j": "-R", "i": "-P", "k": "-B", "o": "-L", "l": "-G", "p": "-T", ";": "-S",
-    " ": "*", "]": "-Z"
+    " ": "*"
 };
 
 function mapKeyUnique(k) {
