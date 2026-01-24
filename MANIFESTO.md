@@ -83,3 +83,7 @@ The website should be mobile friendly. **This doesn't mean causing a virtual key
 **Testing**
 
 The website should be thoroughly tested, and tests should be committed. Use Puppeteer for testing.
+
+**Documentation**
+
+A documentation file must be added to the repository detailing how to run and use the website, and how the website works.
