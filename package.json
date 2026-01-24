@@ -7,7 +7,8 @@
     "test": "jest",
     "test:e2e": "node tests/web_test.js",
     "test:stress": "node tests/stress_test.js",
-    "test:ux": "jest tests/frontend_ux.test.js"
+    "test:ux": "jest tests/frontend_ux.test.js",
+    "test:invalid-stroke": "jest tests/frontend_invalid_stroke.test.js"
   },
   "dependencies": {
     "puppeteer": "^24.36.0"

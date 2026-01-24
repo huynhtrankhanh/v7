@@ -291,11 +291,10 @@ function handleChord(stroke) {
         }
     }
 
-    saveState();
-
     if (stroke.includes("*")) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
+            saveState();
             if (state.islands.length % 2 !== 0) {
                 state.islands.push(v7Code);
             } else {
@@ -310,6 +309,7 @@ function handleChord(stroke) {
     const parsed = parse(stroke);
     if (parsed) {
         const text = assemble(parsed);
+        saveState();
         if (state.islands.length % 2 === 0) {
              state.islands.push(text + " ");
         } else {
