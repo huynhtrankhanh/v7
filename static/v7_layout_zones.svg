@@ -1,93 +1,124 @@
-<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+<svg width="850" height="450" viewBox="0 0 850 450" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <style>
       .key { rx: 10; ry: 10; stroke: #888; stroke-width: 2; fill: #FFF; }
       .label { font-family: sans-serif; font-size: 14px; fill: #555; font-weight: bold; text-anchor: middle; }
       .sub { font-size: 10px; fill: #888; }
-      /* Zones */
-      .zone-left-cons { fill: #FFB7B2; }
-      .zone-left-tone { fill: #AEC6CF; }
-      .zone-left-vowel { fill: #77DD77; }
-      .zone-left-suffix { fill: #B5EAD7; }
-      
-      .zone-right-cons { fill: #FFB7B2; opacity: 0.8; }
-      .zone-right-tone { fill: #AEC6CF; opacity: 0.8; }
-      .zone-right-vowel { fill: #77DD77; opacity: 0.8; }
-      .zone-right-suffix { fill: #B5EAD7; opacity: 0.8; }
-      
+      .zone-onset { fill: #FFB7B2; }
+      .zone-tone { fill: #AEC6CF; }
+      .zone-vowel { fill: #77DD77; }
       .title { font-family: sans-serif; font-size: 24px; font-weight: bold; fill: #333; }
-      .legend-box { rx: 5; ry: 5; stroke: none; }
+      .legend-box { rx: 5; ry: 5; }
       .legend-text { font-family: sans-serif; font-size: 14px; fill: #333; }
     </style>
   </defs>
 
-  <text x="400" y="30" class="title" text-anchor="middle">V7 Island Layout: Zones (Complete &amp; Mirrored)</text>
+  <text x="425" y="30" class="title" text-anchor="middle">V7 Island Mode: Mirrored Layout Zones</text>
 
-  <!-- Left Hand -->
-  <g transform="translate(30, 60)">
-    <rect x="0" y="0" width="60" height="60" class="key zone-left-cons" />
-    <text x="30" y="25" class="label">Q<tspan x="30" dy="20" class="sub"># (1)</tspan></text>
-    <rect x="70" y="0" width="60" height="60" class="key zone-left-cons" />
-    <text x="100" y="25" class="label">W<tspan x="100" dy="20" class="sub">T (4)</tspan></text>
-    <rect x="140" y="0" width="60" height="60" class="key zone-left-cons" />
-    <text x="170" y="25" class="label">E<tspan x="170" dy="20" class="sub">P (8)</tspan></text>
-    <rect x="210" y="0" width="60" height="60" class="key zone-left-cons" />
-    <text x="240" y="25" class="label">R<tspan x="240" dy="20" class="sub">H (16)</tspan></text>
-    <rect x="20" y="70" width="60" height="60" class="key zone-left-cons" />
-    <text x="50" y="95" class="label">A<tspan x="50" dy="20" class="sub">S (2)</tspan></text>
-    <rect x="90" y="70" width="60" height="60" class="key zone-left-tone" />
-    <text x="120" y="95" class="label">S<tspan x="120" dy="20" class="sub">K (1)</tspan></text>
-    <rect x="160" y="70" width="60" height="60" class="key zone-left-tone" />
-    <text x="190" y="95" class="label">D<tspan x="190" dy="20" class="sub">W (2)</tspan></text>
-    <rect x="230" y="70" width="60" height="60" class="key zone-left-tone" />
-    <text x="260" y="95" class="label">F<tspan x="260" dy="20" class="sub">R (4)</tspan></text>
-    <rect x="160" y="140" width="60" height="60" class="key zone-left-vowel" />
-    <text x="190" y="165" class="label">C<tspan x="190" dy="20" class="sub">A (1)</tspan></text>
-    <rect x="230" y="140" width="60" height="60" class="key zone-left-vowel" />
-    <text x="260" y="165" class="label">V<tspan x="260" dy="20" class="sub">O (2)</tspan></text>
-    <rect x="280" y="0" width="60" height="60" class="key zone-left-suffix" />
-    <text x="310" y="25" class="label">T<tspan x="310" dy="20" class="sub">-D</tspan></text>
-    <rect x="300" y="70" width="60" height="60" class="key zone-left-suffix" />
-    <text x="330" y="95" class="label">G<tspan x="330" dy="20" class="sub">-D</tspan></text>
+  <!-- Left Hand (Absolute Coordinates) -->
+  <!-- Onset Zone -->
+  <g>
+    <rect x="20" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="50" y="85" class="label">Q<tspan x="50" dy="20" class="sub"># (1)</tspan></text>
+    
+    <rect x="90" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="120" y="85" class="label">W<tspan x="120" dy="20" class="sub">T (4)</tspan></text>
+
+    <rect x="160" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="190" y="85" class="label">E<tspan x="190" dy="20" class="sub">P (8)</tspan></text>
+
+    <rect x="230" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="260" y="85" class="label">R<tspan x="260" dy="20" class="sub">H (16)</tspan></text>
+
+    <rect x="40" y="130" width="60" height="60" class="key zone-onset" />
+    <text x="70" y="155" class="label">A<tspan x="70" dy="20" class="sub">S (2)</tspan></text>
   </g>
 
-  <line x1="400" y1="60" x2="400" y2="300" stroke="#DDD" stroke-width="2" stroke-dasharray="5,5" />
+  <!-- Tone Zone -->
+  <g>
+    <rect x="110" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="140" y="155" class="label">S<tspan x="140" dy="20" class="sub">K (1)</tspan></text>
 
-  <g transform="translate(410, 60)">
-    <rect x="210" y="0" width="60" height="60" class="key zone-right-cons" />
-    <text x="240" y="25" class="label">P<tspan x="240" dy="20" class="sub">-T (1)</tspan></text>
-    <rect x="140" y="0" width="60" height="60" class="key zone-right-cons" />
-    <text x="170" y="25" class="label">O<tspan x="170" dy="20" class="sub">-L (4)</tspan></text>
-    <rect x="70" y="0" width="60" height="60" class="key zone-right-cons" />
-    <text x="100" y="25" class="label">I<tspan x="100" dy="20" class="sub">-P (8)</tspan></text>
-    <rect x="0" y="0" width="60" height="60" class="key zone-right-cons" />
-    <text x="30" y="25" class="label">U<tspan x="30" dy="20" class="sub">-F (16)</tspan></text>
-    <rect x="230" y="70" width="60" height="60" class="key zone-right-cons" />
-    <text x="260" y="95" class="label">;<tspan x="260" dy="20" class="sub">-S (2)</tspan></text>
-    <rect x="160" y="70" width="60" height="60" class="key zone-right-tone" />
-    <text x="190" y="95" class="label">L<tspan x="190" dy="20" class="sub">-G (1)</tspan></text>
-    <rect x="90" y="70" width="60" height="60" class="key zone-right-tone" />
-    <text x="120" y="95" class="label">K<tspan x="120" dy="20" class="sub">-B (2)</tspan></text>
-    <rect x="20" y="70" width="60" height="60" class="key zone-right-tone" />
-    <text x="50" y="95" class="label">J<tspan x="50" dy="20" class="sub">-R (4)</tspan></text>
-    <rect x="90" y="140" width="60" height="60" class="key zone-right-vowel" />
-    <text x="120" y="165" class="label">M<tspan x="120" dy="20" class="sub">U (1)</tspan></text>
-    <rect x="20" y="140" width="60" height="60" class="key zone-right-vowel" />
-    <text x="50" y="165" class="label">N<tspan x="50" dy="20" class="sub">E (2)</tspan></text>
-    <rect x="-50" y="0" width="60" height="60" class="key zone-right-suffix" />
-    <text x="-20" y="25" class="label">Y<tspan x="-20" dy="20" class="sub">-Z</tspan></text>
-    <rect x="-30" y="70" width="60" height="60" class="key zone-right-suffix" />
-    <text x="0" y="95" class="label">H<tspan x="0" dy="20" class="sub">-Z</tspan></text>
+    <rect x="180" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="210" y="155" class="label">D<tspan x="210" dy="20" class="sub">W (2)</tspan></text>
+
+    <rect x="250" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="280" y="155" class="label">F<tspan x="280" dy="20" class="sub">R (4)</tspan></text>
   </g>
 
-  <g transform="translate(50, 350)">
-    <rect x="0" y="0" width="20" height="20" class="legend-box zone-left-cons"/>
-    <text x="30" y="15" class="legend-text">Consonant (Onset)</text>
-    <rect x="200" y="0" width="20" height="20" class="legend-box zone-left-tone"/>
-    <text x="230" y="15" class="legend-text">Tone</text>
-    <rect x="400" y="0" width="20" height="20" class="legend-box zone-left-vowel"/>
-    <text x="430" y="15" class="legend-text">Vowel (Rime Start)</text>
-    <rect x="600" y="0" width="20" height="20" class="legend-box zone-left-suffix"/>
-    <text x="630" y="15" class="legend-text">Vowel Suffix (for 'u')</text>
+  <!-- Vowel Zone -->
+  <g>
+    <rect x="300" y="60" width="60" height="60" class="key zone-vowel" />
+    <text x="330" y="85" class="label">T<tspan x="330" dy="20" class="sub">-D</tspan></text>
+    
+    <rect x="320" y="130" width="60" height="60" class="key zone-vowel" />
+    <text x="350" y="155" class="label">G<tspan x="350" dy="20" class="sub">-D</tspan></text>
+
+    <rect x="180" y="200" width="60" height="60" class="key zone-vowel" />
+    <text x="210" y="225" class="label">C<tspan x="210" dy="20" class="sub">A (1)</tspan></text>
+
+    <rect x="250" y="200" width="60" height="60" class="key zone-vowel" />
+    <text x="280" y="225" class="label">V<tspan x="280" dy="20" class="sub">O (2)</tspan></text>
+  </g>
+
+  <!-- Mirror Line -->
+  <line x1="425" y1="60" x2="425" y2="260" stroke="#DDD" stroke-width="2" stroke-dasharray="5,5" />
+
+  <!-- Right Hand (Absolute Coordinates) -->
+  <!-- Onset Zone -->
+  <g>
+    <rect x="770" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="800" y="85" class="label">P<tspan x="800" dy="20" class="sub">-T (1)</tspan></text>
+
+    <rect x="700" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="730" y="85" class="label">O<tspan x="730" dy="20" class="sub">-L (4)</tspan></text>
+
+    <rect x="630" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="660" y="85" class="label">I<tspan x="660" dy="20" class="sub">-P (8)</tspan></text>
+
+    <rect x="560" y="60" width="60" height="60" class="key zone-onset" />
+    <text x="590" y="85" class="label">U<tspan x="590" dy="20" class="sub">-F (16)</tspan></text>
+
+    <rect x="750" y="130" width="60" height="60" class="key zone-onset" />
+    <text x="780" y="155" class="label">;<tspan x="780" dy="20" class="sub">-S (2)</tspan></text>
+  </g>
+
+  <!-- Tone Zone -->
+  <g>
+    <rect x="680" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="710" y="155" class="label">L<tspan x="710" dy="20" class="sub">-G (1)</tspan></text>
+
+    <rect x="610" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="640" y="155" class="label">K<tspan x="640" dy="20" class="sub">-B (2)</tspan></text>
+
+    <rect x="540" y="130" width="60" height="60" class="key zone-tone" />
+    <text x="570" y="155" class="label">J<tspan x="570" dy="20" class="sub">-R (4)</tspan></text>
+  </g>
+
+  <!-- Vowel Zone -->
+  <g>
+    <rect x="490" y="60" width="60" height="60" class="key zone-vowel" />
+    <text x="520" y="85" class="label">Y<tspan x="520" dy="20" class="sub">-Z</tspan></text>
+    
+    <rect x="470" y="130" width="60" height="60" class="key zone-vowel" />
+    <text x="500" y="155" class="label">H<tspan x="500" dy="20" class="sub">-Z</tspan></text>
+
+    <rect x="540" y="200" width="60" height="60" class="key zone-vowel" />
+    <text x="570" y="225" class="label">N<tspan x="570" dy="20" class="sub">E (2)</tspan></text>
+
+    <rect x="610" y="200" width="60" height="60" class="key zone-vowel" />
+    <text x="640" y="225" class="label">M<tspan x="640" dy="20" class="sub">U (1)</tspan></text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(100, 350)">
+    <rect x="0" y="0" width="30" height="30" class="key zone-onset" />
+    <text x="40" y="20" class="legend-text" style="text-anchor: start;">Onset (Consonant)</text>
+    
+    <rect x="250" y="0" width="30" height="30" class="key zone-tone" />
+    <text x="290" y="20" class="legend-text" style="text-anchor: start;">Tone</text>
+    
+    <rect x="450" y="0" width="30" height="30" class="key zone-vowel" />
+    <text x="490" y="20" class="legend-text" style="text-anchor: start;">Vowel (Rime Start)</text>
   </g>
 </svg>
