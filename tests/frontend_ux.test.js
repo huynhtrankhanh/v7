@@ -54,7 +54,7 @@ describe('V7 Frontend UX', () => {
     test('updateDisplay shows top candidate when candidates exist', () => {
         const mockState = {
             islands: ["Hello ", "na0"],
-            candidates: [["Hello ", "nay"]]
+            candidates: [["Hello", "nay"]]
         };
         window.setState(mockState);
         window.updateDisplay();

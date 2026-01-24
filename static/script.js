@@ -223,6 +223,14 @@ function assemble(parsed) {
 
 // --- V7 Decoding ---
 
+function remapTone(t) {
+    if (t === 3) return 4;
+    if (t === 4) return 3;
+    if (t === 5) return 6;
+    if (t === 6) return 5;
+    return t;
+}
+
 function getV7FromStroke(stroke) {
     let parts;
     if (stroke.includes("*")) {
@@ -265,7 +273,7 @@ function getV7FromStroke(stroke) {
     let vowelCharB = vowelIntMap[vB];
     if (vB === 0) vowelCharB = hasSuffixZ ? "u" : "e";
 
-    return consA + vowelCharA + tA + consB + vowelCharB + tB;
+    return consA + vowelCharA + remapTone(tA) + consB + vowelCharB + remapTone(tB);
 }
 
 // --- App State ---
@@ -334,6 +342,8 @@ function handleChord(stroke) {
         runInference();
         return;
     }
+
+    console.log("Ignored stroke:", stroke);
 }
 
 async function runInference() {
@@ -353,7 +363,7 @@ async function runInference() {
 
 function selectCandidate(index) {
     if (!state.candidates[index]) return;
-    const chosenText = state.candidates[index].join(" ");
+    const chosenText = state.candidates[index].filter(s => s.length > 0).join(" ");
     saveState();
     state.islands = [chosenText + " "];
     state.candidates = [];
@@ -367,7 +377,7 @@ function updateDisplay() {
     let text = "";
     if (state.candidates.length > 0) {
         // Preview top candidate
-        text = state.candidates[0].join("");
+        text = state.candidates[0].filter(s => s.length > 0).join(" ");
     } else {
         // Fallback: Show all islands, wrapping V7 codes in brackets
         text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join("");
@@ -389,7 +399,7 @@ function updateDisplay() {
         for (let i = 0; i < Math.min(state.candidates.length, 5); i++) {
             const div = document.createElement("div");
             div.className = "candidate";
-            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${state.candidates[i].join("") || " "}</span>`;
+            div.innerHTML = `<span class="candidate-chord">${chords[i]}</span><span class="candidate-text">${state.candidates[i].filter(s => s.length > 0).join(" ") || " "}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }
