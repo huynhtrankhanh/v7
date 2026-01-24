@@ -76,12 +76,7 @@
     <text x="10" y="20" class="text-q">P</text>
     <text x="30" y="45" class="text-s">-T</text>
   </g>
-  <!-- [(-D) -->
-  <g transform="translate(720, 20)">
-    <rect class="key row-1" width="60" height="60"/>
-    <text x="10" y="20" class="text-q">[</text>
-    <text x="30" y="45" class="text-s">-D</text>
-  </g>
+
 
   <!-- Row 2 -->
   <!-- A(S-) -->
