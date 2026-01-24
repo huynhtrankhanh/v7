@@ -25,4 +25,19 @@ O: -L
 L: -G
 P: -T
 ;: -S
+C: A
+V: O
+N: E
+M: U
+spacebar: *
 ```
+
+Recall the steno order: #STKPWHRAO*EUFRPBLGTSDZ
+
+In the above key layout, if the hyphen occurs after the letter, it means the key is to the left of the `*` in the steno layout. Otherwise, if the hyphen occurs before the letter, it means the key is to the right of the `*`.
+
+A chord is a key combination. When a chord is pressed, it is serialized according to the steno order. Keys not present in the chord are taken out of the steno order. Then, if all of the `AO*EU` keys are taken out, they are replaced by `-` in the chord serialization, also called the outline.
+
+For example: `TPH-LG`, `TPHOT`, `TPHAT`, `TPH*T`, `KWRA*EBG`.
+
+With this down pat, now we tackle a different aspect of the stenography experience.
