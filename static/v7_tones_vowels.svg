@@ -11,7 +11,7 @@
   </defs>
 
   <text x="210" y="30" class="label" style="font-size: 20px;">V7 Tones (Mirrored Patterns)</text>
-  <text x="640" y="30" class="label" style="font-size: 20px;">V7 Vowels (Rotated T Shape)</text>
+  <text x="640" y="30" class="label" style="font-size: 20px;">V7 Vowels (Flipped L Shape)</text>
 
   <!-- Tones Grid (Left hand patterns) -->
   <g transform="translate(20, 50)">
@@ -74,57 +74,58 @@
     <text x="180" y="330" class="sub-label">Tone Keys: K, W, R (Left) / -G, -B, -R (Right)</text>
   </g>
 
-  <!-- Vowels Grid (Rotated T Shape) -->
-  <!-- Shape Layout: 
-       Top: -D
-       Center-Left: A
-       Bottom: O
+  <!-- Vowels Grid (Horizontally Flipped L Shape) -->
+  <!-- Left Hand Layout (Bitmask Sum):
+       Top: -D (Suffix)
+       Base: A (bit 1), O (bit 2)
   -->
   <g transform="translate(450, 50)">
     <!-- a (1) -->
     <g transform="translate(0, 0)">
-      <rect width="180" height="100" class="group-box"/>
+      <rect width="180" height="90" class="group-box"/>
       <text x="90" y="25" class="label">a (1)</text>
       <circle cx="110" cy="45" class="bit-dot" /><!-- -D -->
-      <circle cx="70" cy="65" class="bit-dot bit-active-vowel" /><!-- A -->
-      <circle cx="110" cy="85" class="bit-dot" /><!-- O -->
+      <circle cx="70" cy="70" class="bit-dot bit-active-vowel" /><!-- A -->
+      <circle cx="110" cy="70" class="bit-dot" /><!-- O -->
     </g>
     <!-- o (2) -->
     <g transform="translate(190, 0)">
-      <rect width="180" height="100" class="group-box"/>
+      <rect width="180" height="90" class="group-box"/>
       <text x="90" y="25" class="label">o (2)</text>
       <circle cx="110" cy="45" class="bit-dot" />
-      <circle cx="70" cy="65" class="bit-dot" />
-      <circle cx="110" cy="85" class="bit-dot bit-active-vowel" />
+      <circle cx="70" cy="70" class="bit-dot" />
+      <circle cx="110" cy="70" class="bit-dot bit-active-vowel" /><!-- O -->
     </g>
     <!-- i (3) -->
-    <g transform="translate(0, 110)">
-      <rect width="180" height="100" class="group-box"/>
+    <g transform="translate(0, 100)">
+      <rect width="180" height="90" class="group-box"/>
       <text x="90" y="25" class="label">i (3)</text>
       <circle cx="110" cy="45" class="bit-dot" />
-      <circle cx="70" cy="65" class="bit-dot bit-active-vowel" />
-      <circle cx="110" cy="85" class="bit-dot bit-active-vowel" />
+      <circle cx="70" cy="70" class="bit-dot bit-active-vowel" /><!-- A -->
+      <circle cx="110" cy="70" class="bit-dot bit-active-vowel" /><!-- O -->
     </g>
     <!-- e (0) -->
-    <g transform="translate(190, 110)">
-      <rect width="180" height="100" class="group-box"/>
+    <g transform="translate(190, 100)">
+      <rect width="180" height="90" class="group-box"/>
       <text x="90" y="25" class="label">e (0)</text>
       <circle cx="110" cy="45" class="bit-dot" />
-      <circle cx="70" cy="65" class="bit-dot" />
-      <circle cx="110" cy="85" class="bit-dot" />
+      <circle cx="70" cy="70" class="bit-dot" />
+      <circle cx="110" cy="70" class="bit-dot" />
     </g>
     <!-- u (0 + Suffix) -->
-    <g transform="translate(95, 220)">
-      <rect width="180" height="100" class="group-box" style="fill: #E8F5E9;"/>
+    <g transform="translate(95, 200)">
+      <rect width="180" height="90" class="group-box" style="fill: #E8F5E9;"/>
       <text x="90" y="25" class="label">u (0 + -D/-Z)</text>
-      <circle cx="110" cy="45" class="bit-dot bit-active-vowel" /><!-- -D/-Z active -->
-      <circle cx="70" cy="65" class="bit-dot" />
-      <circle cx="110" cy="85" class="bit-dot" />
+      <circle cx="110" cy="45" class="bit-dot bit-active-vowel" /><!-- -D/-Z -->
+      <circle cx="70" cy="70" class="bit-dot" />
+      <circle cx="110" cy="70" class="bit-dot" />
     </g>
-    <text x="180" y="340" class="sub-label">Vowel Layout: Top=-D/-Z, Left=A/U, Bottom=O/E</text>
+    
+    <text x="180" y="320" class="sub-label">Vowel Layout (Left Hand): Top=-D, Left=A, Right=O</text>
+    <text x="180" y="335" class="sub-label">Vowel Layout (Right Hand): Top=-Z, Left=E, Right=U</text>
   </g>
 
   <text x="425" y="450" class="label" style="font-size: 14px; font-weight: normal; fill: #666;">
-    Vowel shape represents the keys A, O, -D (Left Hand) and U, E, -Z (Right Hand).
+    Vowel patterns use A, O, -D (Left) or mirror equivalents E, U, -Z (Right).
   </text>
 </svg>
