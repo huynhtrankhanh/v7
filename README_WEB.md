@@ -206,24 +206,45 @@ Tones use 3 bits (3 keys), while vowels use 2 bits (2 keys).
 
 ## Usage
 
-### Syllable Entry (Fixed Text)
+**CRITICAL: MODE SWITCHING**
+
+The system automatically distinguishes between two input modes based on the `*` (Spacebar) key:
+
+1.  **Single Syllable Mode:** Type your stroke **WITHOUT** holding down the `*` key.
+2.  **V7 Island Mode (Two Syllables):** Type your stroke **WHILE HOLDING DOWN** the `*` key.
+
+---
+
+### Single Syllable Entry (Fixed Text)
+
 Most common Vietnamese syllables can be fully specified using standard steno chords. These are immediately converted to text and added to the sentence.
 
-### V7 Island Entry
-A V7 island represents two syllables partially specified. A stroke that includes a separator (`*` or `-`) and doesn't match a fully specified syllable will be treated as a V7 island. The engine will infer the best candidates based on the current context.
+*   **Action:** Press the keys for a single syllable.
+*   **Result:** Unambiguous text is inserted immediately.
+
+### V7 Island Entry (Predictive Text)
+
+A V7 island represents two syllables partially specified. This mode leverages the V7 inference engine to predict the best candidates based on the surrounding context.
+
+*   **Action:** Hold down the `*` key (Spacebar) while pressing the keys for the two syllables.
+*   **Result:** A list of 5 candidates appears at the bottom. The main text display shows a preview of the top candidate.
 
 ### Candidate Selection
-When candidates are displayed, use the following chords to select one:
+
+When candidates are displayed, you must select one to proceed. Use the following keys (standard steno chords):
 - `TK`: Candidate 1
 - `PW`: Candidate 2
 - `HR`: Candidate 3
 - `-FR`: Candidate 4
 - `-PB`: Candidate 5
 
-Selecting a candidate collapses the ambiguity and merges it into the fixed text context.
+Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
 
 ### Undo
-The `*` key (Spacebar) by itself undoes the previous stroke.
+
+The `*` key (Spacebar) pressed by itself undoes the previous action (syllable entry, island entry, or candidate selection).
+
+---
 
 ## Implementation Details
 
