@@ -17,4 +17,12 @@ R: H-
 F: R-
 T, G: -D
 Y, H: -Z
+U: -F
+J: -R
+I: -P
+K: -B
+O: -L
+L: -G
+P: -T
+;: -S
 ```
