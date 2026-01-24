@@ -8,13 +8,15 @@
     "test:e2e": "node tests/web_test.js",
     "test:stress": "node tests/stress_test.js",
     "test:ux": "jest tests/frontend_ux.test.js",
-    "test:invalid-stroke": "jest tests/frontend_invalid_stroke.test.js"
+    "test:invalid-stroke": "jest tests/frontend_invalid_stroke.test.js",
+    "test:e2e-jsdom": "jest tests/e2e_jsdom.test.js"
   },
   "dependencies": {
     "puppeteer": "^24.36.0"
   },
   "devDependencies": {
     "jest": "^30.2.0",
-    "jest-environment-jsdom": "^30.2.0"
+    "jest-environment-jsdom": "^30.2.0",
+    "node-fetch": "^2.7.0"
   }
 }
