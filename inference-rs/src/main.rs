@@ -310,24 +310,33 @@ fn perform_inference(
     
     for (i, segment) in islands.iter().enumerate() {
         if i % 2 == 0 {
-            // Fixed Text Island
+            // === MODIFIED SECTION: Fixed Text Island ===
             if segment.is_empty() {
-                // We still need to record empty history for this island to maintain alignment
-                 for state in &mut current_states {
-                     state.history.push(Vec::new());
-                 }
+                // Record empty history for alignment
+                for state in &mut current_states {
+                    state.history.push(Vec::new());
+                }
                 continue;
             }
+
+            // 1. We still need purified words to update the LM State accurately
             let purified_words = purify(segment);
-            // Deterministic update for all current states
+
+            // 2. Update states
             for state in &mut current_states {
+                // Update Score/State using PURIFIED words
                 for word in &purified_words {
                     let (lm_score, new_st) = model.score(&state.state, word);
                     state.score += lm_score;
                     state.state = new_st;
                 }
-                state.history.push(purified_words.clone());
+                
+                // Store ORIGINAL text in history
+                // We wrap it in a Vec to match the expected type, 
+                // but this ensures the final output retains casing/punctuation.
+                state.history.push(vec![segment.clone()]);
             }
+            // ===========================================
         } else {
             // V7 Code Island
             // eprintln!("Decoding V7 island: {}", segment);
