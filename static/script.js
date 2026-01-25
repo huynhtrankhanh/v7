@@ -294,17 +294,33 @@ let state = {
 };
 let history = [];
 
-function saveState() {
-    history.push(JSON.stringify(state));
+function saveState(isReplace = false) {
+    if (isReplace) {
+        history.push({ islands: [...state.islands] });
+    } else {
+        history.push({
+            islandsRef: state.islands,
+            len: state.islands.length,
+            lastItem: state.islands.length > 0 ? state.islands[state.islands.length - 1] : null
+        });
+    }
 }
 
 function restoreState() {
     if (history.length > 0) {
-        state = JSON.parse(history.pop());
+        const snapshot = history.pop();
+        if (snapshot.islands) {
+            state.islands = snapshot.islands;
+        } else if (snapshot.islandsRef) {
+            state.islands = snapshot.islandsRef;
+            state.islands.length = snapshot.len;
+            if (snapshot.len > 0 && snapshot.lastItem !== null) {
+                state.islands[snapshot.len - 1] = snapshot.lastItem;
+            }
+        }
+        state.candidates = [];
         updateDisplay();
-        // Recalculate inference if we went back to ambiguous state?
-        // Yes, if we undid a selection, we might be back to candidates.
-        // But `state.candidates` is preserved in JSON.
+        runInference();
     }
 }
 
@@ -375,7 +391,7 @@ async function runInference() {
 function selectCandidate(index) {
     if (!state.candidates[index]) return;
     const chosenText = state.candidates[index].filter(s => s.length > 0).join(" ");
-    saveState();
+    saveState(true);
     state.islands = [chosenText];
     state.candidates = [];
     updateDisplay();
@@ -458,7 +474,7 @@ function updateDisplay() {
                  textHtml = `<span class="common-prefix">[...]</span>${suffix}`;
             }
 
-            div.innerHTML = `<span class="candidate-text">${textHtml}</span>`;
+            div.innerHTML = `<sup>${i + 1}</sup> <span class="candidate-text">${textHtml}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }
