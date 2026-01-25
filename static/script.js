@@ -293,6 +293,27 @@ let state = {
     candidates: []
 };
 let history = [];
+let isTextareaMode = false;
+
+function smartJoin(islands) {
+    if (islands.length === 0) return "";
+    let text = islands[0];
+    for (let i = 1; i < islands.length; i++) {
+        const next = islands[i];
+        const prev = text;
+
+        // Don't insert space if previous ends with whitespace or newline
+        const prevHasSpace = prev.length > 0 && /\s$/.test(prev);
+        // Don't insert space if next starts with whitespace or newline
+        const nextHasSpace = next.length > 0 && /^\s/.test(next);
+
+        if (!prevHasSpace && !nextHasSpace && prev.length > 0 && next.length > 0) {
+            text += " ";
+        }
+        text += next;
+    }
+    return text;
+}
 
 function saveState(isReplace = false) {
     if (isReplace) {
@@ -329,6 +350,43 @@ function restoreState() {
 function handleChord(stroke) {
     if (stroke === "*") {
         if (history.length > 0) restoreState();
+        return;
+    }
+
+    // Escape Hatch (#S)
+    if (stroke === "#S") {
+        if (state.candidates.length > 0) selectCandidate(0);
+        history.length = 0; // Clear undo buffer in place
+        isTextareaMode = true;
+        updateDisplay();
+        return;
+    }
+
+    // Space (SP)
+    if (stroke === "SP") {
+        saveState();
+        if (state.candidates.length > 0) selectCandidate(0);
+        if (state.islands.length % 2 === 0) {
+             state.islands.push(" ");
+        } else {
+             state.islands[state.islands.length - 1] += " ";
+        }
+        updateDisplay();
+        return;
+    }
+
+    // Punctuation
+    const punct = { "TPPL": ". ", "KWBG": ", ", "KWPL": "? ", "TPBG": "! " };
+    if (punct[stroke]) {
+        saveState();
+        if (state.candidates.length > 0) selectCandidate(0);
+        const p = punct[stroke];
+        if (state.islands.length % 2 === 0) {
+             state.islands.push(p);
+        } else {
+             state.islands[state.islands.length - 1] += p;
+        }
+        updateDisplay();
         return;
     }
     
@@ -421,26 +479,67 @@ function getCommonPrefix(strings) {
     return prefix;
 }
 
+// Inject styles for cursor
+if (!document.getElementById("dynamic-styles")) {
+    const style = document.createElement("style");
+    style.id = "dynamic-styles";
+    style.textContent = `
+        @keyframes blink { 50% { opacity: 0; } }
+        .cursor { animation: blink 1s step-end infinite; }
+    `;
+    document.head.appendChild(style);
+}
+
 function updateDisplay() {
     const display = document.getElementById("text-display");
     const candArea = document.getElementById("candidate-area");
 
+    if (isTextareaMode) {
+        let ta = display.querySelector("textarea");
+        if (!ta) {
+            display.innerHTML = "";
+            ta = document.createElement("textarea");
+            Object.assign(ta.style, {
+                width: "100%", height: "100%", fontSize: "inherit",
+                fontFamily: "inherit", border: "none", resize: "none", outline: "none"
+            });
+            ta.value = smartJoin(state.islands);
+            display.appendChild(ta);
+            ta.focus();
+            ta.setSelectionRange(ta.value.length, ta.value.length);
+        }
+        candArea.innerHTML = '<span style="color:#999">Text Mode (Press Esc to return)</span>';
+        return;
+    }
+
     let text = "";
     if (state.candidates.length > 0) {
         // Preview top candidate
-        text = state.candidates[0].filter(s => s.length > 0).join(" ");
+        // Use smartJoin to avoid double spaces if candidates have internal structure
+        text = smartJoin(state.candidates[0].filter(s => s.length > 0));
     } else {
         // Fallback: Show all islands, wrapping V7 codes in brackets
-        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
+        const displayIslands = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s);
+        text = smartJoin(displayIslands);
     }
     
-    // Remove the initial placeholder if it exists
+    // Reset display logic for standard mode
+    display.innerHTML = "";
+
     if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
         display.textContent = "Start typing with your steno keyboard...";
         display.style.color = "#999";
     } else {
-        display.textContent = text;
         display.style.color = "#000";
+        display.innerText = text;
+
+        const cursor = document.createElement("span");
+        cursor.className = "cursor";
+        Object.assign(cursor.style, {
+            display: "inline-block", width: "2px", height: "1em",
+            backgroundColor: "black", verticalAlign: "text-bottom"
+        });
+        display.appendChild(cursor);
     }
     display.scrollTop = display.scrollHeight;
 
@@ -509,6 +608,69 @@ let heldKeys = new Set();
 let strokeKeys = new Set();
 
 document.addEventListener("keydown", (e) => {
+    // Textarea Mode: Only handle Escape to exit
+    if (isTextareaMode) {
+        if (e.key === "Escape") {
+            e.preventDefault();
+            const ta = document.querySelector("#text-display textarea");
+            if (ta) {
+                // Update state with textarea content
+                // We treat the whole content as one text island for simplicity,
+                // or we could try to preserve island structure if we parsed it,
+                // but "textarea" implies free editing.
+                state.islands = [ta.value];
+            }
+            isTextareaMode = false;
+            updateDisplay();
+        }
+        return;
+    }
+
+    // Copy Buffer (Ctrl+C / Cmd+C) when no selection
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        const selection = window.getSelection();
+        if (selection.toString().length === 0) {
+            let text = "";
+            if (state.candidates.length > 0) {
+                 text = state.candidates[0].filter(s => s.length > 0).join(" ");
+            } else {
+                 text = smartJoin(state.islands);
+            }
+            navigator.clipboard.writeText(text).catch(err => console.error("Copy failed", err));
+            e.preventDefault();
+            return;
+        }
+    }
+
+    // Enter for Newline
+    if (e.key === "Enter") {
+        e.preventDefault();
+        saveState();
+        if (state.islands.length % 2 === 0) {
+             state.islands.push("\n");
+        } else {
+             state.islands[state.islands.length - 1] += "\n";
+        }
+        updateDisplay();
+        return;
+    }
+
+    // Shift + Letter for Literal Append
+    // We check if it is a letter A-Z
+    if (e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+        // e.key is the character produced (e.g. "A").
+        e.preventDefault();
+        saveState();
+        if (state.islands.length % 2 === 0) {
+             state.islands.push(e.key);
+        } else {
+             state.islands[state.islands.length - 1] += e.key;
+        }
+        updateDisplay();
+        return;
+    }
+
+    // Steno Input
     if (e.repeat) return;
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
