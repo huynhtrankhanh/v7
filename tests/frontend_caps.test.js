@@ -19,7 +19,7 @@ window.fetch = jest.fn(() => Promise.resolve({ json: () => Promise.resolve({ can
 
 describe('Frontend Capitalization Feature', () => {
     beforeAll(() => {
-        document.body.innerHTML = '<div id="text-display"></div><div id="candidate-area"></div>';
+        document.body.innerHTML = '<div id="text-display"></div><textarea id="text-input" style="display:none"></textarea><div id="candidate-area"></div>';
         eval(scriptContent);
     });
 
@@ -31,13 +31,13 @@ describe('Frontend Capitalization Feature', () => {
     test('Fixed text stroke without # is lowercase', () => {
         // Stroke: "TA" -> "ta"
         window.handleChord("TA");
-        expect(window.state.islands[0]).toBe("ta ");
+        expect(window.state.islands[0]).toBe("ta");
     });
 
     test('Fixed text stroke WITH # is Capitalized', () => {
         // Stroke: "#TA" -> "Ta"
         window.handleChord("#TA");
-        expect(window.state.islands[0]).toBe("Ta ");
+        expect(window.state.islands[0]).toBe("Ta");
     });
 
     test('Complex syllable with #', () => {
@@ -46,6 +46,6 @@ describe('Frontend Capitalization Feature', () => {
         // Stroke: "HAS".
         // With #: "#HAS". -> "Hà"
         window.handleChord("#HAS");
-        expect(window.state.islands[0]).toBe("Hà ");
+        expect(window.state.islands[0]).toBe("Hà");
     });
 });

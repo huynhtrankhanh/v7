@@ -346,7 +346,7 @@ function appendText(text) {
 
 function handleChord(stroke) {
     // 1. Escape Hatch: #S
-    if (stroke === "#S-") {
+    if (stroke === "#S-" || stroke === "#S") {
         if (state.candidates.length > 0) {
             selectCandidate(0); // Select top candidate
         }
@@ -399,6 +399,11 @@ function handleChord(stroke) {
     };
 
     if (punctuationMap[stroke]) {
+        // Fix: Auto-select candidate if present
+        if (state.candidates.length > 0) {
+            selectCandidate(0);
+        }
+
         saveState();
         const punct = punctuationMap[stroke];
         // Append punctuation directly, handling spacing carefully
@@ -497,7 +502,13 @@ function updateDisplay() {
         text = state.candidates[0].filter(s => s.length > 0).join(" ");
     } else {
         // Fallback: Show all islands, wrapping V7 codes in brackets
-        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
+        // Fix: Don't add space if previous island ends with newline
+        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s)
+            .reduce((acc, curr) => {
+                if (acc === "") return curr;
+                if (acc.endsWith("\n")) return acc + curr;
+                return acc + " " + curr;
+            }, "");
     }
     
     if (isRawMode) {
@@ -517,6 +528,12 @@ function updateDisplay() {
         // Render text with cursor
         display.innerHTML = ""; // clear
         
+        // Fix: Cursor should be at the start if placeholder is present
+        const cursor = document.createElement("span");
+        cursor.id = "cursor";
+        cursor.innerHTML = "|"; // Visual placeholder, styled by CSS
+        display.appendChild(cursor);
+
         if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
             const placeholder = document.createElement("span");
             placeholder.textContent = "Start typing with your steno keyboard...";
@@ -524,16 +541,10 @@ function updateDisplay() {
             display.appendChild(placeholder);
         } else {
             const textNode = document.createTextNode(text);
-            display.appendChild(textNode);
+            display.insertBefore(textNode, cursor); // Text before cursor
             display.style.color = "#000";
         }
         
-        // Append Cursor
-        const cursor = document.createElement("span");
-        cursor.id = "cursor";
-        cursor.innerHTML = "|"; // Visual placeholder, styled by CSS
-        display.appendChild(cursor);
-
         display.scrollTop = display.scrollHeight;
 
         // Render Candidates
@@ -609,7 +620,12 @@ document.addEventListener("keydown", (e) => {
         if (!window.getSelection().toString()) {
             const textToCopy = state.candidates.length > 0 
                 ? state.candidates[0].filter(s => s.length > 0).join(" ") 
-                : state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
+                : state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s)
+                    .reduce((acc, curr) => {
+                        if (acc === "") return curr;
+                        if (acc.endsWith("\n")) return acc + curr;
+                        return acc + " " + curr;
+                    }, "");
             
             navigator.clipboard.writeText(textToCopy).catch(err => {
                 console.error('Failed to copy: ', err);

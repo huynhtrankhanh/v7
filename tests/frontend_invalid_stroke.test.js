@@ -26,6 +26,7 @@ describe('V7 Frontend Invalid Stroke Handling', () => {
     beforeAll(() => {
         document.body.innerHTML = `
             <div id="text-display"></div>
+            <textarea id="text-input" style="display:none"></textarea>
             <div id="candidate-area"></div>
         `;
         try {

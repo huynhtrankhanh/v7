@@ -35,7 +35,7 @@ beforeAll(async () => {
     ]);
     await sleep(2000);
     window.fetch = require('node-fetch');
-    document.body.innerHTML = '<div id="text-display"></div><div id="candidate-area"></div>';
+    document.body.innerHTML = '<div id="text-display"></div><textarea id="text-input" style="display:none"></textarea><div id="candidate-area"></div>';
     try {
         eval(scriptContent);
     } catch (e) {
