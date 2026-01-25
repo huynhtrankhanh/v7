@@ -531,7 +531,6 @@ function updateDisplay() {
         // Fix: Cursor should be at the start if placeholder is present
         const cursor = document.createElement("span");
         cursor.id = "cursor";
-        cursor.innerHTML = "|"; // Visual placeholder, styled by CSS
         display.appendChild(cursor);
 
         if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
