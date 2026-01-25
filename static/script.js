@@ -526,7 +526,7 @@ function updateDisplay() {
         candArea.style.display = 'flex';
 
         // Render text with cursor
-        display.innerHTML = ""; // clear
+        display.replaceChildren(); // clear
         
         // Fix: Cursor should be at the start if placeholder is present
         const cursor = document.createElement("span");
@@ -547,7 +547,7 @@ function updateDisplay() {
         display.scrollTop = display.scrollHeight;
 
         // Render Candidates
-        candArea.innerHTML = "";
+        candArea.replaceChildren();
         if (state.candidates.length > 0) {
             // Calculate common prefix for top 5 candidates
             const visibleCandidates = state.candidates.slice(0, 5);
@@ -571,13 +571,28 @@ function updateDisplay() {
                 const div = document.createElement("div");
                 div.className = "candidate";
                 
-                let textHtml = candStrings[i];
+                const sup = document.createElement("sup");
+                sup.textContent = i + 1;
+                div.appendChild(sup);
+
+                div.appendChild(document.createTextNode(" "));
+
+                const span = document.createElement("span");
+                span.className = "candidate-text";
+
                 if (prefix.length > 0) {
+                     const prefixSpan = document.createElement("span");
+                     prefixSpan.className = "common-prefix";
+                     prefixSpan.textContent = "[...]";
+                     span.appendChild(prefixSpan);
+
                      const suffix = candStrings[i].substring(prefix.length);
-                     textHtml = "<span class=\"common-prefix\">[...]</span>" + suffix;
+                     span.appendChild(document.createTextNode(suffix));
+                } else {
+                     span.textContent = candStrings[i];
                 }
 
-                div.innerHTML = `<sup>${i + 1}</sup> <span class="candidate-text">${textHtml}</span>`;
+                div.appendChild(span);
                 div.onclick = () => selectCandidate(i);
                 candArea.appendChild(div);
             }
@@ -586,7 +601,14 @@ function updateDisplay() {
             const div = document.createElement("div");
             div.className = "candidate";
             div.style.cursor = "default";
-            div.innerHTML = '<span class="candidate-text" style="color: #999; text-align: center;">No candidates</span>';
+
+            const span = document.createElement("span");
+            span.className = "candidate-text";
+            span.style.color = "#999";
+            span.style.textAlign = "center";
+            span.textContent = "No candidates";
+
+            div.appendChild(span);
             candArea.appendChild(div);
         }
     }
