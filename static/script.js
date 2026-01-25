@@ -458,7 +458,7 @@ function updateDisplay() {
                  textHtml = `<span class="common-prefix">[...]</span>${suffix}`;
             }
 
-            div.innerHTML = `<span class="candidate-text">${textHtml}</span>`;
+            div.innerHTML = `<sup class="candidate-number">${i+1}</sup><span class="candidate-text">${textHtml}</span>`;
             div.onclick = () => selectCandidate(i);
             candArea.appendChild(div);
         }

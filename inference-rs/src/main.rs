@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
+use std::rc::Rc;
 use anyhow::{Result, Context};
 use unicode_normalization::UnicodeNormalization;
 use clap::Parser;
@@ -16,7 +17,12 @@ use axum::{
 use tower_http::services::ServeDir;
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(feature = "mock"))]
 mod kenlm;
+#[cfg(feature = "mock")]
+#[path = "kenlm_mock.rs"]
+mod kenlm;
+
 mod regex_enum;
 
 #[derive(Parser, Debug)]
@@ -157,10 +163,19 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 }
 
 #[derive(Debug, Clone)]
+enum HistoryNode {
+    Root,
+    Item {
+        parent: Rc<HistoryNode>,
+        text: Vec<String>,
+    }
+}
+
+#[derive(Debug, Clone)]
 struct IslandState {
     score: f32,
     state: kenlm::State,
-    history: Vec<Vec<String>>, // List of decoded texts for V7 islands encountered so far
+    history: Rc<HistoryNode>,
 }
 
 #[derive(Debug, Clone)]
@@ -282,8 +297,12 @@ fn beam_search_v7_island<'a>(
         words.reverse();
         
         // Combine with history from origin
-        let mut new_history = incoming_states[node.origin_idx].history.clone();
-        new_history.push(words);
+        // Note: we use Rc to share history
+        let origin_history = &incoming_states[node.origin_idx].history;
+        let new_history = Rc::new(HistoryNode::Item {
+            parent: origin_history.clone(),
+            text: words,
+        });
         
         results.push(IslandState {
             score: node.score,
@@ -305,22 +324,14 @@ fn perform_inference(
     let mut current_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
-        history: Vec::new(),
+        history: Rc::new(HistoryNode::Root),
     }];
     
     for (i, segment) in islands.iter().enumerate() {
         if i % 2 == 0 {
             // === MODIFIED SECTION: Fixed Text Island ===
-            if segment.is_empty() {
-                // Record empty history for alignment
-                for state in &mut current_states {
-                    state.history.push(Vec::new());
-                }
-                continue;
-            }
-
             // 1. We still need purified words to update the LM State accurately
-            let purified_words = purify(segment);
+            let purified_words = if segment.is_empty() { Vec::new() } else { purify(segment) };
 
             // 2. Update states
             for state in &mut current_states {
@@ -331,10 +342,12 @@ fn perform_inference(
                     state.state = new_st;
                 }
                 
-                // Store ORIGINAL text in history
-                // We wrap it in a Vec to match the expected type, 
-                // but this ensures the final output retains casing/punctuation.
-                state.history.push(vec![segment.clone()]);
+                // Store ORIGINAL text in history via linked list
+                let new_node = Rc::new(HistoryNode::Item {
+                    parent: state.history.clone(),
+                    text: if segment.is_empty() { Vec::new() } else { vec![segment.clone()] },
+                });
+                state.history = new_node;
             }
             // ===========================================
         } else {
@@ -350,7 +363,16 @@ fn perform_inference(
     
     let candidates: Vec<Vec<String>> = current_states.into_iter().take(beam_width).map(|s| {
         // Flatten the word lists for each island into strings
-        s.history.into_iter().map(|words| words.join(" ")).collect()
+        // We need to traverse back up to Root, then reverse the list of islands
+        let mut all_islands_words = Vec::new();
+        let mut curr = &s.history;
+        while let HistoryNode::Item { parent, text } = curr.as_ref() {
+            all_islands_words.push(text.clone()); // We clone the text vector here for result
+            curr = parent;
+        }
+        all_islands_words.reverse();
+
+        all_islands_words.into_iter().map(|words| words.join(" ")).collect()
     }).collect();
     
     Ok(candidates)
