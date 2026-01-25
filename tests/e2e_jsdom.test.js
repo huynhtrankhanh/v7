@@ -58,6 +58,7 @@ beforeAll(async () => {
     // DOM Setup
     document.body.innerHTML = `
         <div id="text-display"></div>
+        <textarea id="text-input" style="display:none"></textarea>
         <div id="candidate-area"></div>
     `;
 

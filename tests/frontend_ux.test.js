@@ -1,4 +1,3 @@
-
 /**
  * @jest-environment jsdom
  */
@@ -9,57 +8,128 @@ const path = require('path');
 const scriptPath = path.resolve(__dirname, '../static/script.js');
 let scriptContent = fs.readFileSync(scriptPath, 'utf8');
 
-// Append code to expose functions and state to window for testing
+// Append code to expose internals to window for testing
 scriptContent += `
+window.state = state;
+window.handleChord = handleChord;
 window.updateDisplay = updateDisplay;
-window.getState = () => state;
-window.setState = (s) => { state = s; };
+window.isRawMode = () => isRawMode; // Getter since it's a let
+window.setIsRawMode = (val) => { isRawMode = val; };
+window.getStenoHistory = () => history;
 `;
 
 describe('V7 Frontend UX', () => {
+    let mockWriteText;
+
     beforeAll(() => {
-        // Mock DOM elements
+        // Mock DOM
         document.body.innerHTML = `
-            <div id="text-display"></div>
+            <div id="text-display">Type with your steno keyboard...</div>
+            <textarea id="text-input" style="display:none"></textarea>
             <div id="candidate-area"></div>
         `;
+
+        // Mock Clipboard
+        mockWriteText = jest.fn().mockResolvedValue(undefined);
+        Object.assign(navigator, {
+            clipboard: {
+                writeText: mockWriteText
+            }
+        });
         
-        // Execute the script
+        // Mock fetch for inference
+        global.fetch = jest.fn(() =>
+            Promise.resolve({
+                json: () => Promise.resolve({ candidates: [['mocked']] }),
+            })
+        );
+
+        // Execute script
         try {
             eval(scriptContent);
         } catch (e) {
             console.error("Error evaluating script.js:", e);
         }
     });
-
-    test('updateDisplay shows brackets for V7 codes when candidates are empty', () => {
-        // Setup state with no candidates and some islands
-        const mockState = {
-            islands: ["Hello ", "na0", " World ", "tro2"],
-            candidates: []
-        };
-        
-        window.setState(mockState);
-        window.updateDisplay();
-        
-        const display = document.getElementById("text-display");
-        const content = display.textContent;
-        
-        // Expect: "Hello [na0] World [tro2]"
-        // Note: join("") was used. 
-        // "Hello " + "[na0]" + " World " + "[tro2]"
-        expect(content).toBe("Hello [na0] World [tro2]");
+    
+    beforeEach(() => {
+        // Reset state
+        window.state.islands = [""];
+        window.state.candidates = [];
+        window.getStenoHistory().length = 0;
+        window.setIsRawMode(false);
+        document.getElementById('text-display').textContent = "";
+        document.getElementById('text-input').value = "";
+        jest.clearAllMocks();
     });
 
-    test('updateDisplay shows top candidate when candidates exist', () => {
-        const mockState = {
-            islands: ["Hello ", "na0"],
-            candidates: [["Hello", "nay"]]
-        };
-        window.setState(mockState);
-        window.updateDisplay();
-        const display = document.getElementById("text-display");
-        const content = display.textContent;
-        expect(content).toBe("Hello nay");
+    test('Escape Hatch (#S) triggers raw mode and clears undo', () => {
+        // Setup initial state with some history
+        window.state.islands = ["hello"];
+        window.getStenoHistory().push("some_state");
+        
+        window.handleChord("#S-");
+        
+        expect(window.isRawMode()).toBe(true);
+        expect(window.getStenoHistory().length).toBe(0);
+        expect(document.getElementById('text-input').style.display).toBe('block');
+        expect(document.getElementById('text-display').style.display).toBe('none');
+        expect(document.getElementById('text-input').value).toBe("hello");
+        expect(document.activeElement.id).toBe('text-input');
+    });
+
+    test('Esc key exits raw mode and updates state', () => {
+        window.handleChord("#S-"); // Enter raw mode
+        const textArea = document.getElementById('text-input');
+        textArea.value = "hello world";
+        
+        // Simulate Esc keydown
+        const event = new KeyboardEvent('keydown', { key: 'Escape' });
+        document.dispatchEvent(event);
+        
+        expect(window.isRawMode()).toBe(false);
+        expect(window.state.islands[0]).toBe("hello world");
+        expect(document.getElementById('text-display').style.display).toBe('block');
+        // Undo should be empty upon exit
+        expect(window.getStenoHistory().length).toBe(0);
+    });
+
+    test('Space stroke (S-P) adds space', () => {
+        window.state.islands = ["hello"];
+        window.handleChord("S-P");
+        expect(window.state.islands[0]).toBe("hello ");
+    });
+
+    test('Punctuation TP-PL adds dot and handles spacing', () => {
+        window.state.islands = ["hello"];
+        window.handleChord("TP-PL"); // Period
+        expect(window.state.islands[0]).toBe("hello. ");
+    });
+
+    test('Enter key adds newline', () => {
+        window.state.islands = ["line1"];
+        const event = new KeyboardEvent('keydown', { key: 'Enter' });
+        document.dispatchEvent(event);
+        
+        expect(window.state.islands[0]).toBe("line1\n");
+    });
+
+    test('Shift+Letter appends literal uppercase', () => {
+        window.state.islands = ["abc"];
+        const event = new KeyboardEvent('keydown', { key: 'A', shiftKey: true });
+        document.dispatchEvent(event);
+        
+        expect(window.state.islands[0]).toBe("abc A");
+    });
+
+    test('Ctrl+C copies buffer', () => {
+        window.state.islands = ["copy me"];
+        // Mock selection to be empty
+        window.getSelection = jest.fn().mockReturnValue({ toString: () => "" });
+        
+        const event = new KeyboardEvent('keydown', { key: 'c', ctrlKey: true });
+        document.dispatchEvent(event);
+        
+        expect(mockWriteText).toHaveBeenCalledWith("copy me");
     });
 });

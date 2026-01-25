@@ -217,13 +217,13 @@ function assemble(parsed) {
 
     const final = () => {
         if (parsed.finalConsonant === "w") {
-            if (["iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i"].includes(parsed.vowel)) {
+            if ([ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel)) {
                 return "u";
             }
             return "o";
         }
         if (parsed.finalConsonant === "j") {
-            if (["ă", "â"].includes(parsed.vowel)) {
+            if ([ "ă", "â" ].includes(parsed.vowel)) {
                 return "y";
             }
             return "i";
@@ -293,6 +293,7 @@ let state = {
     candidates: []
 };
 let history = [];
+let isRawMode = false;
 
 function saveState(isReplace = false) {
     if (isReplace) {
@@ -326,7 +327,41 @@ function restoreState() {
 
 // --- Logic ---
 
+function appendText(text) {
+    if (state.islands.length % 2 === 0) {
+        // We are at a V7 island index (though usually we shouldn't be appending fixed text here unless transitioning?)
+        // Actually, V7 architecture assumes Fixed - V7 - Fixed - V7 ...
+        // If we append fixed text, we usually append to the last Fixed island (odd index? No, index 0 is Fixed).
+        // 0: Fixed. 1: V7. 2: Fixed. 
+        // If length is even (2), we are about to push a fixed text island at index 2.
+        state.islands.push(text);
+    } else {
+        // Length is odd (e.g., 1). Last item is Fixed (index 0).
+        const current = state.islands[state.islands.length - 1];
+        // Don't add space if current is empty or ends with space/newline
+        const needsSpace = current.length > 0 && !current.endsWith(" ") && !current.endsWith("\n");
+        state.islands[state.islands.length - 1] = current + (needsSpace ? " " : "") + text;
+    }
+}
+
 function handleChord(stroke) {
+    // 1. Escape Hatch: #S
+    if (stroke === "#S-") {
+        if (state.candidates.length > 0) {
+            selectCandidate(0); // Select top candidate
+        }
+        isRawMode = true;
+        history = []; // Clear undo buffer
+        updateDisplay();
+        const textArea = document.getElementById("text-input");
+        if (textArea) {
+            textArea.focus();
+            textArea.selectionStart = textArea.value.length;
+            textArea.selectionEnd = textArea.value.length;
+        }
+        return;
+    }
+
     if (stroke === "*") {
         if (history.length > 0) restoreState();
         return;
@@ -339,6 +374,41 @@ function handleChord(stroke) {
             selectCandidate(candIndex);
             return;
         }
+    }
+
+    // 2. Space Stroke: S-P
+    if (stroke === "S-P") {
+        saveState();
+        // Force append a space
+        if (state.islands.length % 2 === 0) {
+             state.islands.push(" ");
+        } else {
+             state.islands[state.islands.length - 1] += " ";
+        }
+        runInference(); // Update context if needed? Mostly just text update.
+        updateDisplay();
+        return;
+    }
+
+    // 3. Punctuation
+    const punctuationMap = {
+        "TP-PL": ". ",
+        "KW-BG": ", ",
+        "KW-PL": "? ",
+        "TP-BG": "! "
+    };
+
+    if (punctuationMap[stroke]) {
+        saveState();
+        const punct = punctuationMap[stroke];
+        // Append punctuation directly, handling spacing carefully
+        if (state.islands.length % 2 === 0) {
+             state.islands.push(punct);
+        } else {
+             state.islands[state.islands.length - 1] += punct;
+        }
+        updateDisplay();
+        return;
     }
 
     if (stroke.includes("*")) {
@@ -360,12 +430,7 @@ function handleChord(stroke) {
     if (parsed) {
         const text = assemble(parsed);
         saveState();
-        if (state.islands.length % 2 === 0) {
-             state.islands.push(text);
-        } else {
-             const current = state.islands[state.islands.length - 1];
-             state.islands[state.islands.length - 1] = current + (current.length > 0 ? " " : "") + text;
-        }
+        appendText(text);
         runInference();
         return;
     }
@@ -423,6 +488,7 @@ function getCommonPrefix(strings) {
 
 function updateDisplay() {
     const display = document.getElementById("text-display");
+    const textArea = document.getElementById("text-input");
     const candArea = document.getElementById("candidate-area");
 
     let text = "";
@@ -434,57 +500,85 @@ function updateDisplay() {
         text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
     }
     
-    // Remove the initial placeholder if it exists
-    if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
-        display.textContent = "Start typing with your steno keyboard...";
-        display.style.color = "#999";
+    if (isRawMode) {
+        // Raw Mode: Show textarea
+        display.style.display = 'none';
+        textArea.style.display = 'block';
+        if (textArea.value !== text) { // Only update if changed to avoid cursor jumps if loop?
+             textArea.value = text;
+        }
+        candArea.style.display = 'none'; // Hide candidates in raw mode? Usually yes.
     } else {
-        display.textContent = text;
-        display.style.color = "#000";
-    }
-    display.scrollTop = display.scrollHeight;
+        // Steno Mode: Show div
+        display.style.display = 'block';
+        textArea.style.display = 'none';
+        candArea.style.display = 'flex';
 
-    candArea.innerHTML = "";
-    if (state.candidates.length > 0) {
-        // Calculate common prefix for top 5 candidates
-        const visibleCandidates = state.candidates.slice(0, 5);
-        const candStrings = visibleCandidates.map(c => c.filter(s => s.length > 0).join(" ") || " ");
-        const prefix = getCommonPrefix(candStrings);
-
-        // Check if candidates are short enough for horizontal display
-        let maxRemainingLength = 0;
-        for (const s of candStrings) {
-            maxRemainingLength = Math.max(maxRemainingLength, s.length - prefix.length);
+        // Render text with cursor
+        display.innerHTML = ""; // clear
+        
+        if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
+            const placeholder = document.createElement("span");
+            placeholder.textContent = "Start typing with your steno keyboard...";
+            placeholder.style.color = "#999";
+            display.appendChild(placeholder);
+        } else {
+            const textNode = document.createTextNode(text);
+            display.appendChild(textNode);
+            display.style.color = "#000";
         }
         
-        // Threshold: e.g. 15 chars
-        if (maxRemainingLength < 15) {
-            candArea.classList.add("horizontal");
-        } else {
-            candArea.classList.remove("horizontal");
-        }
+        // Append Cursor
+        const cursor = document.createElement("span");
+        cursor.id = "cursor";
+        cursor.innerHTML = "|"; // Visual placeholder, styled by CSS
+        display.appendChild(cursor);
 
-        for (let i = 0; i < visibleCandidates.length; i++) {
-            const div = document.createElement("div");
-            div.className = "candidate";
+        display.scrollTop = display.scrollHeight;
+
+        // Render Candidates
+        candArea.innerHTML = "";
+        if (state.candidates.length > 0) {
+            // Calculate common prefix for top 5 candidates
+            const visibleCandidates = state.candidates.slice(0, 5);
+            const candStrings = visibleCandidates.map(c => c.filter(s => s.length > 0).join(" ") || " ");
+            const prefix = getCommonPrefix(candStrings);
+
+            // Check if candidates are short enough for horizontal display
+            let maxRemainingLength = 0;
+            for (const s of candStrings) {
+                maxRemainingLength = Math.max(maxRemainingLength, s.length - prefix.length);
+            }
             
-            let textHtml = candStrings[i];
-            if (prefix.length > 0) {
-                 const suffix = candStrings[i].substring(prefix.length);
-                 textHtml = `<span class="common-prefix">[...]</span>${suffix}`;
+            // Threshold: e.g. 15 chars
+            if (maxRemainingLength < 15) {
+                candArea.classList.add("horizontal");
+            } else {
+                candArea.classList.remove("horizontal");
             }
 
-            div.innerHTML = `<sup>${i + 1}</sup> <span class="candidate-text">${textHtml}</span>`;
-            div.onclick = () => selectCandidate(i);
+            for (let i = 0; i < visibleCandidates.length; i++) {
+                const div = document.createElement("div");
+                div.className = "candidate";
+                
+                let textHtml = candStrings[i];
+                if (prefix.length > 0) {
+                     const suffix = candStrings[i].substring(prefix.length);
+                     textHtml = "<span class=\"common-prefix\">[...]</span>" + suffix;
+                }
+
+                div.innerHTML = `<sup>${i + 1}</sup> <span class="candidate-text">${textHtml}</span>`;
+                div.onclick = () => selectCandidate(i);
+                candArea.appendChild(div);
+            }
+        } else {
+            candArea.classList.remove("horizontal");
+            const div = document.createElement("div");
+            div.className = "candidate";
+            div.style.cursor = "default";
+            div.innerHTML = '<span class="candidate-text" style="color: #999; text-align: center;">No candidates</span>';
             candArea.appendChild(div);
         }
-    } else {
-        candArea.classList.remove("horizontal");
-        const div = document.createElement("div");
-        div.className = "candidate";
-        div.style.cursor = "default";
-        div.innerHTML = '<span class="candidate-text" style="color: #999; text-align: center;">No candidates</span>';
-        candArea.appendChild(div);
     }
 }
 
@@ -509,7 +603,68 @@ let heldKeys = new Set();
 let strokeKeys = new Set();
 
 document.addEventListener("keydown", (e) => {
+    // Global Shortcuts
+    if (e.ctrlKey && e.key === 'c') {
+        // Copy entire buffer if nothing selected
+        if (!window.getSelection().toString()) {
+            const textToCopy = state.candidates.length > 0 
+                ? state.candidates[0].filter(s => s.length > 0).join(" ") 
+                : state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s).join(" ");
+            
+            navigator.clipboard.writeText(textToCopy).catch(err => {
+                console.error('Failed to copy: ', err);
+            });
+            // We can prevent default if we want, but let's allow it to be safe? 
+            // Actually request says "Ctrl+C copies the whole buffer when nothing is selected."
+            // Standard behavior is copy selected. 
+        }
+        return; // Allow default processing
+    }
+
+    if (isRawMode) {
+        if (e.key === "Escape") {
+             // Exit Raw Mode
+             const textArea = document.getElementById("text-input");
+             const newText = textArea.value;
+             
+             // Update state
+             state.islands = [newText];
+             state.candidates = [];
+             history = []; // Clear undo
+             isRawMode = false;
+             
+             updateDisplay();
+             e.preventDefault();
+        }
+        return; // Let other keys pass to textarea
+    }
+
     if (e.repeat) return;
+
+    // Handle Literal Uppercase (Shift + Letter)
+    if (e.shiftKey && e.key.length === 1 && e.key.match(/[a-z]/i)) {
+         // Should we check if it is part of steno?
+         // User requested: "SHIFT+ a letter to append an upper case letter literally."
+         saveState();
+         appendText(e.key.toUpperCase());
+         updateDisplay();
+         e.preventDefault();
+         return;
+    }
+    
+    // Handle Enter for Newline
+    if (e.key === "Enter") {
+        saveState();
+        if (state.islands.length % 2 === 0) {
+             state.islands.push("\n");
+        } else {
+             state.islands[state.islands.length - 1] += "\n";
+        }
+        updateDisplay();
+        e.preventDefault();
+        return;
+    }
+
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
     
@@ -519,6 +674,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keyup", (e) => {
+    if (isRawMode) return; // Don't process steno in raw mode
+
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
     
@@ -531,28 +688,6 @@ document.addEventListener("keyup", (e) => {
         const hasMiddle = middleKeys.some(k => strokeKeys.has(k));
         
         let strokeStr = "";
-        for (const k of order) {
-             if (k === "E" && !hasMiddle) { // Insert '-' before right side keys start (which is around where E/U are)
-                 // actually standard steno notation puts hyphen where the vowel would be.
-                 // In our order list, A O * E U are the vowels/middle.
-                 // If none of them are present, we insert hyphen after O and before E?
-                 // Wait, the logic is: if no vowels/star, then hyphen separates left from right.
-                 // Let's just insert it once at the correct position.
-                 // The loop iterates in order.
-                 // We can insert it when we reach the first "right-side" key if we haven't seen a middle key.
-                 // Right side keys: -F, -R, -P, -B, -L, -G, -T, -S, -D, -Z.
-                 // Also E and U are vowels but often on right hand side physically but logically middle.
-                 // But wait, our `order` has E and U after *.
-                 // If we have no middle keys (A, O, *, E, U), we need a hyphen.
-                 // Where? Before the first right-side key.
-                 // Right side keys in `order`: -F, -R ...
-                 // So if we are at -F (or later) and we haven't printed any middle keys, print -.
-                 // BUT we need to print it only once.
-             }
-        }
-        
-        // Simpler approach:
-        strokeStr = "";
         let insertedHyphen = false;
         const rightStart = order.indexOf("-F"); // Index of first right-side consonant
         
@@ -561,17 +696,6 @@ document.addEventListener("keyup", (e) => {
             
             // Logic to insert hyphen if missing middle keys
             if (!hasMiddle && !insertedHyphen && i >= rightStart) {
-                 // Check if we actually have any right side keys to print, 
-                 // OR if we just need to indicate separation.
-                 // Steno rules: TPH-LG. 
-                 // If we just have TPH, it is TPH. 
-                 // If we have LG, it is -LG.
-                 // So if we are traversing and we hit a right-side key that is present,
-                 // and we haven't seen middle keys, we must have a hyphen before it.
-                 // BUT if we have NO left keys, does it matter? Yes -LG.
-                 
-                 // So, if we are at a right side key, and it is present, and !hasMiddle, 
-                 // we prepend hyphen if not already added.
                  if (strokeKeys.has(k)) {
                      strokeStr += "-";
                      insertedHyphen = true;

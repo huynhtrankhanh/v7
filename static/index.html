@@ -64,6 +64,30 @@
             color: #999;
             opacity: 0.6;
         }
+        #text-input {
+            flex-grow: 1;
+            padding: 20px;
+            font-size: 1.5rem;
+            line-height: 1.6;
+            box-sizing: border-box;
+            display: none; /* Hidden by default */
+            font-family: inherit;
+            border: none;
+            outline: none;
+            resize: none;
+        }
+        #cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.2em;
+            background-color: black;
+            animation: blink 1s step-end infinite;
+            vertical-align: text-bottom;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
         @media (max-width: 600px) {
             #text-display {
                 font-size: 1.2rem;
@@ -75,11 +99,16 @@
             .candidate {
                 padding: 10px;
             }
+            #text-input {
+                font-size: 1.2rem;
+                padding: 15px;
+            }
         }
     </style>
 </head>
 <body>
     <div id="text-display">Type with your steno keyboard...</div>
+    <textarea id="text-input"></textarea>
     <div id="candidate-area">
         <div class="candidate">Candidates will appear here...</div>
     </div>

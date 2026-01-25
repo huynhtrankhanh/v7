@@ -52,6 +52,33 @@ The demo uses a QWERTY-to-Steno mapping:
 | `N` | `E` | `Space` | `*` |
 | `M` | `U` | | |
 
+### Space & Newline
+- `S-P`: Inserts a space.
+- `Enter`: Inserts a newline.
+
+### Escape Hatch
+- Stroke `#S-`: 
+    - Selects the top candidate if any.
+    - Collapses all ambiguity.
+    - Clears the undo buffer.
+    - Switches to a raw text area for direct typing.
+    - Press `Esc` to return to steno mode (undo buffer remains empty).
+
+### Literal Uppercase
+- `Shift + [Letter]`: Appends the uppercase letter literally. A space is automatically inserted if needed.
+
+### Punctuation
+Standard steno chords for punctuation:
+- `TP-PL`: Period (`. `)
+- `KW-BG`: Comma (`, `)
+- `KW-PL`: Question mark (`? `)
+- `TP-BG`: Exclamation mark (`! `)
+
+These rules automatically include a following space and avoid double-spacing when combined with other inputs.
+
+### Shortcuts
+- `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
+
 ## Stenography Rules
 
 The system parses strokes greedily in the following order: **Initial Consonant** (longest match) -> **Vowel** (longest match) -> **Final Consonant** (longest match) -> **Tone** (remaining keys).
