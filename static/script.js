@@ -488,6 +488,14 @@ function handleChord(stroke) {
 }
 
 async function runInference() {
+    // Optimization: If no V7 islands, skip inference
+    const hasV7 = state.islands.some(i => i.isV7);
+    if (!hasV7) {
+        state.candidates = [];
+        updateDisplay();
+        return;
+    }
+
     try {
         // Convert client islands to server format [Fixed, V7, Fixed...]
         const serverIslands = convertIslandsForInference(state.islands);
