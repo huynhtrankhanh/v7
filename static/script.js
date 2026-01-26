@@ -286,10 +286,79 @@ function getV7FromStroke(stroke) {
     return consA + vowelCharA + remapTone(tA) + consB + vowelCharB + remapTone(tB);
 }
 
+// --- Island Logic ---
+
+function createIsland(type, value, isV7 = false) {
+    return { type, value, isV7 };
+}
+
+function shouldAddSpace(prev, curr) {
+    if (!prev || !curr) return false;
+    if (prev.value === "" && !prev.isV7) return false;
+    // Spacing Island (space/newline) never needs added space around it
+    if (prev.type === 'spacing' || curr.type === 'spacing') return false;
+
+    // Punctuation
+    if (curr.type === 'punctuation') return false; // No space before punct
+    if (prev.type === 'punctuation') return true;  // Space after punct (unless curr is spacing, handled above)
+
+    // Capital
+    if (prev.type === 'capital') {
+        // No space between capitals
+        if (curr.type === 'capital') return false;
+        // Capital -> Viet: No space (e.g. "The")
+        return false;
+    }
+
+    // Vietnamese (or generic Text)
+    if (prev.type === 'vietnamese') {
+        // Viet -> Viet: Space
+        if (curr.type === 'vietnamese') return true;
+        // Viet -> Capital: Space
+        if (curr.type === 'capital') return true;
+    }
+
+    return false;
+}
+
+function convertIslandsForInference(islands) {
+    const serverIslands = [];
+    let currentFixed = "";
+
+    for (let i = 0; i < islands.length; i++) {
+        const curr = islands[i];
+
+        if (curr.isV7) {
+            // V7 Island: Must be in V7 slot (odd index)
+            // If currentFixed is not empty, push it (even index)
+            // But check spacing between previous item and this V7
+            const prev = i > 0 ? islands[i-1] : null;
+            if (prev && shouldAddSpace(prev, curr)) {
+                currentFixed += " ";
+            }
+
+            serverIslands.push(currentFixed);
+            serverIslands.push(curr.value);
+            currentFixed = "";
+        } else {
+            // Fixed Island (Viet/Punct/Cap/Space)
+            // Append to currentFixed
+            const prev = i > 0 ? islands[i-1] : null;
+            if (prev && shouldAddSpace(prev, curr)) {
+                currentFixed += " ";
+            }
+            currentFixed += curr.value;
+        }
+    }
+
+    serverIslands.push(currentFixed);
+    return serverIslands;
+}
+
 // --- App State ---
 
 let state = {
-    islands: [""],
+    islands: [createIsland('vietnamese', '')], // Start with empty generic island
     candidates: []
 };
 let history = [];
@@ -297,12 +366,14 @@ let isRawMode = false;
 
 function saveState(isReplace = false) {
     if (isReplace) {
-        history.push({ islands: [...state.islands] });
+        // Deep copy
+        history.push({ islands: state.islands.map(i => ({...i})) });
     } else {
+        // Optimization: ref, len, lastItem (copy object)
         history.push({
             islandsRef: state.islands,
             len: state.islands.length,
-            lastItem: state.islands.length > 0 ? state.islands[state.islands.length - 1] : null
+            lastItem: state.islands.length > 0 ? {...state.islands[state.islands.length - 1]} : null
         });
     }
 }
@@ -328,20 +399,8 @@ function restoreState() {
 // --- Logic ---
 
 function appendText(text) {
-    if (state.islands.length % 2 === 0) {
-        // We are at a V7 island index (though usually we shouldn't be appending fixed text here unless transitioning?)
-        // Actually, V7 architecture assumes Fixed - V7 - Fixed - V7 ...
-        // If we append fixed text, we usually append to the last Fixed island (odd index? No, index 0 is Fixed).
-        // 0: Fixed. 1: V7. 2: Fixed. 
-        // If length is even (2), we are about to push a fixed text island at index 2.
-        state.islands.push(text);
-    } else {
-        // Length is odd (e.g., 1). Last item is Fixed (index 0).
-        const current = state.islands[state.islands.length - 1];
-        // Don't add space if current is empty or ends with space/newline
-        const needsSpace = current.length > 0 && !current.endsWith(" ") && !current.endsWith("\n");
-        state.islands[state.islands.length - 1] = current + (needsSpace ? " " : "") + text;
-    }
+    // Append a new Vietnamese (generic text) island
+    state.islands.push(createIsland('vietnamese', text));
 }
 
 function handleChord(stroke) {
@@ -379,39 +438,29 @@ function handleChord(stroke) {
     // 2. Space Stroke: S-P
     if (stroke === "S-P") {
         saveState();
-        // Force append a space
-        if (state.islands.length % 2 === 0) {
-             state.islands.push(" ");
-        } else {
-             state.islands[state.islands.length - 1] += " ";
-        }
-        runInference(); // Update context if needed? Mostly just text update.
+        state.islands.push(createIsland('spacing', ' '));
+        runInference();
         updateDisplay();
         return;
     }
 
     // 3. Punctuation
     const punctuationMap = {
-        "TP-PL": ". ",
-        "KW-BG": ", ",
-        "KW-PL": "? ",
-        "TP-BG": "! "
+        "TP-PL": ".",
+        "KW-BG": ",",
+        "KW-PL": "?",
+        "TP-BG": "!"
     };
 
     if (punctuationMap[stroke]) {
-        // Fix: Auto-select candidate if present
+        // Auto-select candidate if present
         if (state.candidates.length > 0) {
             selectCandidate(0);
         }
 
         saveState();
         const punct = punctuationMap[stroke];
-        // Append punctuation directly, handling spacing carefully
-        if (state.islands.length % 2 === 0) {
-             state.islands.push(punct);
-        } else {
-             state.islands[state.islands.length - 1] += punct;
-        }
+        state.islands.push(createIsland('punctuation', punct));
         updateDisplay();
         return;
     }
@@ -420,12 +469,7 @@ function handleChord(stroke) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
             saveState();
-            if (state.islands.length % 2 !== 0) {
-                state.islands.push(v7Code);
-            } else {
-                state.islands.push("");
-                state.islands.push(v7Code);
-            }
+            state.islands.push(createIsland('vietnamese', v7Code, true));
             runInference();
             return;
         }
@@ -445,10 +489,13 @@ function handleChord(stroke) {
 
 async function runInference() {
     try {
+        // Convert client islands to server format [Fixed, V7, Fixed...]
+        const serverIslands = convertIslandsForInference(state.islands);
+
         const resp = await fetch("/infer", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ islands: state.islands })
+            body: JSON.stringify({ islands: serverIslands })
         });
         const data = await resp.json();
         state.candidates = data.candidates;
@@ -460,9 +507,11 @@ async function runInference() {
 
 function selectCandidate(index) {
     if (!state.candidates[index]) return;
-    const chosenText = state.candidates[index].filter(s => s.length > 0).join(" ");
+    // state.candidates[index] is array of strings [Fixed, V7, Fixed...] from server response
+    // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
+    const chosenText = state.candidates[index].join("");
     saveState(true);
-    state.islands = [chosenText];
+    state.islands = [createIsland('vietnamese', chosenText)];
     state.candidates = [];
     updateDisplay();
 }
@@ -499,16 +548,26 @@ function updateDisplay() {
     let text = "";
     if (state.candidates.length > 0) {
         // Preview top candidate
-        text = state.candidates[0].filter(s => s.length > 0).join(" ");
+        // state.candidates[0] is array of strings. Join them.
+        text = state.candidates[0].join("");
     } else {
-        // Fallback: Show all islands, wrapping V7 codes in brackets
-        // Fix: Don't add space if previous island ends with newline
-        text = state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s)
-            .reduce((acc, curr) => {
-                if (acc === "") return curr;
-                if (acc.endsWith("\n")) return acc + curr;
-                return acc + " " + curr;
-            }, "");
+        // Fallback: Show all islands using spacing rules
+        text = "";
+        for (let i = 0; i < state.islands.length; i++) {
+            const curr = state.islands[i];
+            const prev = i > 0 ? state.islands[i-1] : null;
+
+            if (prev && shouldAddSpace(prev, curr)) {
+                text += " ";
+            }
+
+            // For V7 islands not yet inferred/candidate-selected, show code in brackets?
+            if (curr.isV7) {
+                text += "[" + curr.value + "]";
+            } else {
+                text += curr.value;
+            }
+        }
     }
     
     if (isRawMode) {
@@ -533,7 +592,10 @@ function updateDisplay() {
         cursor.id = "cursor";
         display.appendChild(cursor);
 
-        if (text === "" && state.islands.length === 1 && state.islands[0] === "") {
+        // Check if empty (single empty Viet island)
+        const isEmpty = state.islands.length === 1 && state.islands[0].value === "" && !state.islands[0].isV7;
+
+        if (text === "" && isEmpty) {
             const placeholder = document.createElement("span");
             placeholder.textContent = "Start typing with your steno keyboard...";
             placeholder.style.color = "#999";
@@ -551,7 +613,8 @@ function updateDisplay() {
         if (state.candidates.length > 0) {
             // Calculate common prefix for top 5 candidates
             const visibleCandidates = state.candidates.slice(0, 5);
-            const candStrings = visibleCandidates.map(c => c.filter(s => s.length > 0).join(" ") || " ");
+            // Each candidate is array of strings. Join them.
+            const candStrings = visibleCandidates.map(c => c.join(""));
             const prefix = getCommonPrefix(candStrings);
 
             // Check if candidates are short enough for horizontal display
@@ -639,14 +702,18 @@ document.addEventListener("keydown", (e) => {
     if (e.ctrlKey && e.key === 'c') {
         // Copy entire buffer if nothing selected
         if (!window.getSelection().toString()) {
-            const textToCopy = state.candidates.length > 0 
-                ? state.candidates[0].filter(s => s.length > 0).join(" ") 
-                : state.islands.map((s, i) => i % 2 !== 0 ? "[" + s + "]" : s)
-                    .reduce((acc, curr) => {
-                        if (acc === "") return curr;
-                        if (acc.endsWith("\n")) return acc + curr;
-                        return acc + " " + curr;
-                    }, "");
+            let textToCopy = "";
+            if (state.candidates.length > 0) {
+                 textToCopy = state.candidates[0].join("");
+            } else {
+                 for (let i = 0; i < state.islands.length; i++) {
+                     const curr = state.islands[i];
+                     const prev = i > 0 ? state.islands[i-1] : null;
+                     if (prev && shouldAddSpace(prev, curr)) textToCopy += " ";
+                     if (curr.isV7) textToCopy += "[" + curr.value + "]";
+                     else textToCopy += curr.value;
+                 }
+            }
             
             navigator.clipboard.writeText(textToCopy).catch(err => {
                 console.error('Failed to copy: ', err);
@@ -665,7 +732,7 @@ document.addEventListener("keydown", (e) => {
              const newText = textArea.value;
              
              // Update state
-             state.islands = [newText];
+             state.islands = [createIsland('vietnamese', newText)];
              state.candidates = [];
              history = []; // Clear undo
              isRawMode = false;
@@ -683,7 +750,7 @@ document.addEventListener("keydown", (e) => {
          // Should we check if it is part of steno?
          // User requested: "SHIFT+ a letter to append an upper case letter literally."
          saveState();
-         appendText(e.key.toUpperCase());
+         state.islands.push(createIsland('capital', e.key.toUpperCase()));
          updateDisplay();
          e.preventDefault();
          return;
@@ -692,11 +759,7 @@ document.addEventListener("keydown", (e) => {
     // Handle Enter for Newline
     if (e.key === "Enter") {
         saveState();
-        if (state.islands.length % 2 === 0) {
-             state.islands.push("\n");
-        } else {
-             state.islands[state.islands.length - 1] += "\n";
-        }
+        state.islands.push(createIsland('spacing', '\n'));
         updateDisplay();
         e.preventDefault();
         return;

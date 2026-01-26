@@ -12,7 +12,8 @@ window.parse = parse;
 window.assemble = assemble;
 window.handleChord = handleChord;
 window.state = state;
-window.resetState = () => { state.islands = [""]; state.candidates = []; };
+window.createIsland = createIsland;
+window.resetState = () => { state.islands = [createIsland('vietnamese', '')]; state.candidates = []; };
 // Mock fetch
 window.fetch = jest.fn(() => Promise.resolve({ json: () => Promise.resolve({ candidates: [] }) }));
 `;
@@ -31,13 +32,15 @@ describe('Frontend Capitalization Feature', () => {
     test('Fixed text stroke without # is lowercase', () => {
         // Stroke: "TA" -> "ta"
         window.handleChord("TA");
-        expect(window.state.islands[0]).toBe("ta");
+        // Initial state is [Viet("")], append pushes [Viet("ta")]
+        // So index 1
+        expect(window.state.islands[window.state.islands.length - 1].value).toBe("ta");
     });
 
     test('Fixed text stroke WITH # is Capitalized', () => {
         // Stroke: "#TA" -> "Ta"
         window.handleChord("#TA");
-        expect(window.state.islands[0]).toBe("Ta");
+        expect(window.state.islands[window.state.islands.length - 1].value).toBe("Ta");
     });
 
     test('Complex syllable with #', () => {
@@ -46,6 +49,6 @@ describe('Frontend Capitalization Feature', () => {
         // Stroke: "HAS".
         // With #: "#HAS". -> "Hà"
         window.handleChord("#HAS");
-        expect(window.state.islands[0]).toBe("Hà");
+        expect(window.state.islands[window.state.islands.length - 1].value).toBe("Hà");
     });
 });

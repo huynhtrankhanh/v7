@@ -11,6 +11,7 @@ let scriptContent = fs.readFileSync(scriptPath, 'utf8');
 // Append code to expose internals to window for testing
 scriptContent += `
 window.state = state;
+window.createIsland = createIsland;
 window.handleChord = handleChord;
 window.updateDisplay = updateDisplay;
 window.isRawMode = () => isRawMode; // Getter since it's a let
@@ -54,7 +55,7 @@ describe('V7 Frontend UX', () => {
     
     beforeEach(() => {
         // Reset state
-        window.state.islands = [""];
+        window.state.islands = [window.createIsland('vietnamese', '')];
         window.state.candidates = [];
         window.getStenoHistory().length = 0;
         window.setIsRawMode(false);
@@ -65,7 +66,7 @@ describe('V7 Frontend UX', () => {
 
     test('Escape Hatch (#S) triggers raw mode and clears undo', () => {
         // Setup initial state with some history
-        window.state.islands = ["hello"];
+        window.state.islands = [window.createIsland('vietnamese', 'hello')];
         window.getStenoHistory().push("some_state");
         
         window.handleChord("#S-");
@@ -88,42 +89,50 @@ describe('V7 Frontend UX', () => {
         document.dispatchEvent(event);
         
         expect(window.isRawMode()).toBe(false);
-        expect(window.state.islands[0]).toBe("hello world");
+        expect(window.state.islands[0].value).toBe("hello world");
         expect(document.getElementById('text-display').style.display).toBe('block');
         // Undo should be empty upon exit
         expect(window.getStenoHistory().length).toBe(0);
     });
 
     test('Space stroke (S-P) adds space', () => {
-        window.state.islands = ["hello"];
+        window.state.islands = [window.createIsland('vietnamese', 'hello')];
         window.handleChord("S-P");
-        expect(window.state.islands[0]).toBe("hello ");
+        // [Viet('hello'), Space(' ')]
+        expect(window.state.islands[1].type).toBe("spacing");
+        expect(window.state.islands[1].value).toBe(" ");
     });
 
     test('Punctuation TP-PL adds dot and handles spacing', () => {
-        window.state.islands = ["hello"];
+        window.state.islands = [window.createIsland('vietnamese', 'hello')];
         window.handleChord("TP-PL"); // Period
-        expect(window.state.islands[0]).toBe("hello. ");
+        // [Viet('hello'), Punct('.')]
+        expect(window.state.islands[1].type).toBe("punctuation");
+        expect(window.state.islands[1].value).toBe(".");
+        // Spacing rules will render it as "hello." (no space before punct)
     });
 
     test('Enter key adds newline', () => {
-        window.state.islands = ["line1"];
+        window.state.islands = [window.createIsland('vietnamese', 'line1')];
         const event = new KeyboardEvent('keydown', { key: 'Enter' });
         document.dispatchEvent(event);
         
-        expect(window.state.islands[0]).toBe("line1\n");
+        expect(window.state.islands[1].type).toBe("spacing");
+        expect(window.state.islands[1].value).toBe("\n");
     });
 
     test('Shift+Letter appends literal uppercase', () => {
-        window.state.islands = ["abc"];
+        window.state.islands = [window.createIsland('vietnamese', 'abc')];
         const event = new KeyboardEvent('keydown', { key: 'A', shiftKey: true });
         document.dispatchEvent(event);
         
-        expect(window.state.islands[0]).toBe("abc A");
+        // [Viet('abc'), Cap('A')]
+        expect(window.state.islands[1].type).toBe("capital");
+        expect(window.state.islands[1].value).toBe("A");
     });
 
     test('Ctrl+C copies buffer', () => {
-        window.state.islands = ["copy me"];
+        window.state.islands = [window.createIsland('vietnamese', 'copy me')];
         // Mock selection to be empty
         window.getSelection = jest.fn().mockReturnValue({ toString: () => "" });
         
