@@ -25,3 +25,5 @@ Now here are the spacing rules:
 * Spacing islands sitting together should have no space in between.
 
 You get the general tenor. I haven't specified all the rules. But you are to modify the frontend code to implement these islands, and sensible spacing rules, and then document them in README_WEB.md. The goal is to prevent unnecessary double spacing.
+
+**Note on backend:** You are to run the whole compilation pipeline for the backend, but then you generate a dummy binary.lm file for the language model. This way you can do end to end tests. Do not commit any changes to the backend. This is just a rule to make it possible for you to test the application in an end to end manner.
