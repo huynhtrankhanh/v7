@@ -12,7 +12,27 @@ The web demo provides a real-time stenographic input interface for the V7 infere
 - **Ambiguity Management:** Presents up to 5 candidates for V7 islands.
 - **Seamless Mode Switching:** Automatically switches between fully specified syllables (fixed text) and partially specified V7 islands based on the input chord.
 - **History & Undo:** Supports undoing the last action (syllable entry, V7 island entry, or candidate selection) using the `*` key.
+- **Smart Spacing:** Automatically manages spacing between different types of content (Vietnamese text, punctuation, capitals) to prevent double spacing.
 - **Mobile Friendly:** Optimized for display on mobile devices with external keyboards.
+
+## Island Types & Spacing Rules
+
+The frontend organizes text into "islands" to manage spacing intelligently. The types are:
+
+*   **Vietnamese:** Whole syllables or V7 partially specified syllable pairs.
+*   **Punctuation:** `.` `,` `!` `?`.
+*   **Capital Letter:** Literal uppercase letters.
+*   **Spacing:** Explicit Space or Newline.
+
+**Spacing Rules:**
+*   **Vietnamese ↔ Vietnamese:** Space added.
+*   **Vietnamese → Capital:** Space added (e.g., `Xin Chào`).
+*   **Punctuation → Vietnamese:** Space added (e.g., `. Xin`).
+*   **Punctuation → Capital:** Space added (e.g., `. A`).
+*   **Capital → Capital:** No space (e.g., `USA`).
+*   **Capital → Vietnamese:** No space (e.g., `The`).
+*   **Punctuation → Punctuation:** No space.
+*   **Any ↔ Spacing:** No extra space added.
 
 ## Getting Started
 
@@ -53,8 +73,8 @@ The demo uses a QWERTY-to-Steno mapping:
 | `M` | `U` | | |
 
 ### Space & Newline
-- `S-P`: Inserts a space.
-- `Enter`: Inserts a newline.
+- `S-P`: Inserts a Space Island.
+- `Enter`: Inserts a Newline Island.
 
 ### Escape Hatch
 - Stroke `#S-`: 
@@ -65,16 +85,16 @@ The demo uses a QWERTY-to-Steno mapping:
     - Press `Esc` to return to steno mode (undo buffer remains empty).
 
 ### Literal Uppercase
-- `Shift + [Letter]`: Appends the uppercase letter literally. A space is automatically inserted if needed.
+- `Shift + [Letter]`: Appends the uppercase letter literally as a Capital Island. Spacing is determined by the spacing rules (e.g. no space if previous was capital).
 
 ### Punctuation
 Standard steno chords for punctuation:
-- `TP-PL`: Period (`. `)
-- `KW-BG`: Comma (`, `)
-- `KW-PL`: Question mark (`? `)
-- `TP-BG`: Exclamation mark (`! `)
+- `TP-PL`: Period (`.`)
+- `KW-BG`: Comma (`,`)
+- `KW-PL`: Question mark (`?`)
+- `TP-BG`: Exclamation mark (`!`)
 
-These rules automatically include a following space and avoid double-spacing when combined with other inputs.
+Punctuation marks are inserted as Punctuation Islands without trailing spaces. Spacing after punctuation is handled automatically by the spacing rules.
 
 ### Shortcuts
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
