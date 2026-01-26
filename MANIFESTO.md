@@ -21,4 +21,4 @@ By having these island types, we can have fine grained control over spacing.
 Now here are the spacing rules:
 
 * Capital letter islands sitting next to each other should have no space between them. A capital letter island sitting after a spacing island should have no additional space to separate, so as to prevent double spacing. If it sits after a Vietnamese island or a punctuation island, there should be a space in between.
-* Punctuation islands: When sitting after other island types, there should be no space in between. Other island types when sitting after punctuation islands generally choose to put a space in between.
+* Punctuation islands: When sitting after other island types, there should be no space in between. Other island types when sitting after punctuation islands generally choose to put a space in between, **except spacing islands, which already provide spacing on their own and as such do not warrant additional separating space.**
