@@ -54,7 +54,8 @@ describe('V7 Frontend Invalid Stroke Handling', () => {
         window.handleChord("TA");
         
         expect(window.getHistory().length).toBe(1);
-        expect(window.fetch).toHaveBeenCalled();
+        // Optimization: Fixed text strokes should NOT trigger inference
+        expect(window.fetch).not.toHaveBeenCalled();
     });
 
     test('Valid V7 stroke saves state', () => {
