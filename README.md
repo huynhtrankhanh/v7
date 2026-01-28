@@ -124,6 +124,13 @@ Returns a JSON array of candidate lists. Each list contains the predicted text f
 [["trời","tròn",...], ["đẹp","đến",...]]
 ```
 
+### Mocked Model Mode
+If the KenLM model file (`lm.binary`) is not available, or you wish to test the server integration without loading the heavy model, you can run the server in mocked mode. This mode uses a simple "dumb" inference strategy that returns valid candidates based on the dictionary but without context-aware scoring.
+
+```bash
+./inference-rs/target/release/inference-rs --server --server-with-mocked-model
+```
+
 ## V7 Input Format: Deep Dive
 
 The V7 format is a highly compressed phonetic coding system. Unlike standard Telex, it requires precise adherence to specific mapping rules for consonants, rimes, and tones.

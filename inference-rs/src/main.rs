@@ -36,6 +36,9 @@ struct Args {
 
     #[arg(long, default_value = "static")]
     static_dir: String,
+
+    #[arg(long)]
+    server_with_mocked_model: bool,
 }
 
 struct Tokenizer {
@@ -295,6 +298,42 @@ fn beam_search_v7_island<'a>(
     results
 }
 
+fn perform_mock_inference(
+    islands: &[String],
+    tokenizer: &Tokenizer,
+) -> Result<Vec<Vec<String>>> {
+    let mut decoded_islands = Vec::new();
+
+    for (i, segment) in islands.iter().enumerate() {
+        if i % 2 == 0 {
+            // Fixed text
+            decoded_islands.push(segment.clone());
+        } else {
+            // V7 Code Island
+            let templates = parse_v7_string(segment, tokenizer)?;
+            let mut words = Vec::new();
+            for template in templates {
+                let candidates_opt = get_candidates(&template, tokenizer);
+                if let Some(list) = candidates_opt {
+                    if let Some(first) = list.first() {
+                         words.push(first.clone());
+                    } else {
+                         // Fallback if list is empty
+                         words.push(segment.clone());
+                    }
+                } else {
+                     // Fallback if no candidates found
+                     words.push(segment.clone());
+                }
+            }
+            decoded_islands.push(words.join(" "));
+        }
+    }
+
+    // Return a single candidate containing the decoded islands
+    Ok(vec![decoded_islands])
+}
+
 fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
@@ -358,7 +397,7 @@ fn perform_inference(
 
 struct AppState {
     tokenizer: Tokenizer,
-    model: kenlm::Model,
+    model: Option<kenlm::Model>,
 }
 
 #[derive(Deserialize)]
@@ -380,7 +419,13 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
-    match perform_inference(&payload.islands, &state.tokenizer, &state.model, 100) {
+    let result = if let Some(model) = &state.model {
+        perform_inference(&payload.islands, &state.tokenizer, model, 100)
+    } else {
+        perform_mock_inference(&payload.islands, &state.tokenizer)
+    };
+
+    match result {
         Ok(candidates) => Json(InferResponse { candidates }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
@@ -404,8 +449,13 @@ async fn main() -> Result<()> {
     eprintln!("Loading tokenizer (from regexes)...");
     let tokenizer = Tokenizer::new(root)?;
     
-    eprintln!("Loading model from {}...", args.model_path);
-    let model = kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?;
+    let model = if args.server_with_mocked_model {
+        eprintln!("Mocked Model Mode enabled. Skipping KenLM load.");
+        None
+    } else {
+        eprintln!("Loading model from {}...", args.model_path);
+        Some(kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?)
+    };
 
     if args.server {
         let app_state = Arc::new(AppState {
@@ -446,7 +496,11 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
-        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
+        let candidates = if let Some(m) = &model {
+            perform_inference(&islands, &tokenizer, m, 100)?
+        } else {
+            perform_mock_inference(&islands, &tokenizer)?
+        };
         let duration = start_time.elapsed();
 
         if is_islands_mode {
