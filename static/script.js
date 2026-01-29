@@ -307,7 +307,7 @@ function shouldAddSpace(prev, curr) {
         // No space between capitals
         if (curr.type === 'capital') return false;
         // Capital -> Viet: No space (e.g. "The")
-        return false;
+        return true;
     }
 
     // Vietnamese (or generic Text)
