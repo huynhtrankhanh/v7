@@ -70,6 +70,7 @@ const vowelIntMap = {
 };
 
 // Emily symbols (subset mapping adapted from emily-symbols)
+const EMILY_ATTACHMENT_METHOD = "space";
 const EMILY_SYMBOLS = {
     // System / navigation
     "FG": ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
@@ -127,21 +128,22 @@ function handleEmilySymbol(stroke) {
     if (repeatKeys.includes("S")) repeat += 1;
     if (repeatKeys.includes("T")) repeat += 2;
 
-    // attachmentMethod = "space" per upstream default
-    const spaceBefore = attachments.includes("A");
-    const spaceAfter = attachments.includes("O");
+    const usesSpaceAttachment = EMILY_ATTACHMENT_METHOD === "space";
+    const spaceBefore = usesSpaceAttachment ? attachments.includes("A") : !attachments.includes("A");
+    const spaceAfter = usesSpaceAttachment ? attachments.includes("O") : !attachments.includes("O");
 
     let output = symbol.repeat(repeat);
 
     const capNext = capKey === "*";
+    const shouldApplySpacing = !["{*!}", "{*?}"].includes(symbol);
 
     // leftSpace/rightSpace tags for spacing engine
     return {
         type: 'emily',
         value: output,
-        leftSpace: spaceBefore,
-        rightSpace: spaceAfter,
-        explicitSpacing: true,
+        leftSpace: shouldApplySpacing ? spaceBefore : false,
+        rightSpace: shouldApplySpacing ? spaceAfter : false,
+        explicitSpacing: shouldApplySpacing,
         capNext
     };
 }
@@ -386,10 +388,8 @@ function shouldAddSpace(prev, curr) {
 
     // Capital (now includes numbers)
     if (prev.type === 'capital') {
-        // No space between capitals
-        if (curr.type === 'capital') return false;
-        // Capital -> Viet: No space (e.g. "The")
-        return true;
+        // No space between capitals or following text (e.g. "The")
+        return false;
     }
 
     // Vietnamese (or generic Text)
@@ -514,7 +514,7 @@ function handleChord(stroke) {
         return;
     }
     
-    // Check Selection
+    // Check Selection (allow explicit candidate selection; do not block other input)
     if (state.candidates.length > 0) {
         const candIndex = { "TK": 0, "PW": 1, "HR": 2, "-FR": 3, "-PB": 4 }[stroke];
         if (candIndex !== undefined) {
@@ -559,8 +559,13 @@ function handleChord(stroke) {
         if (emilyResult) {
             saveState();
             // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-            state.islands.push(createIsland(emilyResult.type, emilyResult.value));
+            state.islands.push(createIsland(emilyResult.type, emilyResult.value, false, {
+                leftSpace: emilyResult.leftSpace,
+                rightSpace: emilyResult.rightSpace,
+                explicitSpacing: emilyResult.explicitSpacing
+            }));
             state.pendingCapitalization = emilyResult.capNext || false;
+            runInference();
             updateDisplay();
             return;
         }
@@ -863,7 +868,7 @@ document.addEventListener("keydown", (e) => {
              saveState();
              const value = isNumber ? e.key : e.key.toUpperCase();
              state.islands.push(createIsland('capital', value));
-             updateDisplay();
+             runInference();
              e.preventDefault();
              return;
          }
@@ -873,6 +878,7 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
         saveState();
         state.islands.push(createIsland('spacing', '\n'));
+        runInference();
         updateDisplay();
         e.preventDefault();
         return;
@@ -887,7 +893,7 @@ document.addEventListener("keydown", (e) => {
         // Emit as capital/number island immediately
         saveState();
         state.islands.push(createIsland('capital', mapped));
-        updateDisplay();
+        runInference();
         e.preventDefault();
         return;
     }

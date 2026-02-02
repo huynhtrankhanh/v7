@@ -13,6 +13,7 @@ The web demo provides a real-time stenographic input interface for the V7 infere
 - **Seamless Mode Switching:** Automatically switches between fully specified syllables (fixed text) and partially specified V7 islands based on the input chord.
 - **History & Undo:** Supports undoing the last action (syllable entry, V7 island entry, or candidate selection) using the `*` key.
 - **Smart Spacing:** Automatically manages spacing between different types of content (Vietnamese text, punctuation, capitals) to prevent double spacing.
+- **Emily Symbols:** Supports Emily symbol strokes with configurable attachment spacing.
 - **Mobile Friendly:** Optimized for display on mobile devices with external keyboards.
 
 ## Island Types & Spacing Rules
@@ -23,6 +24,7 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 *   **Punctuation:** `.` `,` `!` `?`.
 *   **Capital Letter:** Literal uppercase letters.
 *   **Spacing:** Explicit Space or Newline.
+*   **Emily:** Emily symbol output (e.g. punctuation-like symbols with explicit attachment spacing).
 
 **Spacing Rules:**
 *   **Vietnamese ↔ Vietnamese:** Space added.
@@ -33,6 +35,7 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 *   **Capital → Vietnamese:** No space (e.g., `The`).
 *   **Punctuation → Punctuation:** No space.
 *   **Any ↔ Spacing:** No extra space added.
+*   **Emily Symbols:** Explicit attachment metadata controls whether spacing is added around the symbol.
 
 ## Getting Started
 
@@ -95,6 +98,15 @@ Standard steno chords for punctuation:
 - `TP-BG`: Exclamation mark (`!`)
 
 Punctuation marks are inserted as Punctuation Islands without trailing spaces. Spacing after punctuation is handled automatically by the spacing rules.
+
+### Emily Symbols
+Emily symbol strokes (starter `SKWH`) follow the upstream spacing behavior. Attachment keys control spacing around the symbol in the `space` attachment method:
+- No attachment keys: no surrounding spaces (symbol attaches to both sides).
+- `A`: insert space before the symbol.
+- `O`: insert space after the symbol.
+- `AO`: insert spaces on both sides.
+
+Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 
 ### Shortcuts
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.

@@ -112,6 +112,12 @@ describe('V7 Frontend UX', () => {
         // Spacing rules will render it as "hello." (no space before punct)
     });
 
+    test('Ambiguous input does not block keystrokes', () => {
+        window.state.candidates = [["cand1"], ["cand2"]];
+        window.handleChord("TA");
+        expect(window.state.islands[window.state.islands.length - 1].value).toBe("ta");
+    });
+
     test('Enter key adds newline', () => {
         window.state.islands = [window.createIsland('vietnamese', 'line1')];
         const event = new KeyboardEvent('keydown', { key: 'Enter' });
