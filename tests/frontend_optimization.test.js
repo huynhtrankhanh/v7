@@ -93,7 +93,7 @@ describe('Frontend Optimization', () => {
         const secondRequest = window.runInference();
 
         await secondRequest;
-        await firstRequest;
+        await expect(firstRequest).resolves.toBeUndefined();
 
         expect(firstSignal).toBeDefined();
         expect(firstSignal.aborted).toBe(true);

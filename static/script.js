@@ -644,7 +644,7 @@ async function runInference() {
         }
         console.error("Inference failed", e);
     } finally {
-        if (requestController && requestController === inferenceAbortController && !requestController.signal.aborted) {
+        if (requestController && requestController === inferenceAbortController) {
             inferenceAbortController = null;
         }
     }
