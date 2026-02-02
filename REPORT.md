@@ -11,9 +11,9 @@ Stripped Plover is a headless, STDIO-based stenography translation engine that s
 - **SQLite-backed dictionaries** loaded through `import_dictionary` calls.
 
 ## Observed Constraints
-- **Not browser-native**: Requires Node.js + SQLite; must run on server/sidecar.
+- **Not browser-native**: requires Node.js + SQLite; must run on server/sidecar.
 - **Stateful per client**: A single Stripped Plover process maintains state; multiple users need separate instances or per-session state handling.
-- **License**: Stripped Plover is GPLv2+ licensed, while this repo is 0BSD. Integrating it directly (bundling) may require legal review. Using it as a separate process over IPC can limit license contagion, but still needs review.
+- **License**: Stripped Plover is GPLv2+ licensed, while this repo is 0BSD. Integrating it directly (bundling) may require legal review. Using it as a separate process over IPC can limit license contagion, but still needs review. **Recommendation**: obtain legal guidance before any integration work.
 
 ## Proposed Integration Architecture
 ### 1) Backend Bridge
