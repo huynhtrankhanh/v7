@@ -449,7 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
-// Feature detection is performed once at module initialization for performance.
+// Feature detection is performed once to keep behavior consistent during this module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
@@ -632,15 +632,13 @@ async function runInference() {
         const fetchOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ islands: serverIslands })
+            body: JSON.stringify({ islands: serverIslands }),
+            ...(controller ? { signal: controller.signal } : {})
         };
-        if (controller) {
-            fetchOptions.signal = controller.signal;
-        }
 
         const resp = await fetch("/infer", fetchOptions);
         if (isStaleInference(controller)) {
-            // Ignore stale responses from superseded requests.
+            // A newer inference request has started; discard this response.
             return;
         }
         const data = await resp.json();
