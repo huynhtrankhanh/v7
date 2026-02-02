@@ -449,7 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
-// Feature detection is cached since AbortController availability won't change at runtime.
+// Feature detection is performed once at module initialization for performance.
 const hasAbortController = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
@@ -640,6 +640,9 @@ async function runInference() {
             return;
         }
         const data = await resp.json();
+        if (controller && controller !== inferenceAbortController) {
+            return;
+        }
         state.candidates = data.candidates;
         updateDisplay();
     } catch (e) {
