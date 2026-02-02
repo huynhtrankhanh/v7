@@ -390,7 +390,7 @@ function shouldAddSpace(prev, curr) {
     // Capital (now includes numbers)
     if (prev.type === 'capital') {
         // No space between capitals or following text (e.g. "The")
-        if (curr.type === 'capital' || curr.type === 'vietnamese') return false;
+        if (curr.type === 'capital') return false;
         return true;
     }
 
