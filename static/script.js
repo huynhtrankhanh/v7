@@ -449,7 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
-const canAbortInference = typeof AbortController !== "undefined";
+const isAbortControllerAvailable = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -613,7 +613,7 @@ async function runInference() {
     if (inferenceAbortController) {
         inferenceAbortController.abort();
     }
-    const controller = canAbortInference ? new AbortController() : null;
+    const controller = isAbortControllerAvailable ? new AbortController() : null;
     inferenceAbortController = controller;
     const requestController = controller;
 
@@ -630,9 +630,7 @@ async function runInference() {
             fetchOptions.signal = requestController.signal;
         }
 
-        const resp = await fetch("/infer", {
-            ...fetchOptions
-        });
+        const resp = await fetch("/infer", fetchOptions);
         const data = await resp.json();
         if (requestController && requestController !== inferenceAbortController) {
             // Ignore stale responses from superseded requests.
