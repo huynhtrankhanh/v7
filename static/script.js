@@ -448,6 +448,9 @@ let state = {
 };
 let history = [];
 let isRawMode = false;
+let inferenceAbortController = null;
+// Feature detection is performed once to keep behavior consistent for the module's lifetime.
+const hasAbortController = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -491,6 +494,19 @@ function appendText(text) {
     }
     // Append a new Vietnamese (generic text) island
     state.islands.push(createIsland('vietnamese', text));
+}
+
+function abortInferenceRequest(clearController) {
+    if (inferenceAbortController) {
+        inferenceAbortController.abort();
+        if (clearController) {
+            inferenceAbortController = null;
+        }
+    }
+}
+
+function isStaleInference(controller) {
+    return controller && controller !== inferenceAbortController;
 }
 
 function handleChord(stroke) {
@@ -599,25 +615,49 @@ async function runInference() {
     // Optimization: If no V7 islands, skip inference
     const hasV7 = state.islands.some(i => i.isV7);
     if (!hasV7) {
+        abortInferenceRequest(true);
         state.candidates = [];
         updateDisplay();
         return;
     }
 
+    abortInferenceRequest(false);
+    const controller = hasAbortController ? new AbortController() : null;
+    inferenceAbortController = controller;
+
     try {
         // Convert client islands to server format [Fixed, V7, Fixed...]
         const serverIslands = convertIslandsForInference(state.islands);
 
-        const resp = await fetch("/infer", {
+        const fetchOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ islands: serverIslands })
-        });
+            body: JSON.stringify({ islands: serverIslands }),
+            ...(controller ? { signal: controller.signal } : {})
+        };
+
+        const resp = await fetch("/infer", fetchOptions);
+        if (isStaleInference(controller)) {
+            // A newer inference request has started; discard this response.
+            return;
+        }
         const data = await resp.json();
+        if (isStaleInference(controller)) {
+            // A newer request may have started while parsing the response.
+            return;
+        }
         state.candidates = data.candidates;
         updateDisplay();
     } catch (e) {
+        if (e && e.name === "AbortError") {
+            return;
+        }
         console.error("Inference failed", e);
+    } finally {
+        if (controller && controller === inferenceAbortController) {
+            // Only clear if this is still the latest inference request.
+            inferenceAbortController = null;
+        }
     }
 }
 
