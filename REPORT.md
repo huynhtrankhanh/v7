@@ -13,7 +13,7 @@ Stripped Plover is a headless, STDIO-based stenography translation engine that s
 ## Observed Constraints
 - **Not browser-native**: requires Node.js + SQLite; must run on server/sidecar.
 - **Stateful per client**: A single Stripped Plover process maintains state; multiple users need separate instances or per-session state handling.
-- **License**: Stripped Plover is GPLv2+ licensed, while this repo is 0BSD. Integrating it directly (bundling) may require legal review. Using it as a separate process over IPC can limit license contagion, but still needs review. **Recommendation**: obtain legal guidance before any integration work.
+- **License**: Stripped Plover is GPLv2+ licensed, while this repo is 0BSD. Integrating it directly (bundling) may require legal review. Using it as a separate process over IPC can limit licensing implications, but still needs review. **Recommendation**: obtain legal guidance before any integration work.
 
 ## Proposed Integration Architecture
 ### 1) Backend Bridge
@@ -41,7 +41,7 @@ Stripped Plover is a headless, STDIO-based stenography translation engine that s
 The current QWERTY → steno conversion already constructs a Plover-style stroke string (e.g., `S-P`, `TP-PL`, `*`). This can be reused for Stripped Plover with minor checks:
 - Ensure the stroke string uses RTFCRE ordering and inserts the hyphen when no vowel/asterisk is present (already done in `script.js`).
 - Preserve `*` for undo, and keep `-` for right-hand-only strokes.
-- For multi-stroke outlines, join strokes with `/` if you plan to buffer multiple strokes before calling `translate` (optional). This is useful when your UI already groups strokes into outlines (e.g., file replay), while live input can send strokes individually and let Stripped Plover maintain outline state.
+- For multi-stroke outlines, join strokes with `/` when you have an outline already buffered (e.g., file replay or batch import). For live input, send strokes individually so Stripped Plover can manage outline state and undo behavior stroke-by-stroke.
 
 ## Output Handling in the Web UI
 Stripped Plover responses include an `output` array (ordered):
