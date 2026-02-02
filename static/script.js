@@ -69,6 +69,83 @@ const vowelIntMap = {
     1: "a", 2: "o", 3: "i", 0: "e" // 0 can be e or u
 };
 
+// Emily symbols (subset mapping adapted from emily-symbols)
+const EMILY_SYMBOLS = {
+    // System / navigation
+    "FG": ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
+    "RPBG": ["{#Up}", "{#Left}", "{#Right}", "{#Down}"],
+    "FRPBG": ["{#Page_Up}", "{#Home}", "{#End}", "{#Page_Down}"],
+    "FRBG": ["{#AudioPlay}", "{#AudioPrev}", "{#AudioNext}", "{#AudioStop}"],
+    "FRB": ["{#AudioMute}", "{#AudioLowerVolume}", "{#AudioRaiseVolume}", "{#Eject}"],
+    "": ["", "{*!}", "{*?}", "{#Space}"],
+    "FL": ["{*-|}", "{*<}", "{<}", "{*>}"],
+    // Symbols
+    "FR": ["!", "¬", "↦", "¡"],
+    "FP": ["\"", "“", "”", "„"],
+    "FRLG": ["#", "©", "®", "™"],
+    "RPBL": ["$", "¥", "€", "£"],
+    "FRPB": ["%", "‰", "‱", "φ"],
+    "FBG": ["&", "∩", "∧", "∈"],
+    "F": ["'", "‘", "’", "‚"],
+    "FPL": ["(", "[", "<", "{"],
+    "RBG": [")", "]", ">", "}"],
+    "L": ["*", "∏", "§", "×"],
+    "G": ["+", "∑", "¶", "±"],
+    "B": [",", "∪", "∨", "∉"],
+    "PL": ["-", "−", "–", "—"],
+    "R": [".", "•", "·", "…"],
+    "RP": ["/", "⇒", "⇔", "÷"],
+    "LG": [":", "∋", "∵", "∴"],
+    "RB": [";", "∀", "∃", "∄"],
+    "PBLG": ["=", "≡", "≈", "≠"],
+    "FPB": ["?", "¿", "∝", "‽"],
+    "FRPBLG": ["@", "⊕", "⊗", "∅"],
+    "FB": ["\\", "Δ", "√", "∞"],
+    "RPG": ["^", "«", "»", "°"],
+    "BG": ["_", "≤", "≥", "µ"],
+    "P": ["`", "⊂", "⊃", "π"],
+    "PB": ["|", "⊤", "⊥", "¦"],
+    "FPBG": ["~", "⊆", "⊇", "˜"],
+    "FPBL": ["↑", "←", "→", "↓"]
+};
+
+function handleEmilySymbol(stroke) {
+    // stroke pattern: starter SKWH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
+    const match = stroke.match(/^([#]?SKWH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/);
+    if (!match) return null;
+    const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] = match;
+
+    if (!(pattern in EMILY_SYMBOLS)) return null;
+
+    let variant = 0;
+    if (variantKeys.includes("E")) variant += 1;
+    if (variantKeys.includes("U")) variant += 2;
+    const baseList = EMILY_SYMBOLS[pattern];
+    const symbol = Array.isArray(baseList) ? baseList[variant] : baseList;
+
+    let repeat = 1;
+    if (repeatKeys.includes("S")) repeat += 1;
+    if (repeatKeys.includes("T")) repeat += 2;
+
+    // attachmentMethod = "space" per upstream default
+    const spaceBefore = attachments.includes("A");
+    const spaceAfter = attachments.includes("O");
+
+    let output = symbol.repeat(repeat);
+
+    const capNext = capKey === "*";
+
+    // leftSpace/rightSpace tags for spacing engine
+    return {
+        type: 'emily',
+        value: output,
+        leftSpace: spaceBefore,
+        rightSpace: spaceAfter,
+        explicitSpacing: true,
+        capNext
+    };
+}
+
 // --- Parse / Assemble ---
 
 function parse(stroke) {
@@ -215,7 +292,7 @@ function assemble(parsed) {
         return toneAccents[parsed.vowel][parsed.tone];
     };
 
-    const final = () => {
+const final = () => {
         if (parsed.finalConsonant === "w") {
             if ([ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel)) {
                 return "u";
@@ -288,8 +365,8 @@ function getV7FromStroke(stroke) {
 
 // --- Island Logic ---
 
-function createIsland(type, value, isV7 = false) {
-    return { type, value, isV7 };
+function createIsland(type, value, isV7 = false, meta = {}) {
+    return { type, value, isV7, ...meta };
 }
 
 function shouldAddSpace(prev, curr) {
@@ -298,11 +375,16 @@ function shouldAddSpace(prev, curr) {
     // Spacing Island (space/newline) never needs added space around it
     if (prev.type === 'spacing' || curr.type === 'spacing') return false;
 
+    // Explicit spacing metadata (Emily symbols)
+    if (prev.explicitSpacing || curr.explicitSpacing) {
+        return !!(prev.rightSpace) || !!(curr.leftSpace);
+    }
+
     // Punctuation
     if (curr.type === 'punctuation') return false; // No space before punct
     if (prev.type === 'punctuation') return true;  // Space after punct (unless curr is spacing, handled above)
 
-    // Capital
+    // Capital (now includes numbers)
     if (prev.type === 'capital') {
         // No space between capitals
         if (curr.type === 'capital') return false;
@@ -359,23 +441,22 @@ function convertIslandsForInference(islands) {
 
 let state = {
     islands: [createIsland('vietnamese', '')], // Start with empty generic island
-    candidates: []
+    candidates: [],
+    pendingCapitalization: false
 };
 let history = [];
 let isRawMode = false;
 
 function saveState(isReplace = false) {
+    const snapshot = { pendingCapitalization: state.pendingCapitalization };
     if (isReplace) {
-        // Deep copy
-        history.push({ islands: state.islands.map(i => ({...i})) });
+        snapshot.islands = state.islands.map(i => ({...i}));
     } else {
-        // Optimization: ref, len, lastItem (copy object)
-        history.push({
-            islandsRef: state.islands,
-            len: state.islands.length,
-            lastItem: state.islands.length > 0 ? {...state.islands[state.islands.length - 1]} : null
-        });
+        snapshot.islandsRef = state.islands;
+        snapshot.len = state.islands.length;
+        snapshot.lastItem = state.islands.length > 0 ? {...state.islands[state.islands.length - 1]} : null;
     }
+    history.push(snapshot);
 }
 
 function restoreState() {
@@ -390,6 +471,9 @@ function restoreState() {
                 state.islands[snapshot.len - 1] = snapshot.lastItem;
             }
         }
+        if (snapshot.pendingCapitalization !== undefined) {
+            state.pendingCapitalization = snapshot.pendingCapitalization;
+        }
         state.candidates = [];
         updateDisplay();
         runInference();
@@ -399,6 +483,10 @@ function restoreState() {
 // --- Logic ---
 
 function appendText(text) {
+    if (state.pendingCapitalization && text.length > 0) {
+        text = text.charAt(0).toUpperCase() + text.slice(1);
+        state.pendingCapitalization = false;
+    }
     // Append a new Vietnamese (generic text) island
     state.islands.push(createIsland('vietnamese', text));
 }
@@ -463,6 +551,19 @@ function handleChord(stroke) {
         state.islands.push(createIsland('punctuation', punct));
         updateDisplay();
         return;
+    }
+
+    // Emily symbols starter: SKWH family
+    if (stroke.startsWith("SKWH")) {
+        const emilyResult = handleEmilySymbol(stroke);
+        if (emilyResult) {
+            saveState();
+            // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
+            state.islands.push(createIsland(emilyResult.type, emilyResult.value));
+            state.pendingCapitalization = emilyResult.capNext || false;
+            updateDisplay();
+            return;
+        }
     }
 
     if (stroke.includes("*")) {
@@ -699,6 +800,7 @@ function mapKeyUnique(k) {
     k = k.toLowerCase();
     if (k === "t" || k === "g") return "-D";
     if (k === "y" || k === "h") return "-Z";
+    if (k >= "0" && k <= "9") return k; // numbers handled as literal inputs
     return qwertyToUnique[k] || null;
 }
 
@@ -753,15 +855,18 @@ document.addEventListener("keydown", (e) => {
 
     if (e.repeat) return;
 
-    // Handle Literal Uppercase (Shift + Letter)
-    if (e.shiftKey && e.key.length === 1 && e.key.match(/[a-z]/i)) {
-         // Should we check if it is part of steno?
-         // User requested: "SHIFT+ a letter to append an upper case letter literally."
-         saveState();
-         state.islands.push(createIsland('capital', e.key.toUpperCase()));
-         updateDisplay();
-         e.preventDefault();
-         return;
+    // Handle Literal Uppercase (Shift + Letter) and literal numbers as capitals
+    if (e.key.length === 1) {
+         const isLetter = e.key.match(/[a-z]/i);
+         const isNumber = e.key.match(/[0-9]/);
+         if ((e.shiftKey && isLetter) || isNumber) {
+             saveState();
+             const value = isNumber ? e.key : e.key.toUpperCase();
+             state.islands.push(createIsland('capital', value));
+             updateDisplay();
+             e.preventDefault();
+             return;
+         }
     }
     
     // Handle Enter for Newline
@@ -777,6 +882,15 @@ document.addEventListener("keydown", (e) => {
     if (!mapped) return;
     
     heldKeys.add(mapped);
+    // Numbers should generate immediate capital island, not be part of steno chord
+    if (mapped.match(/^[0-9]$/)) {
+        // Emit as capital/number island immediately
+        saveState();
+        state.islands.push(createIsland('capital', mapped));
+        updateDisplay();
+        e.preventDefault();
+        return;
+    }
     strokeKeys.add(mapped);
     e.preventDefault();
 });
