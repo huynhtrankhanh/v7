@@ -64,4 +64,39 @@ describe('Frontend Optimization', () => {
 
         expect(window.fetch).toHaveBeenCalled();
     });
+
+    test('Should abort inflight inference when a new request starts', async () => {
+        window.state.islands.push(window.createIsland('vietnamese', 'na0', true));
+
+        let firstSignal;
+        let callCount = 0;
+        window.fetch = jest.fn((url, options = {}) => {
+            callCount += 1;
+            if (callCount === 1) {
+                firstSignal = options.signal;
+                return new Promise((resolve, reject) => {
+                    if (firstSignal) {
+                        firstSignal.addEventListener('abort', () => {
+                            const error = new Error('Aborted');
+                            error.name = 'AbortError';
+                            reject(error);
+                        });
+                    }
+                });
+            }
+            return Promise.resolve({
+                json: () => Promise.resolve({ candidates: [["second"]] })
+            });
+        });
+
+        const firstRequest = window.runInference();
+        const secondRequest = window.runInference();
+
+        await secondRequest;
+        await firstRequest;
+
+        expect(firstSignal).toBeDefined();
+        expect(firstSignal.aborted).toBe(true);
+        expect(window.state.candidates[0][0]).toBe("second");
+    });
 });

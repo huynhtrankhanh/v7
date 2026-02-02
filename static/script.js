@@ -448,6 +448,7 @@ let state = {
 };
 let history = [];
 let isRawMode = false;
+let inferenceAbortController = null;
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -599,25 +600,53 @@ async function runInference() {
     // Optimization: If no V7 islands, skip inference
     const hasV7 = state.islands.some(i => i.isV7);
     if (!hasV7) {
+        if (inferenceAbortController) {
+            inferenceAbortController.abort();
+            inferenceAbortController = null;
+        }
         state.candidates = [];
         updateDisplay();
         return;
     }
 
+    if (inferenceAbortController) {
+        inferenceAbortController.abort();
+    }
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    inferenceAbortController = controller;
+    const requestController = controller;
+
     try {
         // Convert client islands to server format [Fixed, V7, Fixed...]
         const serverIslands = convertIslandsForInference(state.islands);
 
-        const resp = await fetch("/infer", {
+        const fetchOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ islands: serverIslands })
+        };
+        if (requestController) {
+            fetchOptions.signal = requestController.signal;
+        }
+
+        const resp = await fetch("/infer", {
+            ...fetchOptions
         });
         const data = await resp.json();
+        if (requestController && requestController !== inferenceAbortController) {
+            return;
+        }
         state.candidates = data.candidates;
         updateDisplay();
     } catch (e) {
+        if (e && e.name === "AbortError") {
+            return;
+        }
         console.error("Inference failed", e);
+    } finally {
+        if (requestController && requestController === inferenceAbortController && !requestController.signal.aborted) {
+            inferenceAbortController = null;
+        }
     }
 }
 
