@@ -34,7 +34,7 @@ describe('Frontend Spacing Rules', () => {
     const P = (val) => ({ type: 'punctuation', value: val });
     const C = (val) => ({ type: 'capital', value: val });
     const S = (val) => ({ type: 'spacing', value: val });
-    const E = (val, meta = {}) => ({ type: 'emily', value: val, ...meta });
+    const Emily = (val, meta = {}) => ({ type: 'emily', value: val, ...meta });
 
     test('shouldAddSpace: Viet -> Viet (Space)', () => {
         expect(window.shouldAddSpace(V("Xin"), V("chao"))).toBe(true);
@@ -79,19 +79,19 @@ describe('Frontend Spacing Rules', () => {
     });
 
     test('shouldAddSpace: Emily symbols honor explicit spacing', () => {
-        const emily = E("&", { explicitSpacing: true, leftSpace: true, rightSpace: true });
+        const emily = Emily("&", { explicitSpacing: true, leftSpace: true, rightSpace: true });
         expect(window.shouldAddSpace(V("one"), emily)).toBe(true);
         expect(window.shouldAddSpace(emily, V("two"))).toBe(true);
     });
 
     test('shouldAddSpace: Emily attachment suppresses spaces', () => {
-        const emily = E("/", { explicitSpacing: true, leftSpace: false, rightSpace: false });
+        const emily = Emily("/", { explicitSpacing: true, leftSpace: false, rightSpace: false });
         expect(window.shouldAddSpace(V("usr"), emily)).toBe(false);
         expect(window.shouldAddSpace(emily, V("bin"))).toBe(false);
     });
 
     test('shouldAddSpace: Emily add/delete space macros skip spacing', () => {
-        const emily = E("{*!}", { explicitSpacing: false, leftSpace: false, rightSpace: false });
+        const emily = Emily("{*!}", { explicitSpacing: false, leftSpace: false, rightSpace: false });
         expect(window.shouldAddSpace(V("text"), emily)).toBe(false);
         expect(window.shouldAddSpace(emily, V("text"))).toBe(false);
     });
@@ -123,14 +123,14 @@ describe('Frontend Spacing Rules', () => {
     });
 
     test('convertIslandsForInference: Emily spacing applied around symbols', () => {
-        const emily = E("&", { explicitSpacing: true, leftSpace: true, rightSpace: true });
+        const emily = Emily("&", { explicitSpacing: true, leftSpace: true, rightSpace: true });
         const input = [V("one"), emily, V("two")];
         const output = window.convertIslandsForInference(input);
         expect(output).toEqual(["one & two"]);
     });
 
     test('convertIslandsForInference: Emily attachment keeps symbols tight', () => {
-        const emily = E("/", { explicitSpacing: true, leftSpace: false, rightSpace: false });
+        const emily = Emily("/", { explicitSpacing: true, leftSpace: false, rightSpace: false });
         const input = [V("usr"), emily, V("bin")];
         const output = window.convertIslandsForInference(input);
         expect(output).toEqual(["usr/bin"]);

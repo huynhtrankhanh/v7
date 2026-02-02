@@ -71,6 +71,7 @@ const vowelIntMap = {
 
 // Emily symbols (subset mapping adapted from emily-symbols)
 const EMILY_ATTACHMENT_METHOD = "space";
+const EMILY_NO_SPACING_SYMBOLS = ["{*!}", "{*?}"];
 const EMILY_SYMBOLS = {
     // System / navigation
     "FG": ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
@@ -135,7 +136,7 @@ function handleEmilySymbol(stroke) {
     let output = symbol.repeat(repeat);
 
     const capNext = capKey === "*";
-    const shouldApplySpacing = !["{*!}", "{*?}"].includes(symbol);
+    const shouldApplySpacing = !EMILY_NO_SPACING_SYMBOLS.includes(symbol);
 
     // leftSpace/rightSpace tags for spacing engine
     return {
@@ -389,7 +390,8 @@ function shouldAddSpace(prev, curr) {
     // Capital (now includes numbers)
     if (prev.type === 'capital') {
         // No space between capitals or following text (e.g. "The")
-        return false;
+        if (curr.type === 'capital' || curr.type === 'vietnamese') return false;
+        return true;
     }
 
     // Vietnamese (or generic Text)
