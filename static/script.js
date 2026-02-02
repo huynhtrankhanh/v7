@@ -449,7 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
-// Feature detection is performed once to keep behavior consistent during this module's lifetime.
+// Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
@@ -643,6 +643,7 @@ async function runInference() {
         }
         const data = await resp.json();
         if (isStaleInference(controller)) {
+            // A newer request may have started while parsing the response.
             return;
         }
         state.candidates = data.candidates;
@@ -654,6 +655,7 @@ async function runInference() {
         console.error("Inference failed", e);
     } finally {
         if (controller && controller === inferenceAbortController) {
+            // Only clear if this is still the latest inference request.
             inferenceAbortController = null;
         }
     }
