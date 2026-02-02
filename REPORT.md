@@ -41,7 +41,9 @@ Stripped Plover is a headless, STDIO-based stenography translation engine that s
 The current QWERTY → steno conversion already constructs a Plover-style stroke string (e.g., `S-P`, `TP-PL`, `*`). This can be reused for Stripped Plover with minor checks:
 - Ensure the stroke string uses RTFCRE ordering and inserts the hyphen when no vowel/asterisk is present (already done in `script.js`).
 - Preserve `*` for undo, and keep `-` for right-hand-only strokes.
-- Stroke handling options:\n  - **Buffered outlines**: join strokes with `/` when you already have the full outline (e.g., replaying stored steno logs) and send one `translate` request per outline.\n  - **Live input**: send strokes individually (no `/`) so Stripped Plover can manage outline state and undo behavior stroke-by-stroke.
+- Stroke handling options:
+  - **Buffered outlines**: join strokes with `/` when you already have the full outline (e.g., replaying stored steno logs) and send one `translate` request per outline.
+  - **Live input**: send strokes individually (no `/`) so Stripped Plover can manage outline state and undo behavior stroke-by-stroke.
 
 ## Output Handling in the Web UI
 Stripped Plover responses include an `output` array (ordered):
