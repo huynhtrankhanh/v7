@@ -505,6 +505,10 @@ function abortInferenceRequest(clearController) {
     }
 }
 
+function isStaleInference(controller) {
+    return controller && controller !== inferenceAbortController;
+}
+
 function handleChord(stroke) {
     // 1. Escape Hatch: #S
     if (stroke === "#S-" || stroke === "#S") {
@@ -635,12 +639,12 @@ async function runInference() {
         }
 
         const resp = await fetch("/infer", fetchOptions);
-        if (controller && controller !== inferenceAbortController) {
+        if (isStaleInference(controller)) {
             // Ignore stale responses from superseded requests.
             return;
         }
         const data = await resp.json();
-        if (controller && controller !== inferenceAbortController) {
+        if (isStaleInference(controller)) {
             return;
         }
         state.candidates = data.candidates;
