@@ -449,6 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
+const canAbortInference = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -612,7 +613,7 @@ async function runInference() {
     if (inferenceAbortController) {
         inferenceAbortController.abort();
     }
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const controller = canAbortInference ? new AbortController() : null;
     inferenceAbortController = controller;
     const requestController = controller;
 
@@ -634,6 +635,7 @@ async function runInference() {
         });
         const data = await resp.json();
         if (requestController && requestController !== inferenceAbortController) {
+            // Ignore stale responses from superseded requests.
             return;
         }
         state.candidates = data.candidates;
