@@ -449,7 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
-const isAbortControllerAvailable = typeof AbortController !== "undefined";
+const HAS_ABORT_CONTROLLER = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -613,9 +613,8 @@ async function runInference() {
     if (inferenceAbortController) {
         inferenceAbortController.abort();
     }
-    const controller = isAbortControllerAvailable ? new AbortController() : null;
+    const controller = HAS_ABORT_CONTROLLER ? new AbortController() : null;
     inferenceAbortController = controller;
-    const requestController = controller;
 
     try {
         // Convert client islands to server format [Fixed, V7, Fixed...]
@@ -626,13 +625,13 @@ async function runInference() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ islands: serverIslands })
         };
-        if (requestController) {
-            fetchOptions.signal = requestController.signal;
+        if (controller) {
+            fetchOptions.signal = controller.signal;
         }
 
         const resp = await fetch("/infer", fetchOptions);
         const data = await resp.json();
-        if (requestController && requestController !== inferenceAbortController) {
+        if (controller && controller !== inferenceAbortController) {
             // Ignore stale responses from superseded requests.
             return;
         }
@@ -644,7 +643,7 @@ async function runInference() {
         }
         console.error("Inference failed", e);
     } finally {
-        if (requestController && requestController === inferenceAbortController) {
+        if (controller && controller === inferenceAbortController) {
             inferenceAbortController = null;
         }
     }
