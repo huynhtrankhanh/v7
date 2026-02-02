@@ -449,6 +449,7 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
+// Feature detection is cached since AbortController availability won't change at runtime.
 const hasAbortController = typeof AbortController !== "undefined";
 
 function saveState(isReplace = false) {
@@ -493,6 +494,15 @@ function appendText(text) {
     }
     // Append a new Vietnamese (generic text) island
     state.islands.push(createIsland('vietnamese', text));
+}
+
+function abortInferenceRequest(clearController) {
+    if (inferenceAbortController) {
+        inferenceAbortController.abort();
+        if (clearController) {
+            inferenceAbortController = null;
+        }
+    }
 }
 
 function handleChord(stroke) {
@@ -601,18 +611,13 @@ async function runInference() {
     // Optimization: If no V7 islands, skip inference
     const hasV7 = state.islands.some(i => i.isV7);
     if (!hasV7) {
-        if (inferenceAbortController) {
-            inferenceAbortController.abort();
-            inferenceAbortController = null;
-        }
+        abortInferenceRequest(true);
         state.candidates = [];
         updateDisplay();
         return;
     }
 
-    if (inferenceAbortController) {
-        inferenceAbortController.abort();
-    }
+    abortInferenceRequest(false);
     const controller = hasAbortController ? new AbortController() : null;
     inferenceAbortController = controller;
 
