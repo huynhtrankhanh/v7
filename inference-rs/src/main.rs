@@ -10,12 +10,13 @@ use clap::Parser;
 use regex::Regex;
 use axum::{
     extract::{State, Json},
-    routing::{get, post},
+    routing::post,
     Router,
 };
 use tower_http::services::ServeDir;
 use serde::{Deserialize, Serialize};
 
+#[cfg(not(feature = "mocked-model"))]
 mod kenlm;
 mod regex_enum;
 
@@ -37,8 +38,6 @@ struct Args {
     #[arg(long, default_value = "static")]
     static_dir: String,
 
-    #[arg(long)]
-    server_with_mocked_model: bool,
 }
 
 struct Tokenizer {
@@ -160,6 +159,7 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 }
 
 #[derive(Debug, Clone)]
+#[cfg(not(feature = "mocked-model"))]
 struct IslandState {
     score: f32,
     state: kenlm::State,
@@ -167,6 +167,7 @@ struct IslandState {
 }
 
 #[derive(Debug, Clone)]
+#[cfg(not(feature = "mocked-model"))]
 struct BeamNode<'a> {
     score: f32,
     state: kenlm::State,
@@ -181,6 +182,7 @@ fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokeniz
     tokenizer.candidates_index.get(&key)
 }
 
+#[cfg(not(feature = "mocked-model"))]
 fn beam_search_v7_island<'a>(
     templates: &[PartialSyllableTemplate],
     tokenizer: &'a Tokenizer,
@@ -334,6 +336,7 @@ fn perform_mock_inference(
     Ok(vec![decoded_islands])
 }
 
+#[cfg(not(feature = "mocked-model"))]
 fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
@@ -397,7 +400,8 @@ fn perform_inference(
 
 struct AppState {
     tokenizer: Tokenizer,
-    model: Option<kenlm::Model>,
+    #[cfg(not(feature = "mocked-model"))]
+    model: kenlm::Model,
 }
 
 #[derive(Deserialize)]
@@ -419,11 +423,11 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
-    let result = if let Some(model) = &state.model {
-        perform_inference(&payload.islands, &state.tokenizer, model, 100)
-    } else {
-        perform_mock_inference(&payload.islands, &state.tokenizer)
-    };
+    #[cfg(not(feature = "mocked-model"))]
+    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
+
+    #[cfg(feature = "mocked-model")]
+    let result = perform_mock_inference(&payload.islands, &state.tokenizer);
 
     match result {
         Ok(candidates) => Json(InferResponse { candidates }),
@@ -449,17 +453,16 @@ async fn main() -> Result<()> {
     eprintln!("Loading tokenizer (from regexes)...");
     let tokenizer = Tokenizer::new(root)?;
     
-    let model = if args.server_with_mocked_model {
-        eprintln!("Mocked Model Mode enabled. Skipping KenLM load.");
-        None
-    } else {
+    #[cfg(not(feature = "mocked-model"))]
+    let model = {
         eprintln!("Loading model from {}...", args.model_path);
-        Some(kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?)
+        kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
     if args.server {
         let app_state = Arc::new(AppState {
             tokenizer,
+            #[cfg(not(feature = "mocked-model"))]
             model,
         });
 
@@ -496,11 +499,11 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
-        let candidates = if let Some(m) = &model {
-            perform_inference(&islands, &tokenizer, m, 100)?
-        } else {
-            perform_mock_inference(&islands, &tokenizer)?
-        };
+        #[cfg(not(feature = "mocked-model"))]
+        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
+
+        #[cfg(feature = "mocked-model")]
+        let candidates = perform_mock_inference(&islands, &tokenizer)?;
         let duration = start_time.elapsed();
 
         if is_islands_mode {
