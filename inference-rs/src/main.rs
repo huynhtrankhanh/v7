@@ -401,7 +401,7 @@ fn perform_inference(
 struct AppState {
     tokenizer: Tokenizer,
     #[cfg(not(feature = "mocked-model"))]
-    model: Option<kenlm::Model>,
+    model: kenlm::Model,
 }
 
 #[derive(Deserialize)]
@@ -424,11 +424,7 @@ async fn infer_handler(
     }
 
     #[cfg(not(feature = "mocked-model"))]
-    let result = if let Some(model) = &state.model {
-        perform_inference(&payload.islands, &state.tokenizer, model, 100)
-    } else {
-        perform_mock_inference(&payload.islands, &state.tokenizer)
-    };
+    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
 
     #[cfg(feature = "mocked-model")]
     let result = perform_mock_inference(&payload.islands, &state.tokenizer);
@@ -460,7 +456,7 @@ async fn main() -> Result<()> {
     #[cfg(not(feature = "mocked-model"))]
     let model = {
         eprintln!("Loading model from {}...", args.model_path);
-        Some(kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?)
+        kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
     if args.server {
@@ -504,11 +500,7 @@ async fn main() -> Result<()> {
 
         let start_time = std::time::Instant::now();
         #[cfg(not(feature = "mocked-model"))]
-        let candidates = if let Some(m) = &model {
-            perform_inference(&islands, &tokenizer, m, 100)?
-        } else {
-            perform_mock_inference(&islands, &tokenizer)?
-        };
+        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
 
         #[cfg(feature = "mocked-model")]
         let candidates = perform_mock_inference(&islands, &tokenizer)?;
