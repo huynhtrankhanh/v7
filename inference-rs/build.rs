@@ -2,6 +2,12 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    if env::var("CARGO_FEATURE_MOCKED_MODEL").is_ok() {
+        println!("cargo:warning=mocked-model feature enabled; skipping KenLM build");
+        println!("cargo:rerun-if-env-changed=CARGO_FEATURE_MOCKED_MODEL");
+        return;
+    }
+
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let kenlm_root = PathBuf::from(manifest_dir).join("../kenlm");
     let kenlm_build_lib = kenlm_root.join("build/lib");
