@@ -4,7 +4,6 @@ use std::path::PathBuf;
 fn main() {
     if env::var("CARGO_FEATURE_MOCKED_MODEL").is_ok() {
         println!("cargo:warning=mocked-model feature enabled; skipping KenLM build");
-        println!("cargo:rerun-if-env-changed=CARGO_FEATURE_MOCKED_MODEL");
         return;
     }
 
