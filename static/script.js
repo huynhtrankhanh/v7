@@ -567,14 +567,18 @@ async function ploverRpc(method, params) {
 
 function clearPloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        state.islands.splice(strippedPlover.preeditIndex, 1);
+        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
+            state.islands.splice(strippedPlover.preeditIndex, 1);
+        }
         strippedPlover.preeditIndex = null;
     }
 }
 
 function finalizePloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        delete state.islands[strippedPlover.preeditIndex].ploverPreedit;
+        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
+            state.islands[strippedPlover.preeditIndex].ploverPreedit = false;
+        }
         strippedPlover.preeditIndex = null;
     }
 }

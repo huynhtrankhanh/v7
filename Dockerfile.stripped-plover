@@ -4,6 +4,7 @@ RUN apt-get update \
     && apt-get install -y git socat \
     && rm -rf /var/lib/apt/lists/*
 
+# Pin to a known Stripped Plover commit for reproducible builds.
 ARG STRIPPED_PLOVER_REF=8e1f8afed49fb5704ab25a98229d8997458075cf
 
 WORKDIR /opt/stripped-plover
