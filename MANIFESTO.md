@@ -18,10 +18,10 @@ I propose this change:
 
 ```js
 const finalMap = {
-    "FP": "j", "F": "w", "P": "p", "R": "t", "FR": "c", "RP": "ch"
+    "FP": "j", "F": "w", "P": "m", "R": "n", "FR": "ng", "RP": "nh"
 };
 
 const toneMap = {
-    "T": "sắc", "S": "huyền", "G": "hỏi", "TS": "ngã", "GS": "nặng",
+    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng",
 };
 ```
