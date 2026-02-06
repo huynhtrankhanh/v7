@@ -10,7 +10,7 @@ use clap::Parser;
 use regex::Regex;
 use axum::{
     extract::{State, Json},
-    routing::post,
+    routing::{get, post},
     Router,
 };
 use tower_http::services::ServeDir;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "mocked-model"))]
 mod kenlm;
 mod regex_enum;
+mod plover;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -37,6 +38,12 @@ struct Args {
 
     #[arg(long, default_value = "static")]
     static_dir: String,
+
+    #[arg(long)]
+    stripped_plover_host: Option<String>,
+
+    #[arg(long, default_value = "4020")]
+    stripped_plover_port: u16,
 
 }
 
@@ -402,6 +409,7 @@ struct AppState {
     tokenizer: Tokenizer,
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
+    plover: Option<plover::PloverClient>,
 }
 
 #[derive(Deserialize)]
@@ -412,6 +420,24 @@ struct InferRequest {
 #[derive(Serialize)]
 struct InferResponse {
     candidates: Vec<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct PloverRequest {
+    method: String,
+    params: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
+struct PloverProxyResponse {
+    ok: bool,
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PloverStatusResponse {
+    available: bool,
 }
 
 async fn infer_handler(
@@ -438,6 +464,44 @@ async fn infer_handler(
     }
 }
 
+async fn plover_status_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<PloverStatusResponse> {
+    let available = if let Some(client) = state.plover.as_ref() {
+        client.check().await.is_ok()
+    } else {
+        false
+    };
+    Json(PloverStatusResponse { available })
+}
+
+async fn plover_rpc_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<PloverRequest>,
+) -> Json<PloverProxyResponse> {
+    let Some(client) = state.plover.as_ref() else {
+        return Json(PloverProxyResponse {
+            ok: false,
+            result: None,
+            error: Some("Stripped Plover is disabled.".to_string()),
+        });
+    };
+
+    let params = payload.params.unwrap_or_else(|| serde_json::json!({}));
+    match client.send_request(&payload.method, params).await {
+        Ok(result) => Json(PloverProxyResponse {
+            ok: true,
+            result: Some(result),
+            error: None,
+        }),
+        Err(e) => Json(PloverProxyResponse {
+            ok: false,
+            result: None,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
 impl InferRequest {
     fn is_empty(&self) -> bool {
         self.islands.is_empty()
@@ -460,14 +524,25 @@ async fn main() -> Result<()> {
     };
 
     if args.server {
+        let plover_host = args
+            .stripped_plover_host
+            .or_else(|| std::env::var("STRIPPED_PLOVER_HOST").ok());
+        let plover_port = std::env::var("STRIPPED_PLOVER_PORT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(args.stripped_plover_port);
+        let plover = plover_host.map(|host| plover::PloverClient::new(host, plover_port));
         let app_state = Arc::new(AppState {
             tokenizer,
             #[cfg(not(feature = "mocked-model"))]
             model,
+            plover,
         });
 
         let app = Router::new()
             .route("/infer", post(infer_handler))
+            .route("/plover/status", get(plover_status_handler))
+            .route("/plover/rpc", post(plover_rpc_handler))
             .nest_service("/", ServeDir::new(&args.static_dir))
             .with_state(app_state);
 

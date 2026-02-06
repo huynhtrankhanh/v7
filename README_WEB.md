@@ -111,6 +111,11 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 ### Shortcuts
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
 
+### Stripped Plover Integration
+The web demo can optionally integrate with Stripped Plover for strokes that do not match the built-in rules. Press the `#` key (Q on the QWERTY layout) to toggle Stripped Plover mode. When enabled, all strokes are routed to Stripped Plover. When disabled, unrecognized strokes are sent to Stripped Plover as a one-shot translation.
+
+Use the Dictionary Management panel in the UI to upload JSON/Python dictionaries, remove dictionaries, and add/update/remove individual entries.
+
 ## Stenography Rules
 
 The system parses strokes greedily in the following order: **Initial Consonant** (longest match) -> **Vowel** (longest match) -> **Final Consonant** (longest match) -> **Tone** (remaining keys).

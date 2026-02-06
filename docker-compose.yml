@@ -2,6 +2,9 @@ version: '3.8'
 services:
   inference:
     build: .
+    environment:
+      STRIPPED_PLOVER_HOST: stripped-plover
+      STRIPPED_PLOVER_PORT: "4020"
     volumes:
       # Mount the model file from the host to the container
       # This file is expected to exist at runtime.

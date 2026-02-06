@@ -462,6 +462,13 @@ let state = {
 let history = [];
 let isRawMode = false;
 let inferenceAbortController = null;
+let strippedPlover = {
+    available: false,
+    enabled: false,
+    preeditIndex: null,
+    requestId: 0
+};
+let ploverDictionaries = [];
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
@@ -498,6 +505,234 @@ function restoreState() {
     }
 }
 
+function normalizePloverText(text) {
+    return text ? text.replace(/^\s+/, "") : "";
+}
+
+function setPloverMessage(message) {
+    const messageEl = document.getElementById("plover-message");
+    if (messageEl) {
+        messageEl.textContent = message || "";
+    }
+}
+
+function updatePloverStatusUI() {
+    const statusEl = document.getElementById("plover-status");
+    const toggleButton = document.getElementById("plover-toggle");
+    if (!statusEl || !toggleButton) return;
+    if (strippedPlover.available) {
+        statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
+        statusEl.classList.remove("unavailable");
+        statusEl.classList.add("available");
+        toggleButton.disabled = false;
+        toggleButton.textContent = strippedPlover.enabled ? "Disable" : "Enable";
+    } else {
+        statusEl.textContent = "Unavailable";
+        statusEl.classList.remove("available");
+        statusEl.classList.add("unavailable");
+        toggleButton.disabled = true;
+        toggleButton.textContent = "Enable";
+    }
+}
+
+async function fetchPloverStatus() {
+    try {
+        const resp = await fetch("/plover/status");
+        const data = await resp.json();
+        strippedPlover.available = !!data.available;
+        if (!strippedPlover.available) {
+            strippedPlover.enabled = false;
+            strippedPlover.preeditIndex = null;
+        }
+    } catch (e) {
+        strippedPlover.available = false;
+        strippedPlover.enabled = false;
+        strippedPlover.preeditIndex = null;
+    }
+    updatePloverStatusUI();
+}
+
+async function ploverRpc(method, params) {
+    const resp = await fetch("/plover/rpc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ method, params })
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+        throw new Error(data.error || "Stripped Plover error");
+    }
+    return data.result;
+}
+
+function clearPloverPreedit() {
+    if (strippedPlover.preeditIndex !== null) {
+        state.islands.splice(strippedPlover.preeditIndex, 1);
+        strippedPlover.preeditIndex = null;
+    }
+}
+
+function finalizePloverPreedit() {
+    if (strippedPlover.preeditIndex !== null) {
+        delete state.islands[strippedPlover.preeditIndex].ploverPreedit;
+        strippedPlover.preeditIndex = null;
+    }
+}
+
+function applyPloverOutput(output, { recordHistory, allowInference, finalizePreedit }) {
+    if (!Array.isArray(output)) return;
+    const committedParts = [];
+    let preeditText = "";
+    for (const item of output) {
+        if (item.type === "committed") {
+            committedParts.push(item.text || "");
+        } else if (item.type === "preedit") {
+            preeditText = item.text || "";
+        }
+    }
+
+    if (recordHistory) {
+        saveState();
+    }
+
+    clearPloverPreedit();
+
+    const combinedCommitted = finalizePreedit ? `${committedParts.join("")}${preeditText}` : committedParts.join("");
+    const committedText = normalizePloverText(combinedCommitted);
+    if (committedText) {
+        state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
+    }
+
+    if (!finalizePreedit) {
+        const normalizedPreedit = normalizePloverText(preeditText);
+        if (normalizedPreedit) {
+            state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
+            strippedPlover.preeditIndex = state.islands.length - 1;
+        }
+    }
+
+    state.candidates = [];
+    updateDisplay();
+    if (allowInference) {
+        runInference();
+    }
+}
+
+async function handlePloverStroke(stroke, { oneShot }) {
+    if (!strippedPlover.available) return;
+    const currentRequest = ++strippedPlover.requestId;
+    try {
+        const result = await ploverRpc("translate", { stroke });
+        if (currentRequest !== strippedPlover.requestId) return;
+        applyPloverOutput(result.output || [], {
+            recordHistory: oneShot,
+            allowInference: !strippedPlover.enabled,
+            finalizePreedit: oneShot
+        });
+        if (oneShot) {
+            await ploverRpc("reset_state", {});
+        }
+    } catch (e) {
+        if (currentRequest !== strippedPlover.requestId) return;
+        setPloverMessage(e.message || "Stripped Plover request failed.");
+    }
+}
+
+async function togglePloverMode() {
+    if (!strippedPlover.available) return;
+    strippedPlover.enabled = !strippedPlover.enabled;
+    setPloverMessage("");
+    if (!strippedPlover.enabled) {
+        finalizePloverPreedit();
+        try {
+            await ploverRpc("reset_state", {});
+        } catch (e) {
+            setPloverMessage(e.message || "Failed to reset Stripped Plover.");
+        }
+        runInference();
+    } else {
+        abortInferenceRequest(true);
+        state.candidates = [];
+        updateDisplay();
+    }
+    updatePloverStatusUI();
+}
+
+async function refreshPloverDictionaries() {
+    if (!strippedPlover.available) return;
+    try {
+        const result = await ploverRpc("get_dictionary_state", {});
+        ploverDictionaries = result.dictionaries || [];
+        renderPloverDictionaries();
+        setPloverMessage("");
+    } catch (e) {
+        setPloverMessage(e.message || "Failed to load dictionaries.");
+    }
+}
+
+function updatePloverDictionarySelects() {
+    const selectEl = document.getElementById("plover-entry-dict");
+    if (!selectEl) return;
+    selectEl.replaceChildren();
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "First writable dictionary";
+    selectEl.appendChild(emptyOption);
+    for (const dict of ploverDictionaries) {
+        const option = document.createElement("option");
+        option.value = dict.path || dict.name || "";
+        option.textContent = dict.path || dict.name || "dictionary";
+        selectEl.appendChild(option);
+    }
+}
+
+function renderPloverDictionaries() {
+    const listEl = document.getElementById("plover-dictionary-list");
+    if (!listEl) return;
+    listEl.replaceChildren();
+    if (!strippedPlover.available) {
+        const div = document.createElement("div");
+        div.textContent = "Stripped Plover is unavailable.";
+        listEl.appendChild(div);
+        updatePloverDictionarySelects();
+        return;
+    }
+    if (ploverDictionaries.length === 0) {
+        const div = document.createElement("div");
+        div.textContent = "No dictionaries loaded.";
+        listEl.appendChild(div);
+        updatePloverDictionarySelects();
+        return;
+    }
+    for (const dict of ploverDictionaries) {
+        const row = document.createElement("div");
+        row.className = "plover-dictionary-item";
+        const info = document.createElement("div");
+        const name = dict.path || dict.name || "dictionary";
+        info.textContent = name;
+        const meta = document.createElement("div");
+        meta.className = "plover-dictionary-meta";
+        meta.textContent = `entries: ${dict.entries ?? 0} · ${dict.readonly ? "readonly" : "writable"} · ${dict.enabled ? "enabled" : "disabled"}`;
+        row.appendChild(info);
+        row.appendChild(meta);
+        if (!dict.readonly) {
+            const removeButton = document.createElement("button");
+            removeButton.textContent = "Remove";
+            removeButton.onclick = async () => {
+                try {
+                    await ploverRpc("remove_dictionary", { name });
+                    await refreshPloverDictionaries();
+                } catch (e) {
+                    setPloverMessage(e.message || "Failed to remove dictionary.");
+                }
+            };
+            row.appendChild(removeButton);
+        }
+        listEl.appendChild(row);
+    }
+    updatePloverDictionarySelects();
+}
+
 // --- Logic ---
 
 function appendText(text) {
@@ -522,7 +757,17 @@ function isStaleInference(controller) {
     return controller && controller !== inferenceAbortController;
 }
 
-function handleChord(stroke) {
+async function handleChord(stroke) {
+    if (stroke === "#") {
+        await togglePloverMode();
+        return;
+    }
+
+    if (strippedPlover.enabled) {
+        await handlePloverStroke(stroke, { oneShot: false });
+        return;
+    }
+
     // 1. Escape Hatch: #S
     if (stroke === "#S-" || stroke === "#S") {
         if (state.candidates.length > 0) {
@@ -618,6 +863,11 @@ function handleChord(stroke) {
         saveState();
         appendText(text);
         runInference();
+        return;
+    }
+
+    if (strippedPlover.available) {
+        await handlePloverStroke(stroke, { oneShot: true });
         return;
     }
 
@@ -990,7 +1240,133 @@ document.addEventListener("keyup", (e) => {
             }
         }
         
-        handleChord(strokeStr);
+        void handleChord(strokeStr);
         strokeKeys = new Set();
     }
 });
+
+function setupPloverControls() {
+    const toggleButton = document.getElementById("plover-toggle");
+    const refreshButton = document.getElementById("plover-refresh");
+    const uploadButton = document.getElementById("plover-dict-upload");
+    const addButton = document.getElementById("plover-entry-add");
+    const updateButton = document.getElementById("plover-entry-update");
+    const removeButton = document.getElementById("plover-entry-remove");
+
+    if (toggleButton) {
+        toggleButton.addEventListener("click", () => {
+            void togglePloverMode();
+        });
+    }
+    if (refreshButton) {
+        refreshButton.addEventListener("click", () => {
+            void refreshPloverDictionaries();
+        });
+    }
+    if (uploadButton) {
+        uploadButton.addEventListener("click", async () => {
+            if (!strippedPlover.available) {
+                setPloverMessage("Stripped Plover is unavailable.");
+                return;
+            }
+            const fileInput = document.getElementById("plover-dict-file");
+            const nameInput = document.getElementById("plover-dict-name");
+            const typeSelect = document.getElementById("plover-dict-type");
+            const mergeToggle = document.getElementById("plover-dict-merge");
+            const file = fileInput?.files?.[0];
+            if (!file) {
+                setPloverMessage("Select a dictionary file to upload.");
+                return;
+            }
+            const name = (nameInput?.value || "").trim() || file.name;
+            const type = typeSelect?.value || "json";
+            try {
+                const content = await file.text();
+                if (type === "json") {
+                    const data = JSON.parse(content);
+                    await ploverRpc("import_dictionary", {
+                        name,
+                        type: "json",
+                        data,
+                        merge: !!mergeToggle?.checked
+                    });
+                } else {
+                    await ploverRpc("import_dictionary", {
+                        name,
+                        type: "python",
+                        pythonCode: content
+                    });
+                }
+                await refreshPloverDictionaries();
+                setPloverMessage("");
+            } catch (e) {
+                setPloverMessage(e.message || "Failed to upload dictionary.");
+            }
+        });
+    }
+
+    const entryHandler = async (action) => {
+        if (!strippedPlover.available) {
+            setPloverMessage("Stripped Plover is unavailable.");
+            return;
+        }
+        const dictSelect = document.getElementById("plover-entry-dict");
+        const strokeInput = document.getElementById("plover-entry-stroke");
+        const translationInput = document.getElementById("plover-entry-translation");
+        const stroke = (strokeInput?.value || "").trim();
+        const translation = (translationInput?.value || "").trim();
+        const name = (dictSelect?.value || "").trim();
+        if (!stroke) {
+            setPloverMessage("Provide a stroke for entry management.");
+            return;
+        }
+        try {
+            const params = name ? { name, stroke } : { stroke };
+            if (action === "add") {
+                if (!translation) {
+                    setPloverMessage("Provide a translation to add an entry.");
+                    return;
+                }
+                await ploverRpc("add_entry", { ...params, translation });
+            } else if (action === "update") {
+                if (!translation) {
+                    setPloverMessage("Provide a translation to update an entry.");
+                    return;
+                }
+                await ploverRpc("update_entry", { ...params, translation });
+            } else if (action === "remove") {
+                await ploverRpc("remove_entry", params);
+            }
+            setPloverMessage("");
+            await refreshPloverDictionaries();
+        } catch (e) {
+            setPloverMessage(e.message || "Entry update failed.");
+        }
+    };
+
+    if (addButton) {
+        addButton.addEventListener("click", () => {
+            void entryHandler("add");
+        });
+    }
+    if (updateButton) {
+        updateButton.addEventListener("click", () => {
+            void entryHandler("update");
+        });
+    }
+    if (removeButton) {
+        removeButton.addEventListener("click", () => {
+            void entryHandler("remove");
+        });
+    }
+
+    void fetchPloverStatus().then(() => {
+        if (strippedPlover.available) {
+            void refreshPloverDictionaries();
+        } else {
+            renderPloverDictionaries();
+        }
+    });
+}
+
+setupPloverControls();

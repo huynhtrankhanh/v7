@@ -79,7 +79,7 @@ The `docker-compose.yml` file includes an optional `stripped-plover` service tha
 docker-compose up stripped-plover
 ```
 
-This service is optional; the inference engine continues to run normally without it.
+The inference service is configured to connect to Stripped Plover via `STRIPPED_PLOVER_HOST` and `STRIPPED_PLOVER_PORT` when the container is available. This service is optional; the inference engine continues to run normally without it.
 
 ## Usage Workflow
 
