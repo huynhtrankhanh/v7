@@ -156,15 +156,14 @@ If a stroke cannot be parsed according to these rules, it is **ignored**. An ign
 
 | Steno Keys | Sound | Steno Keys | Sound |
 | :--- | :--- | :--- | :--- |
-| `FP` | j (i/y) | `RB` | ch |
-| `F` | w (u/o) | `PB` | nh |
-| `P` | p | `L` | n |
-| `R` | t | `PL` | m |
-| `FR` | c | `B` | ng |
+| `FP` | j (i/y) | `RP` | nh |
+| `F` | w (u/o) | `P` | m |
+| `R` | n | `FR` | ng |
 
 *   **Orthography Rules:**
     *   `F` (`w`): Becomes `u` (e.g., *sau*) or `o` (e.g., *sao*) depending on the preceding vowel.
     *   `FP` (`j`): Becomes `y` (e.g., *tay*) or `i` (e.g., *tai*) depending on the preceding vowel.
+    *   `P`/`R`/`FR`/`RP` combined with `BL` or `BLG` produce finals `p`/`t`/`c`/`ch` with sắc or nặng tones. `F` and `FP` cannot be combined with `BL`/`BLG` (these strokes are ignored).
 
 ### 4. Tones (Right Hand - Remaining Keys)
 
@@ -173,11 +172,13 @@ Tones are determined by the remaining keys after matching the final consonant.
 | Steno Keys | Tone | Diacritic | Example |
 | :--- | :--- | :--- | :--- |
 | *(None)* | Ngang | (none) | ma |
-| `T` | Sắc | Acute (´) | má |
-| `S` | Huyền | Grave (`) | mà |
-| `G` | Hỏi | Hook (?) | mả |
-| `TS` | Ngã | Tilde (~) | mã |
-| `GS` | Nặng | Dot (.) | mạ |
+| `L` | Sắc | Acute (´) | má |
+| `G` | Huyền | Grave (`) | mà |
+| `B` | Hỏi | Hook (?) | mả |
+| `LG` | Ngã | Tilde (~) | mã |
+| `BG` | Nặng | Dot (.) | mạ |
+| `BL` | Sắc (Stop) | Acute (´) | mát |
+| `BLG` | Nặng (Stop) | Dot (.) | mạt |
 
 ### 5. On-Glide (S-)
 The Left `S` key (mapped to `A` on QWERTY) can act as an "on-glide" modifier if it's not part of another valid initial consonant sequence. It typically introduces a medial `u` or `o` sound (e.g., *hoa*, *tuân*) or modifies `c` to `q` (e.g., *qua*).

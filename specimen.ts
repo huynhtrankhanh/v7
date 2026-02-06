@@ -25,12 +25,12 @@ const vowelMap: { [key: string]: string } = {
 };
 
 const finalMap: { [key: string]: string } = {
-    "FP": "j", "F": "w", "P": "p", "R": "t", "BG": "c", "RB": "ch",
-    "PB": "nh", "L": "n", "PL": "m", "G": "ng",
+    "FP": "j", "F": "w", "P": "m", "R": "n", "FR": "ng", "RP": "nh"
 };
 
 const toneMap: { [key: string]: string } = {
-    "T": "sắc", "S": "huyền", "D": "hỏi", "TS": "ngã", "Z": "nặng",
+    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng",
+    "BL": "ách", "BLG": "ạch"
 };
 
 const toneAccents: { [key: string]: { [key: string]: string } } = {
@@ -138,6 +138,16 @@ function parse(stroke: string): Parsed | null {
     if (currentStroke.length !== 0) {
          // console.error(`Characters remaining after parsing stroke: ${stroke}, remaining: ${currentStroke}`);
         return null;
+    }
+
+    if (toneSteno === "BL" || toneSteno === "BLG") {
+        const stopFinals: { [key: string]: string } = { "P": "p", "R": "t", "FR": "c", "RP": "ch" };
+        if (stopFinals[finalConsonantSteno]) {
+            finalConsonant = stopFinals[finalConsonantSteno];
+            tone = toneSteno === "BL" ? "sắc" : "nặng";
+        } else {
+            return null;
+        }
     }
 
     return { onGlide, initialConsonant, vowel, finalConsonant, tone };
