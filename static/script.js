@@ -1242,32 +1242,71 @@ async function viewDictEntries(name) {
         });
         const data = await resp.json();
         if (data.error) {
-            entriesEl.innerHTML = "<em>Error: " + data.error + "</em>";
+            entriesEl.textContent = "";
+            const em = document.createElement("em");
+            em.textContent = "Error: " + data.error;
+            entriesEl.appendChild(em);
             return;
         }
         const entries = data.entries || [];
-        let html = "<h4>Entries for: " + name + "</h4>";
-        html += '<div class="dict-entry-add"><input id="new-stroke" placeholder="Stroke"><input id="new-translation" placeholder="Translation"><button onclick="addEntry()">Add</button></div>';
+        entriesEl.textContent = "";
+
+        const heading = document.createElement("h4");
+        heading.textContent = "Entries for: " + name;
+        entriesEl.appendChild(heading);
+
+        // Add-entry row
+        const addRow = document.createElement("div");
+        addRow.className = "dict-entry-add";
+        const strokeInput = document.createElement("input");
+        strokeInput.id = "new-stroke";
+        strokeInput.placeholder = "Stroke";
+        const transInput = document.createElement("input");
+        transInput.id = "new-translation";
+        transInput.placeholder = "Translation";
+        const addBtn = document.createElement("button");
+        addBtn.textContent = "Add";
+        addBtn.addEventListener("click", () => addEntry());
+        addRow.appendChild(strokeInput);
+        addRow.appendChild(transInput);
+        addRow.appendChild(addBtn);
+        entriesEl.appendChild(addRow);
+
         if (entries.length === 0) {
-            html += "<em>No entries.</em>";
+            const em = document.createElement("em");
+            em.textContent = "No entries.";
+            entriesEl.appendChild(em);
         } else {
-            html += '<table class="dict-entries-table"><tr><th>Stroke</th><th>Translation</th><th></th></tr>';
-            for (const e of entries) {
-                html += "<tr><td>" + escapeHtml(e.stroke) + "</td><td>" + escapeHtml(e.translation) + "</td>";
-                html += '<td><button onclick="removeEntry(\'' + escapeHtml(e.stroke).replace(/'/g, "\\'") + '\')">×</button></td></tr>';
+            const table = document.createElement("table");
+            table.className = "dict-entries-table";
+            const headerRow = document.createElement("tr");
+            for (const h of ["Stroke", "Translation", ""]) {
+                const th = document.createElement("th");
+                th.textContent = h;
+                headerRow.appendChild(th);
             }
-            html += "</table>";
+            table.appendChild(headerRow);
+            for (const entry of entries) {
+                const tr = document.createElement("tr");
+                const tdStroke = document.createElement("td");
+                tdStroke.textContent = entry.stroke;
+                const tdTrans = document.createElement("td");
+                tdTrans.textContent = entry.translation;
+                const tdAction = document.createElement("td");
+                const delBtn = document.createElement("button");
+                delBtn.textContent = "×";
+                delBtn.addEventListener("click", () => removeEntry(entry.stroke));
+                tdAction.appendChild(delBtn);
+                tr.appendChild(tdStroke);
+                tr.appendChild(tdTrans);
+                tr.appendChild(tdAction);
+                table.appendChild(tr);
+            }
+            entriesEl.appendChild(table);
         }
-        entriesEl.innerHTML = html;
     } catch (e) {
         entriesEl.innerHTML = "<em>Failed to load entries.</em>";
     }
-}
-
-function escapeHtml(str) {
-    const div = document.createElement("div");
-    div.appendChild(document.createTextNode(str));
-    return div.innerHTML;
 }
 
 async function addEntry() {

@@ -76,12 +76,22 @@ impl StrippedPloverManager {
             .read_line(&mut ready_line)
             .await
             .map_err(|e| format!("Failed to read ready message: {}", e))?;
-        // Validate it's a ready message (optional, just log)
-        if !ready_line.contains("\"ready\"") {
-            eprintln!(
-                "Warning: Expected ready message from Stripped Plover, got: {}",
-                ready_line.trim()
-            );
+        // Validate the ready message structure
+        match serde_json::from_str::<serde_json::Value>(ready_line.trim()) {
+            Ok(val) => {
+                if val.get("status").and_then(|s| s.as_str()) != Some("ready") {
+                    eprintln!(
+                        "Warning: Expected {{\"status\": \"ready\"}} from Stripped Plover, got: {}",
+                        ready_line.trim()
+                    );
+                }
+            }
+            Err(_) => {
+                eprintln!(
+                    "Warning: Could not parse ready message from Stripped Plover: {}",
+                    ready_line.trim()
+                );
+            }
         }
 
         self.conn = Some(SpConnection {
