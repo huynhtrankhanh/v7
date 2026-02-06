@@ -12,6 +12,8 @@ services:
       - ./generated_regexes.json:/app/generated_regexes.json:ro
     # The default command can be overridden by the user
     # e.g., docker-compose run inference "some input string"
+    ports:
+      - "3000:3000"
   stripped-plover:
     build:
       context: .
@@ -19,8 +21,6 @@ services:
     environment:
       STRIPPED_PLOVER_DB: /data/stripped-plover.sqlite
       STRIPPED_PLOVER_PORT: "4020"
-    ports:
-      - "4020:4020"
     volumes:
       - stripped-plover-data:/data
 
