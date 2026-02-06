@@ -104,9 +104,105 @@
                 padding: 15px;
             }
         }
+        #plover-controls {
+            background-color: #fff;
+            border-bottom: 1px solid #ddd;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .plover-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+        #plover-status.available {
+            color: #0a7a0a;
+            font-weight: 600;
+        }
+        #plover-status.unavailable {
+            color: #a00;
+            font-weight: 600;
+        }
+        #plover-dictionary-panel summary {
+            cursor: pointer;
+        }
+        #plover-dictionary-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .plover-dictionary-item {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .plover-dictionary-meta {
+            color: #666;
+            font-size: 0.8rem;
+        }
+        .plover-section {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .plover-entry-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        #plover-message {
+            color: #a00;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
+    <div id="plover-controls">
+        <div class="plover-row">
+            <strong>Stripped Plover</strong>
+            <span id="plover-status" class="unavailable">Unavailable</span>
+            <button id="plover-toggle" disabled>Enable</button>
+        </div>
+        <details id="plover-dictionary-panel">
+            <summary>Dictionary Management</summary>
+            <div class="plover-section">
+                <button id="plover-refresh">Refresh dictionaries</button>
+                <div id="plover-dictionary-list"></div>
+            </div>
+            <div class="plover-section">
+                <strong>Upload Dictionary</strong>
+                <input type="text" id="plover-dict-name" placeholder="Dictionary name">
+                <select id="plover-dict-type">
+                    <option value="json">JSON</option>
+                    <option value="python">Python</option>
+                </select>
+                <label>
+                    <input type="checkbox" id="plover-dict-merge">
+                    Merge with existing entries
+                </label>
+                <input type="file" id="plover-dict-file">
+                <button id="plover-dict-upload">Upload dictionary</button>
+            </div>
+            <div class="plover-section">
+                <strong>Entry Management</strong>
+                <select id="plover-entry-dict"></select>
+                <input type="text" id="plover-entry-stroke" placeholder="Stroke (e.g. TEFT)">
+                <input type="text" id="plover-entry-translation" placeholder="Translation">
+                <div class="plover-entry-buttons">
+                    <button id="plover-entry-add">Add</button>
+                    <button id="plover-entry-update">Update</button>
+                    <button id="plover-entry-remove">Remove</button>
+                </div>
+            </div>
+            <div id="plover-message"></div>
+        </details>
+    </div>
     <div id="text-display">Type with your steno keyboard...</div>
     <textarea id="text-input"></textarea>
     <div id="candidate-area">

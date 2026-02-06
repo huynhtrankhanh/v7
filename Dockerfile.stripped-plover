@@ -1,0 +1,20 @@
+FROM node:22
+
+RUN apt-get update \
+    && apt-get install -y git socat \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin to the main branch commit from 2026-01-26 for reproducible builds.
+ARG STRIPPED_PLOVER_REF=8e1f8afed49fb5704ab25a98229d8997458075cf
+
+WORKDIR /opt/stripped-plover
+RUN git clone https://github.com/huynhtrankhanh/strippedplover.git . \
+    && git checkout "${STRIPPED_PLOVER_REF}"
+RUN npm install
+RUN npm run build
+
+ENV STRIPPED_PLOVER_DB=/data/stripped-plover.sqlite
+ENV STRIPPED_PLOVER_PORT=4020
+
+EXPOSE 4020
+CMD ["sh", "-c", "exec socat TCP-LISTEN:${STRIPPED_PLOVER_PORT},reuseaddr,fork EXEC:'node dist/index.js ${STRIPPED_PLOVER_DB}',pipes"]
