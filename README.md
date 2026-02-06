@@ -71,6 +71,16 @@ docker-compose run --rm inference [v7_string]
 docker-compose run --rm inference na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
 ```
 
+### Optional Stripped Plover Service
+
+The `docker-compose.yml` file includes an optional `stripped-plover` service that clones and builds the Stripped Plover repository at container build time. It exposes a TCP proxy on port `4020` and stores the dictionary database in a Docker volume so it persists across restarts.
+
+```bash
+docker-compose up stripped-plover
+```
+
+This service is optional; the inference engine continues to run normally without it.
+
 ## Usage Workflow
 
 ### 1. Prepare Corpus
