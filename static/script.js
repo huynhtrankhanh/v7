@@ -601,7 +601,8 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
 
     clearPloverPreedit();
 
-    const combinedCommitted = finalizePreedit ? `${committedParts.join("")}${preeditText}` : committedParts.join("");
+    const committedJoined = committedParts.join("");
+    const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
     const committedText = trimLeadingWhitespace(combinedCommitted);
     if (committedText) {
         state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
@@ -1244,7 +1245,9 @@ document.addEventListener("keyup", (e) => {
             }
         }
         
-        void handleChord(strokeStr);
+        handleChord(strokeStr).catch((err) => {
+            console.error("Stroke handling failed", err);
+        });
         strokeKeys = new Set();
     }
 });
