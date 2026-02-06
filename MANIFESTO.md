@@ -22,6 +22,17 @@ const finalMap = {
 };
 
 const toneMap = {
-    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng",
+    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng", "BL": "ách", "BLG": "ạch"
 };
 ```
+
+With these rules:
+
+"P" + "BL"/"BLG" = final "p", tone "sắc"/"nặng"
+"R" + "BL"/"BLG" = final "t", tone "sắc"/"nặng"
+"FR" + "BL"/"BLG" = final "c", tone "sắc"/"nặng"
+"RP" + "BL"/"BLG" = final "ch", tone "sắc"/"nặng"
+
+"F" and "FP" can't be combined with "BL"/"BLG", these combinations are considered illegal.
+
+Update documentation to reflect these changes.
