@@ -14,12 +14,12 @@ const vowelMap = {
 };
 
 const finalMap = {
-    "FP": "j", "F": "w", "P": "p", "R": "t", "FR": "c", "RB": "ch",
-    "PB": "nh", "L": "n", "PL": "m", "B": "ng",
+    "FP": "j", "F": "w", "P": "m", "R": "n", "FR": "ng", "RP": "nh"
 };
 
 const toneMap = {
-    "T": "sắc", "S": "huyền", "G": "hỏi", "TS": "ngã", "GS": "nặng",
+    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng",
+    "BL": "ách", "BLG": "ạch"
 };
 
 const toneAccents = {
@@ -193,12 +193,14 @@ function parse(stroke) {
     if (!survived) return null;
 
     let finalConsonant = "";
+    let finalSteno = "";
     // Match Final Consonant (2 -> 1)
     for (let length = 2; length > 0; length--) {
         if (length > currentStroke.length) continue;
         const candidate = currentStroke.substring(0, length);
         if (finalMap[candidate] !== undefined) {
             finalConsonant = finalMap[candidate];
+            finalSteno = candidate;
             currentStroke = currentStroke.substring(length);
             survived = true;
             break;
@@ -206,16 +208,27 @@ function parse(stroke) {
     }
 
     let tone = "";
+    let toneSteno = "";
     survived = currentStroke.length === 0;
     if (currentStroke.length > 0) {
         if (toneMap[currentStroke] !== undefined) {
             tone = toneMap[currentStroke];
+            toneSteno = currentStroke;
             currentStroke = "";
             survived = true;
         }
     }
 
     if (!survived) return null;
+    if (toneSteno === "BL" || toneSteno === "BLG") {
+        const stopFinals = { "P": "p", "R": "t", "FR": "c", "RP": "ch" };
+        if (stopFinals[finalSteno]) {
+            finalConsonant = stopFinals[finalSteno];
+            tone = toneSteno === "BL" ? "sắc" : "nặng";
+        } else {
+            return null;
+        }
+    }
 
     return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
 }
