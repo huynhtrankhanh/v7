@@ -27,3 +27,17 @@ Two cases.
 Stripped Plover refers to https://github.com/huynhtrankhanh/strippedplover
 
 stripped_plover defaults to false. The mode toggles when the # (QWERTY Q) key is pressed.
+
+**Dictionary management**
+
+UI for dictionary management needs to be implemented in the frontend. This includes deleting dictionaries and adding dictionaries by upload, and modifying individual entries.
+
+**Persistence of Stripped Plover dictionary database**
+
+It has to persist on a Docker volume.
+
+**UTMOST REQUIREMENT:** when Stripped Plover container is deleted from Docker Compose, the code still functions normally, just that Stripped Plover features are disabled.
+
+**Test the code thoroughly!**
+
+**To test the backend, use the Mocked Model mode. This alone is enough.**
