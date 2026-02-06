@@ -41,5 +41,5 @@ WORKDIR /app
 # Entrypoint runs the binary
 # Usage: docker run ... <v7_string>
 # Arguments are passed to the binary
-ENTRYPOINT ["./inference-rs/target/release/inference-rs"]
+ENTRYPOINT ["./inference-rs/target/release/inference-rs", "--server"]
 
