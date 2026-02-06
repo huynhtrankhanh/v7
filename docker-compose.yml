@@ -7,5 +7,22 @@ services:
       # This file is expected to exist at runtime.
       - ./lm.binary:/app/lm.binary:ro
       - ./generated_regexes.json:/app/generated_regexes.json:ro
+    environment:
+      - STRIPPED_PLOVER_HOST=strippedplover
+      - STRIPPED_PLOVER_PORT=4242
     # The default command can be overridden by the user
     # e.g., docker-compose run inference "some input string"
+
+  # Stripped Plover integration (optional - remove this service to disable SP features)
+  strippedplover:
+    build:
+      context: .
+      dockerfile: strippedplover.Dockerfile
+    volumes:
+      - plover_data:/data
+    restart: always
+    expose:
+      - "4242"
+
+volumes:
+  plover_data:

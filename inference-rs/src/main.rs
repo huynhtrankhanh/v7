@@ -10,7 +10,7 @@ use clap::Parser;
 use regex::Regex;
 use axum::{
     extract::{State, Json},
-    routing::post,
+    routing::{post, get},
     Router,
 };
 use tower_http::services::ServeDir;
@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(feature = "mocked-model"))]
 mod kenlm;
 mod regex_enum;
+mod stripped_plover;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -38,6 +39,13 @@ struct Args {
     #[arg(long, default_value = "static")]
     static_dir: String,
 
+    /// Stripped Plover host (optional; enables SP integration when set)
+    #[arg(long, env = "STRIPPED_PLOVER_HOST")]
+    sp_host: Option<String>,
+
+    /// Stripped Plover TCP port
+    #[arg(long, env = "STRIPPED_PLOVER_PORT", default_value = "4242")]
+    sp_port: u16,
 }
 
 struct Tokenizer {
@@ -402,6 +410,7 @@ struct AppState {
     tokenizer: Tokenizer,
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
+    sp: Option<tokio::sync::Mutex<stripped_plover::StrippedPloverManager>>,
 }
 
 #[derive(Deserialize)]
@@ -444,6 +453,217 @@ impl InferRequest {
     }
 }
 
+// --- Stripped Plover HTTP endpoints ---
+
+#[derive(Deserialize)]
+struct SpStrokeRequest {
+    stroke: String,
+}
+
+#[derive(Serialize)]
+struct SpStrokeResponse {
+    output: Vec<stripped_plover::OutputElement>,
+}
+
+#[derive(Serialize)]
+struct SpStatusResponse {
+    available: bool,
+}
+
+#[derive(Serialize)]
+struct SpErrorResponse {
+    error: String,
+}
+
+#[derive(Deserialize)]
+struct SpImportDictRequest {
+    name: String,
+    #[serde(rename = "type")]
+    dict_type: String,
+    data: Option<serde_json::Value>,
+    #[serde(rename = "pythonCode")]
+    python_code: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SpNameRequest {
+    name: String,
+}
+
+#[derive(Deserialize)]
+struct SpEntryRequest {
+    stroke: String,
+    translation: Option<String>,
+    name: Option<String>,
+}
+
+async fn sp_status_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<SpStatusResponse> {
+    let available = if let Some(sp) = &state.sp {
+        let mut sp = sp.lock().await;
+        sp.check_connection().await
+    } else {
+        false
+    };
+    Json(SpStatusResponse { available })
+}
+
+async fn sp_stroke_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpStrokeRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.translate(&payload.stroke).await {
+        Ok(result) => Json(serde_json::json!({"output": result.output})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_reset_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.reset_state().await {
+        Ok(()) => Json(serde_json::json!({"status": "ok"})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_list_dictionaries_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.list_dictionaries().await {
+        Ok(dicts) => Json(serde_json::json!({"dictionaries": dicts})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_import_dictionary_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpImportDictRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.import_dictionary(
+        &payload.name,
+        &payload.dict_type,
+        payload.data,
+        payload.python_code.as_deref(),
+    ).await {
+        Ok(result) => Json(result),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_export_dictionary_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpNameRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.export_dictionary(&payload.name).await {
+        Ok(result) => Json(result),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_remove_dictionary_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpNameRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.remove_dictionary(&payload.name).await {
+        Ok(()) => Json(serde_json::json!({"status": "ok"})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_get_entries_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpNameRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.get_dictionary_entries(&payload.name).await {
+        Ok(result) => Json(result),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_add_entry_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpEntryRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    let translation = payload.translation.as_deref().unwrap_or("");
+    match sp.add_entry(&payload.stroke, translation, payload.name.as_deref()).await {
+        Ok(()) => Json(serde_json::json!({"status": "ok"})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_update_entry_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpEntryRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    let translation = payload.translation.as_deref().unwrap_or("");
+    match sp.update_entry(&payload.stroke, translation, payload.name.as_deref()).await {
+        Ok(()) => Json(serde_json::json!({"status": "ok"})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
+async fn sp_remove_entry_handler(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<SpEntryRequest>,
+) -> Json<serde_json::Value> {
+    let sp = match &state.sp {
+        Some(sp) => sp,
+        None => return Json(serde_json::json!({"error": "Stripped Plover not configured"})),
+    };
+    let mut sp = sp.lock().await;
+    match sp.remove_entry(&payload.stroke, payload.name.as_deref()).await {
+        Ok(()) => Json(serde_json::json!({"status": "ok"})),
+        Err(e) => Json(serde_json::json!({"error": e})),
+    }
+}
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -460,14 +680,37 @@ async fn main() -> Result<()> {
     };
 
     if args.server {
+        // Set up Stripped Plover manager if host is configured
+        let sp = if let Some(ref host) = args.sp_host {
+            eprintln!("Stripped Plover configured at {}:{}", host, args.sp_port);
+            Some(tokio::sync::Mutex::new(
+                stripped_plover::StrippedPloverManager::new(host.clone(), args.sp_port),
+            ))
+        } else {
+            eprintln!("Stripped Plover not configured (no --sp-host or STRIPPED_PLOVER_HOST)");
+            None
+        };
+
         let app_state = Arc::new(AppState {
             tokenizer,
             #[cfg(not(feature = "mocked-model"))]
             model,
+            sp,
         });
 
         let app = Router::new()
             .route("/infer", post(infer_handler))
+            .route("/sp/status", get(sp_status_handler))
+            .route("/sp/stroke", post(sp_stroke_handler))
+            .route("/sp/reset", post(sp_reset_handler))
+            .route("/sp/dictionaries", get(sp_list_dictionaries_handler))
+            .route("/sp/dictionaries/import", post(sp_import_dictionary_handler))
+            .route("/sp/dictionaries/export", post(sp_export_dictionary_handler))
+            .route("/sp/dictionaries/remove", post(sp_remove_dictionary_handler))
+            .route("/sp/entries", post(sp_get_entries_handler))
+            .route("/sp/entries/add", post(sp_add_entry_handler))
+            .route("/sp/entries/update", post(sp_update_entry_handler))
+            .route("/sp/entries/remove", post(sp_remove_entry_handler))
             .nest_service("/", ServeDir::new(&args.static_dir))
             .with_state(app_state);
 

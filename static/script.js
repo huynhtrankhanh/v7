@@ -465,6 +465,11 @@ let inferenceAbortController = null;
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
+// --- Stripped Plover State ---
+let strippedPloverMode = false; // Is SP the preferred mode?
+let spAvailable = false; // Is SP backend reachable?
+let spPreedit = ""; // Current preedit text from SP in SP mode
+
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
     if (isReplace) {
@@ -522,9 +527,149 @@ function isStaleInference(controller) {
     return controller && controller !== inferenceAbortController;
 }
 
+// --- Stripped Plover Functions ---
+
+async function checkSpStatus() {
+    try {
+        const resp = await fetch("/sp/status");
+        const data = await resp.json();
+        spAvailable = !!data.available;
+    } catch (e) {
+        spAvailable = false;
+    }
+    updateSpIndicator();
+}
+
+function updateSpIndicator() {
+    const indicator = document.getElementById("sp-indicator");
+    if (!indicator) return;
+    if (!spAvailable) {
+        indicator.textContent = "SP: unavailable";
+        indicator.style.background = "#999";
+        indicator.style.display = "inline-block";
+    } else if (strippedPloverMode) {
+        indicator.textContent = "SP: ON";
+        indicator.style.background = "#4caf50";
+        indicator.style.display = "inline-block";
+    } else {
+        indicator.textContent = "SP: off";
+        indicator.style.background = "#2196f3";
+        indicator.style.display = "inline-block";
+    }
+}
+
+async function spSendStroke(stroke) {
+    try {
+        const resp = await fetch("/sp/stroke", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stroke }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+            console.error("SP stroke error:", data.error);
+            return null;
+        }
+        return data.output || [];
+    } catch (e) {
+        console.error("SP stroke failed:", e);
+        return null;
+    }
+}
+
+async function spReset() {
+    try {
+        await fetch("/sp/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    } catch (e) {
+        console.error("SP reset failed:", e);
+    }
+}
+
+function extractTextFromSpOutput(output) {
+    // Extract text from SP output elements. Combine committed and preedit text.
+    let committed = "";
+    let preedit = "";
+    for (const el of output) {
+        if (el.type === "committed") committed += el.text;
+        else if (el.type === "preedit") preedit = el.text;
+    }
+    return { committed, preedit };
+}
+
+async function handleSpModeContinuous(stroke) {
+    // In SP mode ON: all strokes go to SP
+    const output = await spSendStroke(stroke);
+    if (!output) return;
+
+    const { committed, preedit } = extractTextFromSpOutput(output);
+
+    // If there's committed text, add it as a permanent island
+    if (committed) {
+        state.islands.push(createIsland('vietnamese', committed));
+    }
+
+    // Update preedit display
+    spPreedit = preedit;
+    updateDisplay();
+}
+
+async function handleSpSingleShot(stroke) {
+    // SP mode OFF, unrecognized stroke: single-shot translation
+    const output = await spSendStroke(stroke);
+    if (!output) return;
+
+    const { committed, preedit } = extractTextFromSpOutput(output);
+    const text = committed + preedit;
+
+    // Reset SP state immediately (single-shot)
+    await spReset();
+
+    if (text) {
+        saveState();
+        state.islands.push(createIsland('vietnamese', text));
+        runInference();
+        updateDisplay();
+    }
+}
+
+async function toggleStrippedPloverMode() {
+    if (!spAvailable) return;
+
+    if (strippedPloverMode) {
+        // Turning OFF: commit preedit and reset
+        strippedPloverMode = false;
+        if (spPreedit) {
+            state.islands.push(createIsland('vietnamese', spPreedit));
+            spPreedit = "";
+        }
+        await spReset();
+        runInference();
+    } else {
+        // Turning ON
+        strippedPloverMode = true;
+        // Auto-select top candidate if present
+        if (state.candidates.length > 0) {
+            selectCandidate(0);
+        }
+        spPreedit = "";
+    }
+    updateSpIndicator();
+    updateDisplay();
+}
+
 function handleChord(stroke) {
+    // 0. Toggle Stripped Plover mode: lone # (QWERTY Q)
+    if (stroke === "#") {
+        toggleStrippedPloverMode();
+        return;
+    }
+
     // 1. Escape Hatch: #S
     if (stroke === "#S-" || stroke === "#S") {
+        // If in SP mode, exit it first
+        if (strippedPloverMode) {
+            toggleStrippedPloverMode();
+        }
         if (state.candidates.length > 0) {
             selectCandidate(0); // Select top candidate
         }
@@ -537,6 +682,12 @@ function handleChord(stroke) {
             textArea.selectionStart = textArea.value.length;
             textArea.selectionEnd = textArea.value.length;
         }
+        return;
+    }
+
+    // When Stripped Plover mode is ON, route ALL strokes to SP
+    if (strippedPloverMode && spAvailable) {
+        handleSpModeContinuous(stroke);
         return;
     }
 
@@ -618,6 +769,12 @@ function handleChord(stroke) {
         saveState();
         appendText(text);
         runInference();
+        return;
+    }
+
+    // Fallback: If SP is available and stroke was not recognized, try single-shot SP
+    if (spAvailable) {
+        handleSpSingleShot(stroke);
         return;
     }
 
@@ -737,6 +894,11 @@ function updateDisplay() {
                 text += curr.value;
             }
         }
+    }
+
+    // Append SP preedit when in SP mode
+    if (strippedPloverMode && spPreedit) {
+        text += spPreedit;
     }
     
     if (isRawMode) {
@@ -994,3 +1156,189 @@ document.addEventListener("keyup", (e) => {
         strokeKeys = new Set();
     }
 });
+
+// --- Stripped Plover Dictionary Management ---
+
+let dictPanelOpen = false;
+
+function toggleDictPanel() {
+    dictPanelOpen = !dictPanelOpen;
+    const panel = document.getElementById("dict-panel");
+    if (!panel) return;
+    panel.style.display = dictPanelOpen ? "block" : "none";
+    if (dictPanelOpen) refreshDictionaries();
+}
+
+async function refreshDictionaries() {
+    const listEl = document.getElementById("dict-list");
+    if (!listEl) return;
+    listEl.innerHTML = "<em>Loading...</em>";
+
+    try {
+        const resp = await fetch("/sp/dictionaries");
+        const data = await resp.json();
+        if (data.error) {
+            listEl.innerHTML = "<em>Error: " + data.error + "</em>";
+            return;
+        }
+        const dicts = data.dictionaries || [];
+        if (dicts.length === 0) {
+            listEl.innerHTML = "<em>No dictionaries loaded.</em>";
+            return;
+        }
+        listEl.innerHTML = "";
+        for (const d of dicts) {
+            const row = document.createElement("div");
+            row.className = "dict-row";
+
+            const info = document.createElement("span");
+            info.textContent = d.path + " (" + d.entries + " entries" + (d.enabled ? "" : ", disabled") + (d.readonly ? ", read-only" : "") + ")";
+            row.appendChild(info);
+
+            const viewBtn = document.createElement("button");
+            viewBtn.textContent = "Entries";
+            viewBtn.onclick = () => viewDictEntries(d.path);
+            row.appendChild(viewBtn);
+
+            if (!d.readonly) {
+                const delBtn = document.createElement("button");
+                delBtn.textContent = "Remove";
+                delBtn.onclick = () => removeDictionary(d.path);
+                row.appendChild(delBtn);
+            }
+
+            listEl.appendChild(row);
+        }
+    } catch (e) {
+        listEl.innerHTML = "<em>Failed to load dictionaries.</em>";
+    }
+}
+
+async function removeDictionary(name) {
+    try {
+        await fetch("/sp/dictionaries/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+        });
+        refreshDictionaries();
+    } catch (e) {
+        console.error("Remove dictionary failed:", e);
+    }
+}
+
+async function viewDictEntries(name) {
+    const entriesEl = document.getElementById("dict-entries");
+    if (!entriesEl) return;
+    entriesEl.innerHTML = "<em>Loading entries...</em>";
+    entriesEl.style.display = "block";
+    entriesEl.dataset.dictName = name;
+
+    try {
+        const resp = await fetch("/sp/entries", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+        });
+        const data = await resp.json();
+        if (data.error) {
+            entriesEl.innerHTML = "<em>Error: " + data.error + "</em>";
+            return;
+        }
+        const entries = data.entries || [];
+        let html = "<h4>Entries for: " + name + "</h4>";
+        html += '<div class="dict-entry-add"><input id="new-stroke" placeholder="Stroke"><input id="new-translation" placeholder="Translation"><button onclick="addEntry()">Add</button></div>';
+        if (entries.length === 0) {
+            html += "<em>No entries.</em>";
+        } else {
+            html += '<table class="dict-entries-table"><tr><th>Stroke</th><th>Translation</th><th></th></tr>';
+            for (const e of entries) {
+                html += "<tr><td>" + escapeHtml(e.stroke) + "</td><td>" + escapeHtml(e.translation) + "</td>";
+                html += '<td><button onclick="removeEntry(\'' + escapeHtml(e.stroke).replace(/'/g, "\\'") + '\')">×</button></td></tr>';
+            }
+            html += "</table>";
+        }
+        entriesEl.innerHTML = html;
+    } catch (e) {
+        entriesEl.innerHTML = "<em>Failed to load entries.</em>";
+    }
+}
+
+function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+}
+
+async function addEntry() {
+    const entriesEl = document.getElementById("dict-entries");
+    const dictName = entriesEl ? entriesEl.dataset.dictName : null;
+    const strokeInput = document.getElementById("new-stroke");
+    const translationInput = document.getElementById("new-translation");
+    if (!strokeInput || !translationInput || !dictName) return;
+
+    const stroke = strokeInput.value.trim();
+    const translation = translationInput.value;
+    if (!stroke) return;
+
+    try {
+        await fetch("/sp/entries/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stroke, translation, name: dictName }),
+        });
+        viewDictEntries(dictName);
+    } catch (e) {
+        console.error("Add entry failed:", e);
+    }
+}
+
+async function removeEntry(stroke) {
+    const entriesEl = document.getElementById("dict-entries");
+    const dictName = entriesEl ? entriesEl.dataset.dictName : null;
+    if (!dictName) return;
+
+    try {
+        await fetch("/sp/entries/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stroke, name: dictName }),
+        });
+        viewDictEntries(dictName);
+    } catch (e) {
+        console.error("Remove entry failed:", e);
+    }
+}
+
+async function importDictionaryFromFile() {
+    const fileInput = document.getElementById("dict-file-input");
+    const nameInput = document.getElementById("dict-import-name");
+    if (!fileInput || !fileInput.files[0] || !nameInput) return;
+
+    const name = nameInput.value.trim();
+    if (!name) { alert("Please enter a dictionary name."); return; }
+
+    const file = fileInput.files[0];
+    try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        await fetch("/sp/dictionaries/import", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, type: "json", data }),
+        });
+        fileInput.value = "";
+        nameInput.value = "";
+        refreshDictionaries();
+    } catch (e) {
+        console.error("Import dictionary failed:", e);
+        alert("Failed to import dictionary. Ensure the file is valid JSON.");
+    }
+}
+
+// --- Initialization ---
+
+// Check SP availability on load (non-blocking)
+checkSpStatus();
+// Periodically re-check SP status (every 30s)
+setInterval(checkSpStatus, 30000);
