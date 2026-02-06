@@ -21,8 +21,8 @@ COPY generated_regexes.json ./generated_regexes.json
 RUN cd inference-rs && cargo build --release --features mocked-model
 
 FROM public.ecr.aws/lambda/provided:al2
-# Adapter wires API Gateway/Lambda URLs to the Axum HTTP server.
-ADD https://github.com/awslabs/aws-lambda-web-adapter/releases/latest/download/aws-lambda-adapter /opt/extensions/aws-lambda-adapter
+# Adapter wires API Gateway/Lambda URLs to the Axum HTTP server (pin version for reproducibility).
+ADD https://github.com/awslabs/aws-lambda-web-adapter/releases/download/v0.8.4/aws-lambda-adapter /opt/extensions/aws-lambda-adapter
 RUN chmod +x /opt/extensions/aws-lambda-adapter
 COPY --from=builder /app/inference-rs/target/release/inference-rs /var/task/inference-rs
 COPY generated_regexes.json /var/task/
@@ -41,13 +41,17 @@ CMD ["/var/task/inference-rs","--server","--port","8080","--static_dir","/var/ta
 5) Expose via Function URL or API Gateway; `/infer` remains the primary POST endpoint, `/` serves static assets, `/plover/*` is optional.
 
 ## Alternative: GCP Cloud Run (no adapter needed)
-- Build with the existing Dockerfile or a slimmer multi-stage variant; ensure the server binds to `$PORT`:
-  - `CMD ["./inference-rs/target/release/inference-rs","--server","--port","${PORT:-8080}"]`
+- Build with the existing Dockerfile or a slimmer multi-stage variant; ensure the server binds to `$PORT`. With the current Dockerfile the working directory is `/app`, so use the full command:  
+  `CMD ./inference-rs/target/release/inference-rs --server --port ${PORT:-8080} --static_dir ./static --model_path ./lm.binary`  
+  If you adopt the multi-stage layout (copying the binary to `/var/task/inference-rs`), adjust paths accordingly.
 - Deploy with `gcloud run deploy ... --image <image> --memory 1Gi --timeout 30s`.
-- Provide `lm.binary` by baking it into the image (size allows up to 10GB), or download from Cloud Storage/EFS-equivalent on startup and set `--model_path`.
+- Provide `lm.binary` by baking it into the image (size allows up to 10GB), or download from Cloud Storage on startup and set `--model_path`.
+
+## Stripped Plover (optional)
+- The Plover proxy endpoints remain optional in serverless. Leave `STRIPPED_PLOVER_HOST/PORT` unset to disable.
+- If required, ensure network egress is allowed and set `STRIPPED_PLOVER_HOST`/`STRIPPED_PLOVER_PORT` as environment variables. No persistent state is needed; connections are per-request.
 
 ## Operational notes
 - **Cold start mitigation:** keep the model on fast storage (baked image or EFS), use provisioned/low-scale-min settings, and consider the mocked-model build for staging.
-- **Plover proxy:** optional; leave `STRIPPED_PLOVER_HOST/PORT` unset to disable.
 - **Static assets:** served from `static/`; no extra work needed.
 - **Health/readiness:** the adapter can use `/` as a readiness probe; the Axum server starts only after the model (or mocked model) is loaded.
