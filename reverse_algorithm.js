@@ -212,6 +212,7 @@ const initialClusters = ["ngh","ng","gh","gi","qu","kh","ph","th","tr","ch","nh"
 const finalClusters = ["ch","nh","ng","c","m","n","p","t","y","i","u","o",""].sort((a,b)=>b.length-a.length);
 const vowelOrthMap = {
     "ia": "iê/ia", "ya": "iê/ia", "iê": "iê/ia", "yê": "iê/ia",
+    "ye": "iê/ia",
     "ua": "ua/uô", "uô": "ua/uô",
     "ưa": "ưa/ươ", "ươ": "ưa/ươ",
     "ư": "ư", "ơ": "ơ", "ô": "ô", "o": "o", "ê": "ê", "e": "e",
@@ -229,8 +230,7 @@ function orthInitialToPhon(initial, vowelCore) {
 }
 
 function normalizeFinal(final) {
-    if (final === "c") return "w";
-    if (final === "ch") return "j";
+    if (["c", "ch", "p", "t"].includes(final)) return final;
     if (final === "y" || final === "i") return "j";
     if (final === "o" || final === "u") return "w";
     return final;
@@ -239,10 +239,11 @@ function normalizeFinal(final) {
 function removeAccents(syllable) {
     let tone = "";
     let plain = "";
-    for (const ch of syllable) {
+    const normalized = syllable.normalize("NFC");
+    for (const ch of normalized) {
         const info = pickTone(ch);
         if (info) {
-            tone = info.tone;
+            if (info.tone) tone = info.tone;
             plain += info.base;
         } else {
             plain += ch;
@@ -263,10 +264,21 @@ function decomposeSyllable(syllable) {
         for (const final of finalClusters) {
             if (afterInitial.length === 0 && final) continue;
             if (final && !afterInitial.endsWith(final)) continue;
-            const core = final ? afterInitial.slice(0, -final.length) : afterInitial;
+            const rawCore = final ? afterInitial.slice(0, -final.length) : afterInitial;
+            if (rawCore === "" && final && ["i", "y", "u", "o"].includes(final) && initial !== "gi") continue;
+            const core = rawCore
+                || (rawCore === "" && final === "i" ? "i" : "")
+                || (rawCore === "" && final === "" && initial === "gi" ? "i" : "");
             if (!core) continue;
-            const vowel = vowelOrthMap[core];
-            if (!vowel) continue;
+            const vowelBase = vowelOrthMap[core];
+            if (!vowelBase) continue;
+            let vowel = vowelBase;
+            if (initial === "gi" && core === "a") {
+                vowel = "iê/ia";
+            }
+            if (core === "a" && (final === "y" || final === "u")) {
+                vowel = "ă";
+            }
 
             const initialConsonant = orthInitialToPhon(initial, core);
             const finalConsonant = normalizeFinal(final);
