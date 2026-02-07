@@ -1,5 +1,12 @@
 # Stripped Plover integration
 
+**NEW REQUIREMENTS:**
+The specification has been implemented, but imperfectly.
+* RPC calls being over HTTP means the intermediary server has to buffer too much data. Use WebSocket instead.
+* Each WebSocket client spawns a new Stripped Plover process.
+* **RULES PERTAINING TO UNDO:**
+
+
 **NOTE:** for copyright reasons, DO NOT INCLUDE Stripped Plover code in this repository. Instead, just modify docker-compose.yml or Dockerfile to clone the Stripped Plover repository. In fact, Stripped Plover should run as a separate container in Docker Compose.
 
 **Communication flow:**
