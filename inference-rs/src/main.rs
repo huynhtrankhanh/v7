@@ -424,6 +424,8 @@ struct AppState {
     plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
 
+const PLOVER_STATUS_CACHE_SECONDS: u64 = 2;
+
 #[derive(Deserialize)]
 struct InferRequest {
     islands: Vec<String>,
@@ -481,7 +483,7 @@ async fn plover_status_handler(
     {
         let cache = state.plover_status_cache.lock().await;
         if let Some((ts, cached)) = *cache {
-            if ts.elapsed() < Duration::from_secs(2) {
+            if ts.elapsed() < Duration::from_secs(PLOVER_STATUS_CACHE_SECONDS) {
                 return Json(PloverStatusResponse { available: cached });
             }
         }
@@ -555,7 +557,7 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
         };
 
         let _ = socket
-            .send(Message::Text(serde_json::to_string(&response).unwrap_or_else(|_| "{\"ok\":false}".to_string())))
+            .send(Message::Text(serde_json::to_string(&response).unwrap_or_else(|_| "{\"ok\":false,\"error\":\"Response serialization failed\"}".to_string())))
             .await;
     }
 }

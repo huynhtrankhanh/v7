@@ -479,6 +479,7 @@ const dictionaryInputIds = new Set([
     "plover-entry-stroke",
     "plover-entry-translation"
 ]);
+const PLOVER_RPC_TIMEOUT_MS = 5000;
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
@@ -519,7 +520,7 @@ function restoreState() {
     }
 }
 
-function textOrEmpty(text) {
+function ensureString(text) {
     return text || "";
 }
 
@@ -567,20 +568,20 @@ async function fetchPloverStatus() {
 }
 
 function resetPloverSocket(message) {
+    const error = new Error(message || "Stripped Plover connection lost");
     if (ploverSocket) {
         try { ploverSocket.close(); } catch (e) { /* ignore */ }
     }
     ploverSocket = null;
     if (ploverSocketReady) {
         if (ploverSocketReadyReject) {
-            ploverSocketReadyReject(new Error(message || "Stripped Plover connection lost"));
+            ploverSocketReadyReject(error);
         }
         ploverSocketReady = null;
         ploverSocketReadyReject = null;
     }
-    const err = new Error(message || "Stripped Plover connection lost");
     for (const [, { reject }] of ploverPending) {
-        reject(err);
+        reject(error);
     }
     ploverPending.clear();
     strippedPlover.available = false;
@@ -648,7 +649,7 @@ async function ploverRpc(method, params) {
                 ploverPending.delete(key);
                 reject(new Error("Stripped Plover request timed out"));
             }
-        }, 5000);
+        }, PLOVER_RPC_TIMEOUT_MS);
         const wrappedResolve = (value) => {
             clearTimeout(timeoutId);
             resolve(value);
@@ -700,13 +701,13 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
 
     const committedJoined = committedParts.join("");
     const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
-    const committedText = textOrEmpty(combinedCommitted);
+    const committedText = ensureString(combinedCommitted);
     if (committedText) {
         state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
-        const normalizedPreedit = textOrEmpty(preeditText);
+        const normalizedPreedit = ensureString(preeditText);
         if (normalizedPreedit) {
             state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
             strippedPlover.preeditIndex = state.islands.length - 1;
