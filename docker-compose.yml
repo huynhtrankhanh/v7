@@ -24,6 +24,8 @@ services:
       STRIPPED_PLOVER_PORT: "4020"
     volumes:
       - stripped-plover-data:/data
+    ports:
+      - "4020:4020"
 
 volumes:
   stripped-plover-data:
