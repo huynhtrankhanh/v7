@@ -469,8 +469,21 @@ let strippedPlover = {
     requestId: 0
 };
 let ploverDictionaries = [];
+let ploverSocket = null;
+let ploverSocketReady = null;
+let ploverRpcId = 1;
+const ploverPending = new Map();
+const dictionaryInputIds = new Set([
+    "plover-dict-name",
+    "plover-entry-stroke",
+    "plover-entry-translation"
+]);
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
+
+function isDictionaryTextInputFocused(target = document.activeElement) {
+    return !!(target && dictionaryInputIds.has(target.id));
+}
 
 function saveState(isReplace = false) {
     const snapshot = { pendingCapitalization: state.pendingCapitalization };
@@ -506,7 +519,7 @@ function restoreState() {
 }
 
 function trimLeadingWhitespace(text) {
-    return text ? text.replace(/^\s+/, "") : "";
+    return text || "";
 }
 
 function setPloverMessage(message) {
@@ -552,17 +565,87 @@ async function fetchPloverStatus() {
     updatePloverStatusUI();
 }
 
-async function ploverRpc(method, params) {
-    const resp = await fetch("/plover/rpc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ method, params })
-    });
-    const data = await resp.json();
-    if (!data.ok) {
-        throw new Error(data.error || "Stripped Plover error");
+function resetPloverSocket(message) {
+    if (ploverSocket) {
+        try { ploverSocket.close(); } catch (e) { /* ignore */ }
     }
-    return data.result;
+    ploverSocket = null;
+    if (ploverSocketReady) {
+        ploverSocketReady = null;
+    }
+    const err = new Error(message || "Stripped Plover connection lost");
+    for (const [, { reject }] of ploverPending) {
+        reject(err);
+    }
+    ploverPending.clear();
+    strippedPlover.available = false;
+    strippedPlover.enabled = false;
+    strippedPlover.preeditIndex = null;
+    updatePloverStatusUI();
+}
+
+function ensurePloverSocket() {
+    if (ploverSocketReady) return ploverSocketReady;
+    ploverSocketReady = new Promise((resolve, reject) => {
+        const protocol = location.protocol === "https:" ? "wss://" : "ws://";
+        const ws = new WebSocket(`${protocol}${location.host}/plover/ws`);
+        ploverSocket = ws;
+
+        ws.addEventListener("open", () => {
+            strippedPlover.available = true;
+            updatePloverStatusUI();
+            resolve(ws);
+        });
+        ws.addEventListener("message", (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (!data.id) {
+                    return;
+                }
+                const key = JSON.stringify(data.id);
+                const pending = ploverPending.get(key);
+                if (pending) {
+                    ploverPending.delete(key);
+                    if (data.ok) {
+                        pending.resolve(data.result);
+                    } else {
+                        pending.reject(new Error(data.error || "Stripped Plover error"));
+                    }
+                }
+            } catch (e) {
+                // Ignore malformed messages
+            }
+        });
+        ws.addEventListener("close", () => {
+            resetPloverSocket("Stripped Plover connection closed");
+        });
+        ws.addEventListener("error", (e) => {
+            resetPloverSocket("Stripped Plover WebSocket error");
+            reject(new Error("Failed to connect to Stripped Plover"));
+        });
+    });
+    return ploverSocketReady;
+}
+
+async function ploverRpc(method, params) {
+    const socket = await ensurePloverSocket();
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        throw new Error("Stripped Plover unavailable");
+    }
+    const id = ploverRpcId++;
+    const payload = { id, method, params };
+    const promise = new Promise((resolve, reject) => {
+        const key = JSON.stringify(id);
+        ploverPending.set(key, { resolve, reject });
+        socket.send(JSON.stringify(payload));
+        setTimeout(() => {
+            if (ploverPending.has(key)) {
+                ploverPending.delete(key);
+                reject(new Error("Stripped Plover request timed out"));
+            }
+        }, 5000);
+    });
+    return promise;
 }
 
 function clearPloverPreedit() {
@@ -1150,6 +1233,10 @@ document.addEventListener("keydown", (e) => {
         return; // Allow default processing
     }
 
+    if (isDictionaryTextInputFocused(e.target)) {
+        return; // Allow normal typing in dictionary text boxes
+    }
+
     if (isRawMode) {
         if (e.key === "Escape") {
              // Exit Raw Mode
@@ -1213,6 +1300,10 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("keyup", (e) => {
     if (isRawMode) return; // Don't process steno in raw mode
+
+    if (isDictionaryTextInputFocused(e.target)) {
+        return;
+    }
 
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
