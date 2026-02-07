@@ -49,187 +49,7 @@ const accentToTone = (() => {
     return map;
 })();
 
-// --- Forward helpers copied from static/script.js ---
-function parse(stroke) {
-    let currentStroke = stroke;
-    let capitalize = false;
-    if (currentStroke.startsWith("#")) {
-        capitalize = true;
-        currentStroke = currentStroke.substring(1);
-    }
-
-    const onGlide = currentStroke.startsWith("S");
-    if (onGlide) currentStroke = currentStroke.substring(1);
-
-    let initialConsonant = "";
-    let survived = false;
-    
-    // Match Initial Consonant (4 -> 1)
-    for (let length = 4; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (stenographyMap[candidate] !== undefined) {
-            initialConsonant = stenographyMap[candidate];
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-
-    let vowel = "";
-    survived = false;
-    // Match Vowel (4 -> 1)
-    for (let length = 4; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (vowelMap[candidate] !== undefined) {
-            vowel = vowelMap[candidate];
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-    if (!survived) return null;
-
-    let finalConsonant = "";
-    let finalSteno = "";
-    // Match Final Consonant (2 -> 1)
-    for (let length = 2; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (finalMap[candidate] !== undefined) {
-            finalConsonant = finalMap[candidate];
-            finalSteno = candidate;
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-
-    let tone = "";
-    let toneSteno = "";
-    survived = currentStroke.length === 0;
-    if (currentStroke.length > 0) {
-        if (toneMap[currentStroke] !== undefined) {
-            tone = toneMap[currentStroke];
-            toneSteno = currentStroke;
-            currentStroke = "";
-            survived = true;
-        }
-    }
-
-    if (!survived) return null;
-    if (toneSteno === "BL" || toneSteno === "BLG") {
-        const stopFinals = { "P": "p", "R": "t", "FR": "c", "RP": "ch" };
-        if (stopFinals[finalSteno]) {
-            finalConsonant = stopFinals[finalSteno];
-            tone = toneSteno === "BL" ? "sắc" : "nặng";
-        } else {
-            return null;
-        }
-    }
-
-    return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
-}
-
-function assemble(parsed) {
-    const initial = () => {
-        const f = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
-        if (parsed.initialConsonant === "ng/ngh") {
-            return (parsed.onGlide || f) ? "ng" : "ngh";
-        }
-        if (parsed.initialConsonant === "g") {
-            return (parsed.onGlide || f) ? "g" : "gh";
-        }
-        if (parsed.initialConsonant === "gi") {
-            return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
-        }
-        if (parsed.initialConsonant === "c") {
-            return parsed.onGlide ? "q" : (f ? "c" : "k");
-        }
-        return parsed.initialConsonant;
-    };
-
-    const middle = () => {
-        if (parsed.vowel === "iê/ia") {
-            if (parsed.initialConsonant === "") {
-                if (parsed.onGlide) {
-                    if (parsed.finalConsonant === "") return "uy" + toneAccents["a"][parsed.tone];
-                    return "uy" + toneAccents["ê"][parsed.tone];
-                }
-                if (parsed.finalConsonant === "") return toneAccents["i"][parsed.tone] + "a";
-                return "y" + toneAccents["ê"][parsed.tone];
-            }
-            // Has initial consonant
-            if (parsed.onGlide) {
-                if (parsed.finalConsonant === "") return "uy" + toneAccents["a"][parsed.tone];
-                return "uy" + toneAccents["ê"][parsed.tone];
-            }
-            if (parsed.finalConsonant === "") return toneAccents["i"][parsed.tone] + "a";
-            return "i" + toneAccents["ê"][parsed.tone];
-        }
-        if (parsed.vowel === "ua/uô") {
-            return parsed.finalConsonant === ""
-                ? toneAccents["u"][parsed.tone] + "a"
-                : "u" + toneAccents["ô"][parsed.tone];
-        }
-        if (parsed.vowel === "ưa/ươ") {
-            return parsed.finalConsonant === ""
-                ? toneAccents["ư"][parsed.tone] + "a"
-                : "ư" + toneAccents["ơ"][parsed.tone];
-        }
-        if (parsed.vowel === "i") {
-            if (parsed.onGlide) {
-                if (parsed.finalConsonant === "") {
-                    return parsed.initialConsonant !== "c"
-                        ? toneAccents["u"][parsed.tone] + "y"
-                        : "u" + toneAccents["y"][parsed.tone];
-                }
-                return "u" + toneAccents["y"][parsed.tone];
-            }
-            return toneAccents["i"][parsed.tone];
-        }
-        if (parsed.vowel === "ă" && ["w", "j"].includes(parsed.finalConsonant)) {
-            const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
-            return prefix + toneAccents["a"][parsed.tone];
-        }
-        if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide) {
-            return "u" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        if (parsed.initialConsonant === "c" && parsed.onGlide) {
-            return "u" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        if (parsed.onGlide) {
-            return parsed.finalConsonant === ""
-                ? toneAccents["o"][parsed.tone] + parsed.vowel
-                : "o" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        return toneAccents[parsed.vowel][parsed.tone];
-    };
-
-    const final = () => {
-        if (parsed.finalConsonant === "w") {
-            if ([ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel)) {
-                return "u";
-            }
-            return "o";
-        }
-        if (parsed.finalConsonant === "j") {
-            if ([ "ă", "â" ].includes(parsed.vowel)) {
-                return "y";
-            }
-            return "i";
-        }
-        return parsed.finalConsonant;
-    };
-
-    const text = initial() + middle() + final();
-    return parsed.capitalize 
-        ? text.charAt(0).toUpperCase() + text.slice(1)
-        : text;
-}
-
-// --- Reverse syllable -> stroke ---
+// --- Helpers ---
 const capitalOptions = ["", "#"];
 const glideOptions = ["", "S"];
 const initialOptions = ["", ...Object.keys(stenographyMap)];
@@ -237,32 +57,292 @@ const vowelOptions = Object.keys(vowelMap);
 const finalOptions = ["", ...Object.keys(finalMap)];
 const toneOptions = ["", ...Object.keys(toneMap)];
 
+const initialByLength = initialOptions.slice().sort((a, b) => b.length - a.length);
+const vowelByLength = vowelOptions.slice().sort((a, b) => b.length - a.length);
+const finalByLength = finalOptions.slice().sort((a, b) => b.length - a.length);
+
+const stopToneOverride = { BL: "sắc", BLG: "nặng" };
+const stopFinals = { P: "p", R: "t", FR: "c", RP: "ch" };
+const stopFinalFromLetter = { p: "P", t: "R", c: "FR", ch: "RP" };
+
+function pickTone(char) {
+    const info = accentToTone[char];
+    if (!info) return null;
+    return info;
+}
+
+// Decode stroke -> phonetic parts (without reusing original parse)
+function decodeStroke(stroke) {
+    let cursor = stroke;
+    const capitalize = cursor.startsWith("#");
+    if (capitalize) cursor = cursor.slice(1);
+
+    const onGlide = cursor.startsWith("S");
+    if (onGlide) cursor = cursor.slice(1);
+
+    const takeToken = (pool) => {
+        for (const token of pool) {
+            if (cursor.startsWith(token)) {
+                cursor = cursor.slice(token.length);
+                return token;
+            }
+        }
+        return null;
+    };
+
+    const initialSteno = takeToken(initialByLength);
+    const vowelSteno = takeToken(vowelByLength);
+    if (!vowelSteno) return null;
+    const finalSteno = takeToken(finalByLength) || "";
+    const toneSteno = cursor;
+    if (toneSteno && !toneMap[toneSteno]) return null;
+    if (toneSteno) cursor = cursor.slice(toneSteno.length);
+    if (cursor !== "") return null;
+
+    let finalConsonant = finalSteno ? finalMap[finalSteno] : "";
+    let tone = toneMap[toneSteno] || "";
+
+    if (stopToneOverride[toneSteno]) {
+        const mapped = stopFinals[finalSteno];
+        if (!mapped) return null;
+        finalConsonant = mapped;
+        tone = stopToneOverride[toneSteno];
+    }
+
+    return {
+        capitalize,
+        onGlide,
+        initialConsonant: initialSteno ? stenographyMap[initialSteno] : "",
+        vowel: vowelMap[vowelSteno],
+        finalConsonant,
+        tone
+    };
+}
+
+function renderInitial(parsed, vowelCategory) {
+    if (parsed.initialConsonant === "ng/ngh") {
+        return (parsed.onGlide || vowelCategory) ? "ng" : "ngh";
+    }
+    if (parsed.initialConsonant === "g") {
+        return (parsed.onGlide || vowelCategory) ? "g" : "gh";
+    }
+    if (parsed.initialConsonant === "gi") {
+        return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
+    }
+    if (parsed.initialConsonant === "c") {
+        return parsed.onGlide ? "q" : (vowelCategory ? "c" : "k");
+    }
+    return parsed.initialConsonant;
+}
+
+function renderMiddle(parsed) {
+    const toneChar = (base) => toneAccents[base][parsed.tone];
+    const vowel = parsed.vowel;
+
+    if (vowel === "iê/ia") {
+        if (parsed.initialConsonant === "") {
+            if (parsed.onGlide) {
+                return parsed.finalConsonant === "" ? "uy" + toneChar("a") : "uy" + toneChar("ê");
+            }
+            return parsed.finalConsonant === "" ? toneChar("i") + "a" : "y" + toneChar("ê");
+        }
+        if (parsed.onGlide) {
+            return parsed.finalConsonant === "" ? "uy" + toneChar("a") : "uy" + toneChar("ê");
+        }
+        return parsed.finalConsonant === "" ? toneChar("i") + "a" : "i" + toneChar("ê");
+    }
+
+    if (vowel === "ua/uô") {
+        return parsed.finalConsonant === "" ? toneChar("u") + "a" : "u" + toneChar("ô");
+    }
+    if (vowel === "ưa/ươ") {
+        return parsed.finalConsonant === "" ? toneChar("ư") + "a" : "ư" + toneChar("ơ");
+    }
+    if (vowel === "i") {
+        if (parsed.onGlide) {
+            return parsed.finalConsonant === ""
+                ? (parsed.initialConsonant !== "c" ? toneChar("u") + "y" : "u" + toneChar("y"))
+                : "u" + toneChar("y");
+        }
+        return toneChar("i");
+    }
+    if (vowel === "ă" && (parsed.finalConsonant === "w" || parsed.finalConsonant === "j")) {
+        const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
+        return prefix + toneChar("a");
+    }
+    if ((vowel === "â" || vowel === "ê") && parsed.onGlide) {
+        return "u" + toneChar(vowel);
+    }
+    if (parsed.initialConsonant === "c" && parsed.onGlide) {
+        return "u" + toneChar(vowel);
+    }
+    if (parsed.onGlide) {
+        return parsed.finalConsonant === "" ? toneChar("o") + vowel : "o" + toneChar(vowel);
+    }
+    return toneChar(vowel);
+}
+
+function renderFinal(parsed) {
+    if (parsed.finalConsonant === "w") {
+        return ["iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i"].includes(parsed.vowel) ? "u" : "o";
+    }
+    if (parsed.finalConsonant === "j") {
+        return ["ă", "â"].includes(parsed.vowel) ? "y" : "i";
+    }
+    return parsed.finalConsonant;
+}
+
+function renderSyllable(parsed) {
+    const frontVowel = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
+    const initial = renderInitial(parsed, frontVowel);
+    const middle = renderMiddle(parsed);
+    const ending = renderFinal(parsed);
+    const word = initial + middle + ending;
+    return parsed.capitalize ? word[0].toUpperCase() + word.slice(1) : word;
+}
+
 function strokeToVietnamese(stroke) {
-    const parsed = parse(stroke);
-    return parsed ? assemble(parsed) : null;
+    const decoded = decodeStroke(stroke);
+    return decoded ? renderSyllable(decoded) : null;
+}
+
+// Convert orthographic syllable to phonetic parts (text-driven, no reuse of parse/assemble)
+const initialClusters = ["ngh","ng","gh","gi","qu","kh","ph","th","tr","ch","nh","đ","d","g","b","c","k","l","m","n","p","r","s","t","v","x","h","q",""] // "" for vowel-initial
+    .sort((a,b)=>b.length-a.length);
+const finalClusters = ["ch","nh","ng","c","m","n","p","t","y","i","u","o",""].sort((a,b)=>b.length-a.length);
+const vowelOrthMap = {
+    "ia": "iê/ia", "ya": "iê/ia", "iê": "iê/ia", "yê": "iê/ia",
+    "ua": "ua/uô", "uô": "ua/uô",
+    "ưa": "ưa/ươ", "ươ": "ưa/ươ",
+    "ư": "ư", "ơ": "ơ", "ô": "ô", "o": "o", "ê": "ê", "e": "e",
+    "i": "i", "a": "a", "ă": "ă", "â": "â", "u": "u", "y": "y"
+};
+
+function orthInitialToPhon(initial, vowelCore) {
+    if (initial === "ng" || initial === "ngh") return "ng/ngh";
+    if (initial === "q") return "c";
+    if (initial === "k" || initial === "c") return "c";
+    if (initial === "g" && (vowelCore.startsWith("i") || vowelCore.startsWith("e"))) return "g";
+    if (initial === "gh") return "g";
+    if (initial === "gi") return "gi";
+    return initial;
+}
+
+function normalizeFinal(final) {
+    if (final === "c") return "w";
+    if (final === "ch") return "j";
+    if (final === "y" || final === "i") return "j";
+    if (final === "o" || final === "u") return "w";
+    return final;
+}
+
+function removeAccents(syllable) {
+    let tone = "";
+    let plain = "";
+    for (const ch of syllable) {
+        const info = pickTone(ch);
+        if (info) {
+            tone = info.tone;
+            plain += info.base;
+        } else {
+            plain += ch;
+        }
+    }
+    return { tone, plain };
+}
+
+function decomposeSyllable(syllable) {
+    if (!syllable) return null;
+    const capitalize = syllable[0] !== syllable[0].toLowerCase();
+    const lower = syllable.toLowerCase();
+    const { tone, plain } = removeAccents(lower);
+
+    for (const initial of initialClusters) {
+        if (!plain.startsWith(initial)) continue;
+        const afterInitial = plain.slice(initial.length);
+        for (const final of finalClusters) {
+            if (afterInitial.length === 0 && final) continue;
+            if (final && !afterInitial.endsWith(final)) continue;
+            const core = final ? afterInitial.slice(0, -final.length) : afterInitial;
+            if (!core) continue;
+            const vowel = vowelOrthMap[core];
+            if (!vowel) continue;
+
+            const initialConsonant = orthInitialToPhon(initial, core);
+            const finalConsonant = normalizeFinal(final);
+
+            // Try glide both ways; validated later
+            return { capitalize, initialConsonant, finalConsonant, vowel, tone, onGlide: null };
+        }
+    }
+    return null;
+}
+
+function toneToSteno(tone, finalConsonant) {
+    const isStop = !!stopFinalFromLetter[finalConsonant];
+    if (isStop) {
+        if (tone === "sắc") return "BL";
+        if (tone === "nặng") return "BLG";
+        if (!tone) return "";
+        return null; // hỏi/ngã/huyền invalid on stop finals
+    }
+    for (const [steno, label] of Object.entries(toneMap)) {
+        if (steno === "BL" || steno === "BLG") continue;
+        if (label === tone) return steno;
+    }
+    return "";
+}
+
+function initialToSteno(initialConsonant) {
+    for (const [steno, val] of Object.entries(stenographyMap)) {
+        if (val === initialConsonant) return steno;
+    }
+    return "";
+}
+
+function vowelToSteno(vowel) {
+    for (const [steno, val] of Object.entries(vowelMap)) {
+        if (val === vowel) return steno;
+    }
+    return null;
+}
+
+function finalToSteno(finalConsonant) {
+    for (const [steno, val] of Object.entries(finalMap)) {
+        if (val === finalConsonant) return steno;
+    }
+    if (stopFinalFromLetter[finalConsonant]) return stopFinalFromLetter[finalConsonant];
+    if (!finalConsonant) return "";
+    return null;
+}
+
+function buildStroke(parts) {
+    const cap = parts.capitalize ? "#" : "";
+    const glide = parts.onGlide ? "S" : "";
+    const initial = initialToSteno(parts.initialConsonant);
+    const vowel = vowelToSteno(parts.vowel);
+    if (!vowel) return null;
+    const toneSteno = toneToSteno(parts.tone, parts.finalConsonant);
+    if (toneSteno === null) return null;
+    const final = finalToSteno(parts.finalConsonant);
+    if (final === null) return null;
+    return cap + glide + initial + vowel + final + toneSteno;
 }
 
 function syllableToStroke(targetSyllable) {
-    if (!targetSyllable) return null;
-    // Iterate through candidate strokes without storing them (O(1) space)
-    for (const cap of capitalOptions) {
-        for (const glide of glideOptions) {
-            for (const initial of initialOptions) {
-                for (const vowel of vowelOptions) {
-                    for (const final of finalOptions) {
-                        for (const tone of toneOptions) {
-                            const stroke = cap + glide + initial + vowel + final + tone;
-                            const parsed = parse(stroke);
-                            if (!parsed) continue;
-                            const syllable = assemble(parsed);
-                            if (syllable === targetSyllable) {
-                                return stroke;
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    const parts = decomposeSyllable(targetSyllable);
+    if (!parts || !parts.vowel) return null;
+    const onGlideGuesses = [true, false];
+    const cap = parts.capitalize ? "#" : "";
+    for (const glideFlag of onGlideGuesses) {
+        const attempt = { ...parts, onGlide: glideFlag };
+        const stroke = buildStroke(attempt);
+        if (!stroke) continue;
+        const syllable = strokeToVietnamese(stroke);
+        if (syllable === targetSyllable) return stroke;
+        // try capitalization toggle if needed
+        const strokeCap = buildStroke({ ...attempt, capitalize: !parts.capitalize });
+        if (strokeCap && strokeToVietnamese(strokeCap) === targetSyllable) return strokeCap;
     }
     return null;
 }
@@ -277,14 +357,12 @@ if (require.main === module) {
                     for (const final of finalOptions) {
                         for (const tone of toneOptions) {
                             const stroke = cap + glide + initial + vowel + final + tone;
-                            const parsed = parse(stroke);
-                            if (!parsed) continue;
-                            const syllable = assemble(parsed);
+                            const decoded = decodeStroke(stroke);
+                            if (!decoded) continue;
+                            const syllable = renderSyllable(decoded);
                             total++;
                             const back = syllableToStroke(syllable);
-                            if (!back) {
-                                throw new Error(`No reverse stroke for syllable ${syllable}`);
-                            }
+                            if (!back) throw new Error(`No reverse stroke for syllable ${syllable}`);
                             const forward = strokeToVietnamese(back);
                             if (forward !== syllable) {
                                 throw new Error(`Roundtrip mismatch for ${syllable}: got ${forward}`);
@@ -301,6 +379,6 @@ if (require.main === module) {
 module.exports = {
     syllableToStroke,
     strokeToVietnamese,
-    parse,
-    assemble,
+    decodeStroke,
+    renderSyllable,
 };
