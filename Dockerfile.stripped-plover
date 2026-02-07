@@ -17,4 +17,6 @@ ENV STRIPPED_PLOVER_DB=/data/stripped-plover.sqlite
 ENV STRIPPED_PLOVER_PORT=4020
 
 EXPOSE 4020
-CMD ["sh", "-c", "exec socat TCP-LISTEN:${STRIPPED_PLOVER_PORT},reuseaddr,fork EXEC:'node dist/index.js ${STRIPPED_PLOVER_DB}',pipes"]
+# Spawn a fresh Stripped Plover process for every inbound TCP client.
+# socat with the `fork` flag runs a new EXEC for each connection, ensuring per-connection isolation.
+CMD ["sh", "-c", "exec socat TCP-LISTEN:${STRIPPED_PLOVER_PORT},reuseaddr,fork EXEC:'node dist/index.js ${STRIPPED_PLOVER_DB}',pty,stderr,setsid,sigint"]
