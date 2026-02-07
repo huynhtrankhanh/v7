@@ -1,0 +1,16 @@
+{
+  "name": "v7-web-test",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test:e2e": "node scripts/fullstack-e2e.js"
+  },
+  "dependencies": {
+    "puppeteer": "^24.36.0"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "jest-environment-jsdom": "^30.2.0",
+    "node-fetch": "^2.7.0"
+  }
+}

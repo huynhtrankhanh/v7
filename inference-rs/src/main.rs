@@ -4,15 +4,20 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use anyhow::{Result, Context};
 use unicode_normalization::UnicodeNormalization;
 use clap::Parser;
 use regex::Regex;
 use axum::{
     extract::{State, Json},
+    extract::ws::{WebSocketUpgrade, WebSocket, Message},
+    http::StatusCode,
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
+use futures_util::StreamExt;
 use tower_http::services::ServeDir;
 use serde::{Deserialize, Serialize};
 
@@ -405,12 +410,21 @@ fn perform_inference(
     Ok(candidates)
 }
 
+#[derive(Clone)]
+struct PloverConfig {
+    host: String,
+    port: u16,
+}
+
 struct AppState {
     tokenizer: Tokenizer,
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
-    plover: Option<plover::PloverClient>,
+    plover: Option<PloverConfig>,
+    plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
+
+const PLOVER_STATUS_CACHE_SECONDS: u64 = 2;
 
 #[derive(Deserialize)]
 struct InferRequest {
@@ -424,15 +438,10 @@ struct InferResponse {
 
 #[derive(Deserialize)]
 struct PloverRequest {
+    #[serde(default)]
+    id: Option<serde_json::Value>,
     method: String,
     params: Option<serde_json::Value>,
-}
-
-#[derive(Serialize)]
-struct PloverProxyResponse {
-    ok: bool,
-    result: Option<serde_json::Value>,
-    error: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -467,38 +476,89 @@ async fn infer_handler(
 async fn plover_status_handler(
     State(state): State<Arc<AppState>>,
 ) -> Json<PloverStatusResponse> {
-    let available = if let Some(client) = state.plover.as_ref() {
-        client.check().await.is_ok()
-    } else {
-        false
+    let Some(config) = state.plover.as_ref() else {
+        return Json(PloverStatusResponse { available: false });
     };
+
+    {
+        let cache = state.plover_status_cache.lock().await;
+        if let Some((ts, cached)) = *cache {
+            if ts.elapsed() < Duration::from_secs(PLOVER_STATUS_CACHE_SECONDS) {
+                return Json(PloverStatusResponse { available: cached });
+            }
+        }
+    }
+
+    let client = plover::PloverClient::new(config.host.clone(), config.port);
+    let available = client.check().await.is_ok();
+    {
+        let mut cache = state.plover_status_cache.lock().await;
+        *cache = Some((Instant::now(), available));
+    }
     Json(PloverStatusResponse { available })
 }
 
-async fn plover_rpc_handler(
+#[derive(Serialize)]
+struct PloverProxyResponse {
+    ok: bool,
+    result: Option<serde_json::Value>,
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    id: Option<serde_json::Value>,
+}
+
+async fn plover_ws_handler(
     State(state): State<Arc<AppState>>,
-    Json(payload): Json<PloverRequest>,
-) -> Json<PloverProxyResponse> {
-    let Some(client) = state.plover.as_ref() else {
-        return Json(PloverProxyResponse {
-            ok: false,
-            result: None,
-            error: Some("Stripped Plover is disabled.".to_string()),
-        });
+    ws: WebSocketUpgrade,
+) -> impl IntoResponse {
+    let Some(config) = state.plover.clone() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "Stripped Plover is disabled").into_response();
     };
 
-    let params = payload.params.unwrap_or_else(|| serde_json::json!({}));
-    match client.send_request(&payload.method, params).await {
-        Ok(result) => Json(PloverProxyResponse {
-            ok: true,
-            result: Some(result),
-            error: None,
-        }),
-        Err(e) => Json(PloverProxyResponse {
-            ok: false,
-            result: None,
-            error: Some(e.to_string()),
-        }),
+    ws.on_upgrade(|socket| handle_plover_socket(socket, config))
+}
+
+async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
+    let mut socket = stream;
+    let client = plover::PloverClient::new(config.host, config.port);
+
+    while let Some(Ok(message)) = socket.next().await {
+        let Message::Text(text) = message else {
+            continue;
+        };
+
+        let parsed: Result<PloverRequest, _> = serde_json::from_str(&text);
+        let response = match parsed {
+            Ok(req) => {
+                let params = req.params.unwrap_or_else(|| serde_json::json!({}));
+                let id = req.id.clone();
+                let resp = match client.send_request(&req.method, params).await {
+                    Ok(result) => PloverProxyResponse {
+                        ok: true,
+                        result: Some(result),
+                        error: None,
+                        id,
+                    },
+                    Err(e) => PloverProxyResponse {
+                        ok: false,
+                        result: None,
+                        error: Some(e.to_string()),
+                        id,
+                    },
+                };
+                resp
+            }
+            Err(e) => PloverProxyResponse {
+                ok: false,
+                result: None,
+                error: Some(format!("Invalid request: {}", e)),
+                id: None,
+            },
+        };
+
+        let _ = socket
+            .send(Message::Text(serde_json::to_string(&response).unwrap_or_else(|_| "{\"ok\":false,\"error\":\"Response serialization failed\"}".to_string())))
+            .await;
     }
 }
 
@@ -531,18 +591,19 @@ async fn main() -> Result<()> {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(args.stripped_plover_port);
-        let plover = plover_host.map(|host| plover::PloverClient::new(host, plover_port));
+        let plover = plover_host.map(|host| PloverConfig { host, port: plover_port });
         let app_state = Arc::new(AppState {
             tokenizer,
             #[cfg(not(feature = "mocked-model"))]
             model,
             plover,
+            plover_status_cache: tokio::sync::Mutex::new(None),
         });
 
         let app = Router::new()
             .route("/infer", post(infer_handler))
             .route("/plover/status", get(plover_status_handler))
-            .route("/plover/rpc", post(plover_rpc_handler))
+            .route("/plover/ws", get(plover_ws_handler))
             .nest_service("/", ServeDir::new(&args.static_dir))
             .with_state(app_state);
 

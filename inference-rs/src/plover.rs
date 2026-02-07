@@ -98,10 +98,7 @@ impl PloverClient {
                         error.to_string()
                     ));
                 }
-                return value
-                    .get("result")
-                    .cloned()
-                    .context("Missing result from Stripped Plover");
+                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
             }
         }
     }
