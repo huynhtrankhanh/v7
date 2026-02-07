@@ -5,7 +5,12 @@ The specification has been implemented, but imperfectly.
 * RPC calls being over HTTP means the intermediary server has to buffer too much data. Use WebSocket instead.
 * Each WebSocket client spawns a new Stripped Plover process.
 * **RULES PERTAINING TO UNDO:**
-
+  * When Plover mode is enabled, all undo commands are forwarded to Plover
+  * When Plover mode is disabled:
+    * As the frontend has no awareness of the internal state of Plover, it can only treat the whole text inserted by Plover as a unified block, and undo deletes the whole block.
+* It is important to not do any sort of space trimming on the raw text provided by Plover.
+* Thoroughly test the application end to end, using JSDom or Puppeteer. Test the new features.
+* When a text box belonging to the dictionary management section is focused, input capture is temporarily paused to enable the user to type text in the textbox.
 
 **NOTE:** for copyright reasons, DO NOT INCLUDE Stripped Plover code in this repository. Instead, just modify docker-compose.yml or Dockerfile to clone the Stripped Plover repository. In fact, Stripped Plover should run as a separate container in Docker Compose.
 
