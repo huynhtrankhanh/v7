@@ -18,5 +18,6 @@ ENV STRIPPED_PLOVER_PORT=4020
 
 EXPOSE 4020
 # Spawn a fresh Stripped Plover process for every inbound TCP client.
-# socat with the `fork` flag runs a new EXEC for each connection, ensuring per-connection isolation.
+# socat flags: `fork` => new EXEC per connection; `pty` => isolated pseudo-TTY for each child;
+# `stderr` => forward child stderr; `setsid` => separate session; `sigint` => pass SIGINT to child.
 CMD ["sh", "-c", "exec socat TCP-LISTEN:${STRIPPED_PLOVER_PORT},reuseaddr,fork EXEC:'node dist/index.js ${STRIPPED_PLOVER_DB}',pty,stderr,setsid,sigint"]

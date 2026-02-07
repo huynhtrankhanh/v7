@@ -471,6 +471,7 @@ let strippedPlover = {
 let ploverDictionaries = [];
 let ploverSocket = null;
 let ploverSocketReady = null;
+let ploverSocketReadyReject = null;
 let ploverRpcId = 1;
 const ploverPending = new Map();
 const dictionaryInputIds = new Set([
@@ -518,7 +519,7 @@ function restoreState() {
     }
 }
 
-function preserveWhitespace(text) {
+function textOrEmpty(text) {
     return text || "";
 }
 
@@ -571,7 +572,11 @@ function resetPloverSocket(message) {
     }
     ploverSocket = null;
     if (ploverSocketReady) {
+        if (ploverSocketReadyReject) {
+            ploverSocketReadyReject(new Error(message || "Stripped Plover connection lost"));
+        }
         ploverSocketReady = null;
+        ploverSocketReadyReject = null;
     }
     const err = new Error(message || "Stripped Plover connection lost");
     for (const [, { reject }] of ploverPending) {
@@ -587,6 +592,7 @@ function resetPloverSocket(message) {
 function ensurePloverSocket() {
     if (ploverSocketReady) return ploverSocketReady;
     ploverSocketReady = new Promise((resolve, reject) => {
+        ploverSocketReadyReject = reject;
         const protocol = location.protocol === "https:" ? "wss://" : "ws://";
         const ws = new WebSocket(`${protocol}${location.host}/plover/ws`);
         ploverSocket = ws;
@@ -686,13 +692,13 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
 
     const committedJoined = committedParts.join("");
     const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
-    const committedText = preserveWhitespace(combinedCommitted);
+    const committedText = textOrEmpty(combinedCommitted);
     if (committedText) {
         state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
-        const normalizedPreedit = preserveWhitespace(preeditText);
+        const normalizedPreedit = textOrEmpty(preeditText);
         if (normalizedPreedit) {
             state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
             strippedPlover.preeditIndex = state.islands.length - 1;

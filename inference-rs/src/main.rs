@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use anyhow::{Result, Context};
 use unicode_normalization::UnicodeNormalization;
 use clap::Parser;
@@ -420,6 +421,7 @@ struct AppState {
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
     plover: Option<PloverConfig>,
+    plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
 
 #[derive(Deserialize)]
@@ -472,12 +474,25 @@ async fn infer_handler(
 async fn plover_status_handler(
     State(state): State<Arc<AppState>>,
 ) -> Json<PloverStatusResponse> {
-    let available = if let Some(config) = state.plover.as_ref() {
-        let client = plover::PloverClient::new(config.host.clone(), config.port);
-        client.check().await.is_ok()
-    } else {
-        false
+    let Some(config) = state.plover.as_ref() else {
+        return Json(PloverStatusResponse { available: false });
     };
+
+    {
+        let cache = state.plover_status_cache.lock().await;
+        if let Some((ts, cached)) = *cache {
+            if ts.elapsed() < Duration::from_secs(2) {
+                return Json(PloverStatusResponse { available: cached });
+            }
+        }
+    }
+
+    let client = plover::PloverClient::new(config.host.clone(), config.port);
+    let available = client.check().await.is_ok();
+    {
+        let mut cache = state.plover_status_cache.lock().await;
+        *cache = Some((Instant::now(), available));
+    }
     Json(PloverStatusResponse { available })
 }
 
@@ -520,13 +535,13 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
                         ok: true,
                         result: Some(result),
                         error: None,
-                        id: id.clone(),
+                        id: None,
                     },
                     Err(e) => PloverProxyResponse {
                         ok: false,
                         result: None,
                         error: Some(e.to_string()),
-                        id: id.clone(),
+                        id: None,
                     },
                 };
                 (resp, id)
@@ -584,6 +599,7 @@ async fn main() -> Result<()> {
             #[cfg(not(feature = "mocked-model"))]
             model,
             plover,
+            plover_status_cache: tokio::sync::Mutex::new(None),
         });
 
         let app = Router::new()
