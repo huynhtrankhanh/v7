@@ -518,7 +518,7 @@ function restoreState() {
     }
 }
 
-function trimLeadingWhitespace(text) {
+function preserveWhitespace(text) {
     return text || "";
 }
 
@@ -686,13 +686,13 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
 
     const committedJoined = committedParts.join("");
     const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
-    const committedText = trimLeadingWhitespace(combinedCommitted);
+    const committedText = preserveWhitespace(combinedCommitted);
     if (committedText) {
         state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
-        const normalizedPreedit = trimLeadingWhitespace(preeditText);
+        const normalizedPreedit = preserveWhitespace(preeditText);
         if (normalizedPreedit) {
             state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
             strippedPlover.preeditIndex = state.islands.length - 1;

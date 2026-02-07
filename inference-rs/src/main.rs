@@ -434,6 +434,8 @@ struct InferResponse {
 
 #[derive(Deserialize)]
 struct PloverRequest {
+    #[serde(default)]
+    id: Option<serde_json::Value>,
     method: String,
     params: Option<serde_json::Value>,
 }
@@ -509,36 +511,35 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
         };
 
         let parsed: Result<PloverRequest, _> = serde_json::from_str(&text);
-        let response = match parsed {
+        let (response, id_value) = match parsed {
             Ok(req) => {
                 let params = req.params.unwrap_or_else(|| serde_json::json!({}));
-                match client.send_request(&req.method, params).await {
+                let id = req.id.clone();
+                let resp = match client.send_request(&req.method, params).await {
                     Ok(result) => PloverProxyResponse {
                         ok: true,
                         result: Some(result),
                         error: None,
-                        id: None,
+                        id: id.clone(),
                     },
                     Err(e) => PloverProxyResponse {
                         ok: false,
                         result: None,
                         error: Some(e.to_string()),
-                        id: None,
+                        id: id.clone(),
                     },
-                }
+                };
+                (resp, id)
             }
-            Err(e) => PloverProxyResponse {
-                ok: false,
-                result: None,
-                error: Some(format!("Invalid request: {}", e)),
-                id: None,
-            },
-        };
-
-        // Propagate request id if present to help correlate responses.
-        let id_value = match serde_json::from_str::<serde_json::Value>(&text) {
-            Ok(raw) => raw.get("id").cloned(),
-            Err(_) => None,
+            Err(e) => (
+                PloverProxyResponse {
+                    ok: false,
+                    result: None,
+                    error: Some(format!("Invalid request: {}", e)),
+                    id: None,
+                },
+                None,
+            ),
         };
 
         let payload = PloverProxyResponse { id: id_value, ..response };
