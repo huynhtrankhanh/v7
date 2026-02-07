@@ -642,14 +642,22 @@ async function ploverRpc(method, params) {
     const payload = { id, method, params };
     const promise = new Promise((resolve, reject) => {
         const key = JSON.stringify(id);
-        ploverPending.set(key, { resolve, reject });
         socket.send(JSON.stringify(payload));
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
             if (ploverPending.has(key)) {
                 ploverPending.delete(key);
                 reject(new Error("Stripped Plover request timed out"));
             }
         }, 5000);
+        const wrappedResolve = (value) => {
+            clearTimeout(timeoutId);
+            resolve(value);
+        };
+        const wrappedReject = (err) => {
+            clearTimeout(timeoutId);
+            reject(err);
+        };
+        ploverPending.set(key, { resolve: wrappedResolve, reject: wrappedReject });
     });
     return promise;
 }

@@ -526,7 +526,7 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
         };
 
         let parsed: Result<PloverRequest, _> = serde_json::from_str(&text);
-        let (response, id_value) = match parsed {
+        let response = match parsed {
             Ok(req) => {
                 let params = req.params.unwrap_or_else(|| serde_json::json!({}));
                 let id = req.id.clone();
@@ -535,31 +535,27 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
                         ok: true,
                         result: Some(result),
                         error: None,
-                        id: None,
+                        id,
                     },
                     Err(e) => PloverProxyResponse {
                         ok: false,
                         result: None,
                         error: Some(e.to_string()),
-                        id: None,
+                        id,
                     },
                 };
-                (resp, id)
+                resp
             }
-            Err(e) => (
-                PloverProxyResponse {
-                    ok: false,
-                    result: None,
-                    error: Some(format!("Invalid request: {}", e)),
-                    id: None,
-                },
-                None,
-            ),
+            Err(e) => PloverProxyResponse {
+                ok: false,
+                result: None,
+                error: Some(format!("Invalid request: {}", e)),
+                id: None,
+            },
         };
 
-        let payload = PloverProxyResponse { id: id_value, ..response };
         let _ = socket
-            .send(Message::Text(serde_json::to_string(&payload).unwrap_or_else(|_| "{\"ok\":false}".to_string())))
+            .send(Message::Text(serde_json::to_string(&response).unwrap_or_else(|_| "{\"ok\":false}".to_string())))
             .await;
     }
 }
