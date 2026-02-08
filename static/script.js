@@ -737,6 +737,7 @@ async function handlePloverStroke(stroke, { oneShot }) {
         }
     } catch (e) {
         if (currentRequest !== strippedPlover.requestId) return;
+        console.log(e);
         setPloverMessage(e.message || "Stripped Plover request failed.");
     }
 }
@@ -750,6 +751,7 @@ async function togglePloverMode() {
         try {
             await ploverRpc("reset_state", {});
         } catch (e) {
+            console.log(e);
             setPloverMessage(e.message || "Failed to reset Stripped Plover.");
         }
         runInference();
@@ -769,6 +771,7 @@ async function refreshPloverDictionaries() {
         renderPloverDictionaries();
         setPloverMessage("");
     } catch (e) {
+        console.log(e);
         setPloverMessage(e.message || "Failed to load dictionaries.");
     }
 }
@@ -826,6 +829,7 @@ function renderPloverDictionaries() {
                     await ploverRpc("remove_dictionary", { name });
                     await refreshPloverDictionaries();
                 } catch (e) {
+                    console.log(e);
                     setPloverMessage(e.message || "Failed to remove dictionary.");
                 }
             };
@@ -1413,6 +1417,7 @@ function setupPloverControls() {
                 await refreshPloverDictionaries();
                 setPloverMessage("");
             } catch (e) {
+                console.log(e);
                 setPloverMessage(e.message || "Failed to upload dictionary.");
             }
         });
@@ -1453,6 +1458,7 @@ function setupPloverControls() {
             setPloverMessage("");
             await refreshPloverDictionaries();
         } catch (e) {
+            console.log(e);
             setPloverMessage(e.message || "Entry update failed.");
         }
     };
