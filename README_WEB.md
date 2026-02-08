@@ -126,23 +126,24 @@ If a stroke cannot be parsed according to these rules, it is **ignored**. An ign
 
 | Steno Keys | Sound | Steno Keys | Sound |
 | :--- | :--- | :--- | :--- |
-| `PW` | b | `TPH` | n |
-| `K` | c | `TPR` | nh |
-| `KH` | ch | `TPW` | ng/ngh |
-| `KWR` | d | `P` | p |
-| `TK` | đ | `R` | r |
-| `TP` | ph | `KP` | s |
-| `TKPW` | g/gh | `T` | t |
+| `#SP` | b | `TPH` | n |
+| `#T` | c | `#STPH` | nh |
+| `STH` | ch | `#TP` | ng/ngh |
+| `#TPH` | d | `P` | p |
+| `#ST` | đ | `#H` | r |
+| `TP` | ph | `STP` | s |
+| `#STP` | g/gh | `T` | t |
 | `H` | h | `TH` | th |
-| `KWH` | gi | `TR` | tr |
-| `KHR` | kh | `W` | v |
-| `HR` | l | `WR` | x |
+| `KWH` | gi | `#TH` | tr |
+| `#STH` | kh | `#P` | v |
+| `#SH` | l | `#PH` | x |
 | `PH` | m | | |
 
+The left-hand consonant inputs now mirror the two-syllable (V7) layout, reusing the `#`, `S`, `T`, `P`, and `H` keys for all onsets.
 *   **Orthography Rules:**
-    *   `TPW` (`ng`): Automatically becomes `ngh` when followed by front vowels (`i`, `e`, `ê`).
-    *   `TKPW` (`g`): Automatically becomes `gh` when followed by front vowels.
-    *   `K` (`c`): Automatically becomes `k` when followed by front vowels, or `q` if the "on-glide" (S key) is present.
+    *   `#TP` (`ng`): Automatically becomes `ngh` when followed by front vowels (`i`, `e`, `ê`).
+    *   `#STP` (`g`): Automatically becomes `gh` when followed by front vowels.
+    *   `#T` (`c`): Automatically becomes `k` when followed by front vowels, or `q` if the "on-glide" (S key) is present.
 
 ### 2. Vowels (Thumbs)
 
@@ -188,8 +189,8 @@ Tones are determined by the remaining keys after matching the final consonant.
 ### 5. On-Glide (S-)
 The Left `S` key (mapped to `A` on QWERTY) can act as an "on-glide" modifier if it's not part of another valid initial consonant sequence. It typically introduces a medial `u` or `o` sound (e.g., *hoa*, *tuân*) or modifies `c` to `q` (e.g., *qua*).
 
-### 6. Capitalization (#)
-The `#` key (mapped to `Q` on QWERTY) capitalizes the first letter of the resulting syllable.
+### 6. Capitalization (K)
+The `K` key (mapped to `S` on QWERTY) now capitalizes the first letter of the resulting syllable. This frees the `#` key to be used as part of the left-hand consonant combinations shared with the two-syllable (V7) mode.
 
 ### 7. V7 Island Rules (Two-Syllable Islands)
 

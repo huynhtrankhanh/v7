@@ -1,10 +1,10 @@
 // --- Mappings & Constants ---
 
 const stenographyMap = {
-    "PW": "b", "K": "c", "KH": "ch", "KWR": "d", "TK": "đ", "TP": "ph",
-    "TKPW": "g", "H": "h", "KWH": "gi", "KHR": "kh", "HR": "l", "PH": "m",
-    "TPH": "n", "TPR": "nh", "TPW": "ng/ngh", "P": "p", "R": "r", "KP": "s",
-    "T": "t", "TH": "th", "TR": "tr", "W": "v", "WR": "x",
+    "#SP": "b", "#T": "c", "STH": "ch", "#TPH": "d", "#ST": "đ", "TP": "ph",
+    "#STP": "g", "H": "h", "KWH": "gi", "#STH": "kh", "#SH": "l", "PH": "m",
+    "TPH": "n", "#STPH": "nh", "#TP": "ng/ngh", "P": "p", "#H": "r", "STP": "s",
+    "T": "t", "TH": "th", "#TH": "tr", "#P": "v", "#PH": "x",
 };
 
 const vowelMap = {
@@ -154,13 +154,12 @@ function handleEmilySymbol(stroke) {
 function parse(stroke) {
     let currentStroke = stroke;
     let capitalize = false;
-    if (currentStroke.startsWith("#")) {
+    if (currentStroke.includes("K")) {
         capitalize = true;
-        currentStroke = currentStroke.substring(1);
+        currentStroke = currentStroke.replace("K", "");
     }
 
-    const onGlide = currentStroke.startsWith("S");
-    if (onGlide) currentStroke = currentStroke.substring(1);
+    let onGlide = false;
 
     let initialConsonant = "";
     let survived = false;
@@ -175,6 +174,11 @@ function parse(stroke) {
             survived = true;
             break;
         }
+    }
+
+    if (initialConsonant === "" && currentStroke.startsWith("S")) {
+        onGlide = true;
+        currentStroke = currentStroke.substring(1);
     }
 
     let vowel = "";
