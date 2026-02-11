@@ -117,8 +117,11 @@ async function main() {
         });
       });
     });
-    if (!wsResult?.ok && !wsResult?.result) {
-      throw new Error(`WebSocket RPC failed: ${JSON.stringify(wsResult)}`);
+    if (!wsResult?.ok) {
+      throw new Error(`WebSocket RPC failed (not ok): ${JSON.stringify(wsResult)}`);
+    }
+    if (!wsResult?.result?.dictionaries) {
+      throw new Error(`WebSocket RPC missing dictionaries: ${JSON.stringify(wsResult)}`);
     }
 
     // Toggle plover mode via UI.

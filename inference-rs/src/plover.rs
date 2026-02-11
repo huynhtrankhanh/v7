@@ -91,6 +91,11 @@ impl PloverClient {
                 continue;
             }
 
+            let has_result = value.get("result").is_some();
+            let has_error = value.get("error").is_some();
+            if !has_result && !has_error {
+                continue;
+            }
             if matches_id(&value, id) {
                 if let Some(error) = value.get("error") {
                     return Err(anyhow::anyhow!(
