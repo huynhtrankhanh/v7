@@ -5,7 +5,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Pin to the main branch commit from 2026-01-26 for reproducible builds.
-ARG STRIPPED_PLOVER_REF=8e1f8afed49fb5704ab25a98229d8997458075cf
+ARG STRIPPED_PLOVER_REF=main
 
 WORKDIR /opt/stripped-plover
 RUN git clone https://github.com/huynhtrankhanh/strippedplover.git . \
