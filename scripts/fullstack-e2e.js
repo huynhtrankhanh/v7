@@ -169,9 +169,9 @@ async function main() {
     }
     const dictNameInput2 = await page.$("#plover-dict-name");
     if (!dictNameInput2) throw new Error("Dictionary name input not found (python)");
-    await page.$eval("#plover-dict-name", (el) => {
+    await page.evaluate((el) => {
       el.value = "e2e-python";
-    });
+    }, dictNameInput2);
     await page.select("#plover-dict-type", "python");
     await dictFileInput2.uploadFile(PY_DICT_PATH);
     await page.click("#plover-dict-upload");
