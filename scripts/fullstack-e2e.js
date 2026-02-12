@@ -148,8 +148,9 @@ async function main() {
     if (!dictFileInput) {
       throw new Error("Dictionary file input not found");
     }
+    const dictNameInput = await page.$("#plover-dict-name");
+    if (!dictNameInput) throw new Error("Dictionary name input not found");
     await page.$eval("#plover-dict-name", (el) => {
-      if (!el) throw new Error("Dictionary name input not found");
       el.value = "e2e-json";
     });
     await page.select("#plover-dict-type", "json");
@@ -166,8 +167,9 @@ async function main() {
     if (!dictFileInput2) {
       throw new Error("Dictionary file input not found (python)");
     }
+    const dictNameInput2 = await page.$("#plover-dict-name");
+    if (!dictNameInput2) throw new Error("Dictionary name input not found (python)");
     await page.$eval("#plover-dict-name", (el) => {
-      if (!el) throw new Error("Dictionary name input not found (python)");
       el.value = "e2e-python";
     });
     await page.select("#plover-dict-type", "python");
