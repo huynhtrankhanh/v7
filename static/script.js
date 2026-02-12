@@ -479,7 +479,7 @@ const dictionaryInputIds = new Set([
     "plover-entry-stroke",
     "plover-entry-translation"
 ]);
-const PLOVER_RPC_TIMEOUT_MS = 5000;
+const PLOVER_RPC_TIMEOUT_MS = 30000;
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 
