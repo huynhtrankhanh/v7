@@ -8,6 +8,8 @@ use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
+const PLOVER_READ_TIMEOUT: Duration = Duration::from_secs(5);
+
 struct PloverConnection {
     reader: BufReader<tokio::net::tcp::OwnedReadHalf>,
     writer: tokio::net::tcp::OwnedWriteHalf,
@@ -65,7 +67,7 @@ impl PloverClient {
 
         loop {
             let mut line = String::new();
-            let read_result = timeout(Duration::from_secs(5), connection.reader.read_line(&mut line))
+            let read_result = timeout(PLOVER_READ_TIMEOUT, connection.reader.read_line(&mut line))
                 .await
                 .context("Timed out waiting for Stripped Plover response")?;
             let bytes = read_result.context("Failed to read from Stripped Plover")?;

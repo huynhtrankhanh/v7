@@ -9,6 +9,7 @@
 !Dockerfile
 !docker-compose.yml
 !.dockerignore
+!scripts/stripped-plover-agent.cjs
 
 # Explicitly ignore unwanted files within the allowed directories
 ai/__pycache__/
