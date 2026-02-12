@@ -8,6 +8,9 @@ const net = require("net");
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
+const FIXTURE_DIR = path.join(ROOT, "scripts", "fixtures");
+const JSON_DICT_PATH = path.join(FIXTURE_DIR, "e2e-dict.json");
+const PY_DICT_PATH = path.join(FIXTURE_DIR, "e2e-dict.py");
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
@@ -139,6 +142,30 @@ async function main() {
     if (strokeVal !== "PUPE2E") {
       throw new Error(`Dictionary stroke input did not capture text, got: ${strokeVal}`);
     }
+
+    // Upload JSON dictionary
+    const dictFileInput = await page.$("#plover-dict-file");
+    if (!dictFileInput) {
+      throw new Error("Dictionary file input not found");
+    }
+    await page.$eval("#plover-dict-name", (el) => (el.value = "e2e-json"));
+    await page.select("#plover-dict-type", "json");
+    await dictFileInput.uploadFile(JSON_DICT_PATH);
+    await page.click("#plover-dict-upload");
+    await page.waitForFunction(
+      () => document.querySelectorAll("#plover-dictionary-list .plover-dictionary-item").length >= 1,
+      { timeout: 15000 }
+    );
+
+    // Upload Python dictionary
+    await page.$eval("#plover-dict-name", (el) => (el.value = "e2e-python"));
+    await page.select("#plover-dict-type", "python");
+    await dictFileInput.uploadFile(PY_DICT_PATH);
+    await page.click("#plover-dict-upload");
+    await page.waitForFunction(
+      () => document.querySelectorAll("#plover-dictionary-list .plover-dictionary-item").length >= 2,
+      { timeout: 15000 }
+    );
 
     await page.screenshot({ path: screenshotPath, fullPage: true });
 

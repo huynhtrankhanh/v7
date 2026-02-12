@@ -65,7 +65,7 @@ impl PloverClient {
 
         loop {
             let mut line = String::new();
-            let read_result = timeout(Duration::from_secs(5), connection.reader.read_line(&mut line))
+            let read_result = timeout(Duration::from_secs(60), connection.reader.read_line(&mut line))
                 .await
                 .context("Timed out waiting for Stripped Plover response")?;
             let bytes = read_result.context("Failed to read from Stripped Plover")?;
