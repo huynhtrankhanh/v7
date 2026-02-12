@@ -1,7 +1,7 @@
 FROM node:22
 
 RUN apt-get update \
-    && apt-get install -y git socat \
+    && apt-get install -y git \
     && rm -rf /var/lib/apt/lists/*
 
 # Pin to the main branch commit from 2026-01-26 for reproducible builds.
@@ -12,12 +12,11 @@ RUN git clone https://github.com/huynhtrankhanh/strippedplover.git . \
     && git checkout "${STRIPPED_PLOVER_REF}"
 RUN npm install
 RUN npm run build
+COPY scripts/stripped-plover-agent.cjs /opt/stripped-plover/agent.cjs
 
 ENV STRIPPED_PLOVER_DB=/data/stripped-plover.sqlite
 ENV STRIPPED_PLOVER_PORT=4020
 
 EXPOSE 4020
-# Spawn a fresh Stripped Plover process for every inbound TCP client.
-# socat flags: `fork` => new EXEC per connection; `pty` => isolated pseudo-TTY for each child;
-# `stderr` => forward child stderr; `setsid` => separate session; `sigint` => pass SIGINT to child.
-CMD ["sh", "-c", "exec socat TCP-LISTEN:${STRIPPED_PLOVER_PORT},reuseaddr,fork EXEC:'node dist/index.js ${STRIPPED_PLOVER_DB}',pty,stderr,setsid,sigint"]
+# Spawn a fresh Stripped Plover process for every inbound TCP client with explicit newline flushing.
+CMD ["node", "/opt/stripped-plover/agent.cjs"]
