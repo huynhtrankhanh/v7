@@ -148,7 +148,10 @@ async function main() {
     if (!dictFileInput) {
       throw new Error("Dictionary file input not found");
     }
-    await page.$eval("#plover-dict-name", (el) => (el.value = "e2e-json"));
+    await page.$eval("#plover-dict-name", (el) => {
+      if (!el) throw new Error("Dictionary name input not found");
+      el.value = "e2e-json";
+    });
     await page.select("#plover-dict-type", "json");
     await dictFileInput.uploadFile(JSON_DICT_PATH);
     await page.click("#plover-dict-upload");
@@ -158,9 +161,17 @@ async function main() {
     );
 
     // Upload Python dictionary
-    await page.$eval("#plover-dict-name", (el) => (el.value = "e2e-python"));
+    // Re-acquire elements in case the list refresh re-rendered the form.
+    const dictFileInput2 = await page.$("#plover-dict-file");
+    if (!dictFileInput2) {
+      throw new Error("Dictionary file input not found (python)");
+    }
+    await page.$eval("#plover-dict-name", (el) => {
+      if (!el) throw new Error("Dictionary name input not found (python)");
+      el.value = "e2e-python";
+    });
     await page.select("#plover-dict-type", "python");
-    await dictFileInput.uploadFile(PY_DICT_PATH);
+    await dictFileInput2.uploadFile(PY_DICT_PATH);
     await page.click("#plover-dict-upload");
     await page.waitForFunction(
       () => document.querySelectorAll("#plover-dictionary-list .plover-dictionary-item").length >= 2,
