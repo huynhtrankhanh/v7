@@ -1,6 +1,3 @@
-// @ts-nocheck
-// NOTE: This file is being migrated incrementally from legacy JS; targeted modules (textBuffer, rope) are typed.
-// Keeping ts-nocheck here avoids blocking builds while the rest of the surface is ported.
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
 
 // --- Mappings & Constants ---

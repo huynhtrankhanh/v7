@@ -1,4 +1,14 @@
-FROM rust:latest
+FROM node:22 AS frontend
+WORKDIR /app
+
+# Install and build the web assets (Vite + TypeScript)
+COPY package.json package-lock.json tsconfig.json tsconfig.jest.json vite.config.ts ./
+COPY src ./src
+COPY static ./static
+RUN npm ci
+RUN npm run build
+
+FROM rust:latest AS builder
 
 # Install build dependencies for KenLM
 RUN apt-get update && apt-get install -y \
@@ -35,11 +45,16 @@ COPY inference-rs ./inference-rs
 WORKDIR /app/inference-rs
 RUN cargo build --release
 
-# Set working directory back to /app for runtime so paths (like ai/generated_regexes.json) align
+FROM rust:latest
 WORKDIR /app
+
+# Runtime deps for inference binary only (KenLM and web assets copied from builders)
+COPY --from=builder /app/inference-rs/target/release/inference-rs ./inference-rs/target/release/inference-rs
+COPY --from=builder /app/ai ./ai
+COPY --from=builder /app/kenlm ./kenlm
+COPY --from=frontend /app/static ./static
 
 # Entrypoint runs the binary
 # Usage: docker run ... <v7_string>
 # Arguments are passed to the binary
 ENTRYPOINT ["./inference-rs/target/release/inference-rs", "--server"]
-
