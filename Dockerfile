@@ -34,10 +34,6 @@ RUN mkdir -p build \
 
 WORKDIR /app
 
-# Copy necessary project files
-# We need 'ai' directory for runtime data (generated_regexes.json)
-COPY ai ./ai
-
 # Copy Rust project
 COPY inference-rs ./inference-rs
 
@@ -50,7 +46,6 @@ WORKDIR /app
 
 # Runtime deps for inference binary only (KenLM and web assets copied from builders)
 COPY --from=builder /app/inference-rs/target/release/inference-rs ./inference-rs/target/release/inference-rs
-COPY --from=builder /app/ai ./ai
 COPY --from=builder /app/kenlm ./kenlm
 COPY --from=frontend /app/static ./static
 
