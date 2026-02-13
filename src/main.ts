@@ -1,4 +1,6 @@
 // @ts-nocheck
+// NOTE: This file is being migrated incrementally from legacy JS; targeted modules (textBuffer, rope) are typed.
+// Keeping ts-nocheck here avoids blocking builds while the rest of the surface is ported.
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
 
 // --- Mappings & Constants ---
@@ -944,7 +946,7 @@ function selectCandidate(index) {
     // state.candidates[index] is array of strings [Fixed, V7, Fixed...] from server response
     // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
     const chosenText = state.candidates[index].join("");
-    saveState(true);
+    saveState();
     state.islands = [createIsland('vietnamese', chosenText)];
     state.candidates = [];
     updateDisplay();

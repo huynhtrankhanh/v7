@@ -1,3 +1,5 @@
+import { Rope } from "./rope";
+
 export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
 
 export interface Island {
