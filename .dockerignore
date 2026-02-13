@@ -4,11 +4,18 @@
 # Unignore the specific directories we need
 !ai/
 !inference-rs/
+!src/
+!static/
 
 # Unignore build configuration files
 !Dockerfile
 !docker-compose.yml
 !.dockerignore
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.jest.json
+!vite.config.ts
 !scripts/stripped-plover-agent.cjs
 
 # Explicitly ignore unwanted files within the allowed directories
