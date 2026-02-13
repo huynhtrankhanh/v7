@@ -10,7 +10,6 @@ services:
       # This file is expected to exist at runtime.
       - ./lm.binary:/app/lm.binary:ro
       - ./generated_regexes.json:/app/generated_regexes.json:ro
-      - ./static:/app/static:ro
     # The default command can be overridden by the user
     # e.g., docker-compose run inference "some input string"
     ports:
