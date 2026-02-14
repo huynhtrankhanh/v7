@@ -167,7 +167,6 @@ async function main() {
     const renamedName = uniqueName.replace(".json", "-renamed.json");
     const stroke = "TEFT";
 
-    const dictionaryName = uniqueName;
     const uploadPath = path.join("/tmp", uniqueName);
     fs.writeFileSync(uploadPath, "{}\n");
     const fileInput = await page.$("#plover-dict-file");
@@ -176,18 +175,18 @@ async function main() {
     }
     await fileInput.uploadFile(uploadPath);
     await page.click("#plover-dict-name", { clickCount: 3 });
-    await page.type("#plover-dict-name", dictionaryName);
+    await page.type("#plover-dict-name", uniqueName);
     await page.select("#plover-dict-type", "json");
     await page.click("#plover-dict-upload");
 
     await page.waitForFunction(
       (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.includes(name)),
       { timeout: 5000 },
-      dictionaryName
+      uniqueName
     );
     const stateAfterImport = await ploverRpcOnPage(page, "get_dictionary_state", {});
     const importedDictionary = (stateAfterImport?.result?.dictionaries || []).find((dict) =>
-      [dict.identifier, dict.path, dict.name].some((value) => typeof value === "string" && value.includes(dictionaryName))
+      [dict.identifier, dict.path, dict.name].some((value) => typeof value === "string" && value.includes(uniqueName))
     );
     if (!importedDictionary) {
       throw new Error(`Uploaded dictionary not found in state: ${JSON.stringify(stateAfterImport)}`);
@@ -198,7 +197,7 @@ async function main() {
         entry.querySelector(".plover-dictionary-name")?.textContent?.includes(name)
       );
       return row?.querySelector(".plover-dictionary-name")?.textContent?.trim() || "";
-    }, dictionaryName);
+    }, uniqueName);
     if (importedLabel === "dictionary") {
       throw new Error(`Dictionary label incorrectly rendered: ${importedLabel}`);
     }
@@ -210,7 +209,7 @@ async function main() {
     await page.type("#plover-entry-translation", "one");
     await page.click("#plover-entry-add");
 
-    let exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    let exported = await ploverRpcOnPage(page, "export_dictionary", { name: uniqueName });
     if (exported?.result?.data?.[stroke] !== "one") {
       throw new Error(`Entry add failed: ${JSON.stringify(exported)}`);
     }
@@ -219,14 +218,14 @@ async function main() {
     await page.type("#plover-entry-translation", "two");
     await page.select("#plover-entry-dict", dictionaryId);
     await page.click("#plover-entry-update");
-    exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    exported = await ploverRpcOnPage(page, "export_dictionary", { name: uniqueName });
     if (exported?.result?.data?.[stroke] !== "two") {
       throw new Error(`Entry update failed: ${JSON.stringify(exported)}`);
     }
 
     await page.select("#plover-entry-dict", dictionaryId);
     await page.click("#plover-entry-remove");
-    exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    exported = await ploverRpcOnPage(page, "export_dictionary", { name: uniqueName });
     if (Object.prototype.hasOwnProperty.call(exported?.result?.data || {}, stroke)) {
       throw new Error(`Entry remove failed: ${JSON.stringify(exported)}`);
     }
@@ -241,7 +240,7 @@ async function main() {
       const renameButton = Array.from(row.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Rename");
       if (!renameButton) throw new Error("Rename button not found");
       renameButton.click();
-    }, dictionaryName);
+    }, uniqueName);
     await page.waitForFunction(
       (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
       { timeout: 5000 },
