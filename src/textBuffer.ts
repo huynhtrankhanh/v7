@@ -18,6 +18,10 @@ export interface BufferSnapshot {
   pendingCapitalization: boolean;
 }
 
+type HistoryEntry = BufferSnapshot & {
+  group?: string;
+};
+
 export function createIsland(
   type: IslandType,
   value: string,
@@ -93,7 +97,7 @@ export function ensureString(text: string | undefined | null): string {
 export class TextBuffer {
   private islands: Rope<Island>;
   private _pendingCapitalization = false;
-  private history: BufferSnapshot[] = [];
+  private history: HistoryEntry[] = [];
 
   constructor(initialIslands?: Island[]) {
     const seeds = initialIslands && initialIslands.length > 0 ? initialIslands : [createIsland("vietnamese", "")];
@@ -153,8 +157,12 @@ export class TextBuffer {
     };
   }
 
-  save(): void {
-    this.history.push(this.snapshot());
+  save(group?: string): void {
+    if (group && this.history.length > 0 && this.history[this.history.length - 1].group === group) {
+      return;
+    }
+    const snap = this.snapshot();
+    this.history.push({ ...snap, group });
   }
 
   undo(): boolean {
