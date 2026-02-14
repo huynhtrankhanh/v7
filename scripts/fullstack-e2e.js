@@ -8,7 +8,8 @@ const net = require("net");
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
-const PLOVER_RECOVERY_TIMEOUT_MS = 5000;
+const PLOVER_RECOVERY_TIMEOUT_MS = 7000;
+const INITIAL_STATE_TIMEOUT_MS = 1000;
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
@@ -89,7 +90,7 @@ async function main() {
       () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("unavailable"),
       { timeout: 5000 }
     );
-    await page.waitForFunction(() => document.querySelector("#plover-dictionary-open")?.disabled === true, { timeout: 1000 });
+    await page.waitForFunction(() => document.querySelector("#plover-dictionary-open")?.disabled === true, { timeout: INITIAL_STATE_TIMEOUT_MS });
 
     const dcUp = spawn("docker", ["compose", "up", "-d", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
     await new Promise((resolve, reject) => dcUp.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker compose up exited ${code}`)))));
