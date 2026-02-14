@@ -112,6 +112,21 @@
             display: flex;
             flex-direction: column;
             gap: 8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+        }
+        #plover-controls button,
+        #plover-dictionary-dialog button {
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid #c7d2fe;
+            background: #eef2ff;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        #plover-controls button:disabled,
+        #plover-dictionary-dialog button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
         .plover-row {
             display: flex;
@@ -127,36 +142,91 @@
             color: #a00;
             font-weight: 600;
         }
-        #plover-dictionary-panel summary {
-            cursor: pointer;
+        #plover-dictionary-open {
+            margin-left: auto;
+        }
+        #plover-dictionary-dialog {
+            border: none;
+            border-radius: 16px;
+            padding: 0;
+            max-width: 720px;
+            width: min(90vw, 720px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+        }
+        #plover-dictionary-dialog::backdrop {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        .plover-dialog-content {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            padding: 18px 20px 22px;
+            background: #f8f9ff;
+        }
+        .plover-dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .plover-dialog-header h2 {
+            margin: 0;
+            font-size: 1.1rem;
         }
         #plover-dictionary-list {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 10px;
         }
         .plover-dictionary-item {
             display: flex;
-            flex-wrap: wrap;
+            flex-direction: column;
             gap: 8px;
-            justify-content: space-between;
-            align-items: center;
+            background: #ffffff;
+            border: 1px solid #e3e6f5;
+            border-radius: 12px;
+            padding: 12px 14px;
+        }
+        .plover-dictionary-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .plover-dictionary-name {
+            font-weight: 600;
+        }
+        .plover-dictionary-path {
+            font-size: 0.78rem;
+            color: #6b7280;
+            word-break: break-all;
         }
         .plover-dictionary-meta {
-            color: #666;
+            color: #4b5563;
             font-size: 0.8rem;
+        }
+        .plover-dictionary-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
         }
         .plover-section {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
+            padding: 12px;
+            background: #ffffff;
+            border: 1px solid #e3e6f5;
+            border-radius: 12px;
+        }
+        .plover-section-title {
+            font-weight: 600;
         }
         .plover-entry-buttons {
             display: flex;
             gap: 6px;
             flex-wrap: wrap;
         }
-        #plover-message {
+        #plover-message,
+        #plover-entry-message {
             color: #a00;
             font-size: 0.85rem;
         }
@@ -168,15 +238,24 @@
             <strong>Stripped Plover</strong>
             <span id="plover-status" class="unavailable">Unavailable</span>
             <button id="plover-toggle" disabled>Enable</button>
+            <button id="plover-dictionary-open" disabled>Manage dictionaries</button>
         </div>
-        <details id="plover-dictionary-panel">
-            <summary>Dictionary Management</summary>
+    </div>
+    <dialog id="plover-dictionary-dialog">
+        <div class="plover-dialog-content">
+            <div class="plover-dialog-header">
+                <h2>Dictionary Management</h2>
+                <button id="plover-dictionary-close" type="button">Close</button>
+            </div>
             <div class="plover-section">
-                <button id="plover-refresh">Refresh dictionaries</button>
+                <div class="plover-row">
+                    <span class="plover-section-title">Dictionaries</span>
+                    <button id="plover-refresh">Refresh dictionaries</button>
+                </div>
                 <div id="plover-dictionary-list"></div>
             </div>
             <div class="plover-section">
-                <strong>Upload Dictionary</strong>
+                <span class="plover-section-title">Upload Dictionary</span>
                 <input type="text" id="plover-dict-name" placeholder="Dictionary name">
                 <select id="plover-dict-type">
                     <option value="json">JSON</option>
@@ -190,7 +269,7 @@
                 <button id="plover-dict-upload">Upload dictionary</button>
             </div>
             <div class="plover-section">
-                <strong>Entry Management</strong>
+                <span class="plover-section-title">Entry Management</span>
                 <select id="plover-entry-dict"></select>
                 <input type="text" id="plover-entry-stroke" placeholder="Stroke (e.g. TEFT)">
                 <input type="text" id="plover-entry-translation" placeholder="Translation">
@@ -199,10 +278,11 @@
                     <button id="plover-entry-update">Update</button>
                     <button id="plover-entry-remove">Remove</button>
                 </div>
+                <div id="plover-entry-message"></div>
             </div>
             <div id="plover-message"></div>
-        </details>
-    </div>
+        </div>
+    </dialog>
     <div id="text-display">Type with your steno keyboard...</div>
     <textarea id="text-input"></textarea>
     <div id="candidate-area">

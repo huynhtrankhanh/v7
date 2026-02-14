@@ -33,7 +33,10 @@ export function shouldAddSpace(prev: Island | null, curr: Island | null): boolea
   if (prev.type === "spacing" || curr.type === "spacing") return false;
 
   if (prev.explicitSpacing || curr.explicitSpacing) {
-    return !!prev.rightSpace || !!curr.leftSpace;
+    if (curr.explicitSpacing) {
+      return !!curr.leftSpace;
+    }
+    return !!prev.rightSpace;
   }
 
   if (curr.type === "punctuation") return false;
