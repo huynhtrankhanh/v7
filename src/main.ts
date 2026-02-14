@@ -604,7 +604,7 @@ async function ensurePloverAvailability() {
             schedulePloverStatusRetry();
         }
     } catch (e) {
-        console.log(e);
+        console.error(e);
         schedulePloverStatusRetry();
     } finally {
         ploverStatusCheckInFlight = false;
