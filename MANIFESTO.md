@@ -1,9 +1,9 @@
-# Bug Fixing
-* The script.js file has grown too big. Install Vite, use TypeScript, and split script.js into modules.
-* Undo is currently very buggy with unundoable islands everywhere. Make sure every stroke can be undone normally.
-* When in Stripped Plover mode all actions are forwarded to Stripped Plover, so independent handling of number input, enter, capital letters has to be suspended.
-* **RULES PERTAINING TO UNDO:**
-  * When Plover mode is enabled, all undo commands are forwarded to Plover
-  * When Plover mode is disabled:
-    * As the frontend has no awareness of the internal state of Plover, it can only treat the whole text inserted by Plover as a unified block, and undo deletes the whole block.
-* Abstract the text buffer handling into a separate module and test it thoroughly, including using property tests.
+* Remove timeouts everywhere
+* Dictionary import/export: Display loading state when the request is in progress
+* Emily's symbols: Now we have a rope data structure, implementing retroactive space insertion/deletion is easy. Look into the code at https://github.com/EPLHREU/emily-symbols and then reimplement the retroactive space insertion/deletion
+* Dictionary management should be a modal dialog
+* Make it beautiful!
+* Dictionary names have to be displayed accurately.
+* There should be no "first writable dictionary" option, it's confusing and it hurts
+* Every dictionary can be exported, renamed and deleted. Read only dictionaries too. For read only dictionaries, only the content can't be modified.
+* To test and modify the application, I recommend you use **docker compose build**, **docker compose up**, etc. **DO NOT SHY AWAY FROM THESE COMMANDS**
