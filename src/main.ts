@@ -503,21 +503,22 @@ function setButtonLoading(button, isLoading, loadingText = "") {
 }
 
 function getDictionaryId(dict) {
-    return dict.path || dict.name || "";
+    return dict.identifier || dict.path || dict.name || "";
 }
 
 function getDictionaryLabel(dict) {
-    return dict.name || dict.path || "dictionary";
+    return dict.name || dict.identifier || dict.path || "dictionary";
 }
 
 function getDictionaryPath(dict) {
-    return dict.path || "";
+    return dict.path || dict.identifier || "";
 }
 
 function getDictionarySignature(dictionaries) {
     return JSON.stringify(
         dictionaries.map((dict) => ({
             name: dict.name || "",
+            identifier: dict.identifier || "",
             path: dict.path || "",
             entries: dict.entries ?? 0,
             readonly: !!dict.readonly,
@@ -963,7 +964,7 @@ async function renameDictionary(dict, button) {
             });
         }
         if (!dict.enabled) {
-            await ploverRpc("set_dictionary_enabled", { path: renamed, enabled: false });
+            await ploverRpc("set_dictionary_enabled", { identifier: renamed, enabled: false });
         }
         await ploverRpc("remove_dictionary", { name });
         await refreshPloverDictionaries({ force: true });
