@@ -449,7 +449,7 @@ const dictionaryInputIds = new Set([
 const hasAbortController = typeof AbortController !== "undefined";
 let ploverDictionarySignature = "";
 const PLOVER_STATUS_RETRY_MS = 2000;
-let ploverStatusTimer = null;
+let ploverStatusTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
@@ -574,7 +574,9 @@ async function fetchPloverStatus() {
 }
 
 function schedulePloverStatusRetry() {
-    if (ploverStatusTimer) return;
+    if (ploverStatusTimer) {
+        clearTimeout(ploverStatusTimer);
+    }
     ploverStatusTimer = window.setTimeout(() => {
         ploverStatusTimer = null;
         void ensurePloverAvailability();
