@@ -14,7 +14,7 @@ export interface Island {
 }
 
 export interface BufferSnapshot {
-  islands: Island[];
+  islands: Rope<Island>;
   pendingCapitalization: boolean;
 }
 
@@ -88,12 +88,13 @@ export function ensureString(text: string | undefined | null): string {
 }
 
 export class TextBuffer {
-  private islands: Island[];
+  private islands: Rope<Island>;
   private _pendingCapitalization = false;
   private history: BufferSnapshot[] = [];
 
   constructor(initialIslands?: Island[]) {
-    this.islands = initialIslands ? this.cloneIslands(initialIslands) : [createIsland("vietnamese", "")];
+    const seeds = initialIslands && initialIslands.length > 0 ? initialIslands : [createIsland("vietnamese", "")];
+    this.islands = Rope.fromArray(seeds, () => 1);
   }
 
   get pendingCapitalization(): boolean {
@@ -105,15 +106,15 @@ export class TextBuffer {
   }
 
   getIslands(): Island[] {
-    return this.islands;
+    return this.islands.toArray();
   }
 
   setIslands(next: Island[]): void {
-    this.islands = this.cloneIslands(next);
+    this.islands = Rope.fromArray(next, () => 1);
   }
 
   reset(): void {
-    this.islands = [createIsland("vietnamese", "")];
+    this.islands = Rope.fromArray([createIsland("vietnamese", "")], () => 1);
     this._pendingCapitalization = false;
     this.history = [];
   }
@@ -124,7 +125,7 @@ export class TextBuffer {
 
   snapshot(): BufferSnapshot {
     return {
-      islands: this.cloneIslands(this.islands),
+      islands: this.islands.clone(),
       pendingCapitalization: this._pendingCapitalization
     };
   }
@@ -136,7 +137,7 @@ export class TextBuffer {
   undo(): boolean {
     const snap = this.history.pop();
     if (!snap) return false;
-    this.setIslands(snap.islands);
+    this.islands = snap.islands.clone();
     this._pendingCapitalization = snap.pendingCapitalization;
     return true;
   }
@@ -144,32 +145,32 @@ export class TextBuffer {
   appendVietnamese(text: string, meta: Partial<Island> = {}): void {
     this.save();
     const value = this.applyCapitalization(text);
-    this.islands.push(createIsland("vietnamese", value, false, meta));
+    this.islands.append(createIsland("vietnamese", value, false, meta));
   }
 
   appendV7(code: string): void {
     this.save();
-    this.islands.push(createIsland("vietnamese", code, true));
+    this.islands.append(createIsland("vietnamese", code, true));
   }
 
   appendSpacing(value: string): void {
     this.save();
-    this.islands.push(createIsland("spacing", value));
+    this.islands.append(createIsland("spacing", value));
   }
 
   appendPunctuation(value: string): void {
     this.save();
-    this.islands.push(createIsland("punctuation", value));
+    this.islands.append(createIsland("punctuation", value));
   }
 
   appendCapital(value: string): void {
     this.save();
-    this.islands.push(createIsland("capital", value));
+    this.islands.append(createIsland("capital", value));
   }
 
   replaceWithText(text: string, meta: Partial<Island> = {}): void {
     this.save();
-    this.islands = [createIsland("vietnamese", text, false, meta)];
+    this.islands = Rope.fromArray([createIsland("vietnamese", text, false, meta)], () => 1);
     this._pendingCapitalization = false;
   }
 
@@ -180,9 +181,4 @@ export class TextBuffer {
     }
     return text;
   }
-
-  private cloneIslands(source: Island[]): Island[] {
-    return source.map((i) => ({ ...i }));
-  }
 }
-import { Rope } from "./rope";

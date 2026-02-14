@@ -33,14 +33,25 @@ describe("TextBuffer undo", () => {
           buffer.appendVietnamese(s);
         }
         const before = buffer.snapshot();
+        const beforeIslands = before.islands.toArray();
         buffer.appendSpacing(" ");
         buffer.appendPunctuation(".");
         expect(buffer.undo()).toBe(true);
         expect(buffer.undo()).toBe(true);
-        expect(buffer.getIslands()).toEqual(before.islands);
+        expect(buffer.getIslands()).toEqual(beforeIslands);
         expect(buffer.pendingCapitalization).toBe(before.pendingCapitalization);
       })
     );
+  });
+
+  it("reuses island references without deep cloning", () => {
+    const seed = createIsland("vietnamese", "hello");
+    const buffer = new TextBuffer([seed]);
+    const snap = buffer.snapshot();
+    buffer.appendVietnamese("world");
+    expect(snap.islands.toArray()[0]).toBe(seed);
+    buffer.undo();
+    expect(buffer.getIslands()[0]).toBe(seed);
   });
 
   it("convertIslandsForInference matches spacing rules", () => {
