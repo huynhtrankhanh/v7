@@ -201,7 +201,8 @@ export class Rope<T = string> {
       throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
     }
     const [left, rest] = splitAt(this.root, index, this.measure);
-    const [_, right] = splitAt(rest, this.measure(existing), this.measure);
+    const [removed, right] = splitAt(rest, this.measure(existing), this.measure);
+    void removed;
     const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
     this.root = merge(merge(left, newNode, this.measure), right, this.measure);
     return true;
@@ -213,7 +214,8 @@ export class Rope<T = string> {
     const existing = this.getAt(index);
     if (!existing) return false;
     const [left, rest] = splitAt(this.root, index, this.measure);
-    const [_, right] = splitAt(rest, this.measure(existing), this.measure);
+    const [removed, right] = splitAt(rest, this.measure(existing), this.measure);
+    void removed;
     this.root = merge(left, right, this.measure);
     return true;
   }
