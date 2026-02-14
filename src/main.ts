@@ -157,28 +157,29 @@ function applyRetroactiveSpace(action, repeat) {
     if (!action) return false;
     let changed = false;
     for (let i = 0; i < repeat; i++) {
-        const islands = state.islands;
-        if (islands.length === 0) break;
-        const lastIndex = islands.length - 1;
-        const last = islands[lastIndex];
+        const islandCount = buffer.getIslandCount();
+        if (islandCount === 0) break;
+        const lastIndex = islandCount - 1;
+        const last = buffer.getIslandAt(lastIndex);
+        if (!last) break;
         if (last.type === "spacing" && last.value === " ") {
             if (action === "delete") {
-                const nextIslands = islands.slice(0, -1);
-                state.islands = nextIslands;
-                changed = true;
-                continue;
+                if (buffer.removeIslandAt(lastIndex)) {
+                    changed = true;
+                    continue;
+                }
+                break;
             }
             break;
         }
         if (lastIndex === 0) break;
-        const nextIslands = islands.slice();
-        nextIslands[lastIndex] = {
+        if (buffer.replaceIslandAt(lastIndex, {
             ...last,
             explicitSpacing: true,
             leftSpace: action === "insert"
-        };
-        state.islands = nextIslands;
-        changed = true;
+        })) {
+            changed = true;
+        }
         break;
     }
     return changed;
@@ -661,8 +662,9 @@ async function ploverRpc(method, params) {
 
 function clearPloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
-            state.islands.splice(strippedPlover.preeditIndex, 1);
+        const index = strippedPlover.preeditIndex;
+        if (index >= 0 && index < buffer.getIslandCount()) {
+            buffer.removeIslandAt(index);
         }
         strippedPlover.preeditIndex = null;
     }
@@ -670,8 +672,12 @@ function clearPloverPreedit() {
 
 function finalizePloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
-            state.islands[strippedPlover.preeditIndex].ploverPreedit = false;
+        const index = strippedPlover.preeditIndex;
+        if (index >= 0 && index < buffer.getIslandCount()) {
+            const island = buffer.getIslandAt(index);
+            if (island) {
+                buffer.replaceIslandAt(index, { ...island, ploverPreedit: false });
+            }
         }
         strippedPlover.preeditIndex = null;
     }
@@ -699,14 +705,14 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
     const committedText = ensureString(combinedCommitted);
     if (committedText) {
-        state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
+        buffer.appendIsland(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
         const normalizedPreedit = ensureString(preeditText);
         if (normalizedPreedit) {
-            state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
-            strippedPlover.preeditIndex = state.islands.length - 1;
+            buffer.appendIsland(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
+            strippedPlover.preeditIndex = buffer.getIslandCount() - 1;
         }
     }
 
@@ -1003,7 +1009,7 @@ function appendText(text) {
         state.pendingCapitalization = false;
     }
     // Append a new Vietnamese (generic text) island
-    state.islands.push(createIsland('vietnamese', text));
+    buffer.appendIsland(createIsland('vietnamese', text));
 }
 
 function abortInferenceRequest(clearController) {
@@ -1064,7 +1070,7 @@ async function handleChord(stroke) {
     // 2. Space Stroke: S-P
     if (stroke === "S-P") {
         saveState();
-        state.islands.push(createIsland('spacing', ' '));
+        buffer.appendIsland(createIsland('spacing', ' '));
         runInference();
         updateDisplay();
         return;
@@ -1086,7 +1092,7 @@ async function handleChord(stroke) {
 
         saveState();
         const punct = punctuationMap[stroke];
-        state.islands.push(createIsland('punctuation', punct));
+        buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
         return;
     }
@@ -1097,10 +1103,10 @@ async function handleChord(stroke) {
         if (emilyResult) {
             const repeatCount = emilyResult.repeat || 1;
             if (emilyResult.retroSpace) {
-                if (state.islands.length > 0 || emilyResult.capNext) {
-                    saveState();
-                    const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
-                    state.pendingCapitalization = emilyResult.capNext || false;
+            if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
+                saveState();
+                const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
+                state.pendingCapitalization = emilyResult.capNext || false;
                     if (changed || emilyResult.capNext) {
                         runInference();
                         updateDisplay();
@@ -1110,7 +1116,7 @@ async function handleChord(stroke) {
             }
             saveState();
             // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-            state.islands.push(createIsland(emilyResult.type, emilyResult.value, false, {
+            buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
                 leftSpace: emilyResult.leftSpace,
                 rightSpace: emilyResult.rightSpace,
                 explicitSpacing: emilyResult.explicitSpacing
@@ -1126,7 +1132,7 @@ async function handleChord(stroke) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
             saveState();
-            state.islands.push(createIsland('vietnamese', v7Code, true));
+            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
             runInference();
             return;
         }
@@ -1205,7 +1211,7 @@ function selectCandidate(index) {
     // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
     const chosenText = state.candidates[index].join("");
     saveState();
-    state.islands = [createIsland('vietnamese', chosenText)];
+    buffer.setIslands([createIsland('vietnamese', chosenText)]);
     state.candidates = [];
     updateDisplay();
 }
@@ -1431,7 +1437,7 @@ document.addEventListener("keydown", (e) => {
              const newText = textArea.value;
              
              // Update state
-             state.islands = [createIsland('vietnamese', newText)];
+             buffer.setIslands([createIsland('vietnamese', newText)]);
              state.candidates = [];
              buffer.clearHistory();
              isRawMode = false;
@@ -1453,7 +1459,7 @@ document.addEventListener("keydown", (e) => {
          if ((e.shiftKey && isLetter) || isNumber) {
              saveState();
              const value = isNumber ? e.key : e.key.toUpperCase();
-             state.islands.push(createIsland('capital', value));
+             buffer.appendIsland(createIsland('capital', value));
              runInference();
              e.preventDefault();
              return;
@@ -1463,7 +1469,7 @@ document.addEventListener("keydown", (e) => {
     // Handle Enter for Newline (only when Plover is disabled)
     if (!ploverActive && e.key === "Enter") {
         saveState();
-        state.islands.push(createIsland('spacing', '\n'));
+        buffer.appendIsland(createIsland('spacing', '\n'));
         runInference();
         updateDisplay();
         e.preventDefault();
@@ -1478,7 +1484,7 @@ document.addEventListener("keydown", (e) => {
     if (!ploverActive && mapped.match(/^[0-9]$/)) {
         // Emit as capital/number island immediately
         saveState();
-        state.islands.push(createIsland('capital', mapped));
+        buffer.appendIsland(createIsland('capital', mapped));
         runInference();
         e.preventDefault();
         return;

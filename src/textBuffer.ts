@@ -112,8 +112,28 @@ export class TextBuffer {
     return this.islands.toArray();
   }
 
+  getIslandCount(): number {
+    return this.islands.length();
+  }
+
+  getIslandAt(index: number): Island | null {
+    return this.islands.getAt(index);
+  }
+
   setIslands(next: Island[]): void {
     this.islands = Rope.fromArray(next, () => 1);
+  }
+
+  appendIsland(value: Island): void {
+    this.islands.append(value);
+  }
+
+  replaceIslandAt(index: number, value: Island): boolean {
+    return this.islands.replaceAt(index, value);
+  }
+
+  removeIslandAt(index: number): boolean {
+    return this.islands.removeAt(index);
   }
 
   reset(): void {
