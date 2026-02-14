@@ -7,3 +7,4 @@
 * There should be no "first writable dictionary" option, it's confusing and it hurts
 * Every dictionary can be exported, renamed and deleted. Read only dictionaries too. For read only dictionaries, only the content can't be modified.
 * To test and modify the application, I recommend you use **docker compose build**, **docker compose up**, etc. **DO NOT SHY AWAY FROM THESE COMMANDS**
+* Frontend data invalidation: There is a refresh button. But then the frontend must also intelligently detect when the data has changed to refresh too!
