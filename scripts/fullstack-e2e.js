@@ -8,7 +8,7 @@ const net = require("net");
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
-const PLOVER_RECOVERY_TIMEOUT_MS = 10000;
+const PLOVER_RECOVERY_TIMEOUT_MS = 5000;
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
