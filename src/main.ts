@@ -450,6 +450,7 @@ const hasAbortController = typeof AbortController !== "undefined";
 let ploverDictionarySignature = "";
 const PLOVER_STATUS_RETRY_MS = 2000;
 let ploverStatusTimer: ReturnType<typeof setTimeout> | null = null;
+let ploverStatusCheckInFlight = false;
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
@@ -573,10 +574,15 @@ async function fetchPloverStatus() {
     updatePloverStatusUI();
 }
 
-function schedulePloverStatusRetry() {
+function clearPloverStatusTimer() {
     if (ploverStatusTimer) {
         clearTimeout(ploverStatusTimer);
+        ploverStatusTimer = null;
     }
+}
+
+function schedulePloverStatusRetry() {
+    clearPloverStatusTimer();
     ploverStatusTimer = window.setTimeout(() => {
         ploverStatusTimer = null;
         void ensurePloverAvailability();
@@ -584,18 +590,21 @@ function schedulePloverStatusRetry() {
 }
 
 async function ensurePloverAvailability() {
+    if (ploverStatusCheckInFlight) return;
+    ploverStatusCheckInFlight = true;
     const wasAvailable = strippedPlover.available;
-    await fetchPloverStatus();
-    if (strippedPlover.available) {
-        if (ploverStatusTimer) {
-            clearTimeout(ploverStatusTimer);
-            ploverStatusTimer = null;
+    try {
+        await fetchPloverStatus();
+        if (strippedPlover.available) {
+            clearPloverStatusTimer();
+            if (!wasAvailable) {
+                await refreshPloverDictionaries({ force: true });
+            }
+        } else {
+            schedulePloverStatusRetry();
         }
-        if (!wasAvailable) {
-            await refreshPloverDictionaries({ force: true });
-        }
-    } else {
-        schedulePloverStatusRetry();
+    } finally {
+        ploverStatusCheckInFlight = false;
     }
 }
 
