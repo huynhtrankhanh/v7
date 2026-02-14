@@ -145,7 +145,7 @@ export class Rope<T = string> {
 
   append(value: T): void {
     const size = this.measure(value);
-    if (!size) return;
+    if (!Number.isFinite(size) || size < 0) return;
     const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
     this.root = merge(this.root, newNode, this.measure);
   }
