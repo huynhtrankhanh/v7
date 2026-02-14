@@ -72,10 +72,8 @@ export function convertIslandsForInference(islands: Island[]): string[] {
         currentFixed.append(" ");
       }
       const chunk = currentFixed.toString();
-      if (chunk !== "") {
-        serverIslands.push(chunk);
-        currentFixed = Rope.fromString("");
-      }
+      serverIslands.push(chunk);
+      currentFixed = Rope.fromString("");
       serverIslands.push(curr.value);
     } else {
       const prev = i > 0 ? islands[i - 1] : null;

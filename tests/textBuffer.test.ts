@@ -86,6 +86,14 @@ describe("TextBuffer undo", () => {
     expect(shouldAddSpace(islands[3], islands[4])).toBe(true);
   });
 
+  it("prepends empty fixed segment when islands start with V7", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2", true)
+    ];
+    const out = convertIslandsForInference(islands);
+    expect(out).toEqual(["", "tro2", ""]);
+  });
+
   it("uses current explicit spacing for retroactive attachment", () => {
     const prev = createIsland("punctuation", "!", false, { explicitSpacing: true, rightSpace: true });
     const curr = createIsland("vietnamese", "attached", false, { explicitSpacing: true, leftSpace: false });
