@@ -583,13 +583,15 @@ function clearPloverStatusTimer() {
 
 function schedulePloverStatusRetry() {
     clearPloverStatusTimer();
-    ploverStatusTimer = window.setTimeout(async () => {
-        await ensurePloverAvailability();
+    ploverStatusTimer = window.setTimeout(() => {
+        ensurePloverAvailability().catch((err) => console.error("Plover status retry failed:", err));
     }, PLOVER_STATUS_RETRY_MS);
 }
 
 async function ensurePloverAvailability() {
-    if (ploverStatusCheckInFlight) return;
+    if (ploverStatusCheckInFlight) {
+        return;
+    }
     ploverStatusCheckInFlight = true;
     const wasAvailable = strippedPlover.available;
     try {
