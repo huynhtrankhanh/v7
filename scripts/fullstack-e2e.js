@@ -96,11 +96,11 @@ async function main() {
 
     await page.waitForFunction(
       () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("available"),
-      { timeout: 15000 }
+      { timeout: 8000 }
     );
     await page.waitForFunction(
       () => document.querySelector("#plover-dictionary-open")?.disabled === false,
-      { timeout: 15000 }
+      { timeout: 8000 }
     );
 
     // Exercise WS endpoint directly.
