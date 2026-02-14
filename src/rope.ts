@@ -269,5 +269,5 @@ function splitAt<T>(
     const left = rebuild(node, node.left, leftRight, measure);
     return [left, right];
   }
-  throw new Error("Cannot split rope within a node boundary.");
+  throw new Error(`Cannot split at index ${index}: would split within indivisible node data.`);
 }
