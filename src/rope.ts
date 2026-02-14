@@ -171,6 +171,53 @@ export class Rope<T = string> {
     return items;
   }
 
+  getAt(index: number): T | null {
+    if (!Number.isFinite(index)) return null;
+    if (index < 0 || index >= this.length()) return null;
+    let node = this.root;
+    let offset = index;
+    while (node) {
+      const leftSize = nodeSize(node.left);
+      const nodeSizeValue = this.measure(node.data);
+      if (offset < leftSize) {
+        node = node.left;
+      } else if (offset >= leftSize + nodeSizeValue) {
+        offset -= leftSize + nodeSizeValue;
+        node = node.right;
+      } else {
+        return node.data;
+      }
+    }
+    return null;
+  }
+
+  replaceAt(index: number, value: T): boolean {
+    if (!Number.isFinite(index)) return false;
+    if (index < 0 || index >= this.length()) return false;
+    const existing = this.getAt(index);
+    if (!existing) return false;
+    const size = this.measure(value);
+    if (!Number.isFinite(size) || size < 0) {
+      throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
+    }
+    const [left, rest] = splitAt(this.root, index, this.measure);
+    const [_removed, right] = splitAt(rest, this.measure(existing), this.measure);
+    const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
+    this.root = merge(merge(left, newNode, this.measure), right, this.measure);
+    return true;
+  }
+
+  removeAt(index: number): boolean {
+    if (!Number.isFinite(index)) return false;
+    if (index < 0 || index >= this.length()) return false;
+    const existing = this.getAt(index);
+    if (!existing) return false;
+    const [left, rest] = splitAt(this.root, index, this.measure);
+    const [_removed, right] = splitAt(rest, this.measure(existing), this.measure);
+    this.root = merge(left, right, this.measure);
+    return true;
+  }
+
   length(): number {
     return nodeSize(this.root);
   }
@@ -200,4 +247,27 @@ function inorderMapped<T>(n: Node<T> | null, out: string[], mapper: Mapper<T>): 
   inorderMapped(n.left, out, mapper);
   out.push(mapper(n.data));
   inorderMapped(n.right, out, mapper);
+}
+
+function splitAt<T>(
+  node: Node<T> | null,
+  index: number,
+  measure: Measure<T>
+): [Node<T> | null, Node<T> | null] {
+  if (!node) return [null, null];
+  if (index <= 0) return [null, node];
+  if (index >= nodeSize(node)) return [node, null];
+  const leftSize = nodeSize(node.left);
+  const nodeSizeValue = measure(node.data);
+  if (index <= leftSize) {
+    const [left, rightLeft] = splitAt(node.left, index, measure);
+    const right = rebuild(node, rightLeft, node.right, measure);
+    return [left, right];
+  }
+  if (index >= leftSize + nodeSizeValue) {
+    const [leftRight, right] = splitAt(node.right, index - leftSize - nodeSizeValue, measure);
+    const left = rebuild(node, node.left, leftRight, measure);
+    return [left, right];
+  }
+  throw new Error(`Cannot split at index ${index}: would split within indivisible node data.`);
 }

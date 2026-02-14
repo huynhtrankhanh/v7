@@ -73,4 +73,13 @@ describe("TextBuffer undo", () => {
     expect(shouldAddSpace(islands[1], islands[2])).toBe(true);
     expect(shouldAddSpace(islands[3], islands[4])).toBe(true);
   });
+
+  it("uses current explicit spacing for retroactive attachment", () => {
+    const prev = createIsland("punctuation", "!", false, { explicitSpacing: true, rightSpace: true });
+    const curr = createIsland("vietnamese", "attached", false, { explicitSpacing: true, leftSpace: false });
+    const spaced = createIsland("vietnamese", "spaced", false, { explicitSpacing: true, leftSpace: true });
+
+    expect(shouldAddSpace(prev, curr)).toBe(false);
+    expect(shouldAddSpace(prev, spaced)).toBe(true);
+  });
 });

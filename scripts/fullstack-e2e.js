@@ -131,7 +131,8 @@ async function main() {
       { timeout: 3000 }
     );
 
-    await page.click("#plover-dictionary-panel summary");
+    await page.click("#plover-dictionary-open");
+    await page.waitForSelector("#plover-dictionary-dialog[open]");
     // Ensure dictionary input accepts text while capture is paused.
     await page.click("#plover-entry-stroke");
     await page.type("#plover-entry-stroke", "PUPE2E");

@@ -33,7 +33,10 @@ export function shouldAddSpace(prev: Island | null, curr: Island | null): boolea
   if (prev.type === "spacing" || curr.type === "spacing") return false;
 
   if (prev.explicitSpacing || curr.explicitSpacing) {
-    return !!prev.rightSpace || !!curr.leftSpace;
+    if (curr.explicitSpacing) {
+      return !!curr.leftSpace;
+    }
+    return !!prev.rightSpace;
   }
 
   if (curr.type === "punctuation") return false;
@@ -109,8 +112,28 @@ export class TextBuffer {
     return this.islands.toArray();
   }
 
+  getIslandCount(): number {
+    return this.islands.length();
+  }
+
+  getIslandAt(index: number): Island | null {
+    return this.islands.getAt(index);
+  }
+
   setIslands(next: Island[]): void {
     this.islands = Rope.fromArray(next, () => 1);
+  }
+
+  appendIsland(value: Island): void {
+    this.islands.append(value);
+  }
+
+  replaceIslandAt(index: number, value: Island): boolean {
+    return this.islands.replaceAt(index, value);
+  }
+
+  removeIslandAt(index: number): boolean {
+    return this.islands.removeAt(index);
   }
 
   reset(): void {

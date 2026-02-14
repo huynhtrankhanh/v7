@@ -147,8 +147,42 @@ function handleEmilySymbol(stroke) {
         leftSpace: shouldApplySpacing ? spaceBefore : false,
         rightSpace: shouldApplySpacing ? spaceAfter : false,
         explicitSpacing: shouldApplySpacing,
-        capNext
+        capNext,
+        retroSpace: symbol === "{*?}" ? "insert" : symbol === "{*!}" ? "delete" : null,
+        repeat
     };
+}
+
+function applyRetroactiveSpace(action, repeat) {
+    if (!action) return false;
+    let changed = false;
+    for (let i = 0; i < repeat; i++) {
+        const islandCount = buffer.getIslandCount();
+        if (islandCount === 0) break;
+        const lastIndex = islandCount - 1;
+        const last = buffer.getIslandAt(lastIndex);
+        if (!last) break;
+        if (last.type === "spacing" && last.value === " ") {
+            if (action === "delete") {
+                if (buffer.removeIslandAt(lastIndex)) {
+                    changed = true;
+                    continue;
+                }
+                break;
+            }
+            break;
+        }
+        if (lastIndex === 0) break;
+        if (buffer.replaceIslandAt(lastIndex, {
+            ...last,
+            explicitSpacing: true,
+            leftSpace: action === "insert"
+        })) {
+            changed = true;
+        }
+        break;
+    }
+    return changed;
 }
 
 // --- Parse / Assemble ---
@@ -411,9 +445,9 @@ const dictionaryInputIds = new Set([
     "plover-entry-stroke",
     "plover-entry-translation"
 ]);
-const PLOVER_RPC_TIMEOUT_MS = 5000;
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
+let ploverDictionarySignature = "";
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
@@ -438,9 +472,69 @@ function setPloverMessage(message) {
     }
 }
 
+function setEntryMessage(message) {
+    const messageEl = document.getElementById("plover-entry-message");
+    if (messageEl) {
+        messageEl.textContent = message || "";
+    }
+}
+
+function setButtonLoading(button, isLoading, loadingText = "") {
+    if (!button) return;
+    if (isLoading) {
+        if (!button.dataset.label) {
+            button.dataset.label = button.textContent || "";
+        }
+        button.textContent = loadingText;
+        button.disabled = true;
+        button.setAttribute("aria-busy", "true");
+    } else {
+        if (button.dataset.label) {
+            button.textContent = button.dataset.label;
+            delete button.dataset.label;
+        }
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+    }
+}
+
+function getDictionaryId(dict) {
+    return dict.path || dict.name || "";
+}
+
+function getDictionaryLabel(dict) {
+    return dict.name || dict.path || "dictionary";
+}
+
+function getDictionaryPath(dict) {
+    return dict.path || "";
+}
+
+function getDictionarySignature(dictionaries) {
+    return JSON.stringify(
+        dictionaries.map((dict) => ({
+            name: dict.name || "",
+            path: dict.path || "",
+            entries: dict.entries ?? 0,
+            readonly: !!dict.readonly,
+            enabled: !!dict.enabled
+        }))
+    );
+}
+
+function updatePloverDictionaries(nextDictionaries, { force = false } = {}) {
+    const signature = getDictionarySignature(nextDictionaries);
+    if (!force && signature === ploverDictionarySignature) return false;
+    ploverDictionarySignature = signature;
+    ploverDictionaries = nextDictionaries;
+    renderPloverDictionaries();
+    return true;
+}
+
 function updatePloverStatusUI() {
     const statusEl = document.getElementById("plover-status");
     const toggleButton = document.getElementById("plover-toggle");
+    const dictionaryButton = document.getElementById("plover-dictionary-open");
     if (!statusEl || !toggleButton) return;
     if (strippedPlover.available) {
         statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
@@ -448,12 +542,14 @@ function updatePloverStatusUI() {
         statusEl.classList.add("available");
         toggleButton.disabled = false;
         toggleButton.textContent = strippedPlover.enabled ? "Disable" : "Enable";
+        if (dictionaryButton) dictionaryButton.disabled = false;
     } else {
         statusEl.textContent = "Unavailable";
         statusEl.classList.remove("available");
         statusEl.classList.add("unavailable");
         toggleButton.disabled = true;
         toggleButton.textContent = "Enable";
+        if (dictionaryButton) dictionaryButton.disabled = true;
     }
 }
 
@@ -494,6 +590,9 @@ function resetPloverSocket(message) {
     strippedPlover.available = false;
     strippedPlover.enabled = false;
     strippedPlover.preeditIndex = null;
+    ploverDictionarySignature = "";
+    ploverDictionaries = [];
+    renderPloverDictionaries();
     updatePloverStatusUI();
 }
 
@@ -514,6 +613,11 @@ function ensurePloverSocket() {
             try {
                 const data = JSON.parse(event.data);
                 if (!data.id) {
+                    const dictionaries = data?.dictionaries || data?.result?.dictionaries;
+                    if (Array.isArray(dictionaries)) {
+                        updatePloverDictionaries(dictionaries);
+                        setPloverMessage("");
+                    }
                     return;
                 }
                 const key = JSON.stringify(data.id);
@@ -551,29 +655,16 @@ async function ploverRpc(method, params) {
     const promise = new Promise((resolve, reject) => {
         const key = JSON.stringify(id);
         socket.send(JSON.stringify(payload));
-        const timeoutId = setTimeout(() => {
-            if (ploverPending.has(key)) {
-                ploverPending.delete(key);
-                reject(new Error("Stripped Plover request timed out"));
-            }
-        }, PLOVER_RPC_TIMEOUT_MS);
-        const wrappedResolve = (value) => {
-            clearTimeout(timeoutId);
-            resolve(value);
-        };
-        const wrappedReject = (err) => {
-            clearTimeout(timeoutId);
-            reject(err);
-        };
-        ploverPending.set(key, { resolve: wrappedResolve, reject: wrappedReject });
+        ploverPending.set(key, { resolve, reject });
     });
     return promise;
 }
 
 function clearPloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
-            state.islands.splice(strippedPlover.preeditIndex, 1);
+        const index = strippedPlover.preeditIndex;
+        if (index >= 0 && index < buffer.getIslandCount()) {
+            buffer.removeIslandAt(index);
         }
         strippedPlover.preeditIndex = null;
     }
@@ -581,8 +672,12 @@ function clearPloverPreedit() {
 
 function finalizePloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
-        if (strippedPlover.preeditIndex >= 0 && strippedPlover.preeditIndex < state.islands.length) {
-            state.islands[strippedPlover.preeditIndex].ploverPreedit = false;
+        const index = strippedPlover.preeditIndex;
+        if (index >= 0 && index < buffer.getIslandCount()) {
+            const island = buffer.getIslandAt(index);
+            if (island) {
+                buffer.replaceIslandAt(index, { ...island, ploverPreedit: false });
+            }
         }
         strippedPlover.preeditIndex = null;
     }
@@ -610,14 +705,14 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
     const committedText = ensureString(combinedCommitted);
     if (committedText) {
-        state.islands.push(createIsland("vietnamese", committedText, false, { plover: true }));
+        buffer.appendIsland(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
         const normalizedPreedit = ensureString(preeditText);
         if (normalizedPreedit) {
-            state.islands.push(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
-            strippedPlover.preeditIndex = state.islands.length - 1;
+            buffer.appendIsland(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
+            strippedPlover.preeditIndex = buffer.getIslandCount() - 1;
         }
     }
 
@@ -670,12 +765,12 @@ async function togglePloverMode() {
     updatePloverStatusUI();
 }
 
-async function refreshPloverDictionaries() {
+async function refreshPloverDictionaries({ force = false } = {}) {
     if (!strippedPlover.available) return;
     try {
         const result = await ploverRpc("get_dictionary_state", {});
-        ploverDictionaries = result.dictionaries || [];
-        renderPloverDictionaries();
+        const dictionaries = result.dictionaries || [];
+        updatePloverDictionaries(dictionaries, { force });
         setPloverMessage("");
     } catch (e) {
         console.log(e);
@@ -687,15 +782,156 @@ function updatePloverDictionarySelects() {
     const selectEl = document.getElementById("plover-entry-dict");
     if (!selectEl) return;
     selectEl.replaceChildren();
-    const emptyOption = document.createElement("option");
-    emptyOption.value = "";
-    emptyOption.textContent = "First writable dictionary";
-    selectEl.appendChild(emptyOption);
-    for (const dict of ploverDictionaries) {
+    const availableDictionaries = ploverDictionaries;
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    if (availableDictionaries.length === 0) {
+        placeholder.textContent = "No dictionaries available";
+    } else {
+        placeholder.textContent = "Select a dictionary";
+    }
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    selectEl.appendChild(placeholder);
+    for (const dict of availableDictionaries) {
         const option = document.createElement("option");
-        option.value = dict.path || dict.name || "";
-        option.textContent = dict.path || dict.name || "dictionary";
+        option.value = getDictionaryId(dict);
+        option.textContent = dict.readonly
+            ? `${getDictionaryLabel(dict)} (read-only)`
+            : getDictionaryLabel(dict);
+        const path = getDictionaryPath(dict);
+        if (path && path !== option.textContent) {
+            option.title = path;
+        }
         selectEl.appendChild(option);
+    }
+    selectEl.disabled = availableDictionaries.length === 0;
+    updateEntryControls();
+}
+
+function updateEntryControls() {
+    const selectEl = document.getElementById("plover-entry-dict");
+    const addButton = document.getElementById("plover-entry-add");
+    const updateButton = document.getElementById("plover-entry-update");
+    const removeButton = document.getElementById("plover-entry-remove");
+    if (!selectEl || !addButton || !updateButton || !removeButton) return;
+    const selectedId = selectEl.value || "";
+    const selectedDict = selectedId
+        ? ploverDictionaries.find((dict) => getDictionaryId(dict) === selectedId)
+        : null;
+    const canEdit = !!selectedDict && !selectedDict.readonly;
+    const shouldEnable = strippedPlover.available && canEdit;
+    addButton.disabled = !shouldEnable;
+    updateButton.disabled = !shouldEnable;
+    removeButton.disabled = !shouldEnable;
+    if (!strippedPlover.available) {
+        setEntryMessage("Stripped Plover is unavailable.");
+    } else if (!selectedDict) {
+        setEntryMessage(selectEl.disabled
+            ? "No dictionaries available."
+            : "Select a dictionary to edit entries.");
+    } else if (selectedDict.readonly) {
+        setEntryMessage("Selected dictionary is read-only.");
+    } else {
+        setEntryMessage("");
+    }
+}
+
+function getDictionaryFilename(dict, extension) {
+    const rawName = getDictionaryLabel(dict);
+    const base = rawName.split("/").pop() || "dictionary";
+    const safeBase = base.replace(/[\\/:*?"<>|]+/g, "-");
+    return extension ? `${safeBase}.${extension}` : safeBase;
+}
+
+function downloadDictionaryFile(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function exportDictionary(dict, button) {
+    const name = getDictionaryId(dict);
+    if (!name) return;
+    setButtonLoading(button, true, "Exporting...");
+    try {
+        const result = await ploverRpc("export_dictionary", { name });
+        const type = result.type || "json";
+        if (type === "python") {
+            const filename = getDictionaryFilename(dict, "py");
+            downloadDictionaryFile(filename, result.pythonCode || "", "text/x-python");
+        } else {
+            const filename = getDictionaryFilename(dict, "json");
+            const data = JSON.stringify(result.data || {}, null, 2);
+            downloadDictionaryFile(filename, data, "application/json");
+        }
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to export dictionary.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+async function renameDictionary(dict, button) {
+    const name = getDictionaryId(dict);
+    const currentLabel = getDictionaryLabel(dict);
+    if (!name) return;
+    const nextName = window.prompt("Rename dictionary", currentLabel);
+    if (!nextName || nextName.trim() === "" || nextName.trim() === currentLabel) return;
+    setButtonLoading(button, true, "Renaming...");
+    try {
+        const renamed = nextName.trim();
+        const exported = await ploverRpc("export_dictionary", { name });
+        if (exported.type === "python") {
+            await ploverRpc("import_dictionary", {
+                name: renamed,
+                type: "python",
+                pythonCode: exported.pythonCode || ""
+            });
+        } else {
+            await ploverRpc("import_dictionary", {
+                name: renamed,
+                type: "json",
+                data: exported.data || {},
+                merge: false
+            });
+        }
+        if (!dict.enabled) {
+            await ploverRpc("set_dictionary_enabled", { path: renamed, enabled: false });
+        }
+        await ploverRpc("remove_dictionary", { name });
+        await refreshPloverDictionaries({ force: true });
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to rename dictionary.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+async function deleteDictionary(dict, button) {
+    const name = getDictionaryId(dict);
+    if (!name) return;
+    if (!window.confirm(`Delete dictionary "${getDictionaryLabel(dict)}"?`)) return;
+    setButtonLoading(button, true, "Deleting...");
+    try {
+        await ploverRpc("remove_dictionary", { name });
+        await refreshPloverDictionaries({ force: true });
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to delete dictionary.");
+    } finally {
+        setButtonLoading(button, false, "");
     }
 }
 
@@ -721,27 +957,45 @@ function renderPloverDictionaries() {
         const row = document.createElement("div");
         row.className = "plover-dictionary-item";
         const info = document.createElement("div");
-        const name = dict.path || dict.name || "dictionary";
-        info.textContent = name;
+        info.className = "plover-dictionary-info";
+        const name = getDictionaryLabel(dict);
+        const path = getDictionaryPath(dict);
+        const nameEl = document.createElement("div");
+        nameEl.className = "plover-dictionary-name";
+        nameEl.textContent = name;
+        info.appendChild(nameEl);
+        if (path && path !== name) {
+            const pathEl = document.createElement("div");
+            pathEl.className = "plover-dictionary-path";
+            pathEl.textContent = path;
+            info.appendChild(pathEl);
+        }
         const meta = document.createElement("div");
         meta.className = "plover-dictionary-meta";
-        meta.textContent = `entries: ${dict.entries ?? 0} · ${dict.readonly ? "readonly" : "writable"} · ${dict.enabled ? "enabled" : "disabled"}`;
+        meta.textContent = `entries: ${dict.entries ?? 0} · ${dict.readonly ? "read-only" : "writable"} · ${dict.enabled ? "enabled" : "disabled"}`;
+        info.appendChild(meta);
         row.appendChild(info);
-        row.appendChild(meta);
-        if (!dict.readonly) {
-            const removeButton = document.createElement("button");
-            removeButton.textContent = "Remove";
-            removeButton.onclick = async () => {
-                try {
-                    await ploverRpc("remove_dictionary", { name });
-                    await refreshPloverDictionaries();
-                } catch (e) {
-                    console.log(e);
-                    setPloverMessage(e.message || "Failed to remove dictionary.");
-                }
-            };
-            row.appendChild(removeButton);
-        }
+        const actions = document.createElement("div");
+        actions.className = "plover-dictionary-actions";
+        const exportButton = document.createElement("button");
+        exportButton.textContent = "Export";
+        exportButton.addEventListener("click", () => {
+            void exportDictionary(dict, exportButton);
+        });
+        const renameButton = document.createElement("button");
+        renameButton.textContent = "Rename";
+        renameButton.addEventListener("click", () => {
+            void renameDictionary(dict, renameButton);
+        });
+        const deleteButton = document.createElement("button");
+        deleteButton.textContent = "Delete";
+        deleteButton.addEventListener("click", () => {
+            void deleteDictionary(dict, deleteButton);
+        });
+        actions.appendChild(exportButton);
+        actions.appendChild(renameButton);
+        actions.appendChild(deleteButton);
+        row.appendChild(actions);
         listEl.appendChild(row);
     }
     updatePloverDictionarySelects();
@@ -755,7 +1009,7 @@ function appendText(text) {
         state.pendingCapitalization = false;
     }
     // Append a new Vietnamese (generic text) island
-    state.islands.push(createIsland('vietnamese', text));
+    buffer.appendIsland(createIsland('vietnamese', text));
 }
 
 function abortInferenceRequest(clearController) {
@@ -816,7 +1070,7 @@ async function handleChord(stroke) {
     // 2. Space Stroke: S-P
     if (stroke === "S-P") {
         saveState();
-        state.islands.push(createIsland('spacing', ' '));
+        buffer.appendIsland(createIsland('spacing', ' '));
         runInference();
         updateDisplay();
         return;
@@ -838,7 +1092,7 @@ async function handleChord(stroke) {
 
         saveState();
         const punct = punctuationMap[stroke];
-        state.islands.push(createIsland('punctuation', punct));
+        buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
         return;
     }
@@ -847,9 +1101,22 @@ async function handleChord(stroke) {
     if (stroke.startsWith("SKWH")) {
         const emilyResult = handleEmilySymbol(stroke);
         if (emilyResult) {
+            const repeatCount = emilyResult.repeat || 1;
+            if (emilyResult.retroSpace) {
+            if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
+                saveState();
+                const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
+                state.pendingCapitalization = emilyResult.capNext || false;
+                    if (changed || emilyResult.capNext) {
+                        runInference();
+                        updateDisplay();
+                    }
+                }
+                return;
+            }
             saveState();
             // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-            state.islands.push(createIsland(emilyResult.type, emilyResult.value, false, {
+            buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
                 leftSpace: emilyResult.leftSpace,
                 rightSpace: emilyResult.rightSpace,
                 explicitSpacing: emilyResult.explicitSpacing
@@ -865,7 +1132,7 @@ async function handleChord(stroke) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
             saveState();
-            state.islands.push(createIsland('vietnamese', v7Code, true));
+            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
             runInference();
             return;
         }
@@ -944,7 +1211,7 @@ function selectCandidate(index) {
     // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
     const chosenText = state.candidates[index].join("");
     saveState();
-    state.islands = [createIsland('vietnamese', chosenText)];
+    buffer.setIslands([createIsland('vietnamese', chosenText)]);
     state.candidates = [];
     updateDisplay();
 }
@@ -1170,7 +1437,7 @@ document.addEventListener("keydown", (e) => {
              const newText = textArea.value;
              
              // Update state
-             state.islands = [createIsland('vietnamese', newText)];
+             buffer.setIslands([createIsland('vietnamese', newText)]);
              state.candidates = [];
              buffer.clearHistory();
              isRawMode = false;
@@ -1192,7 +1459,7 @@ document.addEventListener("keydown", (e) => {
          if ((e.shiftKey && isLetter) || isNumber) {
              saveState();
              const value = isNumber ? e.key : e.key.toUpperCase();
-             state.islands.push(createIsland('capital', value));
+             buffer.appendIsland(createIsland('capital', value));
              runInference();
              e.preventDefault();
              return;
@@ -1202,7 +1469,7 @@ document.addEventListener("keydown", (e) => {
     // Handle Enter for Newline (only when Plover is disabled)
     if (!ploverActive && e.key === "Enter") {
         saveState();
-        state.islands.push(createIsland('spacing', '\n'));
+        buffer.appendIsland(createIsland('spacing', '\n'));
         runInference();
         updateDisplay();
         e.preventDefault();
@@ -1217,7 +1484,7 @@ document.addEventListener("keydown", (e) => {
     if (!ploverActive && mapped.match(/^[0-9]$/)) {
         // Emit as capital/number island immediately
         saveState();
-        state.islands.push(createIsland('capital', mapped));
+        buffer.appendIsland(createIsland('capital', mapped));
         runInference();
         e.preventDefault();
         return;
@@ -1273,20 +1540,62 @@ document.addEventListener("keyup", (e) => {
 
 function setupPloverControls() {
     const toggleButton = document.getElementById("plover-toggle");
+    const dictionaryOpenButton = document.getElementById("plover-dictionary-open");
+    const dictionaryDialog = document.getElementById("plover-dictionary-dialog");
+    const dictionaryCloseButton = document.getElementById("plover-dictionary-close");
     const refreshButton = document.getElementById("plover-refresh");
     const uploadButton = document.getElementById("plover-dict-upload");
     const addButton = document.getElementById("plover-entry-add");
     const updateButton = document.getElementById("plover-entry-update");
     const removeButton = document.getElementById("plover-entry-remove");
+    const dictSelect = document.getElementById("plover-entry-dict");
 
     if (toggleButton) {
         toggleButton.addEventListener("click", () => {
             void togglePloverMode();
         });
     }
+    if (dictionaryOpenButton && dictionaryDialog) {
+        dictionaryOpenButton.addEventListener("click", () => {
+            if (typeof dictionaryDialog.showModal === "function") {
+                dictionaryDialog.showModal();
+            } else {
+                dictionaryDialog.setAttribute("open", "");
+            }
+        });
+    }
+    if (dictionaryCloseButton && dictionaryDialog) {
+        dictionaryCloseButton.addEventListener("click", () => {
+            if (typeof dictionaryDialog.close === "function") {
+                dictionaryDialog.close();
+            } else {
+                dictionaryDialog.removeAttribute("open");
+            }
+        });
+    }
+    if (dictionaryDialog) {
+        dictionaryDialog.addEventListener("click", (event) => {
+            if (event.target === dictionaryDialog) {
+                if (typeof dictionaryDialog.close === "function") {
+                    dictionaryDialog.close();
+                } else {
+                    dictionaryDialog.removeAttribute("open");
+                }
+            }
+        });
+    }
     if (refreshButton) {
-        refreshButton.addEventListener("click", () => {
-            void refreshPloverDictionaries();
+        refreshButton.addEventListener("click", async () => {
+            if (!strippedPlover.available) {
+                setPloverMessage("Stripped Plover is unavailable.");
+                return;
+            }
+            setButtonLoading(refreshButton, true, "Refreshing...");
+            try {
+                await refreshPloverDictionaries({ force: true });
+            } finally {
+                setButtonLoading(refreshButton, false, "");
+            }
         });
     }
     if (uploadButton) {
@@ -1306,6 +1615,7 @@ function setupPloverControls() {
             }
             const name = (nameInput?.value || "").trim() || file.name;
             const type = typeSelect?.value || "json";
+            setButtonLoading(uploadButton, true, "Uploading...");
             try {
                 const content = await file.text();
                 if (type === "json") {
@@ -1323,18 +1633,20 @@ function setupPloverControls() {
                         pythonCode: content
                     });
                 }
-                await refreshPloverDictionaries();
+                await refreshPloverDictionaries({ force: true });
                 setPloverMessage("");
             } catch (e) {
                 console.log(e);
                 setPloverMessage(e.message || "Failed to upload dictionary.");
+            } finally {
+                setButtonLoading(uploadButton, false, "");
             }
         });
     }
 
     const entryHandler = async (action) => {
         if (!strippedPlover.available) {
-            setPloverMessage("Stripped Plover is unavailable.");
+            setEntryMessage("Stripped Plover is unavailable.");
             return;
         }
         const dictSelect = document.getElementById("plover-entry-dict");
@@ -1343,32 +1655,41 @@ function setupPloverControls() {
         const stroke = (strokeInput?.value || "").trim();
         const translation = (translationInput?.value || "").trim();
         const name = (dictSelect?.value || "").trim();
+        if (!name) {
+            setEntryMessage("Select a dictionary to edit entries.");
+            return;
+        }
+        const selectedDict = ploverDictionaries.find((dict) => getDictionaryId(dict) === name);
+        if (selectedDict?.readonly) {
+            setEntryMessage("Selected dictionary is read-only.");
+            return;
+        }
         if (!stroke) {
-            setPloverMessage("Provide a stroke for entry management.");
+            setEntryMessage("Provide a stroke for entry management.");
             return;
         }
         try {
-            const params = name ? { name, stroke } : { stroke };
+            const params = { name, stroke };
             if (action === "add") {
                 if (!translation) {
-                    setPloverMessage("Provide a translation to add an entry.");
+                    setEntryMessage("Provide a translation to add an entry.");
                     return;
                 }
                 await ploverRpc("add_entry", { ...params, translation });
             } else if (action === "update") {
                 if (!translation) {
-                    setPloverMessage("Provide a translation to update an entry.");
+                    setEntryMessage("Provide a translation to update an entry.");
                     return;
                 }
                 await ploverRpc("update_entry", { ...params, translation });
             } else if (action === "remove") {
                 await ploverRpc("remove_entry", params);
             }
-            setPloverMessage("");
+            setEntryMessage("");
             await refreshPloverDictionaries();
         } catch (e) {
             console.log(e);
-            setPloverMessage(e.message || "Entry update failed.");
+            setEntryMessage(e.message || "Entry update failed.");
         }
     };
 
@@ -1385,6 +1706,11 @@ function setupPloverControls() {
     if (removeButton) {
         removeButton.addEventListener("click", () => {
             void entryHandler("remove");
+        });
+    }
+    if (dictSelect) {
+        dictSelect.addEventListener("change", () => {
+            updateEntryControls();
         });
     }
 
