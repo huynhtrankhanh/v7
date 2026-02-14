@@ -8,6 +8,8 @@ const net = require("net");
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
+const PLOVER_RECOVERY_TIMEOUT_MS = 7000;
+const INITIAL_STATE_TIMEOUT_MS = 1000;
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
@@ -55,10 +57,6 @@ async function main() {
       const dcDown = spawn("docker", ["compose", "down", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
       dcDown.on("exit", () => resolve());
     });
-    const dcUp = spawn("docker", ["compose", "up", "-d", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
-    await new Promise((resolve, reject) => dcUp.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker compose up exited ${code}`)))));
-    await waitForPort(PLOVER_PORT, "127.0.0.1");
-
     const serverLogs = { buffer: "" };
     serverProc = spawn(
       "cargo",
@@ -89,8 +87,22 @@ async function main() {
     await page.goto(`http://localhost:${SERVER_PORT}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#plover-status");
     await page.waitForFunction(
-      () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("available"),
+      () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("unavailable"),
       { timeout: 5000 }
+    );
+    await page.waitForFunction(() => document.querySelector("#plover-dictionary-open")?.disabled === true, { timeout: INITIAL_STATE_TIMEOUT_MS });
+
+    const dcUp = spawn("docker", ["compose", "up", "-d", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
+    await new Promise((resolve, reject) => dcUp.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker compose up exited ${code}`)))));
+    await waitForPort(PLOVER_PORT, "127.0.0.1");
+
+    await page.waitForFunction(
+      () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("available"),
+      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
+    );
+    await page.waitForFunction(
+      () => document.querySelector("#plover-dictionary-open")?.disabled === false,
+      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
     );
 
     // Exercise WS endpoint directly.
