@@ -146,7 +146,7 @@ export class Rope<T = string> {
   append(value: T): void {
     const size = this.measure(value);
     if (!Number.isFinite(size) || size < 0) {
-      throw new Error("Invalid rope node size");
+      throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
     }
     const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
     this.root = merge(this.root, newNode, this.measure);
@@ -154,6 +154,7 @@ export class Rope<T = string> {
 
   concat(other: Rope<T>): void {
     if (!other.root) return;
+    // merge is persistent; nodes are reused without mutating either rope
     this.root = merge(this.root, other.root, this.measure);
   }
 
