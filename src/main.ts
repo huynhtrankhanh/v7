@@ -448,6 +448,8 @@ const dictionaryInputIds = new Set([
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 let ploverDictionarySignature = "";
+const PLOVER_STATUS_RETRY_MS = 2000;
+let ploverStatusTimer = null;
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
@@ -571,6 +573,30 @@ async function fetchPloverStatus() {
     updatePloverStatusUI();
 }
 
+function schedulePloverStatusRetry() {
+    if (ploverStatusTimer) return;
+    ploverStatusTimer = window.setTimeout(() => {
+        ploverStatusTimer = null;
+        void ensurePloverAvailability();
+    }, PLOVER_STATUS_RETRY_MS);
+}
+
+async function ensurePloverAvailability() {
+    const wasAvailable = strippedPlover.available;
+    await fetchPloverStatus();
+    if (strippedPlover.available) {
+        if (ploverStatusTimer) {
+            clearTimeout(ploverStatusTimer);
+            ploverStatusTimer = null;
+        }
+        if (!wasAvailable) {
+            await refreshPloverDictionaries({ force: true });
+        }
+    } else {
+        schedulePloverStatusRetry();
+    }
+}
+
 function resetPloverSocket(message) {
     const error = new Error(message || "Stripped Plover connection lost");
     if (ploverSocket) {
@@ -595,6 +621,7 @@ function resetPloverSocket(message) {
     ploverDictionaries = [];
     renderPloverDictionaries();
     updatePloverStatusUI();
+    schedulePloverStatusRetry();
 }
 
 function ensurePloverSocket() {
@@ -1728,10 +1755,8 @@ function setupPloverControls() {
         });
     }
 
-    void fetchPloverStatus().then(() => {
-        if (strippedPlover.available) {
-            void refreshPloverDictionaries();
-        } else {
+    void ensurePloverAvailability().then(() => {
+        if (!strippedPlover.available) {
             renderPloverDictionaries();
         }
     });
