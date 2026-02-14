@@ -8,6 +8,7 @@ const net = require("net");
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
+const PLOVER_RECOVERY_TIMEOUT_MS = 8000;
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
@@ -96,11 +97,11 @@ async function main() {
 
     await page.waitForFunction(
       () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("available"),
-      { timeout: 8000 }
+      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
     );
     await page.waitForFunction(
       () => document.querySelector("#plover-dictionary-open")?.disabled === false,
-      { timeout: 8000 }
+      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
     );
 
     // Exercise WS endpoint directly.

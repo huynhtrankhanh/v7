@@ -583,9 +583,9 @@ function clearPloverStatusTimer() {
 
 function schedulePloverStatusRetry() {
     clearPloverStatusTimer();
-    ploverStatusTimer = window.setTimeout(() => {
+    ploverStatusTimer = window.setTimeout(async () => {
+        await ensurePloverAvailability();
         ploverStatusTimer = null;
-        void ensurePloverAvailability();
     }, PLOVER_STATUS_RETRY_MS);
 }
 
