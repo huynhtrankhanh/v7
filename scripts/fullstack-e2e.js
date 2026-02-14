@@ -2,6 +2,7 @@
 // Full-stack smoke test: Stripped Plover (real container) + inference backend + Puppeteer UI check.
 const { spawn } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 const puppeteer = require("puppeteer");
 const net = require("net");
 
@@ -47,6 +48,37 @@ function waitForPort(port, host = "127.0.0.1", timeoutMs = 60000) {
     };
     tryConnect();
   });
+}
+
+async function ploverRpcOnPage(page, method, params) {
+  return page.evaluate(
+    async ({ method, params }) => {
+      return await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("WS timeout")), 10000);
+        const ws = new WebSocket(`ws://${location.host}/plover/ws`);
+        ws.addEventListener("open", () => {
+          ws.send(JSON.stringify({ id: 1, method, params }));
+        });
+        ws.addEventListener("message", (ev) => {
+          try {
+            const parsed = JSON.parse(ev.data);
+            if (parsed.id !== 1) return;
+            resolve(parsed);
+          } catch (e) {
+            reject(e);
+          } finally {
+            clearTimeout(timer);
+            ws.close();
+          }
+        });
+        ws.addEventListener("error", (e) => {
+          clearTimeout(timer);
+          reject(e);
+        });
+      });
+    },
+    { method, params }
+  );
 }
 
 async function main() {
@@ -106,29 +138,7 @@ async function main() {
     );
 
     // Exercise WS endpoint directly.
-    const wsResult = await page.evaluate(async () => {
-      return await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("WS timeout")), 10000);
-        const ws = new WebSocket(`ws://${location.host}/plover/ws`);
-        ws.addEventListener("open", () => {
-          ws.send(JSON.stringify({ id: 1, method: "get_dictionary_state", params: {} }));
-        });
-        ws.addEventListener("message", (ev) => {
-          try {
-            resolve(JSON.parse(ev.data));
-          } catch (e) {
-            reject(e);
-          } finally {
-            clearTimeout(timer);
-            ws.close();
-          }
-        });
-        ws.addEventListener("error", (e) => {
-          clearTimeout(timer);
-          reject(e);
-        });
-      });
-    });
+    const wsResult = await ploverRpcOnPage(page, "get_dictionary_state", {});
     if (!wsResult?.ok) {
       throw new Error(`WebSocket RPC failed (not ok): ${JSON.stringify(wsResult)}`);
     }
@@ -152,6 +162,108 @@ async function main() {
     if (strokeVal !== "PUPE2E") {
       throw new Error(`Dictionary stroke input did not capture text, got: ${strokeVal}`);
     }
+
+    const uniqueName = `puppeteer-${Date.now()}.json`;
+    const renamedName = uniqueName.replace(".json", "-renamed.json");
+    const stroke = "TEFT";
+
+    const dictionaryName = uniqueName;
+    const uploadPath = path.join("/tmp", uniqueName);
+    fs.writeFileSync(uploadPath, "{}\n");
+    const fileInput = await page.$("#plover-dict-file");
+    if (!fileInput) {
+      throw new Error("Dictionary file input not found");
+    }
+    await fileInput.uploadFile(uploadPath);
+    await page.click("#plover-dict-name", { clickCount: 3 });
+    await page.type("#plover-dict-name", dictionaryName);
+    await page.select("#plover-dict-type", "json");
+    await page.click("#plover-dict-upload");
+
+    await page.waitForFunction(
+      (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.includes(name)),
+      { timeout: 5000 },
+      dictionaryName
+    );
+    const stateAfterImport = await ploverRpcOnPage(page, "get_dictionary_state", {});
+    const importedDictionary = (stateAfterImport?.result?.dictionaries || []).find((dict) =>
+      [dict.identifier, dict.path, dict.name].some((value) => typeof value === "string" && value.includes(dictionaryName))
+    );
+    if (!importedDictionary) {
+      throw new Error(`Uploaded dictionary not found in state: ${JSON.stringify(stateAfterImport)}`);
+    }
+    const dictionaryId = importedDictionary.identifier || importedDictionary.path || importedDictionary.name;
+    const importedLabel = await page.evaluate((name) => {
+      const row = Array.from(document.querySelectorAll(".plover-dictionary-item")).find((entry) =>
+        entry.querySelector(".plover-dictionary-name")?.textContent?.includes(name)
+      );
+      return row?.querySelector(".plover-dictionary-name")?.textContent?.trim() || "";
+    }, dictionaryName);
+    if (importedLabel === "dictionary") {
+      throw new Error(`Dictionary label incorrectly rendered: ${importedLabel}`);
+    }
+
+    await page.select("#plover-entry-dict", dictionaryId);
+    await page.click("#plover-entry-stroke", { clickCount: 3 });
+    await page.type("#plover-entry-stroke", stroke);
+    await page.click("#plover-entry-translation", { clickCount: 3 });
+    await page.type("#plover-entry-translation", "one");
+    await page.click("#plover-entry-add");
+
+    let exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    if (exported?.result?.data?.[stroke] !== "one") {
+      throw new Error(`Entry add failed: ${JSON.stringify(exported)}`);
+    }
+
+    await page.click("#plover-entry-translation", { clickCount: 3 });
+    await page.type("#plover-entry-translation", "two");
+    await page.select("#plover-entry-dict", dictionaryId);
+    await page.click("#plover-entry-update");
+    exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    if (exported?.result?.data?.[stroke] !== "two") {
+      throw new Error(`Entry update failed: ${JSON.stringify(exported)}`);
+    }
+
+    await page.select("#plover-entry-dict", dictionaryId);
+    await page.click("#plover-entry-remove");
+    exported = await ploverRpcOnPage(page, "export_dictionary", { name: dictionaryName });
+    if (Object.prototype.hasOwnProperty.call(exported?.result?.data || {}, stroke)) {
+      throw new Error(`Entry remove failed: ${JSON.stringify(exported)}`);
+    }
+
+    await page.evaluate((name) => {
+      window.prompt = () => name;
+    }, renamedName);
+    await page.evaluate((name) => {
+      const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
+      const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
+      if (!row) throw new Error(`Dictionary row not found: ${name}`);
+      const renameButton = Array.from(row.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Rename");
+      if (!renameButton) throw new Error("Rename button not found");
+      renameButton.click();
+    }, dictionaryName);
+    await page.waitForFunction(
+      (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
+      { timeout: 5000 },
+      renamedName
+    );
+
+    await page.evaluate(() => {
+      window.confirm = () => true;
+    });
+    await page.evaluate((name) => {
+      const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
+      const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
+      if (!row) throw new Error(`Dictionary row not found: ${name}`);
+      const deleteButton = Array.from(row.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Delete");
+      if (!deleteButton) throw new Error("Delete button not found");
+      deleteButton.click();
+    }, renamedName);
+    await page.waitForFunction(
+      (name) => !Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
+      { timeout: 5000 },
+      renamedName
+    );
 
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
