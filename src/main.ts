@@ -606,6 +606,8 @@ async function ensurePloverAvailability() {
         }
     } catch (e) {
         console.error("Failed to check Stripped Plover availability:", e);
+        strippedPlover.available = false;
+        updatePloverStatusUI();
         schedulePloverStatusRetry();
     } finally {
         ploverStatusCheckInFlight = false;
