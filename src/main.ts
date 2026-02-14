@@ -585,7 +585,6 @@ function schedulePloverStatusRetry() {
     clearPloverStatusTimer();
     ploverStatusTimer = window.setTimeout(async () => {
         await ensurePloverAvailability();
-        ploverStatusTimer = null;
     }, PLOVER_STATUS_RETRY_MS);
 }
 
@@ -604,7 +603,7 @@ async function ensurePloverAvailability() {
             schedulePloverStatusRetry();
         }
     } catch (e) {
-        console.error(e);
+        console.error("Failed to check Stripped Plover availability:", e);
         schedulePloverStatusRetry();
     } finally {
         ploverStatusCheckInFlight = false;
