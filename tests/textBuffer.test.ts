@@ -54,6 +54,18 @@ describe("TextBuffer undo", () => {
     expect(buffer.getIslands()[0]).toBe(seed);
   });
 
+  it("groups plover-style snapshots into a single undo step", () => {
+    const buffer = new TextBuffer();
+    const initial = buffer.getIslands();
+    buffer.save("plover");
+    buffer.appendIsland(createIsland("vietnamese", "first", false, { plover: true }));
+    buffer.save("plover");
+    buffer.appendIsland(createIsland("vietnamese", "second", false, { plover: true }));
+    expect(buffer.undo()).toBe(true);
+    expect(buffer.getIslands()).toEqual(initial);
+    expect(buffer.undo()).toBe(false);
+  });
+
   it("convertIslandsForInference matches spacing rules", () => {
     const islands = [
       createIsland("vietnamese", "xin"),

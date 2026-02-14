@@ -453,13 +453,14 @@ function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
 }
 
-function saveState() {
-    buffer.save();
+function saveState(group) {
+    buffer.save(group);
 }
 
 function restoreState() {
     if (buffer.undo()) {
         state.candidates = [];
+        syncPloverPreeditIndex();
         updateDisplay();
         runInference();
     }
@@ -670,6 +671,17 @@ function clearPloverPreedit() {
     }
 }
 
+function syncPloverPreeditIndex() {
+    const islands = buffer.getIslands();
+    strippedPlover.preeditIndex = null;
+    for (let i = islands.length - 1; i >= 0; i--) {
+        if (islands[i]?.ploverPreedit) {
+            strippedPlover.preeditIndex = i;
+            break;
+        }
+    }
+}
+
 function finalizePloverPreedit() {
     if (strippedPlover.preeditIndex !== null) {
         const index = strippedPlover.preeditIndex;
@@ -687,6 +699,7 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     if (!Array.isArray(output)) return;
     const committedParts = [];
     let preeditText = "";
+    const hadPreedit = strippedPlover.preeditIndex !== null;
     for (const item of output) {
         if (item.type === "committed") {
             committedParts.push(item.text || "");
@@ -695,21 +708,22 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
         }
     }
 
-    if (recordHistory) {
-        saveState();
+    const committedJoined = committedParts.join("");
+    const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
+    const committedText = ensureString(combinedCommitted);
+    const normalizedPreedit = finalizePreedit ? "" : ensureString(preeditText);
+    const shouldSave = hadPreedit || committedText !== "" || normalizedPreedit !== "";
+    if (shouldSave) {
+        saveState(recordHistory ? undefined : "plover");
     }
 
     clearPloverPreedit();
 
-    const committedJoined = committedParts.join("");
-    const combinedCommitted = finalizePreedit ? `${committedJoined}${preeditText}` : committedJoined;
-    const committedText = ensureString(combinedCommitted);
     if (committedText) {
         buffer.appendIsland(createIsland("vietnamese", committedText, false, { plover: true }));
     }
 
     if (!finalizePreedit) {
-        const normalizedPreedit = ensureString(preeditText);
         if (normalizedPreedit) {
             buffer.appendIsland(createIsland("vietnamese", normalizedPreedit, false, { plover: true, ploverPreedit: true }));
             strippedPlover.preeditIndex = buffer.getIslandCount() - 1;
