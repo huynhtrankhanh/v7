@@ -1302,6 +1302,29 @@ function getCommonPrefix(strings) {
     return prefix;
 }
 
+function updateInputPadding(display, textArea, candidateArea) {
+    if (!display.dataset.basePaddingBottom) {
+        display.dataset.basePaddingBottom = String(parseFloat(getComputedStyle(display).paddingBottom) || 0);
+    }
+    if (!textArea.dataset.basePaddingBottom) {
+        textArea.dataset.basePaddingBottom = String(parseFloat(getComputedStyle(textArea).paddingBottom) || 0);
+    }
+
+    const candidateHeight = Math.ceil(candidateArea.getBoundingClientRect().height);
+    const displayBase = parseFloat(display.dataset.basePaddingBottom) || 0;
+    const textAreaBase = parseFloat(textArea.dataset.basePaddingBottom) || 0;
+
+    display.style.paddingBottom = `${displayBase + candidateHeight}px`;
+    textArea.style.paddingBottom = `${textAreaBase + candidateHeight}px`;
+}
+
+function scrollToBottom(element) {
+    element.scrollTop = element.scrollHeight;
+    requestAnimationFrame(() => {
+        element.scrollTop = element.scrollHeight;
+    });
+}
+
 function updateDisplay() {
     const display = document.getElementById("text-display");
     const textArea = document.getElementById("text-input");
@@ -1367,9 +1390,6 @@ function updateDisplay() {
             display.insertBefore(textNode, cursor); // Text before cursor
             display.style.color = "#000";
         }
-        
-        display.scrollTop = display.scrollHeight;
-
         // Render Candidates
         candArea.replaceChildren();
         if (state.candidates.length > 0) {
@@ -1437,6 +1457,9 @@ function updateDisplay() {
             candArea.appendChild(div);
         }
     }
+
+    updateInputPadding(display, textArea, candArea);
+    scrollToBottom(isRawMode ? textArea : display);
 }
 
 // --- Input Handling ---
