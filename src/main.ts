@@ -505,18 +505,6 @@ function setButtonLoading(button, isLoading, loadingText = "") {
     }
 }
 
-function getDictionaryId(dict) {
-    return dict.identifier || dict.path || dict.name || "";
-}
-
-function getDictionaryLabel(dict) {
-    return dict.name || dict.identifier || dict.path || "dictionary";
-}
-
-function getDictionaryPath(dict) {
-    return dict.path || dict.identifier || "";
-}
-
 function getDictionarySignature(dictionaries) {
     return JSON.stringify(
         dictionaries.map((dict) => ({
@@ -857,14 +845,10 @@ function updatePloverDictionarySelects() {
     selectEl.appendChild(placeholder);
     for (const dict of availableDictionaries) {
         const option = document.createElement("option");
-        option.value = getDictionaryId(dict);
+        option.value = dict.identifier;
         option.textContent = dict.readonly
-            ? `${getDictionaryLabel(dict)} (read-only)`
-            : getDictionaryLabel(dict);
-        const path = getDictionaryPath(dict);
-        if (path && path !== option.textContent) {
-            option.title = path;
-        }
+            ? `${dict.identifier} (read-only)`
+            : dict.identifier;
         selectEl.appendChild(option);
     }
     selectEl.disabled = availableDictionaries.length === 0;
@@ -879,7 +863,7 @@ function updateEntryControls() {
     if (!selectEl || !addButton || !updateButton || !removeButton) return;
     const selectedId = selectEl.value || "";
     const selectedDict = selectedId
-        ? ploverDictionaries.find((dict) => getDictionaryId(dict) === selectedId)
+        ? ploverDictionaries.find((dict) => dict.identifier === selectedId)
         : null;
     const canEdit = !!selectedDict && !selectedDict.readonly;
     const shouldEnable = strippedPlover.available && canEdit;
@@ -900,7 +884,7 @@ function updateEntryControls() {
 }
 
 function getDictionaryFilename(dict, extension) {
-    const rawName = getDictionaryLabel(dict);
+    const rawName = dict.identifier;
     const base = rawName.split("/").pop() || "dictionary";
     const safeBase = base.replace(/[\\/:*?"<>|]+/g, "-");
     return extension ? `${safeBase}.${extension}` : safeBase;
@@ -919,7 +903,7 @@ function downloadDictionaryFile(filename, content, mimeType) {
 }
 
 async function exportDictionary(dict, button) {
-    const name = getDictionaryId(dict);
+    const name = dict.identifier;
     if (!name) return;
     setButtonLoading(button, true, "Exporting...");
     try {
@@ -943,8 +927,8 @@ async function exportDictionary(dict, button) {
 }
 
 async function renameDictionary(dict, button) {
-    const name = getDictionaryId(dict);
-    const currentLabel = getDictionaryLabel(dict);
+    const name = dict.identifier;
+    const currentLabel = dict.identifier;
     if (!name) return;
     const nextName = window.prompt("Rename dictionary", currentLabel);
     if (!nextName || nextName.trim() === "" || nextName.trim() === currentLabel) return;
@@ -981,9 +965,9 @@ async function renameDictionary(dict, button) {
 }
 
 async function deleteDictionary(dict, button) {
-    const name = getDictionaryId(dict);
+    const name = dict.identifier;
     if (!name) return;
-    if (!window.confirm(`Delete dictionary "${getDictionaryLabel(dict)}"?`)) return;
+    if (!window.confirm(`Delete dictionary "${dict.identifier}"?`)) return;
     setButtonLoading(button, true, "Deleting...");
     try {
         await ploverRpc("remove_dictionary", { name });
@@ -1020,18 +1004,12 @@ function renderPloverDictionaries() {
         row.className = "plover-dictionary-item";
         const info = document.createElement("div");
         info.className = "plover-dictionary-info";
-        const name = getDictionaryLabel(dict);
-        const path = getDictionaryPath(dict);
+        const name = dict.identifier;
         const nameEl = document.createElement("div");
         nameEl.className = "plover-dictionary-name";
         nameEl.textContent = name;
         info.appendChild(nameEl);
-        if (path && path !== name) {
-            const pathEl = document.createElement("div");
-            pathEl.className = "plover-dictionary-path";
-            pathEl.textContent = path;
-            info.appendChild(pathEl);
-        }
+
         const meta = document.createElement("div");
         meta.className = "plover-dictionary-meta";
         meta.textContent = `entries: ${dict.entries ?? 0} · ${dict.readonly ? "read-only" : "writable"} · ${dict.enabled ? "enabled" : "disabled"}`;
@@ -1744,7 +1722,7 @@ function setupPloverControls() {
             setEntryMessage("Select a dictionary to edit entries.");
             return;
         }
-        const selectedDict = ploverDictionaries.find((dict) => getDictionaryId(dict) === name);
+        const selectedDict = ploverDictionaries.find((dict) => dict.identifier === name);
         if (selectedDict?.readonly) {
             setEntryMessage("Selected dictionary is read-only.");
             return;
