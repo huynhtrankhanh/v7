@@ -1,4 +1,5 @@
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
+import { createUndoManager } from "./undoManager";
 
 // --- Mappings & Constants ---
 
@@ -456,17 +457,19 @@ function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
 }
 
-function saveState(group) {
-    buffer.save(group);
-}
-
-function restoreState() {
-    if (buffer.undo()) {
+const undoManager = createUndoManager(buffer, () => {
         state.candidates = [];
         syncPloverPreeditIndex();
         updateDisplay();
         runInference();
-    }
+});
+
+function saveState(group) {
+    undoManager.save(group);
+}
+
+function restoreState() {
+    undoManager.undo();
 }
 
 function setPloverMessage(message) {
@@ -759,7 +762,7 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     const normalizedPreedit = finalizePreedit ? "" : ensureString(preeditText);
     const shouldSave = hadPreedit || committedText !== "" || normalizedPreedit !== "";
     if (shouldSave) {
-        saveState(recordHistory ? undefined : "plover");
+        undoManager.savePlover({ recordHistory: !!recordHistory, hadPreedit });
     }
 
     clearPloverPreedit();
