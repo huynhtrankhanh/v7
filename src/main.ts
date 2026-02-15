@@ -1302,7 +1302,7 @@ function getCommonPrefix(strings) {
     return prefix;
 }
 
-function updateInputPadding(display, textArea, candArea) {
+function updateInputPadding(display, textArea, candidateArea) {
     if (!display.dataset.basePaddingBottom) {
         display.dataset.basePaddingBottom = String(parseFloat(getComputedStyle(display).paddingBottom) || 0);
     }
@@ -1310,7 +1310,7 @@ function updateInputPadding(display, textArea, candArea) {
         textArea.dataset.basePaddingBottom = String(parseFloat(getComputedStyle(textArea).paddingBottom) || 0);
     }
 
-    const candidateHeight = Math.ceil(candArea.getBoundingClientRect().height);
+    const candidateHeight = Math.ceil(candidateArea.getBoundingClientRect().height);
     const displayBase = parseFloat(display.dataset.basePaddingBottom) || 0;
     const textAreaBase = parseFloat(textArea.dataset.basePaddingBottom) || 0;
 
