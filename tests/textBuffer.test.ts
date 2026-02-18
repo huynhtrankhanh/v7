@@ -102,4 +102,11 @@ describe("TextBuffer undo", () => {
     expect(shouldAddSpace(prev, curr)).toBe(false);
     expect(shouldAddSpace(prev, spaced)).toBe(true);
   });
+
+  it("trims trailing space from the last vietnamese island", () => {
+    const buffer = new TextBuffer([createIsland("vietnamese", "xin chào ")]);
+    expect(buffer.trimTrailingSpaceFromLastVietnameseIsland()).toBe(true);
+    expect(buffer.getIslands()[0].value).toBe("xin chào");
+    expect(buffer.trimTrailingSpaceFromLastVietnameseIsland()).toBe(false);
+  });
 });
