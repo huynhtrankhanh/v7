@@ -130,6 +130,15 @@ export class TextBuffer {
     this.islands.append(value);
   }
 
+  trimTrailingSpaceFromLastVietnameseIsland(): boolean {
+    const lastIndex = this.islands.length() - 1;
+    if (lastIndex < 0) return false;
+    const last = this.islands.getAt(lastIndex);
+    if (!last || last.type !== "vietnamese" || !last.value.endsWith(" ")) return false;
+    const trimmedValue = last.value.slice(0, -1);
+    return this.islands.replaceAt(lastIndex, { ...last, value: trimmedValue });
+  }
+
   replaceIslandAt(index: number, value: Island): boolean {
     return this.islands.replaceAt(index, value);
   }

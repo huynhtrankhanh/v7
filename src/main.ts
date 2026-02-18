@@ -1531,6 +1531,10 @@ document.addEventListener("keydown", (e) => {
     
     // Handle Enter for Newline (only when Plover is disabled)
     if (!ploverActive && e.key === "Enter") {
+        if (state.candidates.length > 0) {
+            selectCandidate(0);
+        }
+        buffer.trimTrailingSpaceFromLastVietnameseIsland();
         saveState();
         buffer.appendIsland(createIsland('spacing', '\n'));
         runInference();
