@@ -1099,11 +1099,27 @@ async function handleChord(stroke) {
         return;
     }
     
+    const punctuationMap = {
+        "TP-PL": ".",
+        "KW-BG": ",",
+        "KW-PL": "?",
+        "TP-BG": "!"
+    };
+
     // Check single-stroke selection+syllable first; otherwise let normal handlers run.
     const selection = state.candidates.length > 0
         ? getCandidateSelectionMatch(stroke, state.candidates.length)
         : null;
     if (selection && selection.syllableStroke !== null) {
+        const combinedPunctuation = punctuationMap[selection.syllableStroke];
+        if (combinedPunctuation) {
+            saveState();
+            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                buffer.appendIsland(createIsland('punctuation', combinedPunctuation));
+                updateDisplay();
+                return;
+            }
+        }
         const parsedSelection = parse(selection.syllableStroke);
         if (parsedSelection) {
             const syllableText = assemble(parsedSelection);
@@ -1126,13 +1142,6 @@ async function handleChord(stroke) {
     }
 
     // 3. Punctuation
-    const punctuationMap = {
-        "TP-PL": ".",
-        "KW-BG": ",",
-        "KW-PL": "?",
-        "TP-BG": "!"
-    };
-
     if (punctuationMap[stroke]) {
         // Auto-select candidate if present
         if (state.candidates.length > 0) {
