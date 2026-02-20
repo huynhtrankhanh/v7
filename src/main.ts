@@ -1,5 +1,6 @@
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
+import { getCandidateSelectionMatch } from "./candidateSelection";
 
 // --- Mappings & Constants ---
 
@@ -1098,12 +1099,24 @@ async function handleChord(stroke) {
         return;
     }
     
-    // Check Selection (allow explicit candidate selection; do not block other input)
+    // Check Selection (allow explicit candidate selection and single-stroke selection+syllable)
     if (state.candidates.length > 0) {
-        const candIndex = { "TK": 0, "PW": 1, "HR": 2, "-FR": 3, "-PB": 4 }[stroke];
-        if (candIndex !== undefined) {
-            selectCandidate(candIndex);
-            return;
+        const selection = getCandidateSelectionMatch(stroke);
+        if (selection) {
+            if (selection.syllableStroke === null) {
+                selectCandidate(selection.candidateIndex);
+                return;
+            }
+            const parsedSelection = parse(selection.syllableStroke);
+            if (parsedSelection) {
+                const syllableText = assemble(parsedSelection);
+                saveState();
+                if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                    appendText(syllableText);
+                    runInference();
+                }
+                return;
+            }
         }
     }
 
@@ -1245,15 +1258,20 @@ async function runInference() {
     }
 }
 
-function selectCandidate(index) {
-    if (!state.candidates[index]) return;
+function selectCandidate(index, options = { saveHistory: true, refreshDisplay: true }) {
+    if (!state.candidates[index]) return false;
     // state.candidates[index] is array of strings [Fixed, V7, Fixed...] from server response
     // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
     const chosenText = state.candidates[index].join("");
-    saveState();
+    if (options.saveHistory) {
+        saveState();
+    }
     buffer.setIslands([createIsland('vietnamese', chosenText)]);
     state.candidates = [];
-    updateDisplay();
+    if (options.refreshDisplay) {
+        updateDisplay();
+    }
+    return true;
 }
 
 function getCommonPrefix(strings) {
