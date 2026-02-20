@@ -1100,19 +1100,18 @@ async function handleChord(stroke) {
     }
     
     // Check single-stroke selection+syllable first; otherwise let normal handlers run.
-    let selection = null;
-    if (state.candidates.length > 0) {
-        selection = getCandidateSelectionMatch(stroke, state.candidates.length);
-        if (selection && selection.syllableStroke !== null) {
-            const parsedSelection = parse(selection.syllableStroke);
-            if (parsedSelection) {
-                const syllableText = assemble(parsedSelection);
-                saveState();
-                if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
-                    appendText(syllableText);
-                    runInference();
-                    return;
-                }
+    const selection = state.candidates.length > 0
+        ? getCandidateSelectionMatch(stroke, state.candidates.length)
+        : null;
+    if (selection && selection.syllableStroke !== null) {
+        const parsedSelection = parse(selection.syllableStroke);
+        if (parsedSelection) {
+            const syllableText = assemble(parsedSelection);
+            saveState();
+            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                appendText(syllableText);
+                runInference();
+                return;
             }
         }
     }
