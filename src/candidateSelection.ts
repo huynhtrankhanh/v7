@@ -5,6 +5,7 @@ const candidateSelectionMap: Record<string, number> = {
     "-D": 3,
     "-Z": 4
 };
+const HYPHEN_PREFIX_LENGTH = 1;
 
 const candidateSelectionSuffixes = Object.keys(candidateSelectionMap).sort((a, b) => b.length - a.length);
 
@@ -20,7 +21,7 @@ export function getCandidateSelectionMatch(stroke: string): CandidateSelectionMa
     }
 
     for (const suffix of candidateSelectionSuffixes) {
-        const rightHandSuffix = suffix.slice(1);
+        const rightHandSuffix = suffix.slice(HYPHEN_PREFIX_LENGTH);
         if (!stroke.endsWith(rightHandSuffix)) continue;
         const syllableStroke = stroke.slice(0, -rightHandSuffix.length);
         if (!syllableStroke || syllableStroke.endsWith("-")) continue;

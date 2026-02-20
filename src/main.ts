@@ -1258,7 +1258,12 @@ async function runInference() {
     }
 }
 
-function selectCandidate(index, options = { saveHistory: true, refreshDisplay: true }) {
+type SelectCandidateOptions = {
+    saveHistory: boolean;
+    refreshDisplay: boolean;
+};
+
+function selectCandidate(index, options: SelectCandidateOptions = { saveHistory: true, refreshDisplay: true }) {
     if (!state.candidates[index]) return false;
     // state.candidates[index] is array of strings [Fixed, V7, Fixed...] from server response
     // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
