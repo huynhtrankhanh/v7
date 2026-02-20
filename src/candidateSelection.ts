@@ -4,6 +4,7 @@ type CandidateSelectionMatch = {
 };
 
 const CANDIDATE_SELECTION_SUFFIXES = [
+    // Keep longer suffixes first so "-TS"/"TS" is not consumed as "-T"/"T".
     { suffix: "TS", index: 1 },
     { suffix: "T", index: 0 },
     { suffix: "S", index: 2 },
