@@ -22,6 +22,11 @@ describe("getCandidateSelectionMatch", () => {
     expect(getCandidateSelectionMatch("KAOZ")).toEqual({ candidateIndex: 4, syllableStroke: "KAO" });
   });
 
+  test("matches combined suffixes for punctuation strokes", () => {
+    expect(getCandidateSelectionMatch("TP-PLT")).toEqual({ candidateIndex: 0, syllableStroke: "TP-PL" });
+    expect(getCandidateSelectionMatch("KW-BGTS")).toEqual({ candidateIndex: 1, syllableStroke: "KW-BG" });
+  });
+
   test("matches combined suffixes with invalid syllable strokes", () => {
     expect(getCandidateSelectionMatch("TS")).toEqual({ candidateIndex: 2, syllableStroke: "T" });
     expect(getCandidateSelectionMatch("SD")).toEqual({ candidateIndex: 3, syllableStroke: "S" });
