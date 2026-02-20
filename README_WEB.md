@@ -305,6 +305,7 @@ When candidates are displayed, you must select one to proceed. Use the following
 
 Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
 Candidate selection keys can also be combined with **single-syllable** strokes in the same chord: the candidate is selected first, then the syllable is appended, and this combined action is treated as a single undo step.
+If the combined chord does not form a valid single-syllable stroke, it is ignored.
 
 ### Undo
 

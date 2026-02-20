@@ -25,7 +25,6 @@ export function getCandidateSelectionMatch(stroke: string): CandidateSelectionMa
         if (!stroke.endsWith(rightHandSuffix)) continue;
         const syllableStroke = stroke.slice(0, -rightHandSuffix.length);
         if (!syllableStroke || syllableStroke.endsWith("-")) continue;
-        if (!/[AOEU]/.test(syllableStroke)) continue;
         return {
             candidateIndex: candidateSelectionMap[suffix],
             syllableStroke

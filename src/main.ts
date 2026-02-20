@@ -1115,8 +1115,8 @@ async function handleChord(stroke) {
                     appendText(syllableText);
                     runInference();
                 }
-                return;
             }
+            return;
         }
     }
 

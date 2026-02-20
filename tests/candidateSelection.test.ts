@@ -17,11 +17,9 @@ describe("getCandidateSelectionMatch", () => {
     expect(getCandidateSelectionMatch("KAOZ")).toEqual({ candidateIndex: 4, syllableStroke: "KAO" });
   });
 
-  test("does not treat bare left-hand keys as candidate selection", () => {
-    expect(getCandidateSelectionMatch("T")).toBeNull();
-    expect(getCandidateSelectionMatch("TS")).toBeNull();
-    expect(getCandidateSelectionMatch("S")).toBeNull();
-    expect(getCandidateSelectionMatch("D")).toBeNull();
-    expect(getCandidateSelectionMatch("Z")).toBeNull();
+  test("matches combined suffixes with invalid syllable strokes", () => {
+    expect(getCandidateSelectionMatch("TS")).toEqual({ candidateIndex: 2, syllableStroke: "T" });
+    expect(getCandidateSelectionMatch("SD")).toEqual({ candidateIndex: 3, syllableStroke: "S" });
+    expect(getCandidateSelectionMatch("TZ")).toEqual({ candidateIndex: 4, syllableStroke: "T" });
   });
 });
