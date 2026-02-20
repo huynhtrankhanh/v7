@@ -296,12 +296,16 @@ A V7 island represents two syllables partially specified. This mode leverages th
 
 ### Candidate Selection
 
-When candidates are displayed, you must select one to proceed. Use the following keys (standard steno chords):
-- `TK`: Candidate 1
-- `PW`: Candidate 2
-- `HR`: Candidate 3
-- `-FR`: Candidate 4
-- `-PB`: Candidate 5
+When candidates are displayed, you can select using either selector-only strokes or by combining a single-syllable stroke with a selector suffix in the same stroke.
+
+Selector mappings:
+- `-T`: Candidate 1
+- `-TS`: Candidate 2
+- `-S`: Candidate 3
+- `-D`: Candidate 4
+- `-Z`: Candidate 5
+
+Combined input example: `KA-TS` selects candidate 2, then continues with the `KA` single-syllable stroke.
 
 Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
 
