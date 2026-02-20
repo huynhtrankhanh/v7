@@ -1099,24 +1099,20 @@ async function handleChord(stroke) {
         return;
     }
     
-    // Check Selection (allow explicit candidate selection and single-stroke selection+syllable)
-    if (state.candidates.length > 0) {
-        const selection = getCandidateSelectionMatch(stroke);
-        if (selection) {
-            if (selection.syllableStroke === null) {
-                selectCandidate(selection.candidateIndex);
+    // Check single-stroke selection+syllable first; otherwise let normal handlers run.
+    const selection = state.candidates.length > 0
+        ? getCandidateSelectionMatch(stroke, state.candidates.length)
+        : null;
+    if (selection && selection.syllableStroke !== null) {
+        const parsedSelection = parse(selection.syllableStroke);
+        if (parsedSelection) {
+            const syllableText = assemble(parsedSelection);
+            saveState();
+            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                appendText(syllableText);
+                runInference();
                 return;
             }
-            const parsedSelection = parse(selection.syllableStroke);
-            if (parsedSelection) {
-                const syllableText = assemble(parsedSelection);
-                saveState();
-                if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
-                    appendText(syllableText);
-                    runInference();
-                }
-            }
-            return;
         }
     }
 
@@ -1197,6 +1193,11 @@ async function handleChord(stroke) {
         saveState();
         appendText(text);
         runInference();
+        return;
+    }
+
+    if (selection && selection.syllableStroke === null) {
+        selectCandidate(selection.candidateIndex);
         return;
     }
 
