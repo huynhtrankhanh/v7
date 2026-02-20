@@ -1101,7 +1101,7 @@ async function handleChord(stroke) {
     
     // Check Selection (allow explicit candidate selection and single-stroke selection+syllable)
     if (state.candidates.length > 0) {
-        const selection = getCandidateSelectionMatch(stroke);
+        const selection = getCandidateSelectionMatch(stroke, state.candidates.length);
         if (selection) {
             if (selection.syllableStroke === null) {
                 selectCandidate(selection.candidateIndex);
@@ -1114,9 +1114,9 @@ async function handleChord(stroke) {
                 if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
                     appendText(syllableText);
                     runInference();
+                    return;
                 }
             }
-            return;
         }
     }
 

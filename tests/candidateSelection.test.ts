@@ -9,6 +9,11 @@ describe("getCandidateSelectionMatch", () => {
     expect(getCandidateSelectionMatch("-Z")).toEqual({ candidateIndex: 4, syllableStroke: null });
   });
 
+  test("does not match selections that exceed available candidates", () => {
+    expect(getCandidateSelectionMatch("-S", 2)).toBeNull();
+    expect(getCandidateSelectionMatch("KAOD", 3)).toBeNull();
+  });
+
   test("matches combined selection suffixes", () => {
     expect(getCandidateSelectionMatch("KAOT")).toEqual({ candidateIndex: 0, syllableStroke: "KAO" });
     expect(getCandidateSelectionMatch("KAOTS")).toEqual({ candidateIndex: 1, syllableStroke: "KAO" });

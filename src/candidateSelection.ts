@@ -14,9 +14,9 @@ export type CandidateSelectionMatch = {
     syllableStroke: string | null;
 };
 
-export function getCandidateSelectionMatch(stroke: string): CandidateSelectionMatch | null {
+export function getCandidateSelectionMatch(stroke: string, candidateCount = Number.POSITIVE_INFINITY): CandidateSelectionMatch | null {
     const loneCandidateIndex = candidateSelectionMap[stroke];
-    if (loneCandidateIndex !== undefined) {
+    if (loneCandidateIndex !== undefined && loneCandidateIndex < candidateCount) {
         return { candidateIndex: loneCandidateIndex, syllableStroke: null };
     }
 
@@ -25,8 +25,10 @@ export function getCandidateSelectionMatch(stroke: string): CandidateSelectionMa
         if (!stroke.endsWith(rightHandSuffix)) continue;
         const syllableStroke = stroke.slice(0, -rightHandSuffix.length);
         if (!syllableStroke || syllableStroke.endsWith("-")) continue;
+        const candidateIndex = candidateSelectionMap[suffix];
+        if (candidateIndex >= candidateCount) continue;
         return {
-            candidateIndex: candidateSelectionMap[suffix],
+            candidateIndex,
             syllableStroke
         };
     }
