@@ -1099,14 +1099,11 @@ async function handleChord(stroke) {
         return;
     }
     
-    // Check Selection (allow explicit candidate selection and single-stroke selection+syllable)
+    // Check single-stroke selection+syllable first; otherwise let normal handlers run.
+    let selection = null;
     if (state.candidates.length > 0) {
-        const selection = getCandidateSelectionMatch(stroke, state.candidates.length);
-        if (selection) {
-            if (selection.syllableStroke === null) {
-                selectCandidate(selection.candidateIndex);
-                return;
-            }
+        selection = getCandidateSelectionMatch(stroke, state.candidates.length);
+        if (selection && selection.syllableStroke !== null) {
             const parsedSelection = parse(selection.syllableStroke);
             if (parsedSelection) {
                 const syllableText = assemble(parsedSelection);
@@ -1197,6 +1194,11 @@ async function handleChord(stroke) {
         saveState();
         appendText(text);
         runInference();
+        return;
+    }
+
+    if (selection && selection.syllableStroke === null) {
+        selectCandidate(selection.candidateIndex);
         return;
     }
 
