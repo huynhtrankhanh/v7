@@ -1,5 +1,6 @@
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
+import { extractCandidateSelection } from "./candidateSelection";
 
 // --- Mappings & Constants ---
 
@@ -1098,12 +1099,15 @@ async function handleChord(stroke) {
         return;
     }
     
-    // Check Selection (allow explicit candidate selection; do not block other input)
+    // Check Selection (allow explicit candidate selection and optional combined syllable input)
     if (state.candidates.length > 0) {
-        const candIndex = { "TK": 0, "PW": 1, "HR": 2, "-FR": 3, "-PB": 4 }[stroke];
-        if (candIndex !== undefined) {
-            selectCandidate(candIndex);
-            return;
+        const selection = extractCandidateSelection(stroke);
+        if (selection) {
+            selectCandidate(selection.index);
+            if (!selection.remainingStroke) {
+                return;
+            }
+            stroke = selection.remainingStroke;
         }
     }
 
