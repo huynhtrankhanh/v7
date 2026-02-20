@@ -114,6 +114,12 @@ const EMILY_SYMBOLS = {
     "FPBG": ["~", "⊆", "⊇", "˜"],
     "FPBL": ["↑", "←", "→", "↓"]
 };
+const PUNCTUATION_MAP: Record<string, string> = {
+    "TP-PL": ".",
+    "KW-BG": ",",
+    "KW-PL": "?",
+    "TP-BG": "!"
+};
 
 function handleEmilySymbol(stroke) {
     // stroke pattern: starter SKWH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
@@ -1099,19 +1105,12 @@ async function handleChord(stroke) {
         return;
     }
     
-    const punctuationMap = {
-        "TP-PL": ".",
-        "KW-BG": ",",
-        "KW-PL": "?",
-        "TP-BG": "!"
-    };
-
     // Check single-stroke selection+syllable first; otherwise let normal handlers run.
     const selection = state.candidates.length > 0
         ? getCandidateSelectionMatch(stroke, state.candidates.length)
         : null;
     if (selection && selection.syllableStroke !== null) {
-        const combinedPunctuation = punctuationMap[selection.syllableStroke];
+        const combinedPunctuation = PUNCTUATION_MAP[selection.syllableStroke];
         if (combinedPunctuation) {
             saveState();
             if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
@@ -1142,14 +1141,14 @@ async function handleChord(stroke) {
     }
 
     // 3. Punctuation
-    if (punctuationMap[stroke]) {
+    if (PUNCTUATION_MAP[stroke]) {
         // Auto-select candidate if present
         if (state.candidates.length > 0) {
             selectCandidate(0);
         }
 
         saveState();
-        const punct = punctuationMap[stroke];
+        const punct = PUNCTUATION_MAP[stroke];
         buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
         return;
