@@ -170,12 +170,46 @@
     return expandExpr();
   }
 
+  let validParseAssembleSyllables = null;
+
+  function getValidParseAssembleSyllables() {
+    if (validParseAssembleSyllables) return validParseAssembleSyllables;
+    const syllables = new Set();
+    const initialKeys = ["", ...Object.keys(stenographyMap)];
+    const vowelKeys = Object.keys(vowelMap);
+    const finalKeys = ["", ...Object.keys(finalMap)];
+    const toneKeys = ["", ...Object.keys(toneMap)];
+
+    [false, true].forEach((capitalize) => {
+      [false, true].forEach((onGlide) => {
+        initialKeys.forEach((initial) => {
+          vowelKeys.forEach((vowel) => {
+            finalKeys.forEach((final) => {
+              toneKeys.forEach((tone) => {
+                const stroke = `${capitalize ? "#" : ""}${onGlide ? "S" : ""}${initial}${vowel}${final}${tone}`;
+                const parsed = parseStroke(stroke);
+                if (!parsed) return;
+                const syllable = assembleParsedSyllable(parsed);
+                if (syllable) syllables.add(syllable);
+              });
+            });
+          });
+        });
+      });
+    });
+
+    validParseAssembleSyllables = syllables;
+    return validParseAssembleSyllables;
+  }
+
   function buildSyllableEntriesFromRegexMap(regexMap) {
     const entries = [];
+    const validSyllables = getValidParseAssembleSyllables();
     Object.entries(regexMap).forEach(([codeKey, regex]) => {
       const code = parseCodeKey(codeKey);
       if (!code || typeof regex !== "string") return;
       enumerateRegex(regex).forEach((syllable) => {
+        if (!validSyllables.has(syllable)) return;
         entries.push({ syllable, code });
       });
     });
