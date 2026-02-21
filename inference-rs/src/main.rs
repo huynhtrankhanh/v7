@@ -18,7 +18,7 @@ use axum::{
     Router,
 };
 use futures_util::StreamExt;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "mocked-model"))]
@@ -600,10 +600,14 @@ async fn main() -> Result<()> {
             plover_status_cache: tokio::sync::Mutex::new(None),
         });
 
+        let practice_page_path = format!("{}/practice.html", args.static_dir);
         let app = Router::new()
             .route("/infer", post(infer_handler))
             .route("/plover/status", get(plover_status_handler))
             .route("/plover/ws", get(plover_ws_handler))
+            .route_service("/generated_regexes.json", ServeFile::new("generated_regexes.json"))
+            .route_service("/practice", ServeFile::new(&practice_page_path))
+            .route_service("/practice/", ServeFile::new(practice_page_path))
             .nest_service("/", ServeDir::new(&args.static_dir))
             .with_state(app_state);
 

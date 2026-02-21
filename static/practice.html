@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>V7 Practice Game</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px; }
+    h1 { margin: 0 0 8px; font-size: 1.35rem; }
+    .muted { color: #4b5563; font-size: 0.92rem; }
+    select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #d1d5db; }
+    button { background: #2563eb; color: #fff; border: none; }
+    button:disabled { opacity: 0.55; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
+    .stat { background: #eef2ff; border-radius: 8px; padding: 8px; text-align: center; }
+    .stat .label { font-size: 0.8rem; color: #4338ca; }
+    .stat .value { font-size: 1.15rem; font-weight: 700; }
+    .target { font-size: 2rem; text-align: center; font-weight: 700; margin: 8px 0; }
+    .status { min-height: 1.4rem; font-weight: 600; text-align: center; }
+    .status.ok { color: #166534; }
+    .status.bad { color: #991b1b; }
+    ol { margin: 8px 0 0; padding-left: 20px; }
+    code { background: #eef2ff; padding: 1px 4px; border-radius: 4px; }
+    @media (max-width: 600px) {
+      .target { font-size: 1.7rem; }
+      .wrap { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>V7 Practice Game</h1>
+      <div class="muted">External keyboard required. No on-screen keyboard is provided.</div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label for="mode-select">Mode</label>
+        <select id="mode-select"></select>
+        <button id="start-btn">Start 60s Game</button>
+      </div>
+      <div class="stats" style="margin-top:10px;">
+        <div class="stat"><div class="label">Time</div><div class="value" id="time-left">60</div></div>
+        <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
+        <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="muted" id="prompt-label">Press Start</div>
+      <div class="target" id="target">-</div>
+      <div class="status" id="status"></div>
+      <div class="muted" style="text-align:center;">Hit the correct chord for the shown syllable. Wrong chords do not advance.</div>
+    </div>
+
+    <div class="card">
+      <strong>Leaderboard</strong>
+      <ol id="leaderboard"></ol>
+      <div class="muted" style="margin-top:6px;">Scores are saved in localStorage per mode.</div>
+    </div>
+
+    <div class="card muted">
+      Tip: For partial modes, <code>*</code> (spacebar) must be held for the chord to count.
+    </div>
+  </div>
+  <script src="/practice.js"></script>
+</body>
+</html>
