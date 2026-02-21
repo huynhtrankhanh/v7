@@ -216,22 +216,17 @@
     return entries;
   }
 
-  async function decodeEmbeddedRegexMap(base64Gzip) {
-    const normalized = (base64Gzip || "").replace(/\s+/g, "");
-    const binary = atob(normalized);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-
-    if (typeof DecompressionStream !== "undefined") {
-      const stream = new Response(bytes).body.pipeThrough(new DecompressionStream("gzip"));
-      return JSON.parse(await new Response(stream).text());
-    }
-
-    if (typeof module !== "undefined" && typeof module.require === "function") {
-      const zlib = module.require("zlib");
-      return JSON.parse(zlib.gunzipSync(Buffer.from(bytes)).toString("utf8"));
-    }
-
-    throw new Error("No gzip decompressor available");
+  async function decodeEmbeddedRegexMap(encodedPayload) {
+    const payload = (encodedPayload || "").trim();
+    if (!payload.startsWith("K2\n")) return JSON.parse(payload);
+    const parts = payload.split("\n", 3);
+    if (parts.length < 3) throw new Error("Invalid embedded regex payload");
+    const tokens = parts[1] ? parts[1].split("\u001f") : [];
+    let jsonText = parts[2];
+    tokens.forEach((token, index) => {
+      jsonText = jsonText.split(String.fromCharCode(0xe000 + index)).join(token);
+    });
+    return JSON.parse(jsonText);
   }
 
   function loadRegexMap() {

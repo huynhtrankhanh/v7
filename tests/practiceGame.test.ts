@@ -35,9 +35,8 @@ describe("practice game helpers", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
   });
 
-  test("decodeEmbeddedRegexMap decodes gzip+base64 payload", async () => {
-    const zlib = require("zlib");
-    const payload = Buffer.from(zlib.gzipSync(Buffer.from(JSON.stringify({ t_a_1: "tá" }), "utf8"))).toString("base64");
-    await expect(decodeEmbeddedRegexMap(payload)).resolves.toEqual({ t_a_1: "tá" });
+  test("decodeEmbeddedRegexMap decodes custom tokenized payload", async () => {
+    const payload = `K2\n(?:\n{\"t_a_1\":\"\uE000tá)\"}`;
+    await expect(decodeEmbeddedRegexMap(payload)).resolves.toEqual({ t_a_1: "(?:tá)" });
   });
 });
