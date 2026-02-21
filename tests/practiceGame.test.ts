@@ -35,8 +35,8 @@ describe("practice game helpers", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
   });
 
-  test("decodeEmbeddedRegexMap decodes custom tokenized payload", async () => {
-    const payload = "K2\n(?:\n{\"t_a_1\":\"\uE000tá)\"}";
-    await expect(decodeEmbeddedRegexMap(payload)).resolves.toEqual({ t_a_1: "(?:tá)" });
+  test("decodeEmbeddedRegexMap reconstructs full regex map from structured marker", async () => {
+    const expected = require("../generated_regexes.json");
+    await expect(decodeEmbeddedRegexMap("G4")).resolves.toEqual(expected);
   });
 });

@@ -12,7 +12,7 @@ Each round lasts 60 seconds:
 - If the chord is wrong, the same syllable stays on screen until you play the correct chord.
 - Your score increments only on correct chords.
 
-Syllables are loaded from a custom tokenized embedded copy of `generated_regexes.json` inside `static/practice.html`, then enumerated from each regex pattern into concrete syllables.
+Syllables are loaded from a structured embedded marker inside `static/practice.html`, then reconstructed in JavaScript into the full equivalent of `generated_regexes.json` before regex enumeration.
 
 ## Practice Modes
 
