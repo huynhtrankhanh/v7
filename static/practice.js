@@ -32,6 +32,33 @@
 
   const LEFT_TONE = { "0": [], "1": ["K"], "2": ["W"], "3": ["R"], "4": ["K", "W"], "5": ["W", "R"], "6": ["K", "R"], "7": ["K", "W", "R"] };
   const RIGHT_TONE = { "0": [], "1": ["G"], "2": ["B"], "3": ["RR"], "4": ["G", "B"], "5": ["B", "RR"], "6": ["G", "RR"], "7": ["G", "B", "RR"] };
+  const stenographyMap = {
+    PW: "b", K: "c", KH: "ch", KWR: "d", TK: "đ", TP: "ph",
+    TKPW: "g", H: "h", KWH: "gi", KHR: "kh", HR: "l", PH: "m",
+    TPH: "n", TPR: "nh", TPW: "ng/ngh", P: "p", R: "r", KP: "s",
+    T: "t", TH: "th", TR: "tr", W: "v", WR: "x"
+  };
+  const vowelMap = {
+    OEU: "iê/ia", AEU: "ua/uô", AOE: "ưa/ươ", AOU: "ư", OU: "ơ",
+    OE: "ô", O: "o", AU: "ê", E: "e", EU: "i", A: "a",
+    AE: "ă", AO: "â", U: "u", AOEU: "y"
+  };
+  const finalMap = { FP: "j", F: "w", P: "m", R: "n", FR: "ng", RP: "nh" };
+  const toneMap = { L: "sắc", G: "huyền", B: "hỏi", LG: "ngã", BG: "nặng", BL: "ách", BLG: "ạch" };
+  const toneAccents = {
+    a: { "": "a", sắc: "á", huyền: "à", hỏi: "ả", ngã: "ã", nặng: "ạ" },
+    "ă": { "": "ă", sắc: "ắ", huyền: "ằ", hỏi: "ẳ", ngã: "ẵ", nặng: "ặ" },
+    "â": { "": "â", sắc: "ấ", huyền: "ầ", hỏi: "ẩ", ngã: "ẫ", nặng: "ậ" },
+    e: { "": "e", sắc: "é", huyền: "è", hỏi: "ẻ", ngã: "ẽ", nặng: "ẹ" },
+    "ê": { "": "ê", sắc: "ế", huyền: "ề", hỏi: "ể", ngã: "ễ", nặng: "ệ" },
+    i: { "": "i", sắc: "í", huyền: "ì", hỏi: "ỉ", ngã: "ĩ", nặng: "ị" },
+    o: { "": "o", sắc: "ó", huyền: "ò", hỏi: "ỏ", ngã: "õ", nặng: "ọ" },
+    "ô": { "": "ô", sắc: "ố", huyền: "ồ", hỏi: "ổ", ngã: "ỗ", nặng: "ộ" },
+    "ơ": { "": "ơ", sắc: "ớ", huyền: "ờ", hỏi: "ở", ngã: "ỡ", nặng: "ợ" },
+    u: { "": "u", sắc: "ú", huyền: "ù", hỏi: "ủ", ngã: "ũ", nặng: "ụ" },
+    "ư": { "": "ư", sắc: "ứ", huyền: "ừ", hỏi: "ử", ngã: "ữ", nặng: "ự" },
+    y: { "": "y", sắc: "ý", huyền: "ỳ", hỏi: "ỷ", ngã: "ỹ", nặng: "ỵ" }
+  };
 
   function mapKeyUnique(key) {
     const k = key.toLowerCase();
@@ -200,6 +227,143 @@
     return true;
   }
 
+  function parseStroke(stroke) {
+    let currentStroke = stroke;
+    let capitalize = false;
+    if (currentStroke.startsWith("#")) {
+      capitalize = true;
+      currentStroke = currentStroke.substring(1);
+    }
+
+    const onGlide = currentStroke.startsWith("S");
+    if (onGlide) currentStroke = currentStroke.substring(1);
+
+    let initialConsonant = "";
+    let survived = false;
+    for (let length = 4; length > 0; length--) {
+      if (length > currentStroke.length) continue;
+      const candidate = currentStroke.substring(0, length);
+      if (stenographyMap[candidate] !== undefined) {
+        initialConsonant = stenographyMap[candidate];
+        currentStroke = currentStroke.substring(length);
+        survived = true;
+        break;
+      }
+    }
+
+    let vowel = "";
+    survived = false;
+    for (let length = 4; length > 0; length--) {
+      if (length > currentStroke.length) continue;
+      const candidate = currentStroke.substring(0, length);
+      if (vowelMap[candidate] !== undefined) {
+        vowel = vowelMap[candidate];
+        currentStroke = currentStroke.substring(length);
+        survived = true;
+        break;
+      }
+    }
+    if (!survived) return null;
+
+    let finalConsonant = "";
+    let finalSteno = "";
+    for (let length = 2; length > 0; length--) {
+      if (length > currentStroke.length) continue;
+      const candidate = currentStroke.substring(0, length);
+      if (finalMap[candidate] !== undefined) {
+        finalConsonant = finalMap[candidate];
+        finalSteno = candidate;
+        currentStroke = currentStroke.substring(length);
+        survived = true;
+        break;
+      }
+    }
+
+    let tone = "";
+    let toneSteno = "";
+    survived = currentStroke.length === 0;
+    if (currentStroke.length > 0) {
+      if (toneMap[currentStroke] !== undefined) {
+        tone = toneMap[currentStroke];
+        toneSteno = currentStroke;
+        currentStroke = "";
+        survived = true;
+      }
+    }
+    if (!survived) return null;
+
+    if (toneSteno === "BL" || toneSteno === "BLG") {
+      const stopFinals = { P: "p", R: "t", FR: "c", RP: "ch" };
+      if (stopFinals[finalSteno]) {
+        finalConsonant = stopFinals[finalSteno];
+        tone = toneSteno === "BL" ? "sắc" : "nặng";
+      } else {
+        return null;
+      }
+    }
+
+    return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
+  }
+
+  function assembleParsedSyllable(parsed) {
+    const initial = () => {
+      const f = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
+      if (parsed.initialConsonant === "ng/ngh") return (parsed.onGlide || f) ? "ng" : "ngh";
+      if (parsed.initialConsonant === "g") return (parsed.onGlide || f) ? "g" : "gh";
+      if (parsed.initialConsonant === "gi") return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
+      if (parsed.initialConsonant === "c") return parsed.onGlide ? "q" : (f ? "c" : "k");
+      return parsed.initialConsonant;
+    };
+
+    const middle = () => {
+      if (parsed.vowel === "iê/ia") {
+        if (parsed.initialConsonant === "") {
+          if (parsed.onGlide) return parsed.finalConsonant === "" ? "uy" + toneAccents.a[parsed.tone] : "uy" + toneAccents["ê"][parsed.tone];
+          return parsed.finalConsonant === "" ? toneAccents.i[parsed.tone] + "a" : "y" + toneAccents["ê"][parsed.tone];
+        }
+        if (parsed.onGlide) return parsed.finalConsonant === "" ? "uy" + toneAccents.a[parsed.tone] : "uy" + toneAccents["ê"][parsed.tone];
+        return parsed.finalConsonant === "" ? toneAccents.i[parsed.tone] + "a" : "i" + toneAccents["ê"][parsed.tone];
+      }
+      if (parsed.vowel === "ua/uô") return parsed.finalConsonant === "" ? toneAccents.u[parsed.tone] + "a" : "u" + toneAccents["ô"][parsed.tone];
+      if (parsed.vowel === "ưa/ươ") return parsed.finalConsonant === "" ? toneAccents["ư"][parsed.tone] + "a" : "ư" + toneAccents["ơ"][parsed.tone];
+      if (parsed.vowel === "i") {
+        if (parsed.onGlide) {
+          if (parsed.finalConsonant === "") return parsed.initialConsonant !== "c" ? toneAccents.u[parsed.tone] + "y" : "u" + toneAccents.y[parsed.tone];
+          return "u" + toneAccents.y[parsed.tone];
+        }
+        return toneAccents.i[parsed.tone];
+      }
+      if (parsed.vowel === "ă" && ["w", "j"].includes(parsed.finalConsonant)) {
+        const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
+        return prefix + toneAccents.a[parsed.tone];
+      }
+      if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide) return "u" + toneAccents[parsed.vowel][parsed.tone];
+      if (parsed.initialConsonant === "c" && parsed.onGlide) return "u" + toneAccents[parsed.vowel][parsed.tone];
+      if (parsed.onGlide) return parsed.finalConsonant === "" ? toneAccents.o[parsed.tone] + parsed.vowel : "o" + toneAccents[parsed.vowel][parsed.tone];
+      return toneAccents[parsed.vowel][parsed.tone];
+    };
+
+    const final = () => {
+      if (parsed.finalConsonant === "w") return [ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel) ? "u" : "o";
+      if (parsed.finalConsonant === "j") return [ "ă", "â" ].includes(parsed.vowel) ? "y" : "i";
+      return parsed.finalConsonant;
+    };
+
+    const text = initial() + middle() + final();
+    return parsed.capitalize ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  }
+
+  function strokeSetToSyllable(strokeSet) {
+    const order = ["#", "S", "T", "K", "P", "W", "H", "R", "A", "O", "E", "U", "F", "RR", "PP", "B", "L", "G", "TT", "SS", "D", "Z"];
+    const symbolMap = { RR: "R", PP: "P", TT: "T", SS: "S", D: "D", Z: "Z" };
+    let stroke = "";
+    order.forEach((key) => {
+      if (strokeSet.has(key)) stroke += symbolMap[key] || key;
+    });
+    const parsed = parseStroke(stroke);
+    return parsed ? assembleParsedSyllable(parsed) : null;
+  }
+
   function readLeaderboard(modeId) {
     try {
       const raw = localStorage.getItem(STORAGE_PREFIX + modeId);
@@ -322,6 +486,18 @@
       if (!state.running || !state.prompt) return;
       // A lone '*' is ignored because valid practice chords must include '*' plus the target syllable keys.
       if (strokeSet.size === 1 && strokeSet.has("*")) return;
+      if (state.modeId === "full") {
+        const syllable = strokeSetToSyllable(strokeSet);
+        if (syllable === state.prompt.entry.syllable) {
+          state.score += 1;
+          scoreEl.textContent = String(state.score);
+          setStatus("Correct", "ok");
+          pickPrompt();
+        } else {
+          setStatus("Wrong chord. Try again.", "bad");
+        }
+        return;
+      }
       const expected = buildExpectedChordSymbols(state.prompt.entry.code, state.modeId, state.prompt.hand);
       if (setsEqual(strokeSet, expected)) {
         state.score += 1;
@@ -393,7 +569,8 @@
     enumerateRegex,
     buildSyllableEntriesFromRegexMap,
     parseCodeKey,
-    buildExpectedChordSymbols
+    buildExpectedChordSymbols,
+    strokeSetToSyllable
   };
 
   if (typeof module !== "undefined" && module.exports) {

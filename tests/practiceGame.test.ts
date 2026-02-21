@@ -2,7 +2,8 @@ const {
   enumerateRegex,
   buildSyllableEntriesFromRegexMap,
   parseCodeKey,
-  buildExpectedChordSymbols
+  buildExpectedChordSymbols,
+  strokeSetToSyllable
 } = require("../static/practice.js");
 
 describe("practice game helpers", () => {
@@ -21,5 +22,9 @@ describe("practice game helpers", () => {
     const code = parseCodeKey("tr_o_2");
     const expected = buildExpectedChordSymbols(code, "partial-left", "left");
     expect(expected.has("*")).toBe(true);
+  });
+
+  test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
+    expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
   });
 });
