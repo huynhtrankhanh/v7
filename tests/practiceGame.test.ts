@@ -18,6 +18,12 @@ describe("practice game helpers", () => {
     expect(syllables).toEqual(["giẹp", "giẹc", "giẹt", "giệp", "giệch"].sort());
   });
 
+  test("buildSyllableEntriesFromRegexMap filters out syllables not producible by parse/assemble", () => {
+    const entries = buildSyllableEntriesFromRegexMap({ "t_a_1": "(?:tá|zzzz)" });
+    const syllables = entries.map((entry: { syllable: string }) => entry.syllable).sort();
+    expect(syllables).toEqual(["tá"]);
+  });
+
   test("buildExpectedChordSymbols requires star for partial modes", () => {
     const code = parseCodeKey("tr_o_2");
     const expected = buildExpectedChordSymbols(code, "partial-left", "left");
