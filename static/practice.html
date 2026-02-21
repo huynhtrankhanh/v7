@@ -651,8 +651,6 @@
 
     function handleStroke(strokeSet) {
       if (!state.running || !state.prompt) return;
-      // A lone '*' is ignored because valid practice chords must include '*' plus the target syllable keys.
-      if (strokeSet.size === 1 && strokeSet.has("*")) return;
       if (state.modeId === "full") {
         const syllable = strokeSetToSyllable(strokeSet);
         if (syllable === state.prompt.entry.syllable) {
