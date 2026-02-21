@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>V7 Practice Game</title>
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 16px; background: #f3f4f6; color: #111827; }
+        .card { max-width: 720px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
+        h1 { margin-top: 0; font-size: 1.4rem; }
+        .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        button, select { padding: 8px 10px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; }
+        button { background: #2563eb; color: #fff; border-color: #2563eb; }
+        button:disabled { opacity: 0.6; }
+        #prompt { font-size: 2rem; font-weight: 700; margin: 16px 0 8px; text-align: center; }
+        #status { min-height: 1.2em; margin-bottom: 10px; text-align: center; }
+        #status.error { color: #b91c1c; }
+        #status.ok { color: #166534; }
+        .stats { display: flex; justify-content: space-between; margin: 8px 0; font-weight: 600; }
+        ol { margin: 8px 0 0 18px; padding: 0; }
+        li { margin: 3px 0; }
+        .muted { color: #6b7280; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="row" style="justify-content:space-between;">
+            <h1>Practice Game</h1>
+            <a href="/" class="muted">Back to main app</a>
+        </div>
+        <p class="muted">External keyboard required. For partial modes, hold <strong>spacebar (*)</strong> for every valid chord.</p>
+        <div class="row">
+            <label for="mode">Mode:</label>
+            <select id="mode">
+                <option value="partial-left">Partial syllable, left hand</option>
+                <option value="partial-right">Partial syllable, right hand</option>
+                <option value="partial-random">Partial syllable, random hand</option>
+                <option value="full">Full syllable</option>
+            </select>
+            <button id="start">Start 60s Game</button>
+        </div>
+        <div class="stats">
+            <span id="time">Time: 60</span>
+            <span id="score">Score: 0</span>
+        </div>
+        <div id="prompt">—</div>
+        <div id="status" class="muted">Press start to begin.</div>
+
+        <h2 style="font-size:1rem;margin:14px 0 6px;">Leaderboard (current mode)</h2>
+        <ol id="leaderboard"></ol>
+    </div>
+    <script src="/practice.js"></script>
+</body>
+</html>
