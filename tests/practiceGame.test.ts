@@ -1,6 +1,7 @@
 const {
   enumerateRegex,
   buildSyllableEntriesFromRegexMap,
+  decodeEmbeddedRegexMap,
   parseCodeKey,
   buildExpectedChordSymbols,
   strokeSetToSyllable
@@ -32,5 +33,11 @@ describe("practice game helpers", () => {
 
   test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
+  });
+
+  test("decodeEmbeddedRegexMap decodes gzip+base64 payload", async () => {
+    const zlib = require("zlib");
+    const payload = Buffer.from(zlib.gzipSync(Buffer.from(JSON.stringify({ t_a_1: "tá" }), "utf8"))).toString("base64");
+    await expect(decodeEmbeddedRegexMap(payload)).resolves.toEqual({ t_a_1: "tá" });
   });
 });

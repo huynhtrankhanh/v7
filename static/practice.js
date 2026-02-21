@@ -216,6 +216,34 @@
     return entries;
   }
 
+  async function decodeEmbeddedRegexMap(base64Gzip) {
+    const normalized = (base64Gzip || "").replace(/\s+/g, "");
+    const binary = atob(normalized);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+
+    if (typeof DecompressionStream !== "undefined") {
+      const stream = new Response(bytes).body.pipeThrough(new DecompressionStream("gzip"));
+      return JSON.parse(await new Response(stream).text());
+    }
+
+    if (typeof module !== "undefined" && typeof module.require === "function") {
+      const zlib = module.require("zlib");
+      return JSON.parse(zlib.gunzipSync(Buffer.from(bytes)).toString("utf8"));
+    }
+
+    throw new Error("No gzip decompressor available");
+  }
+
+  function loadRegexMap() {
+    if (typeof document !== "undefined") {
+      const embedded = document.getElementById("embedded-generated-regexes");
+      if (embedded && embedded.textContent) {
+        return decodeEmbeddedRegexMap(embedded.textContent);
+      }
+    }
+    return fetch("/generated_regexes.json").then((resp) => resp.json());
+  }
+
   function sideChordSymbols(code, side) {
     const consMap = side === "left" ? LEFT_CONSONANT : RIGHT_CONSONANT;
     const toneMap = side === "left" ? LEFT_TONE : RIGHT_TONE;
@@ -586,8 +614,7 @@
 
     refreshLeaderboard();
 
-    fetch("/generated_regexes.json")
-      .then((resp) => resp.json())
+    loadRegexMap()
       .then((regexMap) => {
         state.entries = buildSyllableEntriesFromRegexMap(regexMap);
         if (!state.entries.length) {
@@ -602,6 +629,7 @@
   const exported = {
     enumerateRegex,
     buildSyllableEntriesFromRegexMap,
+    decodeEmbeddedRegexMap,
     parseCodeKey,
     buildExpectedChordSymbols,
     strokeSetToSyllable
