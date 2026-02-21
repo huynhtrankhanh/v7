@@ -1,10 +1,12 @@
-* Remove timeouts everywhere
-* Dictionary import/export: Display loading state when the request is in progress
-* Emily's symbols: Now we have a rope data structure, implementing retroactive space insertion/deletion is easy. Look into the code at https://github.com/EPLHREU/emily-symbols and then reimplement the retroactive space insertion/deletion
-* Dictionary management should be a modal dialog
-* Make it beautiful!
-* Dictionary names have to be displayed accurately.
-* There should be no "first writable dictionary" option, it's confusing and it hurts
-* Every dictionary can be exported, renamed and deleted. Read only dictionaries too. For read only dictionaries, only the content can't be modified.
-* To test and modify the application, I recommend you use **docker compose build**, **docker compose up**, etc. **DO NOT SHY AWAY FROM THESE COMMANDS**
-* Frontend data invalidation: There is a refresh button. But then the frontend must also intelligently detect when the data has changed to refresh too!
+v7 web interface should have a Practice Game subpage (/practice). The subpage must be mobile friendly, but it requires the use of an external keyboard. So **do not implement an on-screen keyboard**.
+
+There are several practice modes:
+* Partial syllable, left hand
+* Partial syllable, right hand
+* Partial syllable, random hand
+* Full syllable
+
+The list of syllables should be taken from generated_regexes.json. Do a regex enumeration to get the list of all syllables.
+
+For all practice modes:
+* A random syllable is chosen, 
