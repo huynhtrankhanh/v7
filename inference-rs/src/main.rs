@@ -473,6 +473,12 @@ async fn infer_handler(
     }
 }
 
+async fn practice_syllables_handler(
+    State(state): State<Arc<AppState>>,
+) -> Json<HashMap<String, Vec<String>>> {
+    Json(state.tokenizer.candidates_index.clone())
+}
+
 async fn plover_status_handler(
     State(state): State<Arc<AppState>>,
 ) -> Json<PloverStatusResponse> {
@@ -602,6 +608,7 @@ async fn main() -> Result<()> {
 
         let app = Router::new()
             .route("/infer", post(infer_handler))
+            .route("/practice/syllables", get(practice_syllables_handler))
             .route("/plover/status", get(plover_status_handler))
             .route("/plover/ws", get(plover_ws_handler))
             .nest_service("/", ServeDir::new(&args.static_dir))
