@@ -218,7 +218,14 @@
 
   async function decodeEmbeddedRegexMap(encodedPayload) {
     const payload = (encodedPayload || "").trim();
-    if (!payload.startsWith("K2\n")) return JSON.parse(payload);
+    if (!payload.startsWith("K2\n")) {
+      try {
+        return JSON.parse(payload);
+      } catch (_) {
+        throw new Error("Invalid legacy JSON regex payload");
+      }
+    }
+    // K2 format: "K2" + newline + token list joined by U+001F + newline + JSON text using U+E000+ placeholders.
     const parts = payload.split("\n", 3);
     if (parts.length < 3) throw new Error("Invalid embedded regex payload");
     const tokens = parts[1] ? parts[1].split("\u001f") : [];
@@ -226,7 +233,11 @@
     tokens.forEach((token, index) => {
       jsonText = jsonText.split(String.fromCharCode(0xe000 + index)).join(token);
     });
-    return JSON.parse(jsonText);
+    try {
+      return JSON.parse(jsonText);
+    } catch (_) {
+      throw new Error("Invalid K2 regex payload");
+    }
   }
 
   function loadRegexMap() {

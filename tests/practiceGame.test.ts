@@ -36,7 +36,7 @@ describe("practice game helpers", () => {
   });
 
   test("decodeEmbeddedRegexMap decodes custom tokenized payload", async () => {
-    const payload = `K2\n(?:\n{\"t_a_1\":\"\uE000tá)\"}`;
+    const payload = "K2\n(?:\n{\"t_a_1\":\"\uE000tá)\"}";
     await expect(decodeEmbeddedRegexMap(payload)).resolves.toEqual({ t_a_1: "(?:tá)" });
   });
 });
