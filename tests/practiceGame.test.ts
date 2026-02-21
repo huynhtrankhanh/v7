@@ -1,10 +1,21 @@
+const fs = require("fs");
+const path = require("path");
+const vm = require("vm");
+
+const practiceHtml = fs.readFileSync(path.join(__dirname, "../static/practice.html"), "utf8");
+const scriptMatch = practiceHtml.match(/<script>\n([\s\S]*?)\n\s*<\/script>\s*<\/body>/);
+if (!scriptMatch) throw new Error("Embedded practice script not found in practice.html");
+const sandbox = { module: { exports: {} }, exports: {}, require, console, Set, Map, Math, JSON, Promise };
+vm.runInNewContext(scriptMatch[1], sandbox);
+
 const {
   enumerateRegex,
   buildSyllableEntriesFromRegexMap,
+  decodeEmbeddedRegexMap,
   parseCodeKey,
   buildExpectedChordSymbols,
   strokeSetToSyllable
-} = require("../static/practice.js");
+} = sandbox.module.exports;
 
 describe("practice game helpers", () => {
   test("enumerateRegex expands non-capturing groups and optionals", () => {
@@ -32,5 +43,10 @@ describe("practice game helpers", () => {
 
   test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
+  });
+
+  test("decodeEmbeddedRegexMap reconstructs full regex map from structured marker", async () => {
+    const expected = require("../generated_regexes.json");
+    await expect(decodeEmbeddedRegexMap("G4")).resolves.toEqual(expected);
   });
 });
