@@ -35,6 +35,7 @@
 
   function mapKeyUnique(key) {
     const k = key.toLowerCase();
+    // -D/-Z are mirrored suffix keys; each is reachable from either of two QWERTY keys.
     if (k === "t" || k === "g") return "D";
     if (k === "y" || k === "h") return "Z";
     return qwertyToUnique[k] || null;
@@ -210,6 +211,7 @@
   }
 
   function writeLeaderboard(modeId, score) {
+    if (!Number.isInteger(score) || score < 0) return;
     const next = readLeaderboard(modeId);
     next.push(score);
     next.sort((a, b) => b - a);
@@ -234,7 +236,8 @@
       score: 0,
       time: ROUND_SECONDS,
       timer: null,
-      prompt: null
+      prompt: null,
+      lastSyllable: null
     };
 
     let heldKeys = new Set();
@@ -274,10 +277,14 @@
         return;
       }
       const entry = state.entries[Math.floor(Math.random() * state.entries.length)];
+      const pickedEntry = state.entries.length > 1 && state.lastSyllable === entry.syllable
+        ? state.entries.find((candidate) => candidate.syllable !== state.lastSyllable) || entry
+        : entry;
       let hand = mode.hand;
       if (mode.hand === "random") hand = Math.random() < 0.5 ? "left" : "right";
-      state.prompt = { entry, hand };
-      targetEl.textContent = entry.syllable;
+      state.prompt = { entry: pickedEntry, hand };
+      state.lastSyllable = pickedEntry.syllable;
+      targetEl.textContent = pickedEntry.syllable;
       const handHint = mode.id === "full" ? "Both hands" : `${hand.charAt(0).toUpperCase()}${hand.slice(1)} hand`;
       promptLabel.textContent = `${mode.label} — ${handHint}`;
     }
@@ -313,6 +320,7 @@
 
     function handleStroke(strokeSet) {
       if (!state.running || !state.prompt) return;
+      // A lone '*' is ignored because valid practice chords must include '*' plus the target syllable keys.
       if (strokeSet.size === 1 && strokeSet.has("*")) return;
       const expected = buildExpectedChordSymbols(state.prompt.entry.code, state.modeId, state.prompt.hand);
       if (setsEqual(strokeSet, expected)) {
