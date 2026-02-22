@@ -152,19 +152,22 @@ If any stage fails (especially vowel or leftover tone parsing), the stroke is **
 
 Additional deterministic onset orthography:
 
+- Define vowel classes used below:
+  - **Back-vowel group:** `a, ă, â, o, ô, ơ, u, ư, ua/uô, ưa/ươ`
+  - **Front-vowel group:** `e, ê, i, iê/ia, y`
 - `TPW` (`ng/ngh`) outputs:
-  - `ng` when on-glide is present OR vowel is one of: `a, ă, â, o, ô, ơ, u, ư, ua/uô, ưa/ươ`
-  - `ngh` otherwise (front-vowel contexts such as `e, ê, i, iê/ia, y`)
+  - `ng` when on-glide is present OR vowel is in the back-vowel group
+  - `ngh` otherwise (front-vowel group)
 - `TKPW` (`g`) outputs:
-  - `g` when on-glide is present OR vowel is one of: `a, ă, â, o, ô, ơ, u, ư, ua/uô, ưa/ươ`
+  - `g` when on-glide is present OR vowel is in the back-vowel group
   - `gh` otherwise
 - `KWH` (`gi`) outputs:
   - `g` when **no on-glide** and vowel is `i` or `iê/ia`
   - `gi` in all other cases
 - `K` (`c`) outputs:
   - `q` when on-glide is present
-  - `c` when no on-glide and vowel is one of: `a, ă, â, o, ô, ơ, u, ư, ua/uô, ưa/ươ`
-  - `k` when no on-glide and other vowels (`e, ê, i, iê/ia, y`)
+  - `c` when no on-glide and vowel is in the back-vowel group
+  - `k` when no on-glide and vowel is in the front-vowel group
 
 ### 2) Vowels (required nucleus)
 
@@ -220,6 +223,7 @@ Stop-tone conversion (`BL` / `BLG`) is strict:
   - `FR` -> output coda `c`
   - `RP` -> output coda `ch`
 - `BL` forces tone to `sắc`; `BLG` forces tone to `nặng`.
+- This reflects Vietnamese checked-syllable orthography where stop codas are written `-p/-t/-c/-ch` rather than the nasal outputs of `P/R/FR/RP`.
 - If `BL`/`BLG` appears with no coda or with codas `F`/`FP`, the stroke is **invalid and ignored**.
 
 ### 5) On-Glide (`S` immediately after optional `#`)
@@ -238,7 +242,7 @@ On-glide is only read from the **leading** `S` position (before onset parsing). 
     - no coda:
       - if onset is `c` -> `u` + accented `y`
       - otherwise -> accented `u` + `y`
-  - `ă` with coda `w/j`: replaces base with accented `a`; prefix is:
+  - `ă` with rendered coda `w/j` (from steno codas `F`/`FP`): replaces base with accented `a`; prefix is:
     - `u` if onset is `c`
     - `o` otherwise
   - `â` or `ê`: uses `u` + accented vowel (not `o` prefix form)
