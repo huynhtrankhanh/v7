@@ -116,13 +116,24 @@ The web demo can optionally integrate with Stripped Plover for strokes that do n
 
 Use the Dictionary Management panel in the UI to upload JSON/Python dictionaries, remove dictionaries, and add/update/remove individual entries.
 
-## Stenography Rules
+## Single-Syllable Mode Orthographic Rules (Deterministic)
 
-The system parses strokes greedily in the following order: **Initial Consonant** (longest match) -> **Vowel** (longest match) -> **Final Consonant** (longest match) -> **Tone** (remaining keys).
+This section is the complete rule set for **single-syllable mode** (i.e., strokes entered **without** `*` held). It is intentionally exhaustive so you can determine exactly what every valid stroke will output.
 
-If a stroke cannot be parsed according to these rules, it is **ignored**. An ignored stroke does not change the internal state or the text buffer, and it does not affect the parsing of subsequent strokes.
+### Parsing Order (strict, greedy, left-to-right)
 
-### 1. Initial Consonants (Left Hand)
+For single-syllable mode, each stroke is parsed in this exact order:
+
+1. Optional capitalization marker: `#`
+2. Optional on-glide marker: `S`
+3. Initial consonant (longest match, 4 keys -> 1 key)
+4. Vowel nucleus (longest match, 4 keys -> 1 key) **(required)**
+5. Final consonant (longest match, 2 keys -> 1 key, optional)
+6. Tone (all remaining keys, optional)
+
+If any stage fails (especially vowel or leftover tone parsing), the stroke is **ignored** (no text output, no state mutation).
+
+### 1) Initial Consonants (after optional `#` and optional leading `S`)
 
 | Steno Keys | Sound | Steno Keys | Sound |
 | :--- | :--- | :--- | :--- |
@@ -139,12 +150,26 @@ If a stroke cannot be parsed according to these rules, it is **ignored**. An ign
 | `HR` | l | `WR` | x |
 | `PH` | m | | |
 
-*   **Orthography Rules:**
-    *   `TPW` (`ng`): Automatically becomes `ngh` when followed by front vowels (`i`, `e`, `ê`).
-    *   `TKPW` (`g`): Automatically becomes `gh` when followed by front vowels.
-    *   `K` (`c`): Automatically becomes `k` when followed by front vowels, or `q` if the "on-glide" (S key) is present.
+Additional deterministic onset orthography:
 
-### 2. Vowels (Thumbs)
+- Define vowel classes used below:
+  - **Back-vowel group:** `a, ă, â, o, ô, ơ, u, ư, ua/uô, ưa/ươ`
+  - **Front-vowel group:** `e, ê, i, iê/ia, y`
+- `TPW` (`ng/ngh`) outputs:
+  - `ng` when on-glide is present OR vowel is in the back-vowel group
+  - `ngh` otherwise (front-vowel group)
+- `TKPW` (`g`) outputs:
+  - `g` when on-glide is present OR vowel is in the back-vowel group
+  - `gh` otherwise
+- `KWH` (`gi`) outputs:
+  - `g` when **no on-glide** and vowel is `i` or `iê/ia`
+  - `gi` in all other cases
+- `K` (`c`) outputs:
+  - `q` when on-glide is present
+  - `c` when no on-glide and vowel is in the back-vowel group
+  - `k` when no on-glide and vowel is in the front-vowel group
+
+### 2) Vowels (required nucleus)
 
 | Steno Keys | Sound | Steno Keys | Sound |
 | :--- | :--- | :--- | :--- |
@@ -157,7 +182,7 @@ If a stroke cannot be parsed according to these rules, it is **ignored**. An ign
 | `O` | o | `AOEU` | y |
 | `U` | u | | |
 
-### 3. Final Consonants (Right Hand)
+### 3) Final Consonants (optional coda)
 
 | Steno Keys | Sound | Steno Keys | Sound |
 | :--- | :--- | :--- | :--- |
@@ -165,12 +190,17 @@ If a stroke cannot be parsed according to these rules, it is **ignored**. An ign
 | `F` | w (u/o) | `P` | m |
 | `R` | n | `FR` | ng |
 
-*   **Orthography Rules:**
-    *   `F` (`w`): Becomes `u` (e.g., *sau*) or `o` (e.g., *sao*) depending on the preceding vowel.
-    *   `FP` (`j`): Becomes `y` (e.g., *tay*) or `i` (e.g., *tai*) depending on the preceding vowel.
-    *   `P`/`R`/`FR`/`RP` combined with `BL` or `BLG` produce finals `p`/`t`/`c`/`ch` with sắc or nặng tones. `F` and `FP` cannot be combined with `BL`/`BLG` (these strokes are ignored).
+Final rendering rules:
 
-### 4. Tones (Right Hand - Remaining Keys)
+- `F` (`w`) renders as:
+  - `u` if vowel is one of: `iê/ia, ư, ưa/ươ, ê, u, ă, â, i`
+  - `o` otherwise
+- `FP` (`j`) renders as:
+  - `y` if vowel is `ă` or `â`
+  - `i` otherwise
+- `P`, `R`, `FR`, `RP` usually render as `m`, `n`, `ng`, `nh`, except under stop-tone conversion (below).
+
+### 4) Tones (remaining right-hand keys after coda parsing)
 
 Tones are determined by the remaining keys after matching the final consonant.
 
@@ -185,13 +215,90 @@ Tones are determined by the remaining keys after matching the final consonant.
 | `BL` | Sắc (Stop) | Acute (´) | mát |
 | `BLG` | Nặng (Stop) | Dot (.) | mạt |
 
-### 5. On-Glide (S-)
-The Left `S` key (mapped to `A` on QWERTY) can act as an "on-glide" modifier if it's not part of another valid initial consonant sequence. It typically introduces a medial `u` or `o` sound (e.g., *hoa*, *tuân*) or modifies `c` to `q` (e.g., *qua*).
+Stop-tone conversion (`BL` / `BLG`) is strict:
 
-### 6. Capitalization (#)
-The `#` key (mapped to `Q` on QWERTY) capitalizes the first letter of the resulting syllable.
+- Allowed only when steno coda is one of:
+  - `P` -> output coda `p`
+  - `R` -> output coda `t`
+  - `FR` -> output coda `c`
+  - `RP` -> output coda `ch`
+- `BL` forces tone to `sắc`; `BLG` forces tone to `nặng`.
+- This reflects Vietnamese checked-syllable orthography where stop codas are written `-p/-t/-c/-ch` rather than the nasal outputs of `P/R/FR/RP`.
+- If `BL`/`BLG` appears with no coda or with codas `F`/`FP`, the stroke is **invalid and ignored**.
 
-### 7. V7 Island Rules (Two-Syllable Islands)
+### 5) On-Glide (`S` immediately after optional `#`)
+
+On-glide is only read from the **leading** `S` position (before onset parsing). It modifies nucleus construction as follows:
+
+- General rule:
+  - open syllable (no coda): prefix `o` before the nucleus
+  - closed syllable (has coda): prefix `o` and attach tone mark to the main vowel letter
+- Specialized behavior by vowel:
+  - `iê/ia`:
+    - no coda -> `uy` + accented `a`
+    - has coda -> `uy` + accented `ê`
+  - `i`:
+    - has coda -> `u` + accented `y`
+    - no coda:
+      - if onset is `c` -> `u` + accented `y`
+      - otherwise -> accented `u` + `y`
+  - `ă` with rendered coda `w/j` (from steno codas `F`/`FP`): replaces base with accented `a`; prefix is:
+    - `u` if onset is `c`
+    - `o` otherwise
+  - `â` or `ê`: uses `u` + accented vowel (not `o` prefix form)
+  - any vowel with onset `c`: uses `u` + accented vowel (reflects `qu...` behavior)
+
+### 6) Vowel-shape resolution rules (what actually gets written)
+
+These are applied after parse and before final coda rendering:
+
+- `iê/ia`:
+  - no coda -> `ia` form (with proper tone placement)
+  - has coda -> `iê`/`yê` form (tone on `ê`)
+  - onset empty + no on-glide + has coda uses `yê...`
+- `ua/uô`:
+  - no coda -> `ua` (tone on `u`)
+  - has coda -> `uô` (tone on `ô`)
+- `ưa/ươ`:
+  - no coda -> `ưa` (tone on `ư`)
+  - has coda -> `ươ` (tone on `ơ`)
+- `ă` + (`w` or `j` coda): nucleus written with `a`-tone series (orthographic `au/ay`-type behavior).
+
+### 7) Capitalization (`#`)
+
+`#` uppercases the first output character of the assembled syllable.
+
+### 8) Complete validity / ignore conditions
+
+A single-syllable stroke is ignored if any of these occurs:
+
+1. No valid vowel can be matched after optional `#`, optional leading `S`, and onset parsing.
+2. After optional coda parsing, remaining keys are neither empty nor a valid tone key sequence.
+3. `BL`/`BLG` is used without a compatible coda (`P`, `R`, `FR`, `RP`).
+4. Any extra unmatched key remains at the end of parse.
+
+### 9) Step-by-step deterministic input recipe
+
+To enter a syllable with certainty:
+
+1. Decide whether syllable-initial capitalization is needed (`#` or not).
+2. Decide whether you need on-glide (`S` before onset) for `o/u` medial behavior (`qua`, `hoa`, `uy...` patterns).
+3. Enter onset keys using the longest onset pattern from the table.
+4. Enter exactly one vowel pattern (longest match principle).
+5. Optionally enter one coda pattern.
+6. Optionally enter tone keys:
+   - plain tones: `L`, `G`, `B`, `LG`, `BG`
+   - stop tones only with stop codas: `BL` or `BLG`
+7. Ensure no extra keys remain; otherwise the stroke will be ignored.
+
+### 10) Practical certainty notes
+
+- The parser is greedy for onset and vowel; if two options share prefixes, the longest valid one wins.
+- On-glide is only the leading `S`, not any later `S` that belongs to another pattern.
+- Single-syllable mode is strictly orthographic assembly; there is no language-model inference in this path.
+- If a stroke is ignored, nothing is partially committed.
+
+## V7 Island Rules (Two-Syllable Islands)
 
 A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. **V7 mode is exclusively activated by holding down the `*` (Spacebar) key while entering the stroke.**
 
