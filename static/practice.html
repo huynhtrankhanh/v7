@@ -19,6 +19,7 @@
     .stat .label { font-size: 0.8rem; color: #4338ca; }
     .stat .value { font-size: 1.15rem; font-weight: 700; }
     .target { font-size: 2rem; text-align: center; font-weight: 700; margin: 8px 0; }
+    .hand-indicator { font-size: 1.5rem; font-weight: 700; color: #111827; text-align: center; }
     .status { min-height: 1.4rem; font-weight: 600; text-align: center; }
     .status.ok { color: #166534; }
     .status.bad { color: #991b1b; }
@@ -616,8 +617,10 @@
       state.prompt = { entry: pickedEntry, hand };
       state.lastSyllable = pickedEntry.syllable;
       targetEl.textContent = pickedEntry.syllable;
-      const handHint = mode.id === "full" ? "Both hands" : `${hand.charAt(0).toUpperCase()}${hand.slice(1)} hand`;
-      promptLabel.textContent = `${mode.label} — ${handHint}`;
+      const handHint = mode.id === "full" ? "FULL" : hand.toUpperCase();
+      promptLabel.textContent = handHint;
+      promptLabel.classList.remove("muted");
+      promptLabel.classList.add("hand-indicator");
     }
 
     function endRound() {
@@ -627,6 +630,9 @@
       writeLeaderboard(state.modeId, state.score);
       refreshLeaderboard();
       setStatus(`Time's up! Final score: ${state.score}`, "ok");
+      promptLabel.textContent = "Press Start";
+      promptLabel.classList.remove("hand-indicator");
+      promptLabel.classList.add("muted");
       startBtn.disabled = false;
     }
 
@@ -688,6 +694,8 @@
       if (!state.running) {
         targetEl.textContent = "-";
         promptLabel.textContent = "Press Start";
+        promptLabel.classList.remove("hand-indicator");
+        promptLabel.classList.add("muted");
         setStatus("", "");
       }
     });
