@@ -733,7 +733,7 @@
     startBtn.addEventListener("click", startRound);
 
     document.addEventListener("keydown", (e) => {
-      if (!state.running && !e.repeat && (e.key === "Enter" || e.key === " ")) {
+      if (!state.running && !e.repeat && e.key === "Enter") {
         if (!e.target || !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
           e.preventDefault();
           startRound();
