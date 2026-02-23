@@ -62,3 +62,39 @@ describe("practice game helpers", () => {
     await expect(decodeEmbeddedRegexMap("G4")).resolves.toEqual(expected);
   });
 });
+
+describe("practice game page behavior", () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    document.documentElement.innerHTML = practiceHtml;
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("starts a round from keyboard without clicking start button", async () => {
+    window.eval(scriptMatch[1]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
+    const promptLabel = document.getElementById("prompt-label");
+    expect(startBtn.disabled).toBe(true);
+    expect(promptLabel?.textContent).not.toBe("Press Start");
+  });
+
+  test("renders leaderboard scores linearly in a single list item", async () => {
+    localStorage.setItem("v7.practice.leaderboard.partial-left", JSON.stringify([12, 9, 7]));
+    window.eval(scriptMatch[1]);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const leaderboardItems = document.querySelectorAll("#leaderboard li");
+    expect(leaderboardItems).toHaveLength(1);
+    expect(leaderboardItems[0].textContent).toBe("#1: 12 · #2: 9 · #3: 7");
+  });
+});
