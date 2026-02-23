@@ -41,6 +41,18 @@ describe("practice game helpers", () => {
     expect(expected.has("*")).toBe(true);
   });
 
+  test("buildExpectedChordSymbols combines left and right syllables for realistic two-syllable prompts", () => {
+    const leftCode = parseCodeKey("tr_o_2");
+    const rightCode = parseCodeKey("m_a_1");
+    const leftOnly = buildExpectedChordSymbols(leftCode, "partial-left", "left");
+    const rightOnly = buildExpectedChordSymbols(rightCode, "partial-right", "right");
+    leftOnly.delete("*");
+    rightOnly.delete("*");
+
+    const expected = buildExpectedChordSymbols({ left: leftCode, right: rightCode }, "realistic-double");
+    expect(expected).toEqual(new Set([...leftOnly, ...rightOnly, "*"]));
+  });
+
   test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
   });

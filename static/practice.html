@@ -73,12 +73,14 @@
 (function () {
   const STORAGE_PREFIX = "v7.practice.leaderboard.";
   const ROUND_SECONDS = 60;
+  const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
 
   const MODES = [
     { id: "partial-left", label: "Partial syllable, left hand", type: "partial", hand: "left" },
     { id: "partial-right", label: "Partial syllable, right hand", type: "partial", hand: "right" },
     { id: "partial-random", label: "Partial syllable, random hand", type: "partial", hand: "random" },
-    { id: "full", label: "Full syllable", type: "full", hand: "both" }
+    { id: "full", label: "Full syllable", type: "full", hand: "both" },
+    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" }
   ];
 
   const qwertyToUnique = {
@@ -376,6 +378,13 @@
   function buildExpectedChordSymbols(code, modeId, hand) {
     const expected = new Set();
 
+    if (modeId === "realistic-double") {
+      sideChordSymbols(code.left, "left").forEach((k) => expected.add(k));
+      sideChordSymbols(code.right, "right").forEach((k) => expected.add(k));
+      expected.add("*");
+      return expected;
+    }
+
     if (modeId === "full") {
       sideChordSymbols(code, "left").forEach((k) => expected.add(k));
       sideChordSymbols(code, "right").forEach((k) => expected.add(k));
@@ -612,6 +621,26 @@
       const pickedEntry = state.entries.length > 1 && state.lastSyllable === entry.syllable
         ? state.entries.find((candidate) => candidate.syllable !== state.lastSyllable) || entry
         : entry;
+      if (mode.id === "realistic") {
+        const useDouble = state.entries.length > 1 && Math.random() < REALISTIC_DOUBLE_SYLLABLE_PROBABILITY;
+        if (useDouble) {
+          const rightEntry = state.entries[Math.floor(Math.random() * state.entries.length)];
+          const pickedRightEntry = state.entries.length > 1 && rightEntry.syllable === pickedEntry.syllable
+            ? state.entries.find((candidate) => candidate.syllable !== pickedEntry.syllable) || rightEntry
+            : rightEntry;
+          state.prompt = { type: "realistic-double", leftEntry: pickedEntry, rightEntry: pickedRightEntry };
+          targetEl.textContent = `${pickedEntry.syllable} ${pickedRightEntry.syllable}`;
+          state.lastSyllable = pickedRightEntry.syllable;
+        } else {
+          state.prompt = { type: "realistic-single", entry: pickedEntry };
+          targetEl.textContent = pickedEntry.syllable;
+          state.lastSyllable = pickedEntry.syllable;
+        }
+        promptLabel.textContent = "REALISTIC";
+        promptLabel.classList.remove("muted");
+        promptLabel.classList.add("hand-indicator");
+        return;
+      }
       let hand = mode.hand;
       if (mode.hand === "random") hand = Math.random() < 0.5 ? "left" : "right";
       state.prompt = { entry: pickedEntry, hand };
@@ -657,9 +686,10 @@
 
     function handleStroke(strokeSet) {
       if (!state.running || !state.prompt) return;
-      if (state.modeId === "full") {
+      if (state.modeId === "full" || (state.modeId === "realistic" && state.prompt.type === "realistic-single")) {
+        const targetSyllable = state.prompt.entry.syllable;
         const syllable = strokeSetToSyllable(strokeSet);
-        if (syllable === state.prompt.entry.syllable) {
+        if (syllable === targetSyllable) {
           state.score += 1;
           scoreEl.textContent = String(state.score);
           setStatus("Correct", "ok");
@@ -669,7 +699,9 @@
         }
         return;
       }
-      const expected = buildExpectedChordSymbols(state.prompt.entry.code, state.modeId, state.prompt.hand);
+      const expected = state.modeId === "realistic" && state.prompt.type === "realistic-double"
+        ? buildExpectedChordSymbols({ left: state.prompt.leftEntry.code, right: state.prompt.rightEntry.code }, "realistic-double")
+        : buildExpectedChordSymbols(state.prompt.entry.code, state.modeId, state.prompt.hand);
       if (setsEqual(strokeSet, expected)) {
         state.score += 1;
         scoreEl.textContent = String(state.score);
