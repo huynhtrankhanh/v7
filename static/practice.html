@@ -598,11 +598,9 @@
         leaderboardEl.appendChild(li);
         return;
       }
-      list.forEach((s) => {
-        const li = document.createElement("li");
-        li.textContent = String(s);
-        leaderboardEl.appendChild(li);
-      });
+      const li = document.createElement("li");
+      li.textContent = list.map((s, i) => `#${i + 1}: ${s}`).join(" · ");
+      leaderboardEl.appendChild(li);
     }
 
     function setStatus(text, cls) {
@@ -735,6 +733,13 @@
     startBtn.addEventListener("click", startRound);
 
     document.addEventListener("keydown", (e) => {
+      if (!state.running && !e.repeat && (e.key === "Enter" || e.key === " ")) {
+        if (!e.target || !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+          e.preventDefault();
+          startRound();
+          return;
+        }
+      }
       if (e.target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
       if (e.repeat) return;
       const mapped = mapKeyUnique(e.key);
