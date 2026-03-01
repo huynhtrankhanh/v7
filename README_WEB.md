@@ -42,7 +42,7 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 ### Prerequisites
 
 - Build the Rust inference engine: `cd inference-rs && cargo build --release`.
-- Ensure `lm.binary` and `generated_regexes.json` are in the project root.
+- Ensure `lm.binary` is in the project root.
 
 ### Running the Server
 
