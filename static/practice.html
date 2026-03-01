@@ -406,7 +406,7 @@
       .filter((entry) => entry.syllable === syllable)
       .forEach((entry) => {
         const expected = buildExpectedChordSymbols(entry.code, modeId, hand);
-        const key = Array.from(expected).sort().join("|");
+        const key = JSON.stringify([...expected].sort());
         if (!expectedByChord.has(key)) expectedByChord.set(key, expected);
       });
     return Array.from(expectedByChord.values());

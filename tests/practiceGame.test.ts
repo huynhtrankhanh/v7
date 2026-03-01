@@ -54,7 +54,7 @@ describe("practice game helpers", () => {
     expect(expected).toEqual(new Set([...leftOnly, ...rightOnly, "*"]));
   });
 
-  test("buildExpectedChordSymbolOptions accepts multiple v7 codes for the same syllable", () => {
+  test("buildExpectedChordSymbolOptions returns all valid chords for syllables with multiple v7 codes", () => {
     const codeA = parseCodeKey("tr_o_2");
     const codeB = parseCodeKey("m_a_1");
     const options = buildExpectedChordSymbolOptions([
