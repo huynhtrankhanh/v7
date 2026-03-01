@@ -72,9 +72,11 @@ describe("practice game helpers", () => {
     expect(strokeSetToSyllable(new Set(["T", "A", "L"]))).toBe("tá");
   });
 
-  test("decodeEmbeddedRegexMap reconstructs full regex map from structured marker", async () => {
-    const expected = require("../generated_regexes.json");
-    await expect(decodeEmbeddedRegexMap("G4")).resolves.toEqual(expected);
+  test("decodeEmbeddedRegexMap reconstructs updated structured regex map from marker", async () => {
+    const map = await decodeEmbeddedRegexMap("G4");
+    expect(map["z_i_1"]).toBe("g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)");
+    expect(map["z_e_1"]).toBe("gié(?:(?:ng?|[mo]))?");
+    expect(map["z_e_1"]).not.toContain("ế");
   });
 });
 

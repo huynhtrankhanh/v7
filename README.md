@@ -9,7 +9,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `data/`: Directory for corpus data (input text).
 *   `preprocess_corpus.py`: Python script to clean and tokenize raw text.
 *   `train_lm.sh`: Shell script to train and binarize the language model.
-*   `generated_regexes.json`: Configuration file mapping V7 codes to candidate syllables.
+*   `generated_regexes.json`: Legacy exported regex map (runtime now uses structured in-code generation).
 *   `lm.binary`: The trained binary language model (generated artifact).
 
 ## Prerequisites
@@ -58,7 +58,7 @@ docker-compose build
 
 ### 2. Run Inference
 
-Use `docker-compose run` to pass arguments to the container. The configuration automatically mounts `lm.binary` and `generated_regexes.json` from your local directory.
+Use `docker-compose run` to pass arguments to the container. The configuration automatically mounts `lm.binary` from your local directory.
 
 **Requirement:** You must have `lm.binary` generated in the project root (see "Usage Workflow" below).
 
@@ -100,7 +100,7 @@ Run the training script. This will:
 *   `lm.binary`: The trained model file (placed in project root).
 
 ### 3. Run Inference
-Use the compiled Rust binary to decode V7 strings. The binary expects `generated_regexes.json` and `lm.binary` to be in the current working directory.
+Use the compiled Rust binary to decode V7 strings. The binary expects `lm.binary` to be in the current working directory.
 
 #### Input Modes
 
