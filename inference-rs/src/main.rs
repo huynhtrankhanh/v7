@@ -704,7 +704,6 @@ async fn main() -> Result<()> {
             .route("/infer", post(infer_handler))
             .route("/plover/status", get(plover_status_handler))
             .route("/plover/ws", get(plover_ws_handler))
-            .route_service("/generated_regexes.json", ServeFile::new("generated_regexes.json"))
             .route_service("/practice", ServeFile::new(&practice_page_path))
             .route_service("/practice/", ServeFile::new(practice_page_path))
             .nest_service("/", ServeDir::new(&args.static_dir))

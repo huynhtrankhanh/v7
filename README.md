@@ -9,7 +9,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `data/`: Directory for corpus data (input text).
 *   `preprocess_corpus.py`: Python script to clean and tokenize raw text.
 *   `train_lm.sh`: Shell script to train and binarize the language model.
-*   `generated_regexes.json`: Legacy exported regex map (runtime now uses structured in-code generation).
+*   Structured regex generation: Runtime builds V7 regex mappings directly from in-code structured logic.
 *   `lm.binary`: The trained binary language model (generated artifact).
 
 ## Prerequisites
