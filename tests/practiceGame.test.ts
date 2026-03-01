@@ -14,6 +14,7 @@ const {
   decodeEmbeddedRegexMap,
   parseCodeKey,
   buildExpectedChordSymbols,
+  buildExpectedChordSymbolOptions,
   strokeSetToSyllable
 } = sandbox.module.exports;
 
@@ -51,6 +52,20 @@ describe("practice game helpers", () => {
 
     const expected = buildExpectedChordSymbols({ left: leftCode, right: rightCode }, "realistic-double");
     expect(expected).toEqual(new Set([...leftOnly, ...rightOnly, "*"]));
+  });
+
+  test("buildExpectedChordSymbolOptions returns all valid chords for syllables with multiple v7 codes", () => {
+    const codeA = parseCodeKey("tr_o_2");
+    const codeB = parseCodeKey("m_a_1");
+    const options = buildExpectedChordSymbolOptions([
+      { syllable: "demo", code: codeA },
+      { syllable: "demo", code: codeB }
+    ], "demo", "partial-left", "left");
+    expect(options).toHaveLength(2);
+    expect(options).toEqual(expect.arrayContaining([
+      buildExpectedChordSymbols(codeA, "partial-left", "left"),
+      buildExpectedChordSymbols(codeB, "partial-left", "left")
+    ]));
   });
 
   test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
