@@ -398,6 +398,20 @@
     return expected;
   }
 
+  function buildExpectedChordSymbolOptions(entries, syllable, modeId, hand) {
+    // A few syllables can appear under more than one v7 code in the source map;
+    // when that happens, the practice game should accept any matching chord.
+    const expectedByChord = new Map();
+    entries
+      .filter((entry) => entry.syllable === syllable)
+      .forEach((entry) => {
+        const expected = buildExpectedChordSymbols(entry.code, modeId, hand);
+        const key = Array.from(expected).sort().join("|");
+        if (!expectedByChord.has(key)) expectedByChord.set(key, expected);
+      });
+    return Array.from(expectedByChord.values());
+  }
+
   function setsEqual(a, b) {
     if (a.size !== b.size) return false;
     for (const v of a) if (!b.has(v)) return false;
@@ -697,10 +711,10 @@
         }
         return;
       }
-      const expected = state.modeId === "realistic" && state.prompt.type === "realistic-double"
-        ? buildExpectedChordSymbols({ left: state.prompt.leftEntry.code, right: state.prompt.rightEntry.code }, "realistic-double")
-        : buildExpectedChordSymbols(state.prompt.entry.code, state.modeId, state.prompt.hand);
-      if (setsEqual(strokeSet, expected)) {
+      const expectedOptions = state.modeId === "realistic" && state.prompt.type === "realistic-double"
+        ? [buildExpectedChordSymbols({ left: state.prompt.leftEntry.code, right: state.prompt.rightEntry.code }, "realistic-double")]
+        : buildExpectedChordSymbolOptions(state.entries, state.prompt.entry.syllable, state.modeId, state.prompt.hand);
+      if (expectedOptions.some((expected) => setsEqual(strokeSet, expected))) {
         state.score += 1;
         scoreEl.textContent = String(state.score);
         setStatus("Correct", "ok");
@@ -781,6 +795,7 @@
     decodeEmbeddedRegexMap,
     parseCodeKey,
     buildExpectedChordSymbols,
+    buildExpectedChordSymbolOptions,
     strokeSetToSyllable
   };
 
