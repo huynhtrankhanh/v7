@@ -196,7 +196,7 @@ class TransformerReranker:
         try:
             import torch
             from transformers import AutoModelForMaskedLM, AutoTokenizer
-        except Exception as exc:  # pragma: no cover - import errors environment-dependent
+        except ImportError as exc:  # pragma: no cover - import errors environment-dependent
             raise RuntimeError(
                 "Transformer dependencies are required. Install from requirements.txt first."
             ) from exc
@@ -309,7 +309,7 @@ class TrainedV7Model:
                 forms = forms[:max_candidates_per_code]
                 for score, decoded, full_text in active:
                     for rank, (candidate, count) in enumerate(forms):
-                        left = full_text if not full_text.endswith(" ") else full_text
+                        left = full_text
                         spacer = "" if (left.endswith(" ") or left == "" or left.endswith("\n")) else " "
                         candidate_with_space = f"{spacer}{candidate}"
                         cand_score = self._candidate_score(

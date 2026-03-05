@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import posixpath
+import traceback
 import time
 import urllib.parse
 from http import HTTPStatus
@@ -27,7 +28,7 @@ class InferenceHandler(SimpleHTTPRequestHandler):
             islands = payload.get("islands", [])
             if not isinstance(islands, list) or not all(isinstance(x, str) for x in islands):
                 raise ValueError("Invalid islands payload")
-        except Exception:
+        except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             self._send_json({"candidates": []}, status=HTTPStatus.BAD_REQUEST)
             return
 
@@ -38,8 +39,14 @@ class InferenceHandler(SimpleHTTPRequestHandler):
                 beam_width=self.beam_width,
                 reranker=self.reranker,
             )
-        except Exception:
+        except ValueError:
             candidates = []
+        except RuntimeError:
+            candidates = []
+        except Exception as exc:
+            self.log_message("Unhandled inference error: %s", exc)
+            self.log_message(traceback.format_exc())
+            raise
         elapsed_ms = int((time.time() - start) * 1000)
         self.log_message("POST /infer islands=%d candidates=%d duration_ms=%d", len(islands), len(candidates), elapsed_ms)
         self._send_json({"candidates": candidates})
