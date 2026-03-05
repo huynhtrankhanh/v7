@@ -144,6 +144,54 @@ cd ..
 ./inference-rs/target/release/inference-rs --server
 ```
 
+## Python ML Inference Server (API-compatible `/infer`)
+
+This repository now includes a Python inference stack that is paired with Python training code:
+
+- `train_python_model.py` (training entrypoint)
+- `v7_python_model.py` (feature extraction, ML training, inference)
+- `python_inference_server.py` (HTTP server, keeps `/infer` API shape)
+
+Unlike n-gram filtering, this stack uses transformer-based reranking (Hugging Face + PyTorch) with full context, including punctuation and capitalization.
+
+### 1) Train a model
+
+```bash
+python train_python_model.py \
+  --corpus data/corpus-full.txt \
+  --output v7_python_model.json
+```
+
+For very large corpora, tune memory/performance with:
+
+- `--max-forms-per-code`
+
+Training streams the corpus line-by-line, so it works on both small and large corpora.
+
+### 2) Run the Python server
+
+```bash
+python python_inference_server.py \
+  --model-path v7_python_model.json \
+  --port 3000 \
+  --static-dir static \
+  --transformer-model-path xlm-roberta-base
+```
+
+### 3) API contract (unchanged)
+
+Request:
+
+```json
+{"islands":["hôm nay ", "tro2", " rất ", "dde7"]}
+```
+
+Response:
+
+```json
+{"candidates":[["hôm nay ","trời"," rất ","đẹp"],["hôm nay ","tròn"," rất ","để"], ...]}
+```
+
 ## V7 Input Format: Deep Dive
 
 The V7 format is a highly compressed phonetic coding system. Unlike standard Telex, it requires precise adherence to specific mapping rules for consonants, rimes, and tones.

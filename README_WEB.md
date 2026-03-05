@@ -52,6 +52,12 @@ Start the inference engine in server mode:
 ./inference-rs/target/release/inference-rs --server --port 3000 --static-dir static
 ```
 
+Or run the Python ML inference server with the same `/infer` API:
+
+```bash
+python python_inference_server.py --model-path v7_python_model.json --port 3000 --static-dir static --transformer-model-path xlm-roberta-base
+```
+
 Access the demo at `http://localhost:3000`.
 
 ## Stenographic Layout
