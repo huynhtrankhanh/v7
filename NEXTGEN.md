@@ -76,10 +76,10 @@ The existing beam search algorithm remains:
 
 ```
 Current:  KenLM.score(state, word) -> (log_prob, new_state)
-Proposed: NeuralLM.score(context_tokens, word) -> (log_prob, new_state)
+Proposed: NeuralLM.score(state, word) -> (log_prob, new_state)
 ```
 
-The neural model replaces the scoring oracle. The `State` type changes from KenLM's opaque byte buffer to a tensor of hidden states (or a KV-cache), but the beam search logic is identical.
+The neural model replaces the scoring oracle. The `state` representation changes from KenLM's opaque byte buffer to a tensor of context token IDs (or a KV-cache), but the beam search logic and API contract are identical.
 
 ## 5. Training Pipeline (GPU)
 
@@ -219,8 +219,8 @@ struct CandleLM {
 impl CandleLM {
     fn new(weights_path: &str) -> Result<Self> {
         let device = Device::Cpu;
-        let vb = VarBuilder::from_file(weights_path, DType::F32, &device)?;
-        let model = TransformerModel::load(vb)?;
+        let var_builder = VarBuilder::from_file(weights_path, DType::F32, &device)?;
+        let model = TransformerModel::load(var_builder)?;
         Ok(Self { model, device })
     }
 }
