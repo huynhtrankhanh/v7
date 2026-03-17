@@ -134,12 +134,12 @@ Returns a JSON array of candidate lists. Each list contains the predicted text f
 [["trời","tròn",...], ["đẹp","đến",...]]
 ```
 
-#### Optional Gemini candidate refinement
+#### Optional Gemini full inference mode
 
-If `GEMINI_API_KEY` is set, the engine will call Gemini after KenLM inference to refine candidates:
+If `GEMINI_API_KEY` is set, the engine will use Gemini directly for V7 decoding (KenLM candidate generation is skipped in this mode):
 
-- it can rerank and remove worthless candidates (while keeping at least one), or
-- for single V7-island inputs, it can synthesize a better sentence from per-position options.
+- it sends strict JSON input with per-position syllable options for each V7 island,
+- Gemini returns strict JSON output containing decoded text for V7 islands.
 
 Gemini interaction is JSON-in/JSON-out. Without `GEMINI_API_KEY`, inference uses the existing KenLM-only behavior.
 
