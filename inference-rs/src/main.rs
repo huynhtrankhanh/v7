@@ -651,6 +651,165 @@ fn apply_synthesized_sentence(
     Some(vec![chosen])
 }
 
+#[derive(Debug, Deserialize)]
+struct GeminiInferenceDecision {
+    decoded_v7_islands: Vec<String>,
+}
+
+fn parse_gemini_inference_decision(response_text: &str) -> Option<GeminiInferenceDecision> {
+    let json_fragment = extract_first_json_object(response_text)?;
+    serde_json::from_str::<GeminiInferenceDecision>(json_fragment).ok()
+}
+
+async fn maybe_infer_with_gemini(
+    islands: &[String],
+    tokenizer: &Tokenizer,
+) -> Option<Vec<Vec<String>>> {
+    let Ok(api_key) = std::env::var("GEMINI_API_KEY") else {
+        return None;
+    };
+    if api_key.trim().is_empty() {
+        return None;
+    }
+
+    let option_limit = std::env::var("GEMINI_POSITION_OPTION_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(24);
+
+    let mut v7_segments = Vec::new();
+    for (idx, segment) in islands.iter().enumerate() {
+        if idx % 2 == 1 {
+            let templates = match parse_v7_string(segment, tokenizer) {
+                Ok(t) => t,
+                Err(err) => {
+                    eprintln!("Gemini full inference: parse failure ({err})");
+                    return perform_mock_inference(islands, tokenizer).ok();
+                }
+            };
+            let position_options: Vec<Vec<String>> = templates
+                .iter()
+                .map(|template| {
+                    get_candidates(template, tokenizer)
+                        .map(|choices| choices.iter().take(option_limit).cloned().collect())
+                        .unwrap_or_default()
+                })
+                .collect();
+            v7_segments.push(json!({
+                "island_index": idx,
+                "v7": segment,
+                "position_options": position_options
+            }));
+        }
+    }
+
+    let json_input = json!({
+        "task": "v7_full_inference",
+        "rules": {
+            "json_output_only": true,
+            "must_use_v7_position_options": true,
+            "preserve_fixed_text": true
+        },
+        "islands": islands,
+        "v7_segments": v7_segments,
+        "response_schema": {
+            "decoded_v7_islands": ["string"]
+        }
+    });
+
+    let prompt = format!(
+        "You are decoding Vietnamese V7 input.\n\
+Return strict JSON only with schema {{\"decoded_v7_islands\":[...]}}.\n\
+Rules:\n\
+1) Do not use KenLM assumptions.\n\
+2) Decode each V7 segment using only the provided per-position options.\n\
+3) Keep fixed-text islands unchanged by only returning decoded strings for V7 islands in order.\n\
+4) Prefer the most meaningful and natural Vietnamese sentence.\n\
+Input JSON:\n{}",
+        json_input
+    );
+
+    let model_name = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        model_name
+    );
+    let request_body = json!({
+        "contents": [{ "parts": [{ "text": prompt }] }],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let timeout_seconds = std::env::var("GEMINI_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(20);
+
+    let response = match client
+        .post(url)
+        .header("x-goog-api-key", api_key)
+        .json(&request_body)
+        .timeout(Duration::from_secs(timeout_seconds))
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            eprintln!("Gemini full inference fallback: request failed ({err})");
+            return perform_mock_inference(islands, tokenizer).ok();
+        }
+    };
+
+    let response_json: serde_json::Value = match response.json().await {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("Gemini full inference fallback: invalid JSON response ({err})");
+            return perform_mock_inference(islands, tokenizer).ok();
+        }
+    };
+
+    let response_text = response_json
+        .get("candidates")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.get("parts"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("text"))
+        .and_then(|v| v.as_str());
+
+    let Some(response_text) = response_text else {
+        eprintln!("Gemini full inference fallback: missing text response");
+        return perform_mock_inference(islands, tokenizer).ok();
+    };
+
+    let Some(decision) = parse_gemini_inference_decision(response_text) else {
+        eprintln!("Gemini full inference fallback: malformed decision JSON");
+        return perform_mock_inference(islands, tokenizer).ok();
+    };
+
+    let mut decoded = Vec::with_capacity(islands.len());
+    let mut v7_iter = decision.decoded_v7_islands.into_iter();
+    for (idx, segment) in islands.iter().enumerate() {
+        if idx % 2 == 0 {
+            decoded.push(segment.clone());
+        } else if let Some(next_decoded) = v7_iter.next() {
+            decoded.push(next_decoded.trim().to_string());
+        } else {
+            eprintln!("Gemini full inference fallback: insufficient decoded islands");
+            return perform_mock_inference(islands, tokenizer).ok();
+        }
+    }
+
+    Some(vec![decoded])
+}
+
 async fn maybe_rerank_with_gemini(
     islands: &[String],
     candidates: Vec<Vec<String>>,
@@ -818,6 +977,10 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
+    if let Some(candidates) = maybe_infer_with_gemini(&payload.islands, &state.tokenizer).await {
+        return Json(InferResponse { candidates });
+    }
+
     #[cfg(not(feature = "mocked-model"))]
     let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
 
@@ -825,10 +988,7 @@ async fn infer_handler(
     let result = perform_mock_inference(&payload.islands, &state.tokenizer);
 
     match result {
-        Ok(candidates) => {
-            let candidates = maybe_rerank_with_gemini(&payload.islands, candidates).await;
-            Json(InferResponse { candidates })
-        }
+        Ok(candidates) => Json(InferResponse { candidates }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
             Json(InferResponse { candidates: vec![] })
@@ -999,12 +1159,25 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
+        if let Some(candidates) = maybe_infer_with_gemini(&islands, &tokenizer).await {
+            let duration = start_time.elapsed();
+            if is_islands_mode {
+                println!("{}", serde_json::to_string(&candidates)?);
+            } else {
+                println!("Top results:");
+                for (i, parts) in candidates.iter().take(5).enumerate() {
+                    println!("{}. {}", i + 1, parts.join(" ").trim());
+                }
+            }
+            println!("\nInference time: {}ms", duration.as_millis());
+            return Ok(());
+        }
+
         #[cfg(not(feature = "mocked-model"))]
         let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
 
         #[cfg(feature = "mocked-model")]
         let candidates = perform_mock_inference(&islands, &tokenizer)?;
-        let candidates = maybe_rerank_with_gemini(&islands, candidates).await;
         let duration = start_time.elapsed();
 
         if is_islands_mode {
@@ -1026,7 +1199,10 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_keep_indices, apply_synthesized_sentence, parse_gemini_decision, parse_keep_indices};
+    use super::{
+        apply_keep_indices, apply_synthesized_sentence, parse_gemini_decision,
+        parse_gemini_inference_decision, parse_keep_indices,
+    };
 
     #[test]
     fn parse_keep_indices_from_json_block() {
@@ -1058,5 +1234,13 @@ mod tests {
         let candidates = vec![vec!["".to_string(), "hôm nay trời xấu".to_string()]];
         let applied = apply_synthesized_sentence(&candidates, "hôm nay trời đẹp", 1).expect("applied");
         assert_eq!(applied, vec![vec!["".to_string(), "hôm nay trời đẹp".to_string()]]);
+    }
+
+    #[test]
+    fn parse_gemini_inference_decision_reads_v7_outputs() {
+        let text = "{\"decoded_v7_islands\":[\"hôm nay trời đẹp\",\"bạn có khỏe không\"]}";
+        let decision = parse_gemini_inference_decision(text).expect("decision");
+        assert_eq!(decision.decoded_v7_islands.len(), 2);
+        assert_eq!(decision.decoded_v7_islands[0], "hôm nay trời đẹp");
     }
 }

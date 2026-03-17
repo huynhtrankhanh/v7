@@ -79,3 +79,38 @@
 | 18 | mùa hè năm nay khá nóng | `mu2he2na0na0kha1no1` | mùa hè năm nay khá nóng | ✅ | 312 |
 | 19 | xin cảm ơn bạn rất nhiều | `xi0ka30o0ba5ra6nhi2` | xin cảm ơn bạn rất nhiều | ✅ | 318 |
 | 20 | hy vọng ngày mai trời nắng | `hi0vo5nga2ma0tro2na1` | hy vọng ngày mai trời nắng | ✅ | 306 |
+
+## 2026-03-17 Gemini Pro full-inference mode (no KenLM generation)
+
+- Runtime command pattern: `cargo run --features mocked-model -- <v7>`
+- Key behavior: when `GEMINI_API_KEY` is set, inference uses Gemini directly from JSON syllable options and skips KenLM candidate generation
+- Fallback behavior: when `GEMINI_API_KEY` is absent, existing local logic is used
+- Note: this run used `mocked-model` because `lm.binary` is not available in this environment
+
+### Aggregate
+- Baseline (no Gemini): **0/20 exact**, average **0.0 ms**
+- With Gemini Pro full inference: **17/20 exact**, average **10417.8 ms**
+
+### 20-sentence evaluation (baseline vs Gemini Pro full inference)
+| # | Source | V7 | Top-1 baseline | Baseline ms | Top-1 Gemini | Gemini ms | Exact baseline | Exact Gemini |
+|---:|---|---|---|---:|---|---:|:---:|:---:|
+| 1 | Hôm nay trời đẹp quá | `ho0na0tro2dde7wa1` | hơi năm trời đẹc quắm | 0 | hôm nay trời đẹp quá | 7606 | ❌ | ✅ |
+| 2 | Chúng ta đi học thôi | `chu1ta0ddi0ho7tho0` | chướng tăm đinh hợp thơi | 0 | chúng ta đi họp thôi | 12186 | ❌ | ❌ |
+| 3 | Em đang ăn cơm trưa | `0e0dda00a0ko0tru0` | eng đăm ăm cơi trưng | 0 | em đang ăn cơm trưa | 10682 | ❌ | ✅ |
+| 4 | Tôi rất thích đọc sách | `to0ra6thi6ddo7sa6` | tơi rấc thiếc đợp sấc | 0 | tôi rất thích đọc sách | 8395 | ❌ | ✅ |
+| 5 | Bạn có khỏe không | `ba5ko1kho3kho0` | bặm coóng khởi khơi | 0 | Bạn có khỏe không? | 4875 | ❌ | ✅ |
+| 6 | Ngày mai tôi về nhà | `nga2ma0to0ve2nha2` | ngằm măm tơi vèng nhằm | 0 | ngày mai tôi về nhà | 8583 | ❌ | ✅ |
+| 7 | Anh ấy làm việc chăm chỉ | `0a00a1la2vi7cha0chi3` | ăm ắm lằm việc chăm chiểng | 0 | ăm ắm lằm việc chăm chiểng | 20002 | ❌ | ❌ |
+| 8 | Cô giáo giảng bài rất hay | `ko0za1za3ba2ra6ha0` | cơi giắm giẳm bằm rấc hăm | 0 | cô giáo giảng bài rất hay | 13977 | ❌ | ✅ |
+| 9 | Trời mưa nên đường đông | `tro2mu0ne0ddu2ddo0` | trời mưng neng đường đơi | 0 | trời mưa nên đường đông | 9983 | ❌ | ✅ |
+| 10 | Mọi người cần giữ bình tĩnh | `mo5ngu2ka2zu4bi2ti4` | mợi ngường cằm giuỗi biềng tỹ | 0 | mọi người cần giữ bình tĩnh | 9740 | ❌ | ✅ |
+| 11 | Chiếc xe này chạy rất êm | `chi6xe0na2cha5ra60e0` | chiếc xeng nằm chặm rấc eng | 0 | chiếc xe này chạy rất êm | 9165 | ❌ | ✅ |
+| 12 | Điện thoại của tôi hết pin | `ddi5tho5ku3to0he6pi0` | điệng thợi cuổng tơi héc pinh | 0 | điện thoại của tôi hết pin | 7997 | ❌ | ✅ |
+| 13 | Chúng tôi đang chờ xe buýt | `chu1to0dda0cho2xe0bu6` | chướng tơi đăm chời xeng bước | 0 | chúng tôi đang chờ xe buýt | 15761 | ❌ | ✅ |
+| 14 | Hôm qua tôi xem một bộ phim | `ho0wa0to0xe0mo7bo5phi0` | hơi quăm tơi xeng mợp bợi phinh | 0 | hôm qua tôi xem một bộ phim | 9667 | ❌ | ✅ |
+| 15 | Bữa tối nay có canh chua | `bu4to1na0ko1ka0chu0` | bưỡng tới năm coóng căm chưng | 0 | bữa tối nay có canh chưa | 10018 | ❌ | ❌ |
+| 16 | Bé đang học đánh vần | `be1dda0ho7dda1va2` | béng đăm hợp đắm vằm | 0 | bé đang học đánh vần | 17355 | ❌ | ✅ |
+| 17 | Việt Nam có nhiều món ngon | `vi7na0ko1nhi2mo1ngo0` | việc năm coóng nhỳ mới ngơi | 0 | Việt Nam có nhiều món ngon | 13261 | ❌ | ✅ |
+| 18 | Mùa hè năm nay khá nóng | `mu2he2na0na0kha1no1` | mường hèng năm năm khắm nới | 0 | Mùa hè năm nay khá nóng | 4667 | ❌ | ✅ |
+| 19 | Xin cảm ơn bạn rất nhiều | `xi0ka30o0ba5ra6nhi2` | xinh cẳm ơi bặm rấc nhỳ | 0 | xin cảm ơn bạn rất nhiều | 6963 | ❌ | ✅ |
+| 20 | Hy vọng ngày mai trời nắng | `hi0vo5nga2ma0tro2na1` | hy vợi ngằm măm trời nắm | 0 | hy vọng ngày mai trời nắng | 7472 | ❌ | ✅ |
