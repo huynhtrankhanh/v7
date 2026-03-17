@@ -538,6 +538,16 @@ struct InferResponse {
     candidates: Vec<Vec<String>>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GeminiDecision {
+    #[serde(default)]
+    action: Option<String>,
+    #[serde(default)]
+    keep: Vec<usize>,
+    #[serde(default)]
+    sentence: Option<String>,
+}
+
 fn extract_first_json_object(text: &str) -> Option<&str> {
     let start = text.find('{')?;
     let end = text.rfind('}')?;
@@ -573,6 +583,11 @@ fn parse_keep_indices(response_text: &str, candidate_count: usize) -> Vec<usize>
     result
 }
 
+fn parse_gemini_decision(response_text: &str) -> Option<GeminiDecision> {
+    let json_fragment = extract_first_json_object(response_text)?;
+    serde_json::from_str::<GeminiDecision>(json_fragment).ok()
+}
+
 fn apply_keep_indices(
     candidates: Vec<Vec<String>>,
     keep_indices: &[usize],
@@ -593,6 +608,47 @@ fn apply_keep_indices(
     } else {
         kept
     }
+}
+
+fn collect_position_options(rerank_pool: &[Vec<String>], v7_index: usize) -> Vec<Vec<String>> {
+    let tokenized: Vec<Vec<String>> = rerank_pool
+        .iter()
+        .filter_map(|candidate| candidate.get(v7_index))
+        .map(|segment| segment.split_whitespace().map(|w| w.to_string()).collect::<Vec<_>>())
+        .filter(|tokens| !tokens.is_empty())
+        .collect();
+    let max_len = tokenized.iter().map(Vec::len).max().unwrap_or(0);
+    (0..max_len)
+        .map(|i| {
+            let mut seen = HashSet::new();
+            let mut options = Vec::new();
+            for tokens in &tokenized {
+                if let Some(word) = tokens.get(i) {
+                    if seen.insert(word.clone()) {
+                        options.push(word.clone());
+                    }
+                }
+            }
+            options
+        })
+        .collect()
+}
+
+fn apply_synthesized_sentence(
+    candidates: &[Vec<String>],
+    sentence: &str,
+    v7_index: usize,
+) -> Option<Vec<Vec<String>>> {
+    let normalized = sentence.trim();
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut chosen = candidates.first()?.clone();
+    if v7_index >= chosen.len() {
+        return None;
+    }
+    chosen[v7_index] = normalized.to_string();
+    Some(vec![chosen])
 }
 
 async fn maybe_rerank_with_gemini(
@@ -619,30 +675,59 @@ async fn maybe_rerank_with_gemini(
         .enumerate()
         .map(|(idx, parts)| format!("{idx}: {}", parts.join(" ")))
         .collect();
+    let v7_indices: Vec<usize> = islands
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, _)| (idx % 2 == 1).then_some(idx))
+        .collect();
+    let synth_v7_index = v7_indices.first().copied();
+    let synth_position_options = synth_v7_index
+        .map(|idx| collect_position_options(&rerank_pool, idx))
+        .unwrap_or_default();
+    let json_input = json!({
+        "task": "v7_inference_refinement",
+        "mode_options": ["rerank", "synthesize"],
+        "rules": {
+            "output_must_be_json": true,
+            "rerank_rule": "Return worthwhile candidates only. If all are bad, keep exactly one best index.",
+            "synthesize_rule": "Only use synthesize when one V7 island can be clearly improved from per-position options."
+        },
+        "islands": islands,
+        "v7_island_indices": v7_indices,
+        "candidates": candidate_samples,
+        "synthesize_context": {
+            "v7_index": synth_v7_index,
+            "position_options": synth_position_options
+        },
+        "response_schema": {
+            "action": "rerank | synthesize",
+            "keep": [0, 1],
+            "sentence": "string; required only when action=synthesize"
+        }
+    });
 
     let prompt = format!(
-        "You are reranking Vietnamese inference candidates.\n\
-Context islands (fixed text and V7 segments interleaved):\n{}\n\n\
-Candidates (index: sentence):\n{}\n\n\
-Return ONLY strict JSON object with field \"keep\".\n\
-\"keep\" must be an array of candidate indices ordered best to worst.\n\
-Exclude worthless/unnatural candidates. If all are bad, still keep exactly one best index.\n\
-Example: {{\"keep\":[0,3,2]}}",
-        islands
-            .iter()
-            .enumerate()
-            .map(|(i, s)| format!("{i}: {s}"))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        candidate_samples.join("\n")
+        "You are improving Vietnamese inference output.\n\
+Choose action rerank or synthesize.\n\
+Return strict JSON only using this schema:\n\
+{{\"action\":\"rerank\",\"keep\":[...]}} OR {{\"action\":\"synthesize\",\"sentence\":\"...\"}}.\n\
+If action=rerank, keep must be unique valid indices in best-first order.\n\
+If action=synthesize, sentence must be a single polished Vietnamese sentence for the first V7 island.\n\
+Here is the JSON input:\n{}",
+        json_input
     );
 
-    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+    let model_name = std::env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.5-pro".to_string());
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+        model_name
+    );
 
     let request_body = json!({
         "contents": [{ "parts": [{ "text": prompt }] }],
         "generationConfig": {
-            "temperature": 0.0
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
         }
     });
 
@@ -690,6 +775,22 @@ Example: {{\"keep\":[0,3,2]}}",
         eprintln!("Gemini rerank skipped: missing text response");
         return candidates;
     };
+
+    if let Some(decision) = parse_gemini_decision(response_text) {
+        if decision
+            .action
+            .as_deref()
+            .map(|a| a.eq_ignore_ascii_case("synthesize"))
+            .unwrap_or(false)
+        {
+            if let (Some(v7_index), Some(sentence)) = (synth_v7_index, decision.sentence.as_deref()) {
+                if let Some(synthesized) = apply_synthesized_sentence(&rerank_pool, sentence, v7_index) {
+                    return synthesized;
+                }
+            }
+        }
+        return apply_keep_indices(rerank_pool, &decision.keep);
+    }
 
     let keep_indices = parse_keep_indices(response_text, rerank_pool.len());
     apply_keep_indices(rerank_pool, &keep_indices)
@@ -925,7 +1026,7 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_keep_indices, parse_keep_indices};
+    use super::{apply_keep_indices, apply_synthesized_sentence, parse_gemini_decision, parse_keep_indices};
 
     #[test]
     fn parse_keep_indices_from_json_block() {
@@ -942,5 +1043,20 @@ mod tests {
         ];
         let kept = apply_keep_indices(candidates, &[]);
         assert_eq!(kept, vec![vec!["alpha".to_string()]]);
+    }
+
+    #[test]
+    fn parse_gemini_decision_supports_synthesize() {
+        let text = "{\"action\":\"synthesize\",\"sentence\":\"hôm nay trời đẹp\"}";
+        let decision = parse_gemini_decision(text).expect("decision");
+        assert_eq!(decision.action.as_deref(), Some("synthesize"));
+        assert_eq!(decision.sentence.as_deref(), Some("hôm nay trời đẹp"));
+    }
+
+    #[test]
+    fn apply_synthesized_sentence_replaces_first_v7_island() {
+        let candidates = vec![vec!["".to_string(), "hôm nay trời xấu".to_string()]];
+        let applied = apply_synthesized_sentence(&candidates, "hôm nay trời đẹp", 1).expect("applied");
+        assert_eq!(applied, vec![vec!["".to_string(), "hôm nay trời đẹp".to_string()]]);
     }
 }

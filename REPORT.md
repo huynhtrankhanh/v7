@@ -45,3 +45,37 @@
 - Transformer output follows V7 game rules at syllable level: consonant code + normalized rime-start + tone digit.
 - Gemini reranking substantially increases latency due to API round-trip.
 - Round-trip quality varies by sentence complexity and dictionary/model coverage.
+
+## 2026-03-17 Gemini Pro CLI run (JSON rerank/synthesize mode)
+
+- Full stack command: `docker compose run --rm --entrypoint ./inference-rs/target/release/inference-rs inference <v7>`
+- Model file: `lm.binary` downloaded from the provided Drive link and mounted via `docker-compose.yml`
+- Candidate refinement enabled when `GEMINI_API_KEY` is set; disabled baseline run also measured
+
+### Aggregate
+- Baseline (no Gemini): 19/20 exact Top-1, avg 309 ms
+- With Gemini Pro: 19/20 exact Top-1, avg 308 ms
+
+### 20-sentence evaluation (with Gemini Pro)
+| # | Source | V7 | Top-1 | Exact match | Runtime (ms) |
+|---:|---|---|---|:---:|---:|
+| 1 | hôm nay trời đẹp quá | `ho0na0tro2dde7wa1` | hôm nay trời đẹp quá | ✅ | 401 |
+| 2 | chúng ta đi học thôi | `chu1ta0ddi0ho7tho0` | chúng ta đi học thôi | ✅ | 295 |
+| 3 | em đang ăn cơm trưa | `0e0dda00a0ko0tru0` | em đang ăn cơm trưa | ✅ | 307 |
+| 4 | tôi rất thích đọc sách | `to0ra6thi6ddo7sa6` | tôi rất thích đọc sách | ✅ | 295 |
+| 5 | bạn có khỏe không | `ba5ko1kho3kho0` | bạn có khỏe không | ✅ | 315 |
+| 6 | ngày mai tôi về nhà | `nga2ma0to0ve2nha2` | ngày mai tôi về nhà | ✅ | 288 |
+| 7 | anh ấy làm việc chăm chỉ | `0a00a1la2vi7cha0chi3` | anh ấy làm việc chăm chỉ | ✅ | 300 |
+| 8 | cô giáo giảng bài rất hay | `ko0za1za3ba2ra6ha0` | cô giáo giảng bài rất hay | ✅ | 285 |
+| 9 | trời mưa nên đường đông | `tro2mu0ne0ddu2ddo0` | trời mưa nên đường đông | ✅ | 287 |
+| 10 | mọi người cần giữ bình tĩnh | `mo5ngu2ka2zu4bi2ti4` | mọi người cần giữ bình tĩnh | ✅ | 296 |
+| 11 | chiếc xe này chạy rất êm | `chi6xe0na2cha5ra60e0` | chiếc xe này chạy rất êm | ✅ | 306 |
+| 12 | điện thoại của tôi hết pin | `ddi5tho5ku3to0he6pi0` | điện thoại của tôi hết pin | ✅ | 303 |
+| 13 | chúng tôi đang chờ xe buýt | `chu1to0dda0cho2xe0bu6` | chúng tôi đang chờ xe buýt | ✅ | 304 |
+| 14 | hôm qua tôi xem một bộ phim | `ho0wa0to0xe0mo7bo5phi0` | hôm qua tôi xem một bộ phim | ✅ | 329 |
+| 15 | bữa tối nay có canh chua | `bu4to1na0ko1ka0chu0` | bữa tối nay có câu chưa | ❌ | 314 |
+| 16 | bé đang học đánh vần | `be1dda0ho7dda1va2` | bé đang học đánh vần | ✅ | 316 |
+| 17 | việt nam có nhiều món ngon | `vi7na0ko1nhi2mo1ngo0` | việt nam có nhiều món ngon | ✅ | 302 |
+| 18 | mùa hè năm nay khá nóng | `mu2he2na0na0kha1no1` | mùa hè năm nay khá nóng | ✅ | 312 |
+| 19 | xin cảm ơn bạn rất nhiều | `xi0ka30o0ba5ra6nhi2` | xin cảm ơn bạn rất nhiều | ✅ | 318 |
+| 20 | hy vọng ngày mai trời nắng | `hi0vo5nga2ma0tro2na1` | hy vọng ngày mai trời nắng | ✅ | 306 |
