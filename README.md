@@ -134,6 +134,19 @@ Returns a JSON array of candidate lists. Each list contains the predicted text f
 [["trời","tròn",...], ["đẹp","đến",...]]
 ```
 
+#### Optional Gemini candidate refinement
+
+If `GEMINI_API_KEY` is set, the engine will call Gemini after KenLM inference to refine candidates:
+
+- it can rerank and remove worthless candidates (while keeping at least one), or
+- for single V7-island inputs, it can synthesize a better sentence from per-position options.
+
+Gemini interaction is JSON-in/JSON-out. Without `GEMINI_API_KEY`, inference uses the existing KenLM-only behavior.
+
+```bash
+GEMINI_API_KEY=*** GEMINI_MODEL=gemini-2.5-pro ./inference-rs/target/release/inference-rs "<v7_string>"
+```
+
 ### Mocked Model Mode
 If the KenLM model file (`lm.binary`) is not available, or you wish to test the server integration without loading the heavy model, you can run the server in mocked mode. This mode uses a simple "dumb" inference strategy that returns valid candidates based on the dictionary but without context-aware scoring. The mocked mode is a compile-time feature flag, which also skips building KenLM.
 
