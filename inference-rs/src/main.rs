@@ -606,10 +606,16 @@ async fn maybe_rerank_with_gemini(
         return candidates;
     }
 
-    let max_candidates = 30usize.min(candidates.len());
-    let candidate_samples: Vec<String> = candidates
+    // Keep reranking input bounded for cost and latency.
+    let max_candidates = std::env::var("GEMINI_RERANK_CANDIDATE_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(30)
+        .min(candidates.len());
+    let rerank_pool: Vec<Vec<String>> = candidates.iter().take(max_candidates).cloned().collect();
+    let candidate_samples: Vec<String> = rerank_pool
         .iter()
-        .take(max_candidates)
         .enumerate()
         .map(|(idx, parts)| format!("{idx}: {}", parts.join(" ")))
         .collect();
@@ -631,10 +637,7 @@ Example: {{\"keep\":[0,3,2]}}",
         candidate_samples.join("\n")
     );
 
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
-        api_key
-    );
+    let url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
     let request_body = json!({
         "contents": [{ "parts": [{ "text": prompt }] }],
@@ -644,10 +647,16 @@ Example: {{\"keep\":[0,3,2]}}",
     });
 
     let client = reqwest::Client::new();
+    let timeout_seconds = std::env::var("GEMINI_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(20);
     let response = match client
         .post(url)
+        .header("x-goog-api-key", api_key)
         .json(&request_body)
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(timeout_seconds))
         .send()
         .await
     {
@@ -682,8 +691,8 @@ Example: {{\"keep\":[0,3,2]}}",
         return candidates;
     };
 
-    let keep_indices = parse_keep_indices(response_text, max_candidates);
-    apply_keep_indices(candidates, &keep_indices)
+    let keep_indices = parse_keep_indices(response_text, rerank_pool.len());
+    apply_keep_indices(rerank_pool, &keep_indices)
 }
 
 #[derive(Deserialize)]
