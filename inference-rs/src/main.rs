@@ -777,19 +777,19 @@ Here is the JSON input:\n{}",
     };
 
     if let Some(decision) = parse_gemini_decision(response_text) {
-        if decision
-            .action
-            .as_deref()
-            .map(|a| a.eq_ignore_ascii_case("synthesize"))
-            .unwrap_or(false)
-        {
-            if let (Some(v7_index), Some(sentence)) = (synth_v7_index, decision.sentence.as_deref()) {
-                if let Some(synthesized) = apply_synthesized_sentence(&rerank_pool, sentence, v7_index) {
-                    return synthesized;
+        if let Some(action) = decision.action.as_deref() {
+            if action.eq_ignore_ascii_case("synthesize") {
+                if let (Some(v7_index), Some(sentence)) = (synth_v7_index, decision.sentence.as_deref()) {
+                    if let Some(synthesized) = apply_synthesized_sentence(&rerank_pool, sentence, v7_index) {
+                        return synthesized;
+                    }
                 }
+            } else if action.eq_ignore_ascii_case("rerank") {
+                return apply_keep_indices(rerank_pool, &decision.keep);
             }
+        } else {
+            return apply_keep_indices(rerank_pool, &decision.keep);
         }
-        return apply_keep_indices(rerank_pool, &decision.keep);
     }
 
     let keep_indices = parse_keep_indices(response_text, rerank_pool.len());
