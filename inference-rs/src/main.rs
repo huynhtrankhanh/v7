@@ -17,6 +17,7 @@ use axum::{
 use futures_util::StreamExt;
 use tower_http::services::{ServeDir, ServeFile};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[cfg(not(feature = "mocked-model"))]
 mod kenlm;
@@ -537,6 +538,154 @@ struct InferResponse {
     candidates: Vec<Vec<String>>,
 }
 
+fn extract_first_json_object(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    if start <= end {
+        Some(&text[start..=end])
+    } else {
+        None
+    }
+}
+
+fn parse_keep_indices(response_text: &str, candidate_count: usize) -> Vec<usize> {
+    let Some(json_fragment) = extract_first_json_object(response_text) else {
+        return Vec::new();
+    };
+
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json_fragment) else {
+        return Vec::new();
+    };
+
+    let Some(keep) = value.get("keep").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+
+    let mut result = Vec::new();
+    for raw in keep {
+        if let Some(idx) = raw.as_u64() {
+            let idx = idx as usize;
+            if idx < candidate_count && !result.contains(&idx) {
+                result.push(idx);
+            }
+        }
+    }
+    result
+}
+
+fn apply_keep_indices(
+    candidates: Vec<Vec<String>>,
+    keep_indices: &[usize],
+) -> Vec<Vec<String>> {
+    if candidates.is_empty() {
+        return candidates;
+    }
+
+    let mut kept = Vec::new();
+    for &idx in keep_indices {
+        if let Some(candidate) = candidates.get(idx) {
+            kept.push(candidate.clone());
+        }
+    }
+
+    if kept.is_empty() {
+        vec![candidates[0].clone()]
+    } else {
+        kept
+    }
+}
+
+async fn maybe_rerank_with_gemini(
+    islands: &[String],
+    candidates: Vec<Vec<String>>,
+) -> Vec<Vec<String>> {
+    let Ok(api_key) = std::env::var("GEMINI_API_KEY") else {
+        return candidates;
+    };
+    if api_key.trim().is_empty() || candidates.len() <= 1 {
+        return candidates;
+    }
+
+    let max_candidates = 30usize.min(candidates.len());
+    let candidate_samples: Vec<String> = candidates
+        .iter()
+        .take(max_candidates)
+        .enumerate()
+        .map(|(idx, parts)| format!("{idx}: {}", parts.join(" ")))
+        .collect();
+
+    let prompt = format!(
+        "You are reranking Vietnamese inference candidates.\n\
+Context islands (fixed text and V7 segments interleaved):\n{}\n\n\
+Candidates (index: sentence):\n{}\n\n\
+Return ONLY strict JSON object with field \"keep\".\n\
+\"keep\" must be an array of candidate indices ordered best to worst.\n\
+Exclude worthless/unnatural candidates. If all are bad, still keep exactly one best index.\n\
+Example: {{\"keep\":[0,3,2]}}",
+        islands
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{i}: {s}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        candidate_samples.join("\n")
+    );
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={}",
+        api_key
+    );
+
+    let request_body = json!({
+        "contents": [{ "parts": [{ "text": prompt }] }],
+        "generationConfig": {
+            "temperature": 0.0
+        }
+    });
+
+    let client = reqwest::Client::new();
+    let response = match client
+        .post(url)
+        .json(&request_body)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await
+    {
+        Ok(resp) => resp,
+        Err(err) => {
+            eprintln!("Gemini rerank skipped: request failed ({err})");
+            return candidates;
+        }
+    };
+
+    let response_json: serde_json::Value = match response.json().await {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("Gemini rerank skipped: invalid JSON response ({err})");
+            return candidates;
+        }
+    };
+
+    let response_text = response_json
+        .get("candidates")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.get("parts"))
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("text"))
+        .and_then(|v| v.as_str());
+
+    let Some(response_text) = response_text else {
+        eprintln!("Gemini rerank skipped: missing text response");
+        return candidates;
+    };
+
+    let keep_indices = parse_keep_indices(response_text, max_candidates);
+    apply_keep_indices(candidates, &keep_indices)
+}
+
 #[derive(Deserialize)]
 struct PloverRequest {
     #[serde(default)]
@@ -566,7 +715,10 @@ async fn infer_handler(
     let result = perform_mock_inference(&payload.islands, &state.tokenizer);
 
     match result {
-        Ok(candidates) => Json(InferResponse { candidates }),
+        Ok(candidates) => {
+            let candidates = maybe_rerank_with_gemini(&payload.islands, candidates).await;
+            Json(InferResponse { candidates })
+        }
         Err(e) => {
             eprintln!("Inference error: {}", e);
             Json(InferResponse { candidates: vec![] })
@@ -742,6 +894,7 @@ async fn main() -> Result<()> {
 
         #[cfg(feature = "mocked-model")]
         let candidates = perform_mock_inference(&islands, &tokenizer)?;
+        let candidates = maybe_rerank_with_gemini(&islands, candidates).await;
         let duration = start_time.elapsed();
 
         if is_islands_mode {
@@ -759,4 +912,26 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_keep_indices, parse_keep_indices};
+
+    #[test]
+    fn parse_keep_indices_from_json_block() {
+        let text = "```json\n{\"keep\":[2,0,2,99]}\n```";
+        let parsed = parse_keep_indices(text, 3);
+        assert_eq!(parsed, vec![2, 0]);
+    }
+
+    #[test]
+    fn apply_keep_indices_falls_back_to_first_candidate() {
+        let candidates = vec![
+            vec!["alpha".to_string()],
+            vec!["beta".to_string()],
+        ];
+        let kept = apply_keep_indices(candidates, &[]);
+        assert_eq!(kept, vec![vec!["alpha".to_string()]]);
+    }
 }
