@@ -17,6 +17,7 @@ use axum::{
 use futures_util::StreamExt;
 use tower_http::services::{ServeDir, ServeFile};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[cfg(not(feature = "mocked-model"))]
 mod kenlm;
@@ -295,6 +296,152 @@ fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokeniz
     tokenizer.candidates_index.get(&key)
 }
 
+const GEMINI_FLASH_MODEL: &str = "gemini-2.0-flash";
+const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
+
+fn candidate_to_sentence(parts: &[String]) -> String {
+    parts.join(" ").trim().to_string()
+}
+
+fn apply_ranked_indices(candidates: &[Vec<String>], ranked_indices: &[usize]) -> Vec<Vec<String>> {
+    let mut seen = HashSet::new();
+    let mut ranked = Vec::new();
+    for idx in ranked_indices {
+        if *idx >= candidates.len() || !seen.insert(*idx) {
+            continue;
+        }
+        ranked.push(candidates[*idx].clone());
+    }
+    if ranked.is_empty() {
+        candidates.to_vec()
+    } else {
+        ranked
+    }
+}
+
+fn parse_ranked_indices(raw_text: &str, candidate_count: usize) -> Vec<usize> {
+    let mut indices = Vec::new();
+
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(raw_text) {
+        if let Some(keep) = value.get("keep").and_then(|v| v.as_array()) {
+            for item in keep {
+                if let Some(index) = item.as_u64() {
+                    let index = index as usize;
+                    if index < candidate_count {
+                        indices.push(index);
+                    }
+                }
+            }
+            if !indices.is_empty() {
+                return indices;
+            }
+        }
+    }
+
+    let re = Regex::new(r"\d+").expect("valid regex");
+    for cap in re.find_iter(raw_text) {
+        if let Ok(index) = cap.as_str().parse::<usize>() {
+            if index < candidate_count {
+                indices.push(index);
+            }
+        }
+    }
+    indices
+}
+
+async fn rerank_candidates_with_gemini(
+    api_key: &str,
+    candidates: &[Vec<String>],
+) -> Result<Vec<Vec<String>>> {
+    let url = format!(
+        "{}/{model}:generateContent?key={key}",
+        GEMINI_API_BASE,
+        model = GEMINI_FLASH_MODEL,
+        key = api_key
+    );
+    let lines: Vec<String> = candidates
+        .iter()
+        .enumerate()
+        .map(|(idx, c)| format!("{idx}: {}", candidate_to_sentence(c)))
+        .collect();
+    let prompt = format!(
+        "You rank Vietnamese text candidates.\n\
+        Keep only high-quality candidates and drop useless ones.\n\
+        Return JSON only with this schema: {{\"keep\":[0,1,2]}}.\n\
+        Rules:\n\
+        - Indices must be from the provided list.\n\
+        - Order keep[] from best to worst.\n\
+        - If all candidates are poor, return keep as an empty list.\n\
+        - If only one is good, return one index.\n\
+        - Never add explanation text.\n\n\
+        Candidates:\n{}",
+        lines.join("\n")
+    );
+
+    let body = json!({
+        "contents": [
+            {
+                "parts": [
+                    { "text": prompt }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
+        }
+    });
+
+    let timeout_seconds = std::env::var("GEMINI_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(5);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(timeout_seconds))
+        .build()?;
+
+    let response = client.post(url).json(&body).send().await?;
+    if !response.status().is_success() {
+        return Ok(candidates.to_vec());
+    }
+
+    let value: serde_json::Value = response.json().await?;
+    let text = value
+        .get("candidates")
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("content"))
+        .and_then(|v| v.get("parts"))
+        .and_then(|v| v.get(0))
+        .and_then(|v| v.get("text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
+
+    let ranked_indices = parse_ranked_indices(text, candidates.len());
+    Ok(apply_ranked_indices(candidates, &ranked_indices))
+}
+
+async fn maybe_rerank_candidates(candidates: Vec<Vec<String>>) -> (Vec<Vec<String>>, Option<u128>) {
+    let api_key = match std::env::var("GEMINI_API_KEY") {
+        Ok(value) if !value.trim().is_empty() => value,
+        _ => return (candidates, None),
+    };
+
+    if candidates.len() < 2 {
+        return (candidates, None);
+    }
+
+    let start = Instant::now();
+    let ranked = match rerank_candidates_with_gemini(&api_key, &candidates).await {
+        Ok(result) => result,
+        Err(error) => {
+            eprintln!("Gemini reranking failed, using original order: {}", error);
+            candidates
+        }
+    };
+    let elapsed = start.elapsed().as_millis();
+    (ranked, Some(elapsed))
+}
+
 #[cfg(not(feature = "mocked-model"))]
 fn beam_search_v7_island<'a>(
     templates: &[PartialSyllableTemplate],
@@ -566,7 +713,10 @@ async fn infer_handler(
     let result = perform_mock_inference(&payload.islands, &state.tokenizer);
 
     match result {
-        Ok(candidates) => Json(InferResponse { candidates }),
+        Ok(candidates) => {
+            let (candidates, _) = maybe_rerank_candidates(candidates).await;
+            Json(InferResponse { candidates })
+        }
         Err(e) => {
             eprintln!("Inference error: {}", e);
             Json(InferResponse { candidates: vec![] })
@@ -742,7 +892,9 @@ async fn main() -> Result<()> {
 
         #[cfg(feature = "mocked-model")]
         let candidates = perform_mock_inference(&islands, &tokenizer)?;
-        let duration = start_time.elapsed();
+        let inference_duration = start_time.elapsed();
+
+        let (candidates, rerank_duration) = maybe_rerank_candidates(candidates).await;
 
         if is_islands_mode {
             println!("{}", serde_json::to_string(&candidates)?);
@@ -755,8 +907,41 @@ async fn main() -> Result<()> {
                  println!("{}. {}", i + 1, full_text.trim());
              }
         }
-        println!("\nInference time: {}ms", duration.as_millis());
+        println!("\nInference time: {}ms", inference_duration.as_millis());
+        if let Some(ms) = rerank_duration {
+            println!("Gemini rerank time: {}ms", ms);
+        }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_ranked_indices, parse_ranked_indices};
+
+    #[test]
+    fn parse_ranked_indices_from_json_keep() {
+        let raw = r#"{"keep":[3,1,0]}"#;
+        let indices = parse_ranked_indices(raw, 4);
+        assert_eq!(indices, vec![3, 1, 0]);
+    }
+
+    #[test]
+    fn parse_ranked_indices_from_plaintext_fallback() {
+        let raw = "Best order: 2, 0. Remove 9.";
+        let indices = parse_ranked_indices(raw, 3);
+        assert_eq!(indices, vec![2, 0]);
+    }
+
+    #[test]
+    fn apply_ranked_indices_dedups_and_filters() {
+        let candidates = vec![
+            vec!["a".to_string()],
+            vec!["b".to_string()],
+            vec!["c".to_string()],
+        ];
+        let ranked = apply_ranked_indices(&candidates, &[2, 2, 0]);
+        assert_eq!(ranked, vec![vec!["c".to_string()], vec!["a".to_string()]]);
+    }
 }
