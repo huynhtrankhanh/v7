@@ -800,7 +800,7 @@ Input JSON:\n{}",
         if idx % 2 == 0 {
             decoded.push(segment.clone());
         } else if let Some(next_decoded) = v7_iter.next() {
-            decoded.push(next_decoded.trim().to_string());
+            decoded.push(next_decoded);
         } else {
             eprintln!("Gemini full inference fallback: insufficient decoded islands");
             return perform_mock_inference(islands, tokenizer).ok();
