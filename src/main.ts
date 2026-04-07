@@ -1105,6 +1105,35 @@ async function handleChord(stroke) {
         return;
     }
     
+    // Emily symbols take precedence over any potentially overlapping ordinary Vietnamese interpretation.
+    const emilyResult = handleEmilySymbol(stroke);
+    if (emilyResult) {
+        const repeatCount = emilyResult.repeat || 1;
+        if (emilyResult.retroSpace) {
+        if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
+            saveState();
+            const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
+            state.pendingCapitalization = emilyResult.capNext || false;
+                if (changed || emilyResult.capNext) {
+                    runInference();
+                    updateDisplay();
+                }
+            }
+            return;
+        }
+        saveState();
+        // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
+        buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
+            leftSpace: emilyResult.leftSpace,
+            rightSpace: emilyResult.rightSpace,
+            explicitSpacing: emilyResult.explicitSpacing
+        }));
+        state.pendingCapitalization = emilyResult.capNext || false;
+        runInference();
+        updateDisplay();
+        return;
+    }
+
     // Check single-stroke selection+syllable first; otherwise let normal handlers run.
     const selection = state.candidates.length > 0
         ? getCandidateSelectionMatch(stroke, state.candidates.length)
@@ -1152,37 +1181,6 @@ async function handleChord(stroke) {
         buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
         return;
-    }
-
-    // Emily symbols starter: SKWH family
-    if (stroke.startsWith("SKWH")) {
-        const emilyResult = handleEmilySymbol(stroke);
-        if (emilyResult) {
-            const repeatCount = emilyResult.repeat || 1;
-            if (emilyResult.retroSpace) {
-            if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
-                saveState();
-                const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
-                state.pendingCapitalization = emilyResult.capNext || false;
-                    if (changed || emilyResult.capNext) {
-                        runInference();
-                        updateDisplay();
-                    }
-                }
-                return;
-            }
-            saveState();
-            // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-            buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
-                leftSpace: emilyResult.leftSpace,
-                rightSpace: emilyResult.rightSpace,
-                explicitSpacing: emilyResult.explicitSpacing
-            }));
-            state.pendingCapitalization = emilyResult.capNext || false;
-            runInference();
-            updateDisplay();
-            return;
-        }
     }
 
     if (stroke.includes("*")) {
