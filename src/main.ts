@@ -1,6 +1,7 @@
-import { TextBuffer, convertIslandsForInference, createIsland, ensureString, shouldAddSpace } from "./textBuffer";
+import { TextBuffer, convertIslandsForInference, createIsland, ensureString } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import { getCandidateSelectionMatch } from "./candidateSelection";
+import { KeyboardStrokeTracker, mapKeyUnique, renderVisibleText, selectCandidateIslands } from "./webCore";
 
 // --- Mappings & Constants ---
 
@@ -788,7 +789,7 @@ async function handlePloverStroke(stroke, { oneShot }) {
         if (currentRequest !== strippedPlover.requestId) return;
         applyPloverOutput(result.output || [], {
             recordHistory: oneShot,
-            allowInference: !strippedPlover.enabled,
+            allowInference: true,
             finalizePreedit: oneShot
         });
         if (oneShot) {
@@ -815,9 +816,7 @@ async function togglePloverMode() {
         }
         runInference();
     } else {
-        abortInferenceRequest(true);
-        state.candidates = [];
-        updateDisplay();
+        runInference();
     }
     updatePloverStatusUI();
 }
@@ -1271,14 +1270,12 @@ type SelectCandidateOptions = {
 };
 
 function selectCandidate(index, options: SelectCandidateOptions = { saveHistory: true, refreshDisplay: true }) {
-    if (!state.candidates[index]) return false;
-    // state.candidates[index] is array of strings [Fixed, V7, Fixed...] from server response
-    // We join them (spacing is already baked into the Fixed parts by convertIslandsForInference + Server)
-    const chosenText = state.candidates[index].join("");
+    const nextIslands = selectCandidateIslands(state.candidates, index);
+    if (!nextIslands) return false;
     if (options.saveHistory) {
         saveState();
     }
-    buffer.setIslands([createIsland('vietnamese', chosenText)]);
+    buffer.setIslands(nextIslands);
     state.candidates = [];
     if (options.refreshDisplay) {
         updateDisplay();
@@ -1338,30 +1335,7 @@ function updateDisplay() {
     const textArea = document.getElementById("text-input");
     const candArea = document.getElementById("candidate-area");
 
-    let text = "";
-    if (state.candidates.length > 0) {
-        // Preview top candidate
-        // state.candidates[0] is array of strings. Join them.
-        text = state.candidates[0].join("");
-    } else {
-        // Fallback: Show all islands using spacing rules
-        text = "";
-        for (let i = 0; i < state.islands.length; i++) {
-            const curr = state.islands[i];
-            const prev = i > 0 ? state.islands[i-1] : null;
-
-            if (prev && shouldAddSpace(prev, curr)) {
-                text += " ";
-            }
-
-            // For V7 islands not yet inferred/candidate-selected, show code in brackets?
-            if (curr.isV7) {
-                text += "[" + curr.value + "]";
-            } else {
-                text += curr.value;
-            }
-        }
-    }
+    const text = renderVisibleText(state.islands, state.candidates);
     
     if (isRawMode) {
         // Raw Mode: Show textarea
@@ -1472,42 +1446,14 @@ function updateDisplay() {
 
 // --- Input Handling ---
 
-const qwertyToUnique = {
-    "q": "#", "a": "S-", "w": "T-", "s": "K-", "e": "P-", "d": "W-", "r": "H-", "f": "R-",
-    "c": "A", "v": "O",
-    "n": "E", "m": "U",
-    "u": "-F", "j": "-R", "i": "-P", "k": "-B", "o": "-L", "l": "-G", "p": "-T", ";": "-S",
-    " ": "*"
-};
-
-function mapKeyUnique(k) {
-    k = k.toLowerCase();
-    if (k === "t" || k === "g") return "-D";
-    if (k === "y" || k === "h") return "-Z";
-    if (k >= "0" && k <= "9") return k; // numbers handled as literal inputs
-    return qwertyToUnique[k] || null;
-}
-
-let heldKeys = new Set();
-let strokeKeys = new Set();
+const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
     // Global Shortcuts
     if (e.ctrlKey && e.key === 'c') {
         // Copy entire buffer if nothing selected
         if (!window.getSelection().toString()) {
-            let textToCopy = "";
-            if (state.candidates.length > 0) {
-                 textToCopy = state.candidates[0].join("");
-            } else {
-                 for (let i = 0; i < state.islands.length; i++) {
-                     const curr = state.islands[i];
-                     const prev = i > 0 ? state.islands[i-1] : null;
-                     if (prev && shouldAddSpace(prev, curr)) textToCopy += " ";
-                     if (curr.isV7) textToCopy += "[" + curr.value + "]";
-                     else textToCopy += curr.value;
-                 }
-            }
+            const textToCopy = renderVisibleText(state.islands, state.candidates);
             
             navigator.clipboard.writeText(textToCopy).catch(err => {
                 console.error('Failed to copy: ', err);
@@ -1575,10 +1521,11 @@ document.addEventListener("keydown", (e) => {
 
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
-    
-    heldKeys.add(mapped);
+    const immediateDigit = !ploverActive && mapped.match(/^[0-9]$/);
+    keyboardStrokeTracker.keyDown(e.key, { includeInStroke: !immediateDigit });
+
     // Numbers should generate immediate capital island, not be part of steno chord
-    if (!ploverActive && mapped.match(/^[0-9]$/)) {
+    if (immediateDigit) {
         // Emit as capital/number island immediately
         saveState();
         buffer.appendIsland(createIsland('capital', mapped));
@@ -1586,7 +1533,6 @@ document.addEventListener("keydown", (e) => {
         e.preventDefault();
         return;
     }
-    strokeKeys.add(mapped);
     e.preventDefault();
 });
 
@@ -1597,41 +1543,11 @@ document.addEventListener("keyup", (e) => {
         return;
     }
 
-    const mapped = mapKeyUnique(e.key);
-    if (!mapped) return;
-    
-    heldKeys.delete(mapped);
-    
-    if (heldKeys.size === 0 && strokeKeys.size > 0) {
-        // Serialize Stroke
-        const order = ["#", "S-", "T-", "K-", "P-", "W-", "H-", "R-", "A", "O", "*", "E", "U", "-F", "-R", "-P", "-B", "-L", "-G", "-T", "-S", "-D", "-Z"];
-        const middleKeys = ["A", "O", "*", "E", "U"];
-        const hasMiddle = middleKeys.some(k => strokeKeys.has(k));
-        
-        let strokeStr = "";
-        let insertedHyphen = false;
-        const rightStart = order.indexOf("-F"); // Index of first right-side consonant
-        
-        for (let i = 0; i < order.length; i++) {
-            const k = order[i];
-            
-            // Logic to insert hyphen if missing middle keys
-            if (!hasMiddle && !insertedHyphen && i >= rightStart) {
-                 if (strokeKeys.has(k)) {
-                     strokeStr += "-";
-                     insertedHyphen = true;
-                 }
-            }
-            
-            if (strokeKeys.has(k)) {
-                strokeStr += k.replace("-", "");
-            }
-        }
-        
+    const strokeStr = keyboardStrokeTracker.keyUp(e.key);
+    if (strokeStr) {
         handleChord(strokeStr).catch((err) => {
             console.error("Stroke handling failed", err);
         });
-        strokeKeys = new Set();
     }
 });
 
