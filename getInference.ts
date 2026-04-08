@@ -47,7 +47,9 @@ export function getInference(rawInput: string[]): InferencePosition[] {
     return [];
   }
 
-  const binaryPath = resolve(process.cwd(), "inference-rs/target/release/inference-rs");
+  const binaryPath =
+    process.env.INFERENCE_RS_BIN?.trim() ||
+    resolve(process.cwd(), "inference-rs/target/release/inference-rs");
   if (!existsSync(binaryPath)) {
     throw new Error(
       `Inference binary not found at "${binaryPath}". Build it first with "cd inference-rs && cargo build --release".`,
@@ -58,7 +60,10 @@ export function getInference(rawInput: string[]): InferencePosition[] {
     encoding: "utf8",
   });
   const syllableCandidates = parseCandidatesFromStdout(stdout);
-  const expectedSyllableCount = Math.floor(rawInput.length / 2);
+  const expectedSyllableCount = rawInput.reduce(
+    (count, _value, index) => count + (index % 2 === 1 ? 1 : 0),
+    0,
+  );
   if (syllableCandidates.length !== expectedSyllableCount) {
     throw new Error(
       `Inference output mismatch: expected ${expectedSyllableCount} syllable candidate list(s) but got ${syllableCandidates.length}.`,
@@ -74,7 +79,7 @@ export function getInference(rawInput: string[]): InferencePosition[] {
     } else {
       result.push({
         type: "syllable",
-        candidates: syllableCandidates[syllableIndex] ?? [],
+        candidates: syllableCandidates[syllableIndex],
       });
       syllableIndex += 1;
     }
