@@ -336,14 +336,17 @@ fn lattice_viterbi_v7_island(
         let mut best_for_state: HashMap<[u8; 128], usize> = HashMap::new();
 
         for &parent_idx in &current_layer {
-            let parent_node = &nodes[parent_idx];
+            let (parent_score, parent_state, parent_origin_idx) = {
+                let parent_node = &nodes[parent_idx];
+                (parent_node.score, parent_node.state.clone(), parent_node.origin_idx)
+            };
 
             for (word_str, word_idx, penalty) in &candidate_data {
                 let (total_score, new_state) = if *penalty < -1.0 && word_str == "<?>" {
-                    (parent_node.score + penalty, parent_node.state.clone())
+                    (parent_score + penalty, parent_state.clone())
                 } else {
-                    let (lm_score, next_state) = model.score_index(&parent_node.state, *word_idx);
-                    (parent_node.score + lm_score + penalty, next_state)
+                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
+                    (parent_score + lm_score + penalty, next_state)
                 };
 
                 let state_key = new_state.data;
@@ -353,7 +356,7 @@ fn lattice_viterbi_v7_island(
                         nodes[existing_idx].state = new_state;
                         nodes[existing_idx].word = Some(word_str.clone());
                         nodes[existing_idx].parent_idx = Some(parent_idx);
-                        nodes[existing_idx].origin_idx = parent_node.origin_idx;
+                        nodes[existing_idx].origin_idx = parent_origin_idx;
                     }
                 } else {
                     nodes.push(LatticeNode {
@@ -361,7 +364,7 @@ fn lattice_viterbi_v7_island(
                         state: new_state,
                         word: Some(word_str.clone()),
                         parent_idx: Some(parent_idx),
-                        origin_idx: parent_node.origin_idx,
+                        origin_idx: parent_origin_idx,
                     });
                     best_for_state.insert(state_key, nodes.len() - 1);
                 }
