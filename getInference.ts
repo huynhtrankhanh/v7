@@ -13,6 +13,7 @@ type Tokenizer = {
   sortedConsonantKeys: string[];
   candidatesIndex: Map<string, string[]>;
 };
+type VowelKey = "a" | "e" | "i" | "o" | "u";
 
 function structuredOnset(c: string, v: string): string {
   if (c === "0") return "";
@@ -129,6 +130,10 @@ function enumerateRegex(regex: string): string[] {
   return expandExpr();
 }
 
+function pickByVowel(v: VowelKey, values: Record<VowelKey, string>): string {
+  return values[v];
+}
+
 function generateStructuredRegexMap(): Map<string, string> {
   const map = new Map<string, string>();
   const structuredConsonants = [
@@ -163,7 +168,7 @@ function generateStructuredRegexMap(): Map<string, string> {
         const k = `${c}_${v}_${i}`;
 
         if (c === "w") {
-          const s = v === "a" ? wa[i] : v === "e" ? we[i] : v === "i" ? wi[i] : wo[i];
+          const s = pickByVowel(v, { a: wa[i], e: we[i], i: wi[i], o: wo[i], u: wo[i] });
           map.set(k, `qu${s}`);
           continue;
         }
@@ -172,7 +177,7 @@ function generateStructuredRegexMap(): Map<string, string> {
           if (v === "i") {
             map.set(k, zi[i]);
           } else {
-            const s = v === "a" ? za[i] : v === "e" ? ze[i] : v === "o" ? zo[i] : zu[i];
+            const s = pickByVowel(v, { a: za[i], e: ze[i], i: zi[i], o: zo[i], u: zu[i] });
             map.set(k, `gi${s}`);
           }
           continue;
@@ -184,7 +189,7 @@ function generateStructuredRegexMap(): Map<string, string> {
           continue;
         }
 
-        let s = v === "a" ? a[i] : v === "e" ? e[i] : v === "o" ? o[i] : u[i];
+        let s = pickByVowel(v, { a: a[i], e: e[i], i: u[i], o: o[i], u: u[i] });
         if (c === "k" && v === "o") s = ko[i];
         if (c === "k" && v === "u") s = ku[i];
         map.set(k, `${structuredOnset(c, v)}${s}`);
@@ -261,8 +266,13 @@ function getTemplateCandidates(template: PartialSyllableTemplate, tokenizer: Tok
 }
 
 export function getInference(rawInput: string[]): InferencePosition[] {
-  if (!Array.isArray(rawInput) || !rawInput.every((value) => typeof value === "string")) {
+  if (!Array.isArray(rawInput)) {
     throw new TypeError("rawInput must be a string array.");
+  }
+  for (const value of rawInput) {
+    if (typeof value !== "string") {
+      throw new TypeError("rawInput must be a string array.");
+    }
   }
 
   const result: InferencePosition[] = [];
