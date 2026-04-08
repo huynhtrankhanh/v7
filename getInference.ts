@@ -40,6 +40,9 @@ export function getInference(rawInput: string[]): InferencePosition[] {
   if (!rawInput.every((value) => typeof value === "string")) {
     throw new TypeError("rawInput must contain only strings.");
   }
+  if (rawInput.some((value) => value.includes("\u0000"))) {
+    throw new TypeError("rawInput contains invalid null characters.");
+  }
   if (rawInput.length === 0) {
     return [];
   }
@@ -55,6 +58,12 @@ export function getInference(rawInput: string[]): InferencePosition[] {
     encoding: "utf8",
   });
   const syllableCandidates = parseCandidatesFromStdout(stdout);
+  const expectedSyllableCount = Math.floor(rawInput.length / 2);
+  if (syllableCandidates.length !== expectedSyllableCount) {
+    throw new Error(
+      `Inference output mismatch: expected ${expectedSyllableCount} syllable candidate list(s) but got ${syllableCandidates.length}.`,
+    );
+  }
 
   const result: InferencePosition[] = [];
   let syllableIndex = 0;
