@@ -204,7 +204,7 @@ function generateStructuredRegexMap(): Map<string, string> {
             s = u[i];
             break;
           case "i":
-            throw new Error("Unexpected vowel 'i' in non-i branch.");
+            throw new Error(`Unexpected vowel "i" in non-i branch for consonant "${c}".`);
         }
         if (c === "k" && v === "o") s = ko[i];
         if (c === "k" && v === "u") s = ku[i];
@@ -261,12 +261,13 @@ function parseV7String(v7String: string, tokenizer: Tokenizer): PartialSyllableT
     const rimeStart = currentSlice[0];
     const toneChar = currentSlice[1];
     if (!rimeStart || !toneChar) {
-      throw new Error(`Unexpected end while parsing: ${v7String}`);
+      const position = v7String.length - currentSlice.length;
+      throw new Error(`Missing rime or tone character while parsing "${v7String}" at position ${position}.`);
     }
 
     const tone = Number.parseInt(toneChar, 10);
     if (!Number.isInteger(tone) || tone < 0 || tone > 7) {
-      throw new Error(`Expected digit tone, got: ${toneChar}`);
+      throw new Error(`Expected tone digit 0-7, got: ${toneChar}.`);
     }
 
     currentSlice = currentSlice.slice(2);
