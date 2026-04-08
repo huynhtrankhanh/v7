@@ -291,6 +291,8 @@ struct LatticeNode {
 
 #[cfg(not(feature = "mocked-model"))]
 const KENLM_STATE_KEY_SIZE: usize = 128;
+#[cfg(not(feature = "mocked-model"))]
+const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
 
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
     let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
@@ -352,8 +354,9 @@ fn lattice_viterbi_v7_island(
                     (parent_score + lm_score + penalty, next_state)
                 };
 
-                // `kenlm::State` stores a fixed-size byte buffer and `score_index` writes
-                // deterministic state bytes into it, so this array is a stable dedup key.
+                // `kenlm::State` is a fixed-size byte buffer initialized from zeros and then
+                // updated by KenLM's deterministic transition function (`score_index`), so
+                // identical linguistic contexts yield identical `data` bytes for dedup keys.
                 let state_key = new_state.data;
                 if let Some(existing_idx) = best_for_state.get(&state_key).copied() {
                     if total_score > nodes[existing_idx].score {
