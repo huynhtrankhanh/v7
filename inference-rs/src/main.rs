@@ -289,6 +289,9 @@ struct LatticeNode {
     origin_idx: usize,
 }
 
+#[cfg(not(feature = "mocked-model"))]
+const KENLM_STATE_KEY_SIZE: usize = 128;
+
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
     let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
     let key = format!("{}_{}_{}", template.consonant, norm_rime_start, template.tone);
@@ -333,7 +336,7 @@ fn lattice_viterbi_v7_island(
             candidate_data.push(("<?>".to_string(), 0, -10.0));
         }
 
-        let mut best_for_state: HashMap<[u8; 128], usize> = HashMap::new();
+        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], usize> = HashMap::new();
 
         for &parent_idx in &current_layer {
             let (parent_score, parent_state, parent_origin_idx) = {
@@ -349,6 +352,8 @@ fn lattice_viterbi_v7_island(
                     (parent_score + lm_score + penalty, next_state)
                 };
 
+                // `kenlm::State` stores a fixed-size byte buffer and `score_index` writes
+                // deterministic state bytes into it, so this array is a stable dedup key.
                 let state_key = new_state.data;
                 if let Some(existing_idx) = best_for_state.get(&state_key).copied() {
                     if total_score > nodes[existing_idx].score {
