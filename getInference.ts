@@ -214,14 +214,6 @@ function createTokenizer(): Tokenizer {
 
 const TOKENIZER = createTokenizer();
 
-function removeDiacritics(text: string): string {
-  const withoutMarks = text
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f\u1dc0-\u1dff\u20d0-\u20ff\ufe20-\ufe2f]/g, "")
-    .normalize("NFC");
-  return withoutMarks.replace(/đ/g, "d").replace(/Đ/g, "D").replace(/y/g, "i").replace(/Y/g, "I");
-}
-
 function parseV7String(v7String: string, tokenizer: Tokenizer): PartialSyllableTemplate[] {
   const templates: PartialSyllableTemplate[] = [];
   let currentSlice = v7String;
@@ -264,28 +256,8 @@ function parseV7String(v7String: string, tokenizer: Tokenizer): PartialSyllableT
 }
 
 function getTemplateCandidates(template: PartialSyllableTemplate, tokenizer: Tokenizer): string[] {
-  const normRimeStart = removeDiacritics(template.rimeFirstLetter);
-  const key = `${template.consonant}_${normRimeStart}_${template.tone}`;
+  const key = `${template.consonant}_${template.rimeFirstLetter}_${template.tone}`;
   return tokenizer.candidatesIndex.get(key) ?? [];
-}
-
-function combineCandidates(perSyllableCandidates: string[][]): string[] {
-  if (perSyllableCandidates.length === 0) return [];
-  let combinations = [""];
-
-  for (const list of perSyllableCandidates) {
-    if (list.length === 0) return [];
-
-    const next: string[] = [];
-    for (const prefix of combinations) {
-      for (const candidate of list) {
-        next.push(prefix === "" ? candidate : `${prefix} ${candidate}`);
-      }
-    }
-    combinations = next;
-  }
-
-  return combinations;
 }
 
 export function getInference(rawInput: string[]): InferencePosition[] {
@@ -305,8 +277,9 @@ export function getInference(rawInput: string[]): InferencePosition[] {
 
     try {
       const templates = parseV7String(chunk, TOKENIZER);
-      const perSyllableCandidates = templates.map((template) => getTemplateCandidates(template, TOKENIZER));
-      result.push({ type: "syllable", candidates: combineCandidates(perSyllableCandidates) });
+      for (const template of templates) {
+        result.push({ type: "syllable", candidates: getTemplateCandidates(template, TOKENIZER) });
+      }
     } catch {
       result.push({ type: "syllable", candidates: [] });
     }
