@@ -1104,7 +1104,18 @@ async function handleChord(stroke) {
         return;
     }
     
-    // Emily symbols take precedence over any potentially overlapping ordinary Vietnamese interpretation.
+    // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
+    if (stroke.includes("*")) {
+        const v7Code = getV7FromStroke(stroke);
+        if (v7Code) {
+            saveState();
+            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
+            runInference();
+            return;
+        }
+    }
+
+    // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
     const emilyResult = handleEmilySymbol(stroke);
     if (emilyResult) {
         const repeatCount = emilyResult.repeat || 1;
@@ -1180,16 +1191,6 @@ async function handleChord(stroke) {
         buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
         return;
-    }
-
-    if (stroke.includes("*")) {
-        const v7Code = getV7FromStroke(stroke);
-        if (v7Code) {
-            saveState();
-            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
-            runInference();
-            return;
-        }
     }
 
     const parsed = parse(stroke);
