@@ -189,7 +189,23 @@ function generateStructuredRegexMap(): Map<string, string> {
           continue;
         }
 
-        let s = pickByVowel(v, { a: a[i], e: e[i], i: u[i], o: o[i], u: u[i] });
+        let s: string;
+        switch (v) {
+          case "a":
+            s = a[i];
+            break;
+          case "e":
+            s = e[i];
+            break;
+          case "o":
+            s = o[i];
+            break;
+          case "u":
+            s = u[i];
+            break;
+          case "i":
+            throw new Error("Unexpected vowel 'i' in non-i branch.");
+        }
         if (c === "k" && v === "o") s = ko[i];
         if (c === "k" && v === "u") s = ku[i];
         map.set(k, `${structuredOnset(c, v)}${s}`);
@@ -233,7 +249,7 @@ function parseV7String(v7String: string, tokenizer: Tokenizer): PartialSyllableT
     }
 
     if (!matchedKey) {
-      throw new Error(`Could not parse consonant at: ${currentSlice}`);
+      throw new Error(`Could not parse consonant in "${v7String}" at "${currentSlice}"`);
     }
 
     const consonant = tokenizer.validConsonantsMap.get(matchedKey);
