@@ -308,6 +308,7 @@ export function getInference(rawInput: string[]): InferencePosition[] {
         result.push({ type: "syllable", candidates: getTemplateCandidates(template, TOKENIZER) });
       }
     } catch {
+      // Return an empty candidate list for unparsable syllable chunks.
       result.push({ type: "syllable", candidates: [] });
     }
   }
