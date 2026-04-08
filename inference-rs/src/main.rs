@@ -281,13 +281,18 @@ struct IslandState {
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct BeamNode<'a> {
+struct LatticeNode {
     score: f32,
     state: kenlm::State,
-    word: &'a str,
+    word: Option<String>,
     parent_idx: Option<usize>,
-    origin_idx: usize, // Index into incoming_states
+    origin_idx: usize,
 }
+
+#[cfg(not(feature = "mocked-model"))]
+const KENLM_STATE_KEY_SIZE: usize = 128;
+#[cfg(not(feature = "mocked-model"))]
+const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
 
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
     let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
@@ -296,120 +301,115 @@ fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokeniz
 }
 
 #[cfg(not(feature = "mocked-model"))]
-fn beam_search_v7_island<'a>(
+fn lattice_viterbi_v7_island(
     templates: &[PartialSyllableTemplate],
-    tokenizer: &'a Tokenizer,
+    tokenizer: &Tokenizer,
     model: &kenlm::Model,
-    beam_width: usize,
     incoming_states: &[IslandState],
 ) -> Vec<IslandState> {
-    // Initialize beam from incoming states
-    let mut current_beam: Vec<BeamNode<'a>> = incoming_states.iter().enumerate().map(|(i, s)| {
-        BeamNode {
-            score: s.score,
-            state: s.state.clone(),
-            word: "",
+    let mut nodes: Vec<LatticeNode> = Vec::new();
+    let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
+    for (origin_idx, state) in incoming_states.iter().enumerate() {
+        nodes.push(LatticeNode {
+            score: state.score,
+            state: state.state.clone(),
+            word: None,
             parent_idx: None,
-            origin_idx: i,
-        }
-    }).collect();
-
-    // Limit initial beam if incoming_states is too large (though unusual)
-    if current_beam.len() > beam_width {
-        current_beam.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-        current_beam.truncate(beam_width);
+            origin_idx,
+        });
+        current_layer.push(nodes.len() - 1);
     }
-
-    let mut history: Vec<Vec<BeamNode<'a>>> = Vec::with_capacity(templates.len() + 1);
-    history.push(current_beam);
 
     for template in templates {
         let candidates_opt = get_candidates(template, tokenizer);
-        
-        let mut candidate_data: Vec<(&str, u32, f32)> = Vec::new();
-        
+        let mut candidate_data: Vec<(String, u32, f32)> = Vec::new();
+
         if let Some(list) = candidates_opt {
-             if list.is_empty() {
-                 candidate_data.push(("<?>", 0, -10.0));
-             } else {
-                 candidate_data.reserve(list.len());
-                 for w in list {
-                     let idx = model.lookup(w);
-                     candidate_data.push((w.as_str(), idx, 0.0));
-                 }
-             }
-        } else {
-             candidate_data.push(("<?>", 0, -10.0));
-        }
-
-        let prev_beam = history.last().unwrap();
-        // We might explore up to prev_beam.len() * candidate_data.len() nodes.
-        let mut next_candidates: Vec<(f32, usize, usize, &'a str, kenlm::State)> = Vec::with_capacity(prev_beam.len() * candidate_data.len());
-
-        for (parent_idx, node) in prev_beam.iter().enumerate() {
-            for (word_str, word_idx, penalty) in &candidate_data {
-                if *penalty < -1.0 && *word_str == "<?>" {
-                     next_candidates.push((node.score + penalty, parent_idx, node.origin_idx, *word_str, node.state.clone()));
-                     continue;
+            if list.is_empty() {
+                candidate_data.push(("<?>".to_string(), 0, -10.0));
+            } else {
+                candidate_data.reserve(list.len());
+                for w in list {
+                    let idx = model.lookup(w);
+                    candidate_data.push((w.clone(), idx, 0.0));
                 }
+            }
+        } else {
+            candidate_data.push(("<?>".to_string(), 0, -10.0));
+        }
 
-                let (lm_score, new_state) = model.score_index(&node.state, *word_idx);
-                let total_score = node.score + lm_score + penalty;
-                
-                next_candidates.push((total_score, parent_idx, node.origin_idx, *word_str, new_state));
+        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], usize> = HashMap::new();
+
+        for &parent_idx in &current_layer {
+            let (parent_score, parent_state, parent_origin_idx) = {
+                let parent_node = &nodes[parent_idx];
+                (parent_node.score, parent_node.state.clone(), parent_node.origin_idx)
+            };
+
+            for (word_str, word_idx, penalty) in &candidate_data {
+                let (total_score, new_state) = if *penalty < -1.0 && word_str == "<?>" {
+                    (parent_score + penalty, parent_state.clone())
+                } else {
+                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
+                    (parent_score + lm_score + penalty, next_state)
+                };
+
+                // `kenlm::State` is a fixed-size byte buffer initialized from zeros and then
+                // updated by KenLM's deterministic transition function (`score_index`), so
+                // identical linguistic contexts yield identical `data` bytes for dedup keys.
+                let state_key = new_state.data;
+                if let Some(existing_idx) = best_for_state.get(&state_key).copied() {
+                    if total_score > nodes[existing_idx].score {
+                        nodes[existing_idx].score = total_score;
+                        nodes[existing_idx].state = new_state;
+                        nodes[existing_idx].word = Some(word_str.clone());
+                        nodes[existing_idx].parent_idx = Some(parent_idx);
+                        nodes[existing_idx].origin_idx = parent_origin_idx;
+                    }
+                } else {
+                    nodes.push(LatticeNode {
+                        score: total_score,
+                        state: new_state,
+                        word: Some(word_str.clone()),
+                        parent_idx: Some(parent_idx),
+                        origin_idx: parent_origin_idx,
+                    });
+                    best_for_state.insert(state_key, nodes.len() - 1);
+                }
             }
         }
-        
-        // Keep top K
-        next_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-        
-        let next_beam: Vec<BeamNode<'a>> = next_candidates.into_iter().take(beam_width).map(|(s, p, o, w, st)| {
-            BeamNode {
-                score: s,
-                state: st,
-                word: w,
-                parent_idx: Some(p),
-                origin_idx: o,
-            }
-        }).collect();
-        
-        history.push(next_beam);
+
+        current_layer = best_for_state.into_values().collect();
+        if current_layer.is_empty() {
+            break;
+        }
     }
-    
-    // Reconstruct paths
-    let last_beam = history.last().unwrap();
-    let mut results = Vec::new();
-    
-    for node in last_beam {
+
+    let mut results = Vec::with_capacity(current_layer.len());
+    for node_idx in current_layer {
+        let node = &nodes[node_idx];
+
         let mut words = Vec::new();
-        let mut current_step = history.len() - 1;
-        
-        // Collect words backwards for this island
-        words.push(node.word.to_string());
-        
-        let mut parent_idx = node.parent_idx;
-        while let Some(idx) = parent_idx {
-            current_step -= 1;
-            let parent_node = &history[current_step][idx];
-            if !parent_node.word.is_empty() {
-                 words.push(parent_node.word.to_string());
+        let mut cursor = Some(node_idx);
+        while let Some(idx) = cursor {
+            let current = &nodes[idx];
+            if let Some(word) = &current.word {
+                words.push(word.clone());
             }
-            parent_idx = parent_node.parent_idx;
+            cursor = current.parent_idx;
         }
-        
         words.reverse();
-        
-        // Combine with history from origin
+
         let mut new_history = incoming_states[node.origin_idx].history.clone();
         new_history.push(words);
-        
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
             history: new_history,
         });
     }
-    
+
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
     results
 }
 
@@ -496,7 +496,7 @@ fn perform_inference(
             // V7 Code Island
             // eprintln!("Decoding V7 island: {}", segment);
             let templates = parse_v7_string(segment, tokenizer)?;
-            current_states = beam_search_v7_island(&templates, tokenizer, model, beam_width, &current_states);
+            current_states = lattice_viterbi_v7_island(&templates, tokenizer, model, &current_states);
         }
     }
     
