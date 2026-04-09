@@ -390,7 +390,7 @@ fn lattice_viterbi_v7_island(
 
         current_layer = best_for_state
             .into_values()
-            .flat_map(|indices| indices.into_iter())
+            .flatten()
             .collect();
         if current_layer.is_empty() {
             break;
@@ -474,7 +474,7 @@ fn perform_inference(
         state: model.begin_sentence_state(),
         history: Vec::new(),
     }];
-    let per_state_width = beam_width.max(1);
+    let hypotheses_per_state = beam_width.max(1);
     
     for (i, segment) in islands.iter().enumerate() {
         if i % 2 == 0 {
@@ -514,7 +514,7 @@ fn perform_inference(
                 tokenizer,
                 model,
                 &current_states,
-                per_state_width,
+                hypotheses_per_state,
             );
         }
     }
@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn can_replace_older_lower_ranked_entries() {
+    fn truncates_to_highest_scoring_entries_after_append() {
         let scores = vec![10.0, 8.0, 9.5];
         let mut indices = vec![0, 1];
         truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
