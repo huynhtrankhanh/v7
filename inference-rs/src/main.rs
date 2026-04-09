@@ -477,10 +477,10 @@ struct IslandState {
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct LatticeNode {
+struct LatticeNode<'a> {
     score: f32,
     state: kenlm::State,
-    word: Option<String>,
+    word: Option<&'a str>,
     parent_idx: Option<usize>,
     origin_idx: usize,
 }
@@ -570,7 +570,7 @@ fn lattice_viterbi_v7_island(
     const UNKNOWN_TOKEN: &str = "<?>";
     const UNKNOWN_PENALTY: f32 = -10.0;
 
-    let mut nodes: Vec<LatticeNode> = Vec::new();
+    let mut nodes: Vec<LatticeNode<'_>> = Vec::new();
     let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
     for (origin_idx, state) in incoming_states.iter().enumerate() {
         nodes.push(LatticeNode {
@@ -647,7 +647,7 @@ fn lattice_viterbi_v7_island(
                 nodes.push(LatticeNode {
                     score: total_score,
                     state: new_state,
-                    word: Some(word_str.to_string()),
+                    word: Some(word_str),
                     parent_idx: Some(parent_idx),
                     origin_idx: parent_origin_idx,
                 });
@@ -667,7 +667,7 @@ fn lattice_viterbi_v7_island(
                     nodes.push(LatticeNode {
                         score: total_score,
                         state: next_state,
-                        word: Some((*word_str).to_string()),
+                        word: Some(*word_str),
                         parent_idx: Some(parent_idx),
                         origin_idx: parent_origin_idx,
                     });
@@ -696,7 +696,7 @@ fn lattice_viterbi_v7_island(
         while let Some(idx) = cursor {
             let current = &nodes[idx];
             if let Some(word) = &current.word {
-                words.push(word.clone());
+                words.push((*word).to_string());
             }
             cursor = current.parent_idx;
         }
