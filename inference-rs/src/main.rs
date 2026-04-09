@@ -1,35 +1,35 @@
 #![allow(dead_code)]
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use anyhow::Result;
-use unicode_normalization::UnicodeNormalization;
-use clap::Parser;
-use regex::Regex;
 use axum::{
-    extract::{State, Json},
-    extract::ws::{WebSocketUpgrade, WebSocket, Message},
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{Json, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Router,
 };
+use clap::Parser;
 use futures_util::StreamExt;
-use tower_http::services::{ServeDir, ServeFile};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tower_http::services::{ServeDir, ServeFile};
+use unicode_normalization::UnicodeNormalization;
 
 #[cfg(not(feature = "mocked-model"))]
 mod kenlm;
-mod regex_enum;
 mod plover;
+mod regex_enum;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
     /// The V7 string to infer. If not provided and not in server mode, uses a default test string.
     v7_string: Option<String>,
-    
+
     #[arg(long, default_value = "lm.binary")]
     model_path: String,
 
@@ -47,7 +47,6 @@ struct Args {
 
     #[arg(long, default_value = "4020")]
     stripped_plover_port: u16,
-
 }
 
 struct Tokenizer {
@@ -71,30 +70,175 @@ fn structured_onset<'a>(c: &'a str, v: &str) -> &'a str {
 fn generate_structured_regex_map() -> HashMap<String, String> {
     let mut map = HashMap::new();
     let structured_consonants = [
-        "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh", "p", "ph", "r",
-        "s", "t", "th", "tr", "v", "w", "x", "z", "đ",
+        "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh", "p", "ph", "r", "s",
+        "t", "th", "tr", "v", "w", "x", "z", "đ",
     ];
-    let structured_hard_consonants: HashSet<&str> =
-        HashSet::from(["b", "ch", "d", "g", "kh", "ng", "p", "ph", "r", "tr", "x", "đ"]);
+    let structured_hard_consonants: HashSet<&str> = HashSet::from([
+        "b", "ch", "d", "g", "kh", "ng", "p", "ph", "r", "tr", "x", "đ",
+    ]);
 
-    let a = ["(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:[ấắ][cpt]|á(?:ch?|[pt]))","(?:[ậặ][cpt]|ạ(?:ch?|[pt]))"];
-    let e = ["(?:e(?:(?:ng?|[mo]))?|ê(?:(?:nh?|[mu]))?)","(?:é(?:(?:ng?|[mo]))?|ế(?:(?:nh?|[mu]))?)","(?:è(?:(?:ng?|[mo]))?|ề(?:(?:nh?|[mu]))?)","(?:ẻ(?:(?:ng?|[mo]))?|ể(?:(?:nh?|[mu]))?)","(?:ẽ(?:(?:ng?|[mo]))?|ễ(?:(?:nh?|[mu]))?)","(?:ẹ(?:(?:ng?|[mo]))?|ệ(?:(?:nh?|[mu]))?)","(?:é[cpt]|ế(?:ch|[pt]))","(?:ẹ[cpt]|ệ(?:ch|[pt]))"];
+    let a = [
+        "(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:[ấắ][cpt]|á(?:ch?|[pt]))",
+        "(?:[ậặ][cpt]|ạ(?:ch?|[pt]))",
+    ];
+    let e = [
+        "(?:e(?:(?:ng?|[mo]))?|ê(?:(?:nh?|[mu]))?)",
+        "(?:é(?:(?:ng?|[mo]))?|ế(?:(?:nh?|[mu]))?)",
+        "(?:è(?:(?:ng?|[mo]))?|ề(?:(?:nh?|[mu]))?)",
+        "(?:ẻ(?:(?:ng?|[mo]))?|ể(?:(?:nh?|[mu]))?)",
+        "(?:ẽ(?:(?:ng?|[mo]))?|ễ(?:(?:nh?|[mu]))?)",
+        "(?:ẹ(?:(?:ng?|[mo]))?|ệ(?:(?:nh?|[mu]))?)",
+        "(?:é[cpt]|ế(?:ch|[pt]))",
+        "(?:ẹ[cpt]|ệ(?:ch|[pt]))",
+    ];
     let o = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]|ă(?:m|ng?)|e(?:[no])?|a(?:(?:[imouy]|n(?:[gh])?))?))?)","(?:ớ(?:[imn])?|ố(?:(?:ng?|[im]))?|ó(?:(?:ng?|[aeim]))?|o(?:óng|é[no]|ắ(?:m|ng?)|á(?:[imouy]|n(?:[gh])?)))","(?:ờ(?:[imn])?|ồ(?:(?:ng?|[im]))?|ò(?:(?:ng?|[aeim]))?|o(?:òng|è[no]|ằ(?:m|ng?)|à(?:[imouy]|n(?:[gh])?)))","(?:ở(?:[imn])?|ổ(?:(?:ng?|[im]))?|ỏ(?:(?:ng?|[aeim]))?|o(?:ỏng|ẻ[no]|ẳ(?:m|ng?)|ả(?:[imouy]|n(?:[gh])?)))","(?:ỡ(?:[imn])?|ỗ(?:(?:ng?|[im]))?|õ(?:(?:ng?|[aeim]))?|o(?:õng|ẽ[no]|ẵ(?:m|ng?)|ã(?:[imouy]|n(?:[gh])?)))","(?:ợ(?:[imn])?|ộ(?:(?:ng?|[im]))?|ọ(?:(?:ng?|[aeim]))?|o(?:ọng|ẹ[no]|ặ(?:m|ng?)|ạ(?:[imouy]|n(?:[gh])?)))","(?:ớ[pt]|[óố][cpt]|o(?:ét|óc|ắ[cpt]|á(?:ch?|[pt])))","(?:ợ[pt]|[ọộ][cpt]|o(?:ẹt|ọc|ặ[cpt]|ạ(?:ch?|[pt])))"];
     let u = ["(?:ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?|u(?:(?:ng?|[aim]|ê(?:nh?)?|â(?:y|ng?)|ơ(?:[in])?|ô(?:ng?|[im])|y(?:(?:ên|nh?|[amu]))?))?)","(?:ướ(?:ng?|[imu])|ú(?:(?:ng?|[aimy]))?|ứ(?:(?:ng?|[aimu]))?|u(?:yến|ế(?:nh?)?|ấ(?:y|ng?)|ớ(?:[in])?|ố(?:ng?|[im])|ý(?:nh?|[amu])))","(?:ườ(?:ng?|[imu])|ù(?:(?:ng?|[aimy]))?|ừ(?:(?:ng?|[aimu]))?|u(?:yền|ề(?:nh?)?|ầ(?:y|ng?)|ờ(?:[in])?|ồ(?:ng?|[im])|ỳ(?:nh?|[amu])))","(?:ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aimy]))?|ử(?:(?:ng?|[aimu]))?|u(?:yển|ể(?:nh?)?|ẩ(?:y|ng?)|ở(?:[in])?|ổ(?:ng?|[im])|ỷ(?:nh?|[amu])))","(?:ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aimy]))?|ữ(?:(?:ng?|[aimu]))?|u(?:yễn|ễ(?:nh?)?|ẫ(?:y|ng?)|ỡ(?:[in])?|ỗ(?:ng?|[im])|ỹ(?:nh?|[amu])))","(?:ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aimy]))?|ự(?:(?:ng?|[aimu]))?|u(?:yện|ệ(?:nh?)?|ậ(?:y|ng?)|ợ(?:[in])?|ộ(?:ng?|[im])|ỵ(?:nh?|[amu])))","(?:ướ[cpt]|[úứ][cpt]|u(?:ớt|yết|ấ[ct]|ố[cpt]|ế(?:t|ch)|ý(?:ch|[pt])))","(?:ượ[cpt]|[ụự][cpt]|u(?:ợt|yệt|ậ[ct]|ộ[cpt]|ệ(?:t|ch)|ỵ(?:ch|[pt])))"];
-    let iz = ["(?:i(?:(?:nh?|[amu]))?|y(?:ê(?:ng?|[mu]))?)","(?:ý|yế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:ỳ|yề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:ỷ|yể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:ỹ|yễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:ỵ|yệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:yế[cpt]|í(?:ch|[pt]))","(?:yệ[cpt]|ị(?:ch|[pt]))"];
-    let is = ["(?:y|i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?)","(?:ý|iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:ỳ|iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:ỷ|iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:ỹ|iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:ỵ|iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:iế[cpt]|í(?:ch|[pt]))","(?:iệ[cpt]|ị(?:ch|[pt]))"];
-    let ih = ["i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?","(?:iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:iế[cpt]|í(?:ch|[pt]))","(?:iệ[cpt]|ị(?:ch|[pt]))"];
-    let wa = ["(?:ă(?:m|ng?)|â(?:y|ng?)|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:y|ng?)|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:y|ng?)|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:y|ng?)|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:y|ng?)|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:y|ng?)|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:ấ[ct]|ắ[cpt]|á(?:ch?|[pt]))","(?:ậ[ct]|ặ[cpt]|ạ(?:ch?|[pt]))"];
-    let we = ["(?:ê(?:nh?)?|e(?:[no])?)","(?:ế(?:nh?)?|é(?:[no])?)","(?:ề(?:nh?)?|è(?:[no])?)","(?:ể(?:nh?)?|ẻ(?:[no])?)","(?:ễ(?:nh?)?|ẽ(?:[no])?)","(?:ệ(?:nh?)?|ẹ(?:[no])?)","(?:ét|ế(?:t|ch))","(?:ẹt|ệ(?:t|ch))"];
-    let wi = ["y(?:(?:ên|nh?|[amu]))?","(?:yến|ý(?:(?:nh?|[amu]))?)","(?:yền|ỳ(?:(?:nh?|[amu]))?)","(?:yển|ỷ(?:(?:nh?|[amu]))?)","(?:yễn|ỹ(?:(?:nh?|[amu]))?)","(?:yện|ỵ(?:(?:nh?|[amu]))?)","(?:yết|ý(?:ch|[pt]))","(?:yệt|ỵ(?:ch|[pt]))"];
-    let wo = ["(?:ông|ơ(?:[in])?)","(?:ống|ớ(?:[in])?)","(?:ồng|ờ(?:[in])?)","(?:ổng|ở(?:[in])?)","(?:ỗng|ỡ(?:[in])?)","(?:ộng|ợ(?:[in])?)","(?:ốc|ớt)","(?:ộc|ợt)"];
-    let ko = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)","(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)","(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)","(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)","(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)","(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)","(?:oóc|ớ[pt]|[óố][cpt])","(?:oọc|ợ[pt]|[ọộ][cpt])"];
-    let ku = ["(?:u(?:(?:ng?|[aim]|ô(?:ng?|[im])))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)","(?:uố(?:ng?|[im])|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)","(?:uồ(?:ng?|[im])|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)","(?:uổ(?:ng?|[im])|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)","(?:uỗ(?:ng?|[im])|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)","(?:uộ(?:ng?|[im])|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)","(?:uố[cpt]|ướ[cpt]|[úứ][cpt])","(?:uộ[cpt]|ượ[cpt]|[ụự][cpt])"];
-    let za = ["(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:[ấắ][cpt]|á(?:ch?|[pt]))","(?:[ậặ][cpt]|ạ(?:ch?|[pt]))"];
-    let ze = ["e(?:(?:ng?|[mo]))?","é(?:(?:ng?|[mo]))?","è(?:(?:ng?|[mo]))?","ẻ(?:(?:ng?|[mo]))?","ẽ(?:(?:ng?|[mo]))?","ẹ(?:(?:ng?|[mo]))?","é[cpt]","ẹ[cpt]"];
-    let zo = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)","(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)","(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)","(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)","(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)","(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)","(?:oóc|ớ[pt]|[óố][cpt])","(?:oọc|ợ[pt]|[ọộ][cpt])"];
-    let zu = ["(?:u(?:(?:ng?|[aim]|ô(?:i|ng)))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)","(?:uố(?:i|ng)|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)","(?:uồ(?:i|ng)|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)","(?:uổ(?:i|ng)|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)","(?:uỗ(?:i|ng)|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)","(?:uộ(?:i|ng)|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)","(?:uốc|ướ[cpt]|[úứ][cpt])","(?:uộc|ượ[cpt]|[ụự][cpt])"];
-    let zi = ["g(?:i(?:[mn])?|iê(?:[mnu]|ng|nh)?)","g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)","g(?:ì(?:[mn])?|iề(?:[mnu]|ng|nh)?)","g(?:ỉ(?:[mn])?|iể(?:[mnu]|ng|nh)?)","g(?:ĩ(?:[mn])?|iễ(?:[mnu]|ng|nh)?)","g(?:ị(?:[mn])?|iệ(?:[mnu]|ng|nh)?)","g(?:í[pt]|iế(?:[cpt]|ch))","g(?:ị[pt]|iệ(?:[cpt]|ch))"];
+    let iz = [
+        "(?:i(?:(?:nh?|[amu]))?|y(?:ê(?:ng?|[mu]))?)",
+        "(?:ý|yế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+        "(?:ỳ|yề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+        "(?:ỷ|yể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+        "(?:ỹ|yễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+        "(?:ỵ|yệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+        "(?:yế[cpt]|í(?:ch|[pt]))",
+        "(?:yệ[cpt]|ị(?:ch|[pt]))",
+    ];
+    let is = [
+        "(?:y|i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?)",
+        "(?:ý|iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+        "(?:ỳ|iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+        "(?:ỷ|iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+        "(?:ỹ|iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+        "(?:ỵ|iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+        "(?:iế[cpt]|í(?:ch|[pt]))",
+        "(?:iệ[cpt]|ị(?:ch|[pt]))",
+    ];
+    let ih = [
+        "i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?",
+        "(?:iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+        "(?:iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+        "(?:iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+        "(?:iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+        "(?:iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+        "(?:iế[cpt]|í(?:ch|[pt]))",
+        "(?:iệ[cpt]|ị(?:ch|[pt]))",
+    ];
+    let wa = [
+        "(?:ă(?:m|ng?)|â(?:y|ng?)|a(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ắ(?:m|ng?)|ấ(?:y|ng?)|á(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ằ(?:m|ng?)|ầ(?:y|ng?)|à(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẳ(?:m|ng?)|ẩ(?:y|ng?)|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẵ(?:m|ng?)|ẫ(?:y|ng?)|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ặ(?:m|ng?)|ậ(?:y|ng?)|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ấ[ct]|ắ[cpt]|á(?:ch?|[pt]))",
+        "(?:ậ[ct]|ặ[cpt]|ạ(?:ch?|[pt]))",
+    ];
+    let we = [
+        "(?:ê(?:nh?)?|e(?:[no])?)",
+        "(?:ế(?:nh?)?|é(?:[no])?)",
+        "(?:ề(?:nh?)?|è(?:[no])?)",
+        "(?:ể(?:nh?)?|ẻ(?:[no])?)",
+        "(?:ễ(?:nh?)?|ẽ(?:[no])?)",
+        "(?:ệ(?:nh?)?|ẹ(?:[no])?)",
+        "(?:ét|ế(?:t|ch))",
+        "(?:ẹt|ệ(?:t|ch))",
+    ];
+    let wi = [
+        "y(?:(?:ên|nh?|[amu]))?",
+        "(?:yến|ý(?:(?:nh?|[amu]))?)",
+        "(?:yền|ỳ(?:(?:nh?|[amu]))?)",
+        "(?:yển|ỷ(?:(?:nh?|[amu]))?)",
+        "(?:yễn|ỹ(?:(?:nh?|[amu]))?)",
+        "(?:yện|ỵ(?:(?:nh?|[amu]))?)",
+        "(?:yết|ý(?:ch|[pt]))",
+        "(?:yệt|ỵ(?:ch|[pt]))",
+    ];
+    let wo = [
+        "(?:ông|ơ(?:[in])?)",
+        "(?:ống|ớ(?:[in])?)",
+        "(?:ồng|ờ(?:[in])?)",
+        "(?:ổng|ở(?:[in])?)",
+        "(?:ỗng|ỡ(?:[in])?)",
+        "(?:ộng|ợ(?:[in])?)",
+        "(?:ốc|ớt)",
+        "(?:ộc|ợt)",
+    ];
+    let ko = [
+        "(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)",
+        "(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)",
+        "(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)",
+        "(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)",
+        "(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)",
+        "(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)",
+        "(?:oóc|ớ[pt]|[óố][cpt])",
+        "(?:oọc|ợ[pt]|[ọộ][cpt])",
+    ];
+    let ku = [
+        "(?:u(?:(?:ng?|[aim]|ô(?:ng?|[im])))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)",
+        "(?:uố(?:ng?|[im])|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)",
+        "(?:uồ(?:ng?|[im])|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)",
+        "(?:uổ(?:ng?|[im])|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)",
+        "(?:uỗ(?:ng?|[im])|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)",
+        "(?:uộ(?:ng?|[im])|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)",
+        "(?:uố[cpt]|ướ[cpt]|[úứ][cpt])",
+        "(?:uộ[cpt]|ượ[cpt]|[ụự][cpt])",
+    ];
+    let za = [
+        "(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+        "(?:[ấắ][cpt]|á(?:ch?|[pt]))",
+        "(?:[ậặ][cpt]|ạ(?:ch?|[pt]))",
+    ];
+    let ze = [
+        "e(?:(?:ng?|[mo]))?",
+        "é(?:(?:ng?|[mo]))?",
+        "è(?:(?:ng?|[mo]))?",
+        "ẻ(?:(?:ng?|[mo]))?",
+        "ẽ(?:(?:ng?|[mo]))?",
+        "ẹ(?:(?:ng?|[mo]))?",
+        "é[cpt]",
+        "ẹ[cpt]",
+    ];
+    let zo = [
+        "(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)",
+        "(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)",
+        "(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)",
+        "(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)",
+        "(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)",
+        "(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)",
+        "(?:oóc|ớ[pt]|[óố][cpt])",
+        "(?:oọc|ợ[pt]|[ọộ][cpt])",
+    ];
+    let zu = [
+        "(?:u(?:(?:ng?|[aim]|ô(?:i|ng)))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)",
+        "(?:uố(?:i|ng)|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)",
+        "(?:uồ(?:i|ng)|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)",
+        "(?:uổ(?:i|ng)|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)",
+        "(?:uỗ(?:i|ng)|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)",
+        "(?:uộ(?:i|ng)|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)",
+        "(?:uốc|ướ[cpt]|[úứ][cpt])",
+        "(?:uộc|ượ[cpt]|[ụự][cpt])",
+    ];
+    let zi = [
+        "g(?:i(?:[mn])?|iê(?:[mnu]|ng|nh)?)",
+        "g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)",
+        "g(?:ì(?:[mn])?|iề(?:[mnu]|ng|nh)?)",
+        "g(?:ỉ(?:[mn])?|iể(?:[mnu]|ng|nh)?)",
+        "g(?:ĩ(?:[mn])?|iễ(?:[mnu]|ng|nh)?)",
+        "g(?:ị(?:[mn])?|iệ(?:[mnu]|ng|nh)?)",
+        "g(?:í[pt]|iế(?:[cpt]|ch))",
+        "g(?:ị[pt]|iệ(?:[cpt]|ch))",
+    ];
 
     for c in structured_consonants {
         for v in ["a", "e", "i", "o", "u"] {
@@ -175,14 +319,14 @@ impl Tokenizer {
                 let c = parts[0].to_string();
                 valid_consonants_map.insert(c.clone(), c.clone());
             }
-            
+
             let candidates = regex_enum::enumerate(&regex);
             candidates_index.insert(key, candidates);
         }
 
         valid_consonants_map.insert("dd".to_string(), "đ".to_string());
         if valid_consonants_map.contains_key("0") {
-             valid_consonants_map.insert("0".to_string(), "0".to_string());
+            valid_consonants_map.insert("0".to_string(), "0".to_string());
         }
 
         let mut sorted_consonant_keys: Vec<String> = valid_consonants_map.keys().cloned().collect();
@@ -206,9 +350,13 @@ fn remove_diacritics(text: &str) -> String {
         .chars()
         .filter(|c| !is_combining_mark(*c))
         .collect();
-        
+
     let result: String = without_marks.nfc().collect();
-    result.replace('đ', "d").replace('Đ', "D").replace('y', "i").replace('Y', "I")
+    result
+        .replace('đ', "d")
+        .replace('Đ', "D")
+        .replace('y', "i")
+        .replace('Y', "I")
 }
 
 fn purify(text: &str) -> Vec<String> {
@@ -249,17 +397,27 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
             if tokenizer.valid_consonants_map.contains_key("") {
                 "".to_string()
             } else {
-                 return Err(anyhow::anyhow!("Could not parse consonant at: {}", current_slice));
+                return Err(anyhow::anyhow!(
+                    "Could not parse consonant at: {}",
+                    current_slice
+                ));
             }
         };
 
         let mut chars_iter = current_slice.chars();
-        let rime_start = chars_iter.next().ok_or_else(|| anyhow::anyhow!("Unexpected end looking for rime start"))?;
+        let rime_start = chars_iter
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Unexpected end looking for rime start"))?;
         current_slice = chars_iter.as_str();
 
         let mut chars_iter = current_slice.chars();
-        let tone_char = chars_iter.next().ok_or_else(|| anyhow::anyhow!("Unexpected end looking for tone"))?;
-        let tone = tone_char.to_digit(10).ok_or_else(|| anyhow::anyhow!("Expected digit for tone, got {}", tone_char))? as i32;
+        let tone_char = chars_iter
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("Unexpected end looking for tone"))?;
+        let tone = tone_char
+            .to_digit(10)
+            .ok_or_else(|| anyhow::anyhow!("Expected digit for tone, got {}", tone_char))?
+            as i32;
         current_slice = chars_iter.as_str();
 
         templates.push(PartialSyllableTemplate {
@@ -294,11 +452,32 @@ struct LatticeNode {
 const KENLM_STATE_KEY_SIZE: usize = 128;
 #[cfg(not(feature = "mocked-model"))]
 const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
+const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
 
-fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
+fn get_candidates<'a>(
+    template: &PartialSyllableTemplate,
+    tokenizer: &'a Tokenizer,
+) -> Option<&'a Vec<String>> {
     let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
-    let key = format!("{}_{}_{}", template.consonant, norm_rime_start, template.tone);
+    let key = format!(
+        "{}_{}_{}",
+        template.consonant, norm_rime_start, template.tone
+    );
     tokenizer.candidates_index.get(&key)
+}
+
+fn is_v7_segment(segment: &str, tokenizer: &Tokenizer) -> bool {
+    !segment.is_empty() && parse_v7_string(segment, tokenizer).is_ok()
+}
+
+fn uses_strict_alternating_island_mode(islands: &[String], tokenizer: &Tokenizer) -> bool {
+    islands.iter().enumerate().all(|(i, segment)| {
+        if i % 2 == 0 {
+            !is_v7_segment(segment, tokenizer)
+        } else {
+            is_v7_segment(segment, tokenizer)
+        }
+    })
 }
 
 fn truncate_top_indices_by_score<F>(indices: &mut Vec<usize>, limit: usize, mut score_of: F)
@@ -323,6 +502,9 @@ fn lattice_viterbi_v7_island(
     incoming_states: &[IslandState],
     per_state_width: usize,
 ) -> Vec<IslandState> {
+    const UNKNOWN_TOKEN: &str = "<?>";
+    const UNKNOWN_PENALTY: f32 = -10.0;
+
     let mut nodes: Vec<LatticeNode> = Vec::new();
     let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
     for (origin_idx, state) in incoming_states.iter().enumerate() {
@@ -338,20 +520,35 @@ fn lattice_viterbi_v7_island(
 
     for template in templates {
         let candidates_opt = get_candidates(template, tokenizer);
-        let mut candidate_data: Vec<(String, u32, f32)> = Vec::new();
+        let mut candidate_words = [UNKNOWN_TOKEN; MAX_CANDIDATES_PER_SYLLABLE];
+        let mut candidate_indices = [0u32; MAX_CANDIDATES_PER_SYLLABLE];
+        let mut candidate_penalties = [UNKNOWN_PENALTY; MAX_CANDIDATES_PER_SYLLABLE];
+        let mut candidate_count = 0usize;
+        let mut overflow_candidates: Option<Vec<(&str, u32)>> = None;
 
         if let Some(list) = candidates_opt {
             if list.is_empty() {
-                candidate_data.push(("<?>".to_string(), 0, -10.0));
+                candidate_count = 1;
             } else {
-                candidate_data.reserve(list.len());
-                for w in list {
-                    let idx = model.lookup(w);
-                    candidate_data.push((w.clone(), idx, 0.0));
+                let inlined = list.len().min(MAX_CANDIDATES_PER_SYLLABLE);
+                for i in 0..inlined {
+                    let word = list[i].as_str();
+                    candidate_words[i] = word;
+                    candidate_indices[i] = model.lookup(word);
+                    candidate_penalties[i] = 0.0;
+                }
+                candidate_count = inlined;
+
+                if list.len() > MAX_CANDIDATES_PER_SYLLABLE {
+                    let mut overflow = Vec::with_capacity(list.len() - MAX_CANDIDATES_PER_SYLLABLE);
+                    for word in &list[MAX_CANDIDATES_PER_SYLLABLE..] {
+                        overflow.push((word.as_str(), model.lookup(word)));
+                    }
+                    overflow_candidates = Some(overflow);
                 }
             }
         } else {
-            candidate_data.push(("<?>".to_string(), 0, -10.0));
+            candidate_count = 1;
         }
 
         let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
@@ -359,14 +556,22 @@ fn lattice_viterbi_v7_island(
         for &parent_idx in &current_layer {
             let (parent_score, parent_state, parent_origin_idx) = {
                 let parent_node = &nodes[parent_idx];
-                (parent_node.score, parent_node.state.clone(), parent_node.origin_idx)
+                (
+                    parent_node.score,
+                    parent_node.state.clone(),
+                    parent_node.origin_idx,
+                )
             };
 
-            for (word_str, word_idx, penalty) in &candidate_data {
-                let (total_score, new_state) = if *penalty < -1.0 && word_str == "<?>" {
+            for i in 0..candidate_count {
+                let word_str = candidate_words[i];
+                let word_idx = candidate_indices[i];
+                let penalty = candidate_penalties[i];
+
+                let (total_score, new_state) = if penalty < -1.0 && word_str == UNKNOWN_TOKEN {
                     (parent_score + penalty, parent_state.clone())
                 } else {
-                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
+                    let (lm_score, next_state) = model.score_index(&parent_state, word_idx);
                     (parent_score + lm_score + penalty, next_state)
                 };
 
@@ -377,21 +582,41 @@ fn lattice_viterbi_v7_island(
                 nodes.push(LatticeNode {
                     score: total_score,
                     state: new_state,
-                    word: Some(word_str.clone()),
+                    word: Some(word_str.to_string()),
                     parent_idx: Some(parent_idx),
                     origin_idx: parent_origin_idx,
                 });
                 let new_idx = nodes.len() - 1;
-                let entry = best_for_state.entry(state_key).or_default();
+                let entry = best_for_state
+                    .entry(state_key)
+                    .or_insert_with(|| Vec::with_capacity(per_state_width));
                 entry.push(new_idx);
                 truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
             }
+
+            if let Some(overflow) = &overflow_candidates {
+                for (word_str, word_idx) in overflow {
+                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
+                    let total_score = parent_score + lm_score;
+                    let state_key = next_state.data;
+                    nodes.push(LatticeNode {
+                        score: total_score,
+                        state: next_state,
+                        word: Some((*word_str).to_string()),
+                        parent_idx: Some(parent_idx),
+                        origin_idx: parent_origin_idx,
+                    });
+                    let new_idx = nodes.len() - 1;
+                    let entry = best_for_state
+                        .entry(state_key)
+                        .or_insert_with(|| Vec::with_capacity(per_state_width));
+                    entry.push(new_idx);
+                    truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
+                }
+            }
         }
 
-        current_layer = best_for_state
-            .into_values()
-            .flatten()
-            .collect();
+        current_layer = best_for_state.into_values().flatten().collect();
         if current_layer.is_empty() {
             break;
         }
@@ -425,14 +650,18 @@ fn lattice_viterbi_v7_island(
     results
 }
 
-fn perform_mock_inference(
-    islands: &[String],
-    tokenizer: &Tokenizer,
-) -> Result<Vec<Vec<String>>> {
+fn perform_mock_inference(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<Vec<String>>> {
     let mut decoded_islands = Vec::new();
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
     for (i, segment) in islands.iter().enumerate() {
-        if i % 2 == 0 {
+        let should_decode_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(segment, tokenizer)
+        };
+
+        if !should_decode_v7 {
             // Fixed text
             decoded_islands.push(segment.clone());
         } else {
@@ -443,14 +672,14 @@ fn perform_mock_inference(
                 let candidates_opt = get_candidates(&template, tokenizer);
                 if let Some(list) = candidates_opt {
                     if let Some(first) = list.first() {
-                         words.push(first.clone());
+                        words.push(first.clone());
                     } else {
-                         // Fallback if list is empty
-                         words.push(segment.clone());
+                        // Fallback if list is empty
+                        words.push(segment.clone());
                     }
                 } else {
-                     // Fallback if no candidates found
-                     words.push(segment.clone());
+                    // Fallback if no candidates found
+                    words.push(segment.clone());
                 }
             }
             decoded_islands.push(words.join(" "));
@@ -475,9 +704,16 @@ fn perform_inference(
         history: Vec::new(),
     }];
     let hypotheses_per_state = beam_width.max(1);
-    
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
+
     for (i, segment) in islands.iter().enumerate() {
-        if i % 2 == 0 {
+        let should_decode_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(segment, tokenizer)
+        };
+
+        if !should_decode_v7 {
             // === MODIFIED SECTION: Fixed Text Island ===
             if segment.is_empty() {
                 // Record empty history for alignment
@@ -498,9 +734,9 @@ fn perform_inference(
                     state.score += lm_score;
                     state.state = new_st;
                 }
-                
+
                 // Store ORIGINAL text in history
-                // We wrap it in a Vec to match the expected type, 
+                // We wrap it in a Vec to match the expected type,
                 // but this ensures the final output retains casing/punctuation.
                 state.history.push(vec![segment.clone()]);
             }
@@ -518,21 +754,28 @@ fn perform_inference(
             );
         }
     }
-    
+
     // Sort final results
     current_states.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-    
-    let candidates: Vec<Vec<String>> = current_states.into_iter().take(beam_width).map(|s| {
-        // Flatten the word lists for each island into strings
-        s.history.into_iter().map(|words| words.join(" ")).collect()
-    }).collect();
-    
+
+    let candidates: Vec<Vec<String>> = current_states
+        .into_iter()
+        .take(beam_width)
+        .map(|s| {
+            // Flatten the word lists for each island into strings
+            s.history.into_iter().map(|words| words.join(" ")).collect()
+        })
+        .collect();
+
     Ok(candidates)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::truncate_top_indices_by_score;
+    use super::{
+        is_v7_segment, truncate_top_indices_by_score, uses_strict_alternating_island_mode,
+        Tokenizer,
+    };
 
     #[test]
     fn keeps_best_indices_in_descending_score_order() {
@@ -552,6 +795,31 @@ mod tests {
         indices.push(2);
         truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
         assert_eq!(indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn detects_parseable_v7_segment() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        assert!(is_v7_segment("tro2", &tokenizer));
+        assert!(!is_v7_segment("hôm nay", &tokenizer));
+    }
+
+    #[test]
+    fn strict_alternating_mode_requires_v7_on_odd_indices() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        let strict = vec![
+            "hôm nay ".to_string(),
+            "tro2".to_string(),
+            " rất ".to_string(),
+            "dde7".to_string(),
+        ];
+        let non_strict = vec!["tro2".to_string(), "dde7".to_string()];
+
+        assert!(uses_strict_alternating_island_mode(&strict, &tokenizer));
+        assert!(!uses_strict_alternating_island_mode(
+            &non_strict,
+            &tokenizer
+        ));
     }
 }
 
@@ -618,9 +886,7 @@ async fn infer_handler(
     }
 }
 
-async fn plover_status_handler(
-    State(state): State<Arc<AppState>>,
-) -> Json<PloverStatusResponse> {
+async fn plover_status_handler(State(state): State<Arc<AppState>>) -> Json<PloverStatusResponse> {
     let Some(config) = state.plover.as_ref() else {
         return Json(PloverStatusResponse { available: false });
     };
@@ -657,7 +923,11 @@ async fn plover_ws_handler(
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let Some(config) = state.plover.clone() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "Stripped Plover is disabled").into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Stripped Plover is disabled",
+        )
+            .into_response();
     };
 
     ws.on_upgrade(|socket| handle_plover_socket(socket, config))
@@ -702,7 +972,11 @@ async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
         };
 
         let _ = socket
-            .send(Message::Text(serde_json::to_string(&response).unwrap_or_else(|_| "{\"ok\":false,\"error\":\"Response serialization failed\"}".to_string())))
+            .send(Message::Text(
+                serde_json::to_string(&response).unwrap_or_else(|_| {
+                    "{\"ok\":false,\"error\":\"Response serialization failed\"}".to_string()
+                }),
+            ))
             .await;
     }
 }
@@ -713,13 +987,12 @@ impl InferRequest {
     }
 }
 
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
     eprintln!("Loading tokenizer (from structured regex logic)...");
     let tokenizer = Tokenizer::new()?;
-    
+
     #[cfg(not(feature = "mocked-model"))]
     let model = {
         eprintln!("Loading model from {}...", args.model_path);
@@ -734,7 +1007,10 @@ async fn main() -> Result<()> {
             .ok()
             .and_then(|value| value.parse().ok())
             .unwrap_or(args.stripped_plover_port);
-        let plover = plover_host.map(|host| PloverConfig { host, port: plover_port });
+        let plover = plover_host.map(|host| PloverConfig {
+            host,
+            port: plover_port,
+        });
         let app_state = Arc::new(AppState {
             tokenizer,
             #[cfg(not(feature = "mocked-model"))]
@@ -757,17 +1033,18 @@ async fn main() -> Result<()> {
         eprintln!("Listening on {}", addr);
         let listener = tokio::net::TcpListener::bind(&addr).await?;
         axum::serve(listener, app).await?;
-
     } else {
         // Legacy CLI Mode
-        let input = args.v7_string.unwrap_or_else(|| "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7".to_string());
-        
+        let input = args
+            .v7_string
+            .unwrap_or_else(|| "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7".to_string());
+
         // Determine input mode
         let (is_islands_mode, islands) = match serde_json::from_str::<Vec<String>>(&input) {
             Ok(parsed) => {
                 eprintln!("Mode: Fixed Text Islands (JSON detected)");
                 (true, parsed)
-            },
+            }
             Err(_) => {
                 eprintln!("Mode: Single V7 String (Legacy)");
                 // Mimic island structure: Empty fixed text -> V7 string
@@ -791,13 +1068,13 @@ async fn main() -> Result<()> {
         if is_islands_mode {
             println!("{}", serde_json::to_string(&candidates)?);
         } else {
-             println!("Top results:");
-             for (i, parts) in candidates.iter().take(5).enumerate() {
-                 let full_text = parts.join(" ");
-                 // Note: perform_inference returns candidates[i] as a list of strings (one per island).
-                 // In legacy mode (["", "v7"]), parts[0] is "", parts[1] is the decoded text.
-                 println!("{}. {}", i + 1, full_text.trim());
-             }
+            println!("Top results:");
+            for (i, parts) in candidates.iter().take(5).enumerate() {
+                let full_text = parts.join(" ");
+                // Note: perform_inference returns candidates[i] as a list of strings (one per island).
+                // In legacy mode (["", "v7"]), parts[0] is "", parts[1] is the decoded text.
+                println!("{}. {}", i + 1, full_text.trim());
+            }
         }
         println!("\nInference time: {}ms", duration.as_millis());
     }
