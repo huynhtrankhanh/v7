@@ -392,12 +392,11 @@ fn purify(text: &str) -> Vec<String> {
 
 fn normalize_rime_start_char(c: char) -> char {
     let base = c.nfd().find(|ch| !is_combining_mark(*ch)).unwrap_or(c);
-    let normalized = match base {
+    match base {
         'đ' | 'Đ' => 'd',
         'y' | 'Y' => 'i',
-        _ => base,
-    };
-    normalized.to_lowercase().next().unwrap_or(normalized)
+        _ => base.to_lowercase().next().unwrap_or(base),
+    }
 }
 
 #[derive(Debug)]
@@ -547,13 +546,15 @@ fn push_history(
 
 #[cfg(not(feature = "mocked-model"))]
 fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usize>) -> Vec<String> {
-    let mut parts = Vec::new();
+    let mut index_chain = Vec::new();
     while let Some(idx) = tail_idx {
-        let node = &history_arena[idx];
-        parts.push(node.island_words.join(" "));
-        tail_idx = node.prev_idx;
+        index_chain.push(idx);
+        tail_idx = history_arena[idx].prev_idx;
     }
-    parts.reverse();
+    let mut parts = Vec::with_capacity(index_chain.len());
+    for idx in index_chain.into_iter().rev() {
+        parts.push(history_arena[idx].island_words.join(" "));
+    }
     parts
 }
 
