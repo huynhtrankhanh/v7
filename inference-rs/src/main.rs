@@ -14,7 +14,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tower_http::services::{ServeDir, ServeFile};
 use unicode_normalization::UnicodeNormalization;
@@ -52,7 +52,7 @@ struct Args {
 struct Tokenizer {
     valid_consonants_map: HashMap<String, String>,
     sorted_consonant_keys: Vec<String>,
-    candidates_index: HashMap<String, Vec<String>>,
+    candidates_index: HashMap<String, HashMap<char, HashMap<i32, Vec<String>>>>,
 }
 
 fn structured_onset<'a>(c: &'a str, v: &str) -> &'a str {
@@ -314,14 +314,34 @@ impl Tokenizer {
         let mut candidates_index = HashMap::new();
 
         for (key, regex) in regex_map {
-            let parts: Vec<&str> = key.split('_').collect();
-            if parts.len() >= 1 {
-                let c = parts[0].to_string();
-                valid_consonants_map.insert(c.clone(), c.clone());
-            }
+            let mut parts = key.split('_');
+            // `generate_structured_regex_map` emits keys in `consonant_rime_tone` format.
+            let Some(consonant_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_part) = parts.next() else {
+                continue;
+            };
+            let Some(tone_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_start) = rime_part.chars().next() else {
+                continue;
+            };
+            let Ok(tone) = tone_part.parse::<i32>() else {
+                continue;
+            };
+            let consonant = consonant_part.to_string();
+
+            valid_consonants_map.insert(consonant.clone(), consonant.clone());
 
             let candidates = regex_enum::enumerate(&regex);
-            candidates_index.insert(key, candidates);
+            candidates_index
+                .entry(consonant)
+                .or_insert_with(HashMap::new)
+                .entry(rime_start)
+                .or_insert_with(HashMap::new)
+                .insert(tone, candidates);
         }
 
         valid_consonants_map.insert("dd".to_string(), "đ".to_string());
@@ -360,13 +380,23 @@ fn remove_diacritics(text: &str) -> String {
 }
 
 fn purify(text: &str) -> Vec<String> {
+    static NON_LETTER_RE: OnceLock<Regex> = OnceLock::new();
+    let non_letter_re = NON_LETTER_RE.get_or_init(|| Regex::new(r"[^\p{L}\s]").unwrap());
     let lower = text.to_lowercase();
     // Keep only letters (\p{L}) and whitespace (\s).
     // Python logic: [^\w\s] -> space, and [\d_] -> space.
     // Effectively keeps only letters.
-    let re = Regex::new(r"[^\p{L}\s]").unwrap();
-    let cleaned = re.replace_all(&lower, " ");
+    let cleaned = non_letter_re.replace_all(&lower, " ");
     cleaned.split_whitespace().map(|s| s.to_string()).collect()
+}
+
+fn normalize_rime_start_char(c: char) -> char {
+    let base = c.nfd().find(|ch| !is_combining_mark(*ch)).unwrap_or(c);
+    match base {
+        'đ' | 'Đ' => 'd',
+        'y' | 'Y' => 'i',
+        _ => base.to_lowercase().next().unwrap_or(base),
+    }
 }
 
 #[derive(Debug)]
@@ -432,18 +462,25 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct IslandState {
-    score: f32,
-    state: kenlm::State,
-    history: Vec<Vec<String>>, // List of decoded texts for V7 islands encountered so far
+struct HistoryEntry {
+    prev_idx: Option<usize>,
+    island_words: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct LatticeNode {
+struct IslandState {
     score: f32,
     state: kenlm::State,
-    word: Option<String>,
+    history_tail_idx: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(not(feature = "mocked-model"))]
+struct LatticeNode<'a> {
+    score: f32,
+    state: kenlm::State,
+    word: Option<&'a str>,
     parent_idx: Option<usize>,
     origin_idx: usize,
 }
@@ -458,12 +495,12 @@ fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
     tokenizer: &'a Tokenizer,
 ) -> Option<&'a Vec<String>> {
-    let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
-    let key = format!(
-        "{}_{}_{}",
-        template.consonant, norm_rime_start, template.tone
-    );
-    tokenizer.candidates_index.get(&key)
+    let norm_rime_start = normalize_rime_start_char(template.rime_first_letter);
+    tokenizer
+        .candidates_index
+        .get(template.consonant.as_str())
+        .and_then(|by_rime| by_rime.get(&norm_rime_start))
+        .and_then(|by_tone| by_tone.get(&template.tone))
 }
 
 fn is_v7_segment(segment: &str, tokenizer: &Tokenizer) -> bool {
@@ -495,17 +532,45 @@ where
 }
 
 #[cfg(not(feature = "mocked-model"))]
+fn push_history(
+    history_arena: &mut Vec<HistoryEntry>,
+    prev_idx: Option<usize>,
+    island_words: Vec<String>,
+) -> Option<usize> {
+    history_arena.push(HistoryEntry {
+        prev_idx,
+        island_words,
+    });
+    Some(history_arena.len() - 1)
+}
+
+#[cfg(not(feature = "mocked-model"))]
+fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usize>) -> Vec<String> {
+    let mut index_chain = Vec::new();
+    while let Some(idx) = tail_idx {
+        index_chain.push(idx);
+        tail_idx = history_arena[idx].prev_idx;
+    }
+    let mut parts = Vec::with_capacity(index_chain.len());
+    for idx in index_chain.into_iter().rev() {
+        parts.push(history_arena[idx].island_words.join(" "));
+    }
+    parts
+}
+
+#[cfg(not(feature = "mocked-model"))]
 fn lattice_viterbi_v7_island(
     templates: &[PartialSyllableTemplate],
     tokenizer: &Tokenizer,
     model: &kenlm::Model,
     incoming_states: &[IslandState],
     per_state_width: usize,
+    history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
     const UNKNOWN_TOKEN: &str = "<?>";
     const UNKNOWN_PENALTY: f32 = -10.0;
 
-    let mut nodes: Vec<LatticeNode> = Vec::new();
+    let mut nodes: Vec<LatticeNode<'_>> = Vec::new();
     let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
     for (origin_idx, state) in incoming_states.iter().enumerate() {
         nodes.push(LatticeNode {
@@ -582,7 +647,7 @@ fn lattice_viterbi_v7_island(
                 nodes.push(LatticeNode {
                     score: total_score,
                     state: new_state,
-                    word: Some(word_str.to_string()),
+                    word: Some(word_str),
                     parent_idx: Some(parent_idx),
                     origin_idx: parent_origin_idx,
                 });
@@ -602,7 +667,7 @@ fn lattice_viterbi_v7_island(
                     nodes.push(LatticeNode {
                         score: total_score,
                         state: next_state,
-                        word: Some((*word_str).to_string()),
+                        word: Some(*word_str),
                         parent_idx: Some(parent_idx),
                         origin_idx: parent_origin_idx,
                     });
@@ -631,18 +696,21 @@ fn lattice_viterbi_v7_island(
         while let Some(idx) = cursor {
             let current = &nodes[idx];
             if let Some(word) = &current.word {
-                words.push(word.clone());
+                words.push((*word).to_string());
             }
             cursor = current.parent_idx;
         }
         words.reverse();
 
-        let mut new_history = incoming_states[node.origin_idx].history.clone();
-        new_history.push(words);
+        let new_history_tail_idx = push_history(
+            history_arena,
+            incoming_states[node.origin_idx].history_tail_idx,
+            words,
+        );
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
-            history: new_history,
+            history_tail_idx: new_history_tail_idx,
         });
     }
 
@@ -701,8 +769,9 @@ fn perform_inference(
     let mut current_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
-        history: Vec::new(),
+        history_tail_idx: None,
     }];
+    let mut history_arena: Vec<HistoryEntry> = Vec::new();
     let hypotheses_per_state = beam_width.max(1);
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
@@ -718,7 +787,8 @@ fn perform_inference(
             if segment.is_empty() {
                 // Record empty history for alignment
                 for state in &mut current_states {
-                    state.history.push(Vec::new());
+                    state.history_tail_idx =
+                        push_history(&mut history_arena, state.history_tail_idx, Vec::new());
                 }
                 continue;
             }
@@ -738,7 +808,11 @@ fn perform_inference(
                 // Store ORIGINAL text in history
                 // We wrap it in a Vec to match the expected type,
                 // but this ensures the final output retains casing/punctuation.
-                state.history.push(vec![segment.clone()]);
+                state.history_tail_idx = push_history(
+                    &mut history_arena,
+                    state.history_tail_idx,
+                    vec![segment.clone()],
+                );
             }
             // ===========================================
         } else {
@@ -751,6 +825,7 @@ fn perform_inference(
                 model,
                 &current_states,
                 hypotheses_per_state,
+                &mut history_arena,
             );
         }
     }
@@ -761,10 +836,7 @@ fn perform_inference(
     let candidates: Vec<Vec<String>> = current_states
         .into_iter()
         .take(beam_width)
-        .map(|s| {
-            // Flatten the word lists for each island into strings
-            s.history.into_iter().map(|words| words.join(" ")).collect()
-        })
+        .map(|s| materialize_history(&history_arena, s.history_tail_idx))
         .collect();
 
     Ok(candidates)
