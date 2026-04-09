@@ -294,6 +294,7 @@ struct LatticeNode {
 const KENLM_STATE_KEY_SIZE: usize = 128;
 #[cfg(not(feature = "mocked-model"))]
 const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
+const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
 
 fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokenizer) -> Option<&'a Vec<String>> {
     let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
@@ -323,6 +324,9 @@ fn lattice_viterbi_v7_island(
     incoming_states: &[IslandState],
     per_state_width: usize,
 ) -> Vec<IslandState> {
+    const UNKNOWN_TOKEN: &str = "<?>";
+    const UNKNOWN_PENALTY: f32 = -10.0;
+
     let mut nodes: Vec<LatticeNode> = Vec::new();
     let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
     for (origin_idx, state) in incoming_states.iter().enumerate() {
@@ -338,20 +342,23 @@ fn lattice_viterbi_v7_island(
 
     for template in templates {
         let candidates_opt = get_candidates(template, tokenizer);
-        let mut candidate_data: Vec<(String, u32, f32)> = Vec::new();
+        let mut candidate_data: Vec<(&str, u32, f32)> =
+            Vec::with_capacity(MAX_CANDIDATES_PER_SYLLABLE);
 
         if let Some(list) = candidates_opt {
             if list.is_empty() {
-                candidate_data.push(("<?>".to_string(), 0, -10.0));
+                candidate_data.push((UNKNOWN_TOKEN, 0, UNKNOWN_PENALTY));
             } else {
-                candidate_data.reserve(list.len());
+                if list.len() > MAX_CANDIDATES_PER_SYLLABLE {
+                    candidate_data.reserve(list.len() - MAX_CANDIDATES_PER_SYLLABLE);
+                }
                 for w in list {
                     let idx = model.lookup(w);
-                    candidate_data.push((w.clone(), idx, 0.0));
+                    candidate_data.push((w.as_str(), idx, 0.0));
                 }
             }
         } else {
-            candidate_data.push(("<?>".to_string(), 0, -10.0));
+            candidate_data.push((UNKNOWN_TOKEN, 0, UNKNOWN_PENALTY));
         }
 
         let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
@@ -363,7 +370,7 @@ fn lattice_viterbi_v7_island(
             };
 
             for (word_str, word_idx, penalty) in &candidate_data {
-                let (total_score, new_state) = if *penalty < -1.0 && word_str == "<?>" {
+                let (total_score, new_state) = if *penalty < -1.0 && *word_str == UNKNOWN_TOKEN {
                     (parent_score + penalty, parent_state.clone())
                 } else {
                     let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
@@ -377,12 +384,14 @@ fn lattice_viterbi_v7_island(
                 nodes.push(LatticeNode {
                     score: total_score,
                     state: new_state,
-                    word: Some(word_str.clone()),
+                    word: Some((*word_str).to_string()),
                     parent_idx: Some(parent_idx),
                     origin_idx: parent_origin_idx,
                 });
                 let new_idx = nodes.len() - 1;
-                let entry = best_for_state.entry(state_key).or_default();
+                let entry = best_for_state
+                    .entry(state_key)
+                    .or_insert_with(|| Vec::with_capacity(per_state_width));
                 entry.push(new_idx);
                 truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
             }
