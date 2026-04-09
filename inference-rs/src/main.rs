@@ -14,7 +14,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tower_http::services::{ServeDir, ServeFile};
 use unicode_normalization::UnicodeNormalization;
@@ -52,7 +52,7 @@ struct Args {
 struct Tokenizer {
     valid_consonants_map: HashMap<String, String>,
     sorted_consonant_keys: Vec<String>,
-    candidates_index: HashMap<String, Vec<String>>,
+    candidates_index: HashMap<String, HashMap<char, HashMap<i32, Vec<String>>>>,
 }
 
 fn structured_onset<'a>(c: &'a str, v: &str) -> &'a str {
@@ -314,14 +314,26 @@ impl Tokenizer {
         let mut candidates_index = HashMap::new();
 
         for (key, regex) in regex_map {
-            let parts: Vec<&str> = key.split('_').collect();
-            if parts.len() >= 1 {
-                let c = parts[0].to_string();
-                valid_consonants_map.insert(c.clone(), c.clone());
-            }
+            let mut parts = key.split('_');
+            let consonant = parts.next().unwrap_or_default().to_string();
+            let rime_start = parts
+                .next()
+                .and_then(|part| part.chars().next())
+                .unwrap_or_default();
+            let tone = parts
+                .next()
+                .and_then(|part| part.parse::<i32>().ok())
+                .unwrap_or_default();
+
+            valid_consonants_map.insert(consonant.clone(), consonant.clone());
 
             let candidates = regex_enum::enumerate(&regex);
-            candidates_index.insert(key, candidates);
+            candidates_index
+                .entry(consonant)
+                .or_insert_with(HashMap::new)
+                .entry(rime_start)
+                .or_insert_with(HashMap::new)
+                .insert(tone, candidates);
         }
 
         valid_consonants_map.insert("dd".to_string(), "đ".to_string());
@@ -360,13 +372,24 @@ fn remove_diacritics(text: &str) -> String {
 }
 
 fn purify(text: &str) -> Vec<String> {
+    static NON_LETTER_RE: OnceLock<Regex> = OnceLock::new();
+    let non_letter_re = NON_LETTER_RE.get_or_init(|| Regex::new(r"[^\p{L}\s]").unwrap());
     let lower = text.to_lowercase();
     // Keep only letters (\p{L}) and whitespace (\s).
     // Python logic: [^\w\s] -> space, and [\d_] -> space.
     // Effectively keeps only letters.
-    let re = Regex::new(r"[^\p{L}\s]").unwrap();
-    let cleaned = re.replace_all(&lower, " ");
+    let cleaned = non_letter_re.replace_all(&lower, " ");
     cleaned.split_whitespace().map(|s| s.to_string()).collect()
+}
+
+fn normalize_rime_start_char(c: char) -> char {
+    let base = c.nfd().find(|ch| !is_combining_mark(*ch)).unwrap_or(c);
+    let normalized = match base {
+        'đ' | 'Đ' => 'd',
+        'y' | 'Y' => 'i',
+        _ => base,
+    };
+    normalized.to_lowercase().next().unwrap_or(normalized)
 }
 
 #[derive(Debug)]
@@ -458,12 +481,12 @@ fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
     tokenizer: &'a Tokenizer,
 ) -> Option<&'a Vec<String>> {
-    let norm_rime_start = remove_diacritics(&template.rime_first_letter.to_string());
-    let key = format!(
-        "{}_{}_{}",
-        template.consonant, norm_rime_start, template.tone
-    );
-    tokenizer.candidates_index.get(&key)
+    let norm_rime_start = normalize_rime_start_char(template.rime_first_letter);
+    tokenizer
+        .candidates_index
+        .get(template.consonant.as_str())
+        .and_then(|by_rime| by_rime.get(&norm_rime_start))
+        .and_then(|by_tone| by_tone.get(&template.tone))
 }
 
 fn is_v7_segment(segment: &str, tokenizer: &Tokenizer) -> bool {
