@@ -315,15 +315,23 @@ impl Tokenizer {
 
         for (key, regex) in regex_map {
             let mut parts = key.split('_');
-            let consonant = parts.next().unwrap_or_default().to_string();
-            let rime_start = parts
-                .next()
-                .and_then(|part| part.chars().next())
-                .unwrap_or_default();
-            let tone = parts
-                .next()
-                .and_then(|part| part.parse::<i32>().ok())
-                .unwrap_or_default();
+            // `generate_structured_regex_map` emits keys in `consonant_rime_tone` format.
+            let Some(consonant_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_part) = parts.next() else {
+                continue;
+            };
+            let Some(tone_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_start) = rime_part.chars().next() else {
+                continue;
+            };
+            let Ok(tone) = tone_part.parse::<i32>() else {
+                continue;
+            };
+            let consonant = consonant_part.to_string();
 
             valid_consonants_map.insert(consonant.clone(), consonant.clone());
 
