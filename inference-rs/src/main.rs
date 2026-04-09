@@ -463,10 +463,17 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
+struct HistoryNode {
+    prev: Option<Arc<HistoryNode>>,
+    island_words: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+#[cfg(not(feature = "mocked-model"))]
 struct IslandState {
     score: f32,
     state: kenlm::State,
-    history: Vec<Vec<String>>, // List of decoded texts for V7 islands encountered so far
+    history: Option<Arc<HistoryNode>>,
 }
 
 #[derive(Debug, Clone)]
@@ -523,6 +530,29 @@ where
     if indices.len() > limit {
         indices.truncate(limit);
     }
+}
+
+#[cfg(not(feature = "mocked-model"))]
+fn push_history(
+    history: &Option<Arc<HistoryNode>>,
+    island_words: Vec<String>,
+) -> Option<Arc<HistoryNode>> {
+    Some(Arc::new(HistoryNode {
+        prev: history.clone(),
+        island_words,
+    }))
+}
+
+#[cfg(not(feature = "mocked-model"))]
+fn materialize_history(history: &Option<Arc<HistoryNode>>) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut cursor = history.clone();
+    while let Some(node) = cursor {
+        parts.push(node.island_words.join(" "));
+        cursor = node.prev.clone();
+    }
+    parts.reverse();
+    parts
 }
 
 #[cfg(not(feature = "mocked-model"))]
@@ -668,8 +698,7 @@ fn lattice_viterbi_v7_island(
         }
         words.reverse();
 
-        let mut new_history = incoming_states[node.origin_idx].history.clone();
-        new_history.push(words);
+        let new_history = push_history(&incoming_states[node.origin_idx].history, words);
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
@@ -732,7 +761,7 @@ fn perform_inference(
     let mut current_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
-        history: Vec::new(),
+        history: None,
     }];
     let hypotheses_per_state = beam_width.max(1);
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
@@ -749,7 +778,7 @@ fn perform_inference(
             if segment.is_empty() {
                 // Record empty history for alignment
                 for state in &mut current_states {
-                    state.history.push(Vec::new());
+                    state.history = push_history(&state.history, Vec::new());
                 }
                 continue;
             }
@@ -769,7 +798,7 @@ fn perform_inference(
                 // Store ORIGINAL text in history
                 // We wrap it in a Vec to match the expected type,
                 // but this ensures the final output retains casing/punctuation.
-                state.history.push(vec![segment.clone()]);
+                state.history = push_history(&state.history, vec![segment.clone()]);
             }
             // ===========================================
         } else {
@@ -792,10 +821,7 @@ fn perform_inference(
     let candidates: Vec<Vec<String>> = current_states
         .into_iter()
         .take(beam_width)
-        .map(|s| {
-            // Flatten the word lists for each island into strings
-            s.history.into_iter().map(|words| words.join(" ")).collect()
-        })
+        .map(|s| materialize_history(&s.history))
         .collect();
 
     Ok(candidates)
