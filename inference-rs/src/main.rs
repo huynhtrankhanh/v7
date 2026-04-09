@@ -463,8 +463,8 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct HistoryNode {
-    prev: Option<Arc<HistoryNode>>,
+struct HistoryEntry {
+    prev_idx: Option<usize>,
     island_words: Vec<String>,
 }
 
@@ -473,7 +473,7 @@ struct HistoryNode {
 struct IslandState {
     score: f32,
     state: kenlm::State,
-    history: Option<Arc<HistoryNode>>,
+    history_tail_idx: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -534,22 +534,24 @@ where
 
 #[cfg(not(feature = "mocked-model"))]
 fn push_history(
-    history: &Option<Arc<HistoryNode>>,
+    history_arena: &mut Vec<HistoryEntry>,
+    prev_idx: Option<usize>,
     island_words: Vec<String>,
-) -> Option<Arc<HistoryNode>> {
-    Some(Arc::new(HistoryNode {
-        prev: history.clone(),
+) -> Option<usize> {
+    history_arena.push(HistoryEntry {
+        prev_idx,
         island_words,
-    }))
+    });
+    Some(history_arena.len() - 1)
 }
 
 #[cfg(not(feature = "mocked-model"))]
-fn materialize_history(history: &Option<Arc<HistoryNode>>) -> Vec<String> {
+fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usize>) -> Vec<String> {
     let mut parts = Vec::new();
-    let mut cursor = history.clone();
-    while let Some(node) = cursor {
+    while let Some(idx) = tail_idx {
+        let node = &history_arena[idx];
         parts.push(node.island_words.join(" "));
-        cursor = node.prev.clone();
+        tail_idx = node.prev_idx;
     }
     parts.reverse();
     parts
@@ -562,6 +564,7 @@ fn lattice_viterbi_v7_island(
     model: &kenlm::Model,
     incoming_states: &[IslandState],
     per_state_width: usize,
+    history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
     const UNKNOWN_TOKEN: &str = "<?>";
     const UNKNOWN_PENALTY: f32 = -10.0;
@@ -698,11 +701,15 @@ fn lattice_viterbi_v7_island(
         }
         words.reverse();
 
-        let new_history = push_history(&incoming_states[node.origin_idx].history, words);
+        let new_history_tail_idx = push_history(
+            history_arena,
+            incoming_states[node.origin_idx].history_tail_idx,
+            words,
+        );
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
-            history: new_history,
+            history_tail_idx: new_history_tail_idx,
         });
     }
 
@@ -761,8 +768,9 @@ fn perform_inference(
     let mut current_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
-        history: None,
+        history_tail_idx: None,
     }];
+    let mut history_arena: Vec<HistoryEntry> = Vec::new();
     let hypotheses_per_state = beam_width.max(1);
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
@@ -778,7 +786,8 @@ fn perform_inference(
             if segment.is_empty() {
                 // Record empty history for alignment
                 for state in &mut current_states {
-                    state.history = push_history(&state.history, Vec::new());
+                    state.history_tail_idx =
+                        push_history(&mut history_arena, state.history_tail_idx, Vec::new());
                 }
                 continue;
             }
@@ -798,7 +807,11 @@ fn perform_inference(
                 // Store ORIGINAL text in history
                 // We wrap it in a Vec to match the expected type,
                 // but this ensures the final output retains casing/punctuation.
-                state.history = push_history(&state.history, vec![segment.clone()]);
+                state.history_tail_idx = push_history(
+                    &mut history_arena,
+                    state.history_tail_idx,
+                    vec![segment.clone()],
+                );
             }
             // ===========================================
         } else {
@@ -811,6 +824,7 @@ fn perform_inference(
                 model,
                 &current_states,
                 hypotheses_per_state,
+                &mut history_arena,
             );
         }
     }
@@ -821,7 +835,7 @@ fn perform_inference(
     let candidates: Vec<Vec<String>> = current_states
         .into_iter()
         .take(beam_width)
-        .map(|s| materialize_history(&s.history))
+        .map(|s| materialize_history(&history_arena, s.history_tail_idx))
         .collect();
 
     Ok(candidates)
