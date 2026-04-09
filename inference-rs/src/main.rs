@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -300,12 +301,27 @@ fn get_candidates<'a>(template: &PartialSyllableTemplate, tokenizer: &'a Tokeniz
     tokenizer.candidates_index.get(&key)
 }
 
+fn truncate_top_indices_by_score<F>(indices: &mut Vec<usize>, limit: usize, mut score_of: F)
+where
+    F: FnMut(usize) -> f32,
+{
+    indices.sort_by(|a, b| {
+        score_of(*b)
+            .partial_cmp(&score_of(*a))
+            .unwrap_or(Ordering::Equal)
+    });
+    if indices.len() > limit {
+        indices.truncate(limit);
+    }
+}
+
 #[cfg(not(feature = "mocked-model"))]
 fn lattice_viterbi_v7_island(
     templates: &[PartialSyllableTemplate],
     tokenizer: &Tokenizer,
     model: &kenlm::Model,
     incoming_states: &[IslandState],
+    per_state_width: usize,
 ) -> Vec<IslandState> {
     let mut nodes: Vec<LatticeNode> = Vec::new();
     let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
@@ -338,7 +354,7 @@ fn lattice_viterbi_v7_island(
             candidate_data.push(("<?>".to_string(), 0, -10.0));
         }
 
-        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], usize> = HashMap::new();
+        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
 
         for &parent_idx in &current_layer {
             let (parent_score, parent_state, parent_origin_idx) = {
@@ -358,28 +374,24 @@ fn lattice_viterbi_v7_island(
                 // updated by KenLM's deterministic transition function (`score_index`), so
                 // identical linguistic contexts yield identical `data` bytes for dedup keys.
                 let state_key = new_state.data;
-                if let Some(existing_idx) = best_for_state.get(&state_key).copied() {
-                    if total_score > nodes[existing_idx].score {
-                        nodes[existing_idx].score = total_score;
-                        nodes[existing_idx].state = new_state;
-                        nodes[existing_idx].word = Some(word_str.clone());
-                        nodes[existing_idx].parent_idx = Some(parent_idx);
-                        nodes[existing_idx].origin_idx = parent_origin_idx;
-                    }
-                } else {
-                    nodes.push(LatticeNode {
-                        score: total_score,
-                        state: new_state,
-                        word: Some(word_str.clone()),
-                        parent_idx: Some(parent_idx),
-                        origin_idx: parent_origin_idx,
-                    });
-                    best_for_state.insert(state_key, nodes.len() - 1);
-                }
+                nodes.push(LatticeNode {
+                    score: total_score,
+                    state: new_state,
+                    word: Some(word_str.clone()),
+                    parent_idx: Some(parent_idx),
+                    origin_idx: parent_origin_idx,
+                });
+                let new_idx = nodes.len() - 1;
+                let entry = best_for_state.entry(state_key).or_default();
+                entry.push(new_idx);
+                truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
             }
         }
 
-        current_layer = best_for_state.into_values().collect();
+        current_layer = best_for_state
+            .into_values()
+            .flatten()
+            .collect();
         if current_layer.is_empty() {
             break;
         }
@@ -462,6 +474,7 @@ fn perform_inference(
         state: model.begin_sentence_state(),
         history: Vec::new(),
     }];
+    let hypotheses_per_state = beam_width.max(1);
     
     for (i, segment) in islands.iter().enumerate() {
         if i % 2 == 0 {
@@ -496,7 +509,13 @@ fn perform_inference(
             // V7 Code Island
             // eprintln!("Decoding V7 island: {}", segment);
             let templates = parse_v7_string(segment, tokenizer)?;
-            current_states = lattice_viterbi_v7_island(&templates, tokenizer, model, &current_states);
+            current_states = lattice_viterbi_v7_island(
+                &templates,
+                tokenizer,
+                model,
+                &current_states,
+                hypotheses_per_state,
+            );
         }
     }
     
@@ -509,6 +528,31 @@ fn perform_inference(
     }).collect();
     
     Ok(candidates)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_top_indices_by_score;
+
+    #[test]
+    fn keeps_best_indices_in_descending_score_order() {
+        let scores = vec![0.4, 0.9, 0.6, 1.2, 0.1];
+        let mut indices = vec![0, 1, 2, 3, 4];
+        truncate_top_indices_by_score(&mut indices, 3, |idx| scores[idx]);
+        assert_eq!(indices, vec![3, 1, 2]);
+    }
+
+    #[test]
+    fn truncates_to_highest_scoring_entries_after_append() {
+        let scores = vec![10.0, 8.0, 9.5];
+        let mut indices = vec![0, 1];
+        truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
+        assert_eq!(indices, vec![0, 1]);
+
+        indices.push(2);
+        truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
+        assert_eq!(indices, vec![0, 2]);
+    }
 }
 
 #[derive(Clone)]
