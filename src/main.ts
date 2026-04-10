@@ -123,8 +123,8 @@ const PUNCTUATION_MAP: Record<string, string> = {
 };
 
 function handleEmilySymbol(stroke) {
-    // stroke pattern: starter SKWH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
-    const match = stroke.match(/^([#]?SKWH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/);
+    // stroke pattern: starter WH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
+    const match = stroke.match(/^([#]?WH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/);
     if (!match) return null;
     const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] = match;
 
