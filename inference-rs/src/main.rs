@@ -489,6 +489,17 @@ const MAX_SYLLABLES_PER_WORD: usize = 5;
 const MAX_WORD_CANDIDATES_PER_SPAN: usize = 128;
 const UNKNOWN_TOKEN: &str = "<?>";
 
+fn is_supported_punctuation_token(token: &str) -> bool {
+    matches!(token, "." | "," | "!" | ";" | ":")
+}
+
+#[cfg(not(feature = "mocked-model"))]
+#[derive(Clone)]
+enum DecodeUnit {
+    Syllable(Vec<String>),
+    BoundaryToken(String),
+}
+
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
     tokenizer: &'a Tokenizer,
@@ -752,6 +763,75 @@ fn lattice_viterbi_v7_island(
     results
 }
 
+#[cfg(not(feature = "mocked-model"))]
+fn build_decode_units(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<DecodeUnit>> {
+    let mut units = Vec::new();
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
+
+    for (i, segment) in islands.iter().enumerate() {
+        let should_decode_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(segment, tokenizer)
+        };
+
+        if should_decode_v7 {
+            let templates = parse_v7_string(segment, tokenizer)?;
+            for template in templates {
+                let choices = get_candidates(&template, tokenizer)
+                    .map(|list| {
+                        if list.is_empty() {
+                            vec![UNKNOWN_TOKEN.to_string()]
+                        } else {
+                            list.iter()
+                                .take(MAX_CANDIDATES_PER_SYLLABLE)
+                                .cloned()
+                                .collect()
+                        }
+                    })
+                    .unwrap_or_else(|| vec![UNKNOWN_TOKEN.to_string()]);
+                units.push(DecodeUnit::Syllable(choices));
+            }
+            continue;
+        }
+
+        for token in purify(segment) {
+            if is_supported_punctuation_token(&token) || token.contains('_') {
+                units.push(DecodeUnit::BoundaryToken(token));
+            } else {
+                units.push(DecodeUnit::Syllable(vec![token]));
+            }
+        }
+    }
+
+    Ok(units)
+}
+
+#[cfg(not(feature = "mocked-model"))]
+fn format_output_tokens(tokens: &[String]) -> String {
+    let mut out = String::new();
+    for token in tokens {
+        if token.is_empty() {
+            continue;
+        }
+        if is_supported_punctuation_token(token) {
+            if out.ends_with(' ') {
+                out.pop();
+            }
+            out.push_str(token);
+            out.push(' ');
+            continue;
+        }
+
+        if !out.is_empty() && !out.ends_with(' ') {
+            out.push(' ');
+        }
+        out.push_str(token);
+        out.push(' ');
+    }
+    out.trim_end().to_string()
+}
+
 fn perform_mock_inference(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<Vec<String>>> {
     let mut decoded_islands = Vec::new();
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
@@ -799,81 +879,109 @@ fn perform_inference(
     model: &kenlm::Model,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
-    // Initial state
-    let mut current_states = vec![IslandState {
+    #[derive(Clone)]
+    struct DecodingState {
+        score: f32,
+        lm_state: kenlm::State,
+        display_tokens: Vec<String>,
+    }
+
+    let units = build_decode_units(islands, tokenizer)?;
+    if units.is_empty() {
+        return Ok(vec![vec![String::new()]]);
+    }
+
+    let width = beam_width.max(1);
+    let mut frontiers: Vec<Vec<DecodingState>> = vec![Vec::new(); units.len() + 1];
+    frontiers[0].push(DecodingState {
         score: 0.0,
-        state: model.begin_sentence_state(),
-        history_tail_idx: None,
-    }];
-    let mut history_arena: Vec<HistoryEntry> = Vec::new();
-    let hypotheses_per_state = beam_width.max(1);
-    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
+        lm_state: model.begin_sentence_state(),
+        display_tokens: Vec::new(),
+    });
 
-    for (i, segment) in islands.iter().enumerate() {
-        let should_decode_v7 = if strict_alternating {
-            i % 2 == 1
-        } else {
-            is_v7_segment(segment, tokenizer)
-        };
+    let mut span_candidates_cache: HashMap<(usize, usize), Vec<(String, String, f32)>> =
+        HashMap::new();
 
-        if !should_decode_v7 {
-            // === MODIFIED SECTION: Fixed Text Island ===
-            if segment.is_empty() {
-                // Record empty history for alignment
-                for state in &mut current_states {
-                    state.history_tail_idx =
-                        push_history(&mut history_arena, state.history_tail_idx, Vec::new());
+    for pos in 0..units.len() {
+        if frontiers[pos].is_empty() {
+            continue;
+        }
+        let base_states = frontiers[pos].clone();
+        let mut touched_end_positions = Vec::new();
+
+        match &units[pos] {
+            DecodeUnit::BoundaryToken(token) => {
+                for state in &base_states {
+                    let (lm_score, next_lm_state) = model.score(&state.lm_state, token);
+                    let mut next_tokens = state.display_tokens.clone();
+                    next_tokens.push(token.clone());
+                    frontiers[pos + 1].push(DecodingState {
+                        score: state.score + lm_score,
+                        lm_state: next_lm_state,
+                        display_tokens: next_tokens,
+                    });
                 }
-                continue;
+                touched_end_positions.push(pos + 1);
             }
-
-            // 1. We still need purified words to update the LM State accurately
-            let purified_words = purify(segment);
-
-            // 2. Update states
-            for state in &mut current_states {
-                // Update Score/State using PURIFIED words
-                for word in &purified_words {
-                    let (lm_score, new_st) = model.score(&state.state, word);
-                    state.score += lm_score;
-                    state.state = new_st;
+            DecodeUnit::Syllable(_) => {
+                for span_len in 1..=MAX_SYLLABLES_PER_WORD.min(units.len() - pos) {
+                    let end = pos + span_len;
+                    if units[pos..end]
+                        .iter()
+                        .any(|unit| matches!(unit, DecodeUnit::BoundaryToken(_)))
+                    {
+                        break;
+                    }
+                    let candidates = span_candidates_cache.entry((pos, end)).or_insert_with(|| {
+                        let syllable_choices: Vec<Vec<String>> = units[pos..end]
+                            .iter()
+                            .map(|unit| match unit {
+                                DecodeUnit::Syllable(choices) => choices.clone(),
+                                DecodeUnit::BoundaryToken(_) => Vec::new(),
+                            })
+                            .collect();
+                        enumerate_word_candidates(&syllable_choices, MAX_WORD_CANDIDATES_PER_SPAN)
+                    });
+                    if candidates.is_empty() {
+                        continue;
+                    }
+                    for state in &base_states {
+                        for (lm_token, display_text, penalty) in candidates.iter() {
+                            let (lm_score, next_lm_state) = model.score(&state.lm_state, lm_token);
+                            let mut next_tokens = state.display_tokens.clone();
+                            next_tokens.push(display_text.clone());
+                            frontiers[end].push(DecodingState {
+                                score: state.score + lm_score + *penalty,
+                                lm_state: next_lm_state,
+                                display_tokens: next_tokens,
+                            });
+                        }
+                    }
+                    touched_end_positions.push(end);
                 }
-
-                // Store ORIGINAL text in history
-                // We wrap it in a Vec to match the expected type,
-                // but this ensures the final output retains casing/punctuation.
-                state.history_tail_idx = push_history(
-                    &mut history_arena,
-                    state.history_tail_idx,
-                    vec![segment.clone()],
-                );
             }
-            // ===========================================
-        } else {
-            // V7 Code Island
-            // eprintln!("Decoding V7 island: {}", segment);
-            let templates = parse_v7_string(segment, tokenizer)?;
-            current_states = lattice_viterbi_v7_island(
-                &templates,
-                tokenizer,
-                model,
-                &current_states,
-                hypotheses_per_state,
-                &mut history_arena,
-            );
+        }
+
+        for end in touched_end_positions {
+            frontiers[end].sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+            if frontiers[end].len() > width {
+                frontiers[end].truncate(width);
+            }
         }
     }
 
-    // Sort final results
-    current_states.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-
-    let candidates: Vec<Vec<String>> = current_states
+    let mut finals = frontiers
+        .pop()
+        .unwrap_or_default()
         .into_iter()
-        .take(beam_width)
-        .map(|s| materialize_history(&history_arena, s.history_tail_idx))
-        .collect();
+        .collect::<Vec<_>>();
+    finals.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    finals.truncate(width);
 
-    Ok(candidates)
+    Ok(finals
+        .into_iter()
+        .map(|state| vec![format_output_tokens(&state.display_tokens)])
+        .collect())
 }
 
 #[cfg(test)]
