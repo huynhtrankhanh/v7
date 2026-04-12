@@ -6,3 +6,6 @@ Use underthesea to perform word segmentation prior to KenLM training. This also 
 Punctuation should be considered tokens on their own right. Only these punctuation marks are supported: full stop, exclamation mark, comma, semicolon, colon.
 
 ## Dataset
+Use this dataset when testing. Do not commit the dataset or the resulting model to the repository. This is only to test the approach. The model will be trained on the complete dataset later. This is a small dataset for testing and validation.
+
+https://github.com/hoanganhpham1006/Vietnamese_Language_Model/blob/master/Train_Full.zip
