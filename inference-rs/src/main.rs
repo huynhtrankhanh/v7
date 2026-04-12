@@ -380,14 +380,13 @@ fn remove_diacritics(text: &str) -> String {
 }
 
 fn purify(text: &str) -> Vec<String> {
-    static NON_LETTER_RE: OnceLock<Regex> = OnceLock::new();
-    let non_letter_re = NON_LETTER_RE.get_or_init(|| Regex::new(r"[^\p{L}\s]").unwrap());
+    static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
+    let token_re = TOKEN_RE.get_or_init(|| Regex::new(r"\p{L}+(?:_\p{L}+)*|[.,!;:]").unwrap());
     let lower = text.to_lowercase();
-    // Keep only letters (\p{L}) and whitespace (\s).
-    // Python logic: [^\w\s] -> space, and [\d_] -> space.
-    // Effectively keeps only letters.
-    let cleaned = non_letter_re.replace_all(&lower, " ");
-    cleaned.split_whitespace().map(|s| s.to_string()).collect()
+    token_re
+        .find_iter(&lower)
+        .map(|m| m.as_str().to_string())
+        .collect()
 }
 
 fn normalize_rime_start_char(c: char) -> char {
@@ -477,19 +476,17 @@ struct IslandState {
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct LatticeNode<'a> {
+struct LatticeNode {
     score: f32,
     state: kenlm::State,
-    word: Option<&'a str>,
+    display_text: Option<String>,
     parent_idx: Option<usize>,
     origin_idx: usize,
 }
 
-#[cfg(not(feature = "mocked-model"))]
-const KENLM_STATE_KEY_SIZE: usize = 128;
-#[cfg(not(feature = "mocked-model"))]
-const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
 const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
+const MAX_SYLLABLES_PER_WORD: usize = 5;
+const MAX_WORD_CANDIDATES_PER_SPAN: usize = 128;
 
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
@@ -559,6 +556,71 @@ fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usiz
 }
 
 #[cfg(not(feature = "mocked-model"))]
+fn enumerate_word_candidates(
+    syllable_candidates: &[Vec<String>],
+    limit: usize,
+) -> Vec<(String, String, f32)> {
+    fn dfs(
+        pos: usize,
+        syllable_candidates: &[Vec<String>],
+        current: &mut Vec<String>,
+        has_unknown: bool,
+        out: &mut Vec<(String, String, f32)>,
+        limit: usize,
+    ) {
+        if out.len() >= limit {
+            return;
+        }
+        if pos == syllable_candidates.len() {
+            let display = current.join(" ");
+            let lm_token = if current.len() == 1 {
+                current[0].clone()
+            } else {
+                current.join("_")
+            };
+            let penalty = if has_unknown { -10.0 } else { 0.0 };
+            out.push((lm_token, display, penalty));
+            return;
+        }
+
+        if syllable_candidates[pos].is_empty() {
+            current.push("<?>".to_string());
+            dfs(pos + 1, syllable_candidates, current, true, out, limit);
+            current.pop();
+            return;
+        }
+
+        for word in &syllable_candidates[pos] {
+            if out.len() >= limit {
+                break;
+            }
+            current.push(word.clone());
+            dfs(
+                pos + 1,
+                syllable_candidates,
+                current,
+                has_unknown || word == "<?>",
+                out,
+                limit,
+            );
+            current.pop();
+        }
+    }
+
+    let mut results = Vec::new();
+    let mut current = Vec::new();
+    dfs(
+        0,
+        syllable_candidates,
+        &mut current,
+        false,
+        &mut results,
+        limit,
+    );
+    results
+}
+
+#[cfg(not(feature = "mocked-model"))]
 fn lattice_viterbi_v7_island(
     templates: &[PartialSyllableTemplate],
     tokenizer: &Tokenizer,
@@ -567,136 +629,100 @@ fn lattice_viterbi_v7_island(
     per_state_width: usize,
     history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
-    const UNKNOWN_TOKEN: &str = "<?>";
-    const UNKNOWN_PENALTY: f32 = -10.0;
-
-    let mut nodes: Vec<LatticeNode<'_>> = Vec::new();
-    let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
+    let mut nodes: Vec<LatticeNode> = Vec::new();
+    let mut frontiers: Vec<Vec<usize>> = vec![Vec::new(); templates.len() + 1];
     for (origin_idx, state) in incoming_states.iter().enumerate() {
         nodes.push(LatticeNode {
             score: state.score,
             state: state.state.clone(),
-            word: None,
+            display_text: None,
             parent_idx: None,
             origin_idx,
         });
-        current_layer.push(nodes.len() - 1);
+        frontiers[0].push(nodes.len() - 1);
     }
 
-    for template in templates {
-        let candidates_opt = get_candidates(template, tokenizer);
-        let mut candidate_words = [UNKNOWN_TOKEN; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_indices = [0u32; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_penalties = [UNKNOWN_PENALTY; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_count = 0usize;
-        let mut overflow_candidates: Option<Vec<(&str, u32)>> = None;
-
-        if let Some(list) = candidates_opt {
-            if list.is_empty() {
-                candidate_count = 1;
-            } else {
-                let inlined = list.len().min(MAX_CANDIDATES_PER_SYLLABLE);
-                for i in 0..inlined {
-                    let word = list[i].as_str();
-                    candidate_words[i] = word;
-                    candidate_indices[i] = model.lookup(word);
-                    candidate_penalties[i] = 0.0;
-                }
-                candidate_count = inlined;
-
-                if list.len() > MAX_CANDIDATES_PER_SYLLABLE {
-                    let mut overflow = Vec::with_capacity(list.len() - MAX_CANDIDATES_PER_SYLLABLE);
-                    for word in &list[MAX_CANDIDATES_PER_SYLLABLE..] {
-                        overflow.push((word.as_str(), model.lookup(word)));
-                    }
-                    overflow_candidates = Some(overflow);
-                }
-            }
-        } else {
-            candidate_count = 1;
-        }
-
-        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
-
-        for &parent_idx in &current_layer {
-            let (parent_score, parent_state, parent_origin_idx) = {
-                let parent_node = &nodes[parent_idx];
-                (
-                    parent_node.score,
-                    parent_node.state.clone(),
-                    parent_node.origin_idx,
-                )
-            };
-
-            for i in 0..candidate_count {
-                let word_str = candidate_words[i];
-                let word_idx = candidate_indices[i];
-                let penalty = candidate_penalties[i];
-
-                let (total_score, new_state) = if penalty < -1.0 && word_str == UNKNOWN_TOKEN {
-                    (parent_score + penalty, parent_state.clone())
+    let syllable_candidates: Vec<Vec<String>> = templates
+        .iter()
+        .map(|template| {
+            if let Some(list) = get_candidates(template, tokenizer) {
+                if list.is_empty() {
+                    vec!["<?>".to_string()]
                 } else {
-                    let (lm_score, next_state) = model.score_index(&parent_state, word_idx);
-                    (parent_score + lm_score + penalty, next_state)
+                    list.iter()
+                        .take(MAX_CANDIDATES_PER_SYLLABLE)
+                        .cloned()
+                        .collect()
+                }
+            } else {
+                vec!["<?>".to_string()]
+            }
+        })
+        .collect();
+
+    for start_pos in 0..templates.len() {
+        if frontiers[start_pos].is_empty() {
+            continue;
+        }
+        let mut generated_by_end: HashMap<usize, Vec<usize>> = HashMap::new();
+
+        for span_len in 1..=MAX_SYLLABLES_PER_WORD.min(templates.len() - start_pos) {
+            let end_pos = start_pos + span_len;
+            let candidates = enumerate_word_candidates(
+                &syllable_candidates[start_pos..end_pos],
+                MAX_WORD_CANDIDATES_PER_SPAN,
+            );
+            if candidates.is_empty() {
+                continue;
+            }
+
+            for &parent_idx in &frontiers[start_pos] {
+                let (parent_score, parent_state, parent_origin_idx) = {
+                    let parent_node = &nodes[parent_idx];
+                    (
+                        parent_node.score,
+                        parent_node.state.clone(),
+                        parent_node.origin_idx,
+                    )
                 };
 
-                // `kenlm::State` is a fixed-size byte buffer initialized from zeros and then
-                // updated by KenLM's deterministic transition function (`score_index`), so
-                // identical linguistic contexts yield identical `data` bytes for dedup keys.
-                let state_key = new_state.data;
-                nodes.push(LatticeNode {
-                    score: total_score,
-                    state: new_state,
-                    word: Some(word_str),
-                    parent_idx: Some(parent_idx),
-                    origin_idx: parent_origin_idx,
-                });
-                let new_idx = nodes.len() - 1;
-                let entry = best_for_state
-                    .entry(state_key)
-                    .or_insert_with(|| Vec::with_capacity(per_state_width));
-                entry.push(new_idx);
-                truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
-            }
-
-            if let Some(overflow) = &overflow_candidates {
-                for (word_str, word_idx) in overflow {
-                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
-                    let total_score = parent_score + lm_score;
-                    let state_key = next_state.data;
+                for (lm_token, display_text, penalty) in &candidates {
+                    let (lm_score, next_state) = model.score(&parent_state, lm_token);
+                    let total_score = parent_score + lm_score + penalty;
                     nodes.push(LatticeNode {
                         score: total_score,
                         state: next_state,
-                        word: Some(*word_str),
+                        display_text: Some(display_text.clone()),
                         parent_idx: Some(parent_idx),
                         origin_idx: parent_origin_idx,
                     });
-                    let new_idx = nodes.len() - 1;
-                    let entry = best_for_state
-                        .entry(state_key)
-                        .or_insert_with(|| Vec::with_capacity(per_state_width));
-                    entry.push(new_idx);
-                    truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
+                    generated_by_end
+                        .entry(end_pos)
+                        .or_insert_with(Vec::new)
+                        .push(nodes.len() - 1);
                 }
             }
         }
 
-        current_layer = best_for_state.into_values().flatten().collect();
-        if current_layer.is_empty() {
-            break;
+        for (end_pos, mut generated_indices) in generated_by_end {
+            frontiers[end_pos].append(&mut generated_indices);
+            truncate_top_indices_by_score(&mut frontiers[end_pos], per_state_width, |idx| {
+                nodes[idx].score
+            });
         }
     }
 
-    let mut results = Vec::with_capacity(current_layer.len());
-    for node_idx in current_layer {
+    let final_layer = &frontiers[templates.len()];
+    let mut results = Vec::with_capacity(final_layer.len());
+    for &node_idx in final_layer {
         let node = &nodes[node_idx];
 
         let mut words = Vec::new();
         let mut cursor = Some(node_idx);
         while let Some(idx) = cursor {
             let current = &nodes[idx];
-            if let Some(word) = &current.word {
-                words.push((*word).to_string());
+            if let Some(word) = &current.display_text {
+                words.push(word.clone());
             }
             cursor = current.parent_idx;
         }
@@ -845,7 +871,7 @@ fn perform_inference(
 #[cfg(test)]
 mod tests {
     use super::{
-        is_v7_segment, truncate_top_indices_by_score, uses_strict_alternating_island_mode,
+        is_v7_segment, purify, truncate_top_indices_by_score, uses_strict_alternating_island_mode,
         Tokenizer,
     };
 
@@ -892,6 +918,17 @@ mod tests {
             &non_strict,
             &tokenizer
         ));
+    }
+
+    #[test]
+    fn purify_keeps_supported_punctuation_as_tokens() {
+        let tokens = purify("Hôm nay, trời đẹp! Nhưng: hơi nóng;");
+        assert_eq!(
+            tokens,
+            vec![
+                "hôm", "nay", ",", "trời", "đẹp", "!", "nhưng", ":", "hơi", "nóng", ";"
+            ]
+        );
     }
 }
 

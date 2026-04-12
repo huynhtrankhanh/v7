@@ -1,17 +1,31 @@
 #!/bin/bash
 set -e
 
+INPUT_PATH="${1:-data/corpus-full.txt}"
+OUTPUT_PATH="${2:-data/corpus.tok}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "Error: $PYTHON_BIN is not available."
+    exit 1
+fi
+
+if [ ! -f "$INPUT_PATH" ]; then
+    echo "Error: input corpus not found at $INPUT_PATH"
+    exit 1
+fi
+
 # 1. Preprocess
-if [ -f "data/corpus.tok" ]; then
+if [ -f "$OUTPUT_PATH" ]; then
     echo "Corpus already preprocessed. Skipping..."
 else
     echo "Preprocessing corpus..."
-    ./bin/python preprocess_corpus.py data/corpus-full.txt data/corpus.tok
+    "$PYTHON_BIN" preprocess_corpus.py "$INPUT_PATH" "$OUTPUT_PATH"
 fi
 
 # 2. Train KenLM
 echo "Training KenLM (3-gram)..."
-./kenlm/build/bin/lmplz -o 3 --prune 0 0 1 < data/corpus.tok > lm.arpa
+./kenlm/build/bin/lmplz -o 3 --prune 0 0 1 < "$OUTPUT_PATH" > lm.arpa
 
 # 3. Binarize
 echo "Binarizing model..."

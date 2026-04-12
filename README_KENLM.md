@@ -15,8 +15,9 @@ The corpus was extracted from `../corpus-full.7z` into `data/corpus-full.txt`.
 
 A preprocessing script `preprocess_corpus.py` was created to:
 - Lowercase the text.
-- Remove non-alphanumeric characters (keeping Vietnamese characters).
-- Normalize whitespace.
+- Segment Vietnamese words using `underthesea` (multi-syllable words become `_`-joined tokens).
+- Keep only supported punctuation tokens: `.`, `!`, `,`, `;`, `:`.
+- Normalize whitespace and punctuation token boundaries.
 
 Command used:
 ```bash
