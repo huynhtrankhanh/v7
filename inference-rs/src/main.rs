@@ -487,6 +487,7 @@ struct LatticeNode {
 const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
 const MAX_SYLLABLES_PER_WORD: usize = 5;
 const MAX_WORD_CANDIDATES_PER_SPAN: usize = 128;
+const UNKNOWN_TOKEN: &str = "<?>";
 
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
@@ -584,7 +585,7 @@ fn enumerate_word_candidates(
         }
 
         if syllable_candidates[pos].is_empty() {
-            current.push("<?>".to_string());
+            current.push(UNKNOWN_TOKEN.to_string());
             dfs(pos + 1, syllable_candidates, current, true, out, limit);
             current.pop();
             return;
@@ -599,7 +600,7 @@ fn enumerate_word_candidates(
                 pos + 1,
                 syllable_candidates,
                 current,
-                has_unknown || word == "<?>",
+                has_unknown || word == UNKNOWN_TOKEN,
                 out,
                 limit,
             );
@@ -647,7 +648,7 @@ fn lattice_viterbi_v7_island(
         .map(|template| {
             if let Some(list) = get_candidates(template, tokenizer) {
                 if list.is_empty() {
-                    vec!["<?>".to_string()]
+                    vec![UNKNOWN_TOKEN.to_string()]
                 } else {
                     list.iter()
                         .take(MAX_CANDIDATES_PER_SYLLABLE)
@@ -655,10 +656,13 @@ fn lattice_viterbi_v7_island(
                         .collect()
                 }
             } else {
-                vec!["<?>".to_string()]
+                vec![UNKNOWN_TOKEN.to_string()]
             }
         })
         .collect();
+
+    let mut span_candidates_cache: HashMap<(usize, usize), Vec<(String, String, f32)>> =
+        HashMap::new();
 
     for start_pos in 0..templates.len() {
         if frontiers[start_pos].is_empty() {
@@ -668,10 +672,14 @@ fn lattice_viterbi_v7_island(
 
         for span_len in 1..=MAX_SYLLABLES_PER_WORD.min(templates.len() - start_pos) {
             let end_pos = start_pos + span_len;
-            let candidates = enumerate_word_candidates(
-                &syllable_candidates[start_pos..end_pos],
-                MAX_WORD_CANDIDATES_PER_SPAN,
-            );
+            let candidates = span_candidates_cache
+                .entry((start_pos, end_pos))
+                .or_insert_with(|| {
+                    enumerate_word_candidates(
+                        &syllable_candidates[start_pos..end_pos],
+                        MAX_WORD_CANDIDATES_PER_SPAN,
+                    )
+                });
             if candidates.is_empty() {
                 continue;
             }
@@ -686,9 +694,9 @@ fn lattice_viterbi_v7_island(
                     )
                 };
 
-                for (lm_token, display_text, penalty) in &candidates {
+                for (lm_token, display_text, penalty) in candidates.iter() {
                     let (lm_score, next_state) = model.score(&parent_state, lm_token);
-                    let total_score = parent_score + lm_score + penalty;
+                    let total_score = parent_score + lm_score + *penalty;
                     nodes.push(LatticeNode {
                         score: total_score,
                         state: next_state,

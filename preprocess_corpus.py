@@ -8,8 +8,26 @@ NON_ALLOWED_RE = re.compile(rf"[^\w\s{re.escape(SUPPORTED_PUNCTUATION)}]", flags
 DIGITS_RE = re.compile(r"\d")
 PUNCT_SPACING_RE = re.compile(rf"([{re.escape(SUPPORTED_PUNCTUATION)}])")
 
+
+def open_corpus_with_fallback(path):
+    encodings = ("utf-8-sig", "utf-16", "utf-16-le")
+    last_error = None
+    for encoding in encodings:
+        try:
+            f = open(path, 'r', encoding=encoding)
+            f.read(1)
+            f.seek(0)
+            return f
+        except UnicodeDecodeError as exc:
+            last_error = exc
+        except Exception:
+            raise
+    if last_error:
+        raise last_error
+    raise RuntimeError("Could not determine input encoding")
+
 def preprocess(input_path, output_path):
-    with open(input_path, 'r', encoding='utf-8') as fin, open(output_path, 'w', encoding='utf-8') as fout:
+    with open_corpus_with_fallback(input_path) as fin, open(output_path, 'w', encoding='utf-8') as fout:
         for line in tqdm(fin, desc="Processing"):
             line = line.strip().lower()
             if not line:
