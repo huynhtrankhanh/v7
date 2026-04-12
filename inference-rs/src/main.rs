@@ -13,7 +13,7 @@ use futures_util::StreamExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tower_http::services::{ServeDir, ServeFile};
@@ -488,6 +488,7 @@ const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
 const MAX_SYLLABLES_PER_WORD: usize = 5;
 const MAX_WORD_CANDIDATES_PER_SPAN: usize = 128;
 const UNKNOWN_TOKEN: &str = "<?>";
+const UNKNOWN_TOKEN_PENALTY: f32 = -3.0;
 
 fn is_supported_punctuation_token(token: &str) -> bool {
     matches!(token, "." | "," | "!" | ";" | ":")
@@ -496,7 +497,10 @@ fn is_supported_punctuation_token(token: &str) -> bool {
 #[cfg(not(feature = "mocked-model"))]
 #[derive(Clone)]
 enum DecodeUnit {
-    Syllable(Vec<String>),
+    Syllable {
+        choices: Vec<String>,
+        from_v7: bool,
+    },
     BoundaryToken(String),
 }
 
@@ -572,63 +576,92 @@ fn enumerate_word_candidates(
     syllable_candidates: &[Vec<String>],
     limit: usize,
 ) -> Vec<(String, String, f32)> {
-    fn dfs(
-        pos: usize,
-        syllable_candidates: &[Vec<String>],
-        current: &mut Vec<String>,
-        has_unknown: bool,
-        out: &mut Vec<(String, String, f32)>,
-        limit: usize,
-    ) {
-        if out.len() >= limit {
-            return;
-        }
-        if pos == syllable_candidates.len() {
-            let display = current.join(" ");
-            let lm_token = if current.len() == 1 {
-                current[0].clone()
-            } else {
-                current.join("_")
-            };
-            let penalty = if has_unknown { -10.0 } else { 0.0 };
-            out.push((lm_token, display, penalty));
-            return;
-        }
+    #[derive(Clone, Eq, PartialEq)]
+    struct RankNode {
+        rank_sum: usize,
+        indices: Vec<usize>,
+    }
 
-        if syllable_candidates[pos].is_empty() {
-            current.push(UNKNOWN_TOKEN.to_string());
-            dfs(pos + 1, syllable_candidates, current, true, out, limit);
-            current.pop();
-            return;
-        }
-
-        for word in &syllable_candidates[pos] {
-            if out.len() >= limit {
-                break;
-            }
-            current.push(word.clone());
-            dfs(
-                pos + 1,
-                syllable_candidates,
-                current,
-                has_unknown || word == UNKNOWN_TOKEN,
-                out,
-                limit,
-            );
-            current.pop();
+    impl Ord for RankNode {
+        fn cmp(&self, other: &Self) -> Ordering {
+            other
+                .rank_sum
+                .cmp(&self.rank_sum)
+                .then_with(|| other.indices.cmp(&self.indices))
         }
     }
 
+    impl PartialOrd for RankNode {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+
+    if syllable_candidates.is_empty() || limit == 0 {
+        return Vec::new();
+    }
+
+    let choices_per_slot: Vec<Vec<String>> = syllable_candidates
+        .iter()
+        .map(|choices| {
+            if choices.is_empty() {
+                vec![UNKNOWN_TOKEN.to_string()]
+            } else {
+                choices.clone()
+            }
+        })
+        .collect();
+
+    let mut heap = BinaryHeap::new();
+    let mut visited: HashSet<Vec<usize>> = HashSet::new();
+    let start = vec![0; choices_per_slot.len()];
+    visited.insert(start.clone());
+    heap.push(RankNode {
+        rank_sum: 0,
+        indices: start,
+    });
+
     let mut results = Vec::new();
-    let mut current = Vec::new();
-    dfs(
-        0,
-        syllable_candidates,
-        &mut current,
-        false,
-        &mut results,
-        limit,
-    );
+    while let Some(node) = heap.pop() {
+        if results.len() >= limit {
+            break;
+        }
+
+        let words: Vec<String> = node
+            .indices
+            .iter()
+            .enumerate()
+            .map(|(pos, &idx)| choices_per_slot[pos][idx].clone())
+            .collect();
+        let has_unknown = words.iter().any(|w| w == UNKNOWN_TOKEN);
+        let display = words.join(" ");
+        let lm_token = if words.len() == 1 {
+            words[0].clone()
+        } else {
+            words.join("_")
+        };
+        let penalty = if has_unknown {
+            UNKNOWN_TOKEN_PENALTY
+        } else {
+            0.0
+        };
+        results.push((lm_token, display, penalty));
+
+        for dim in 0..node.indices.len() {
+            let mut next = node.indices.clone();
+            next[dim] += 1;
+            if next[dim] >= choices_per_slot[dim].len() {
+                continue;
+            }
+            if visited.insert(next.clone()) {
+                heap.push(RankNode {
+                    rank_sum: node.rank_sum + 1,
+                    indices: next,
+                });
+            }
+        }
+    }
+
     results
 }
 
@@ -790,7 +823,10 @@ fn build_decode_units(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<D
                         }
                     })
                     .unwrap_or_else(|| vec![UNKNOWN_TOKEN.to_string()]);
-                units.push(DecodeUnit::Syllable(choices));
+                units.push(DecodeUnit::Syllable {
+                    choices,
+                    from_v7: true,
+                });
             }
             continue;
         }
@@ -799,7 +835,10 @@ fn build_decode_units(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<D
             if is_supported_punctuation_token(&token) || token.contains('_') {
                 units.push(DecodeUnit::BoundaryToken(token));
             } else {
-                units.push(DecodeUnit::Syllable(vec![token]));
+                units.push(DecodeUnit::Syllable {
+                    choices: vec![token],
+                    from_v7: false,
+                });
             }
         }
     }
@@ -883,7 +922,7 @@ fn perform_inference(
     struct DecodingState {
         score: f32,
         lm_state: kenlm::State,
-        display_tokens: Vec<String>,
+        history_tail_idx: Option<usize>,
     }
 
     let units = build_decode_units(islands, tokenizer)?;
@@ -896,8 +935,9 @@ fn perform_inference(
     frontiers[0].push(DecodingState {
         score: 0.0,
         lm_state: model.begin_sentence_state(),
-        display_tokens: Vec::new(),
+        history_tail_idx: None,
     });
+    let mut history_arena: Vec<HistoryEntry> = Vec::new();
 
     let mut span_candidates_cache: HashMap<(usize, usize), Vec<(String, String, f32)>> =
         HashMap::new();
@@ -907,36 +947,44 @@ fn perform_inference(
             continue;
         }
         let base_states = frontiers[pos].clone();
-        let mut touched_end_positions = Vec::new();
+        let mut touched_end_positions: HashSet<usize> = HashSet::new();
 
         match &units[pos] {
             DecodeUnit::BoundaryToken(token) => {
                 for state in &base_states {
                     let (lm_score, next_lm_state) = model.score(&state.lm_state, token);
-                    let mut next_tokens = state.display_tokens.clone();
-                    next_tokens.push(token.clone());
+                    let next_history_tail_idx = push_history(
+                        &mut history_arena,
+                        state.history_tail_idx,
+                        vec![token.clone()],
+                    );
                     frontiers[pos + 1].push(DecodingState {
                         score: state.score + lm_score,
                         lm_state: next_lm_state,
-                        display_tokens: next_tokens,
+                        history_tail_idx: next_history_tail_idx,
                     });
                 }
-                touched_end_positions.push(pos + 1);
+                touched_end_positions.insert(pos + 1);
             }
-            DecodeUnit::Syllable(_) => {
+            DecodeUnit::Syllable { .. } => {
+                let mut span_has_v7 = false;
                 for span_len in 1..=MAX_SYLLABLES_PER_WORD.min(units.len() - pos) {
                     let end = pos + span_len;
-                    if units[pos..end]
-                        .iter()
-                        .any(|unit| matches!(unit, DecodeUnit::BoundaryToken(_)))
-                    {
-                        break;
+                    let current = &units[end - 1];
+                    match current {
+                        DecodeUnit::BoundaryToken(_) => break,
+                        DecodeUnit::Syllable { from_v7, .. } => {
+                            span_has_v7 |= *from_v7;
+                        }
+                    }
+                    if span_len > 1 && !span_has_v7 {
+                        continue;
                     }
                     let candidates = span_candidates_cache.entry((pos, end)).or_insert_with(|| {
                         let syllable_choices: Vec<Vec<String>> = units[pos..end]
                             .iter()
                             .map(|unit| match unit {
-                                DecodeUnit::Syllable(choices) => choices.clone(),
+                                DecodeUnit::Syllable { choices, .. } => choices.clone(),
                                 DecodeUnit::BoundaryToken(_) => Vec::new(),
                             })
                             .collect();
@@ -948,16 +996,19 @@ fn perform_inference(
                     for state in &base_states {
                         for (lm_token, display_text, penalty) in candidates.iter() {
                             let (lm_score, next_lm_state) = model.score(&state.lm_state, lm_token);
-                            let mut next_tokens = state.display_tokens.clone();
-                            next_tokens.push(display_text.clone());
+                            let next_history_tail_idx = push_history(
+                                &mut history_arena,
+                                state.history_tail_idx,
+                                vec![display_text.clone()],
+                            );
                             frontiers[end].push(DecodingState {
                                 score: state.score + lm_score + *penalty,
                                 lm_state: next_lm_state,
-                                display_tokens: next_tokens,
+                                history_tail_idx: next_history_tail_idx,
                             });
                         }
                     }
-                    touched_end_positions.push(end);
+                    touched_end_positions.insert(end);
                 }
             }
         }
@@ -980,7 +1031,10 @@ fn perform_inference(
 
     Ok(finals
         .into_iter()
-        .map(|state| vec![format_output_tokens(&state.display_tokens)])
+        .map(|state| {
+            let decoded_tokens = materialize_history(&history_arena, state.history_tail_idx);
+            vec![format_output_tokens(&decoded_tokens)]
+        })
         .collect())
 }
 
