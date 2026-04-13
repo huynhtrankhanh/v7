@@ -17,6 +17,9 @@
 !tsconfig.jest.json
 !vite.config.ts
 !scripts/stripped-plover-agent.cjs
+!requirements.txt
+!train_lm.sh
+!preprocess_corpus.py
 
 # Explicitly ignore unwanted files within the allowed directories
 ai/__pycache__/
