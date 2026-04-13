@@ -10,6 +10,10 @@ SUPPORTED_PUNCT = {'.', '!', ',', ';', ':'}
 # Number of most-frequent bigrams + trigrams to use for syllable grouping.
 TOP_NGRAMS = 144000
 
+# Memory management constraints for n-gram counting
+PRUNE_THRESHOLD = 3_000_000 # Max number of unique n-grams to hold in RAM
+PRUNE_KEEP = 1_000_000      # How many top n-grams to keep when pruning
+
 
 def _is_valid_syllable(token: str) -> bool:
     """Return True for tokens consisting only of Unicode letters (no digits,
@@ -75,18 +79,50 @@ def _tokenize_line(line: str):
 
 
 def _count_ngrams(input_path: str):
-    """First pass: count all consecutive syllable bigrams and trigrams."""
+    """First pass: count consecutive syllable bigrams and trigrams.
+    Periodically prunes the counters based on capacity to prevent Out-Of-Memory (OOM) 
+    errors, safely handling extremely long single lines."""
     bigrams: Counter = Counter()
     trigrams: Counter = Counter()
+    
+    # We track how many items we've processed to avoid calling len() on every iteration
+    items_since_check = 0
+    CHECK_INTERVAL = 200_000 
+
     for line in _iter_lines(input_path):
         line = line.strip().lower()
         if not line:
             continue
+            
         syllables = [t for t in _tokenize_line(line) if _is_valid_syllable(t)]
-        for i in range(len(syllables) - 1):
+        n_syllables = len(syllables)
+        
+        # Consolidate into a single loop to allow mid-line pruning
+        for i in range(n_syllables - 1):
+            # Add bigram
             bigrams[(syllables[i], syllables[i + 1])] += 1
-        for i in range(len(syllables) - 2):
-            trigrams[(syllables[i], syllables[i + 1], syllables[i + 2])] += 1
+            
+            # Add trigram (if not at the very end)
+            if i < n_syllables - 2:
+                trigrams[(syllables[i], syllables[i + 1], syllables[i + 2])] += 1
+                
+            items_since_check += 1
+            
+            # Capacity-based Pruning
+            if items_since_check >= CHECK_INTERVAL:
+                # Only prune if we've actually breached the RAM threshold
+                if len(bigrams) > PRUNE_THRESHOLD:
+                    bigrams = Counter(dict(bigrams.most_common(PRUNE_KEEP)))
+                if len(trigrams) > PRUNE_THRESHOLD:
+                    trigrams = Counter(dict(trigrams.most_common(PRUNE_KEEP)))
+                items_since_check = 0 # Reset interval counter
+
+    # Final safety prune before returning
+    if len(bigrams) > PRUNE_THRESHOLD:
+        bigrams = Counter(dict(bigrams.most_common(PRUNE_KEEP)))
+    if len(trigrams) > PRUNE_THRESHOLD:
+        trigrams = Counter(dict(trigrams.most_common(PRUNE_KEEP)))
+
     return bigrams, trigrams
 
 
@@ -132,19 +168,8 @@ def preprocess(input_path: str, tok_path: str, vocab_path: str) -> None:
     """Tokenise *input_path* (file or directory) using KenLM n-gram statistics
     and write:
 
-    * *tok_path*   – one tokenised sentence per line, suitable for KenLM.
+    * *tok_path* – one tokenised sentence per line, suitable for KenLM.
     * *vocab_path* – sorted list of unique tokens seen in the corpus.
-
-    Supported punctuation marks (. ! , ; :) are kept as separate tokens.
-    Multi-syllable groups are represented with underscores (e.g. ``học_sinh``).
-
-    Algorithm
-    ---------
-    Pass 1 – Count every consecutive syllable bigram and trigram across the
-             corpus and select the TOP_NGRAMS most frequent ones.
-    Pass 2 – Re-read the corpus and greedily group consecutive syllables using
-             the selected n-grams (trigrams preferred over bigrams), then write
-             the grouped tokens as the training corpus for KenLM.
     """
     print("Pass 1: counting syllable bigrams and trigrams...")
     bigrams, trigrams = _count_ngrams(input_path)
