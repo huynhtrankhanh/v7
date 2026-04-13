@@ -621,7 +621,17 @@ struct LatticeNode {
 const KENLM_STATE_KEY_SIZE: usize = 128;
 #[cfg(not(feature = "mocked-model"))]
 const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
-const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
+/// Score penalty applied when a V7 slot has no matching candidates or all
+/// candidates are unknown to the language model.  A value of -10.0 log-prob
+/// units is large enough to push unknown-word paths to the bottom of the beam
+/// while still allowing them to survive if every alternative is equally bad.
+#[cfg(not(feature = "mocked-model"))]
+const UNKNOWN_PENALTY: f32 = -10.0;
+
+/// Placeholder token stored in history when no candidate syllable could be
+/// decoded for a V7 slot.
+#[cfg(not(feature = "mocked-model"))]
+const UNKNOWN_TOKEN: &str = "<?>"; 
 
 // ---------------------------------------------------------------------------
 // Syllable-level vocabulary trie
@@ -848,7 +858,6 @@ fn lattice_viterbi_unified(
     per_state_width: usize,
     history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
-    const UNKNOWN_PENALTY: f32 = -10.0;
     const MAX_WORD_SYLLABLES: usize = 5;
 
     let n = slots.len();
@@ -960,7 +969,7 @@ fn lattice_viterbi_unified(
 
                         let word_str = word_opt
                             .clone()
-                            .unwrap_or_else(|| "???".to_string());
+                            .unwrap_or_else(|| UNKNOWN_TOKEN.to_string());
                         let state_key = new_state.data;
 
                         nodes.push(LatticeNode {
@@ -1023,7 +1032,13 @@ fn lattice_viterbi_unified(
         });
     }
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    results.sort_by(|a, b| {
+        // NaN scores are treated as less than any finite score so they sink
+        // to the bottom of the beam rather than producing unpredictable order.
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Greater)
+    });
     results
 }
 

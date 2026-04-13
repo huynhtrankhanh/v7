@@ -12,8 +12,13 @@ SUPPORTED_PUNCT = {'.', '!', ',', ';', ':'}
 def _is_valid_token(token: str) -> bool:
     """Return True for word tokens consisting only of Unicode letters and
     underscores (the separator used by underthesea for multi-syllable words)
-    with no digits."""
+    with no digits.  The first and last characters must be alphabetic so that
+    lone underscores and underscore-prefixed noise tokens are rejected."""
     if not token:
+        return False
+    if not token[0].isalpha():
+        return False
+    if not token[-1].isalpha():
         return False
     for ch in token:
         if not (ch.isalpha() or ch == '_'):
@@ -95,7 +100,6 @@ def preprocess(input_path: str, tok_path: str, vocab_path: str) -> None:
         for word in sorted(vocab):
             fvocab.write(word + '\n')
     print(f"Vocabulary written: {vocab_path}")
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:

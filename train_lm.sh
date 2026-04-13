@@ -32,7 +32,8 @@ fi
 
 # 2. Train KenLM (3-gram)
 echo "Training KenLM (3-gram)..."
-"${KENLM_BIN}/lmplz" -o 3 --prune 0 0 1 < "${TOK}" > "${ARPA}"
+"${KENLM_BIN}/lmplz" -o 3 --prune 0 0 1 < "${TOK}" \
+  | awk '/^\\data\\/{found=1} found && !/^Name:lmplz/' > "${ARPA}"
 
 # 3. Binarize
 echo "Binarizing model..."
