@@ -12,3 +12,5 @@ KenLM is already installed in the docker-compose.yml file. You just need to run 
 Use this dataset when testing. Do not commit the dataset or the resulting model to the repository. This is only to test the approach. The model will be trained on the complete dataset later. This is a small dataset for testing and validation.
 
 https://github.com/hoanganhpham1006/Vietnamese_Language_Model/blob/master/Train_Full.zip
+
+To check whether your code is doing a good job, take a small sentence in the dataset, turn into v7 and run inference. If inference returns a wildly inaccurate result, you are doing something wrong, and must reexamine the code.
