@@ -41,6 +41,35 @@ COPY inference-rs ./inference-rs
 WORKDIR /app/inference-rs
 RUN cargo build --release
 
+# ---------------------------------------------------------------------------
+# Training stage: Python + underthesea + KenLM binaries
+# Use this stage to preprocess the corpus and train the language model.
+# Run via:  docker compose run --rm train bash train_lm.sh
+# ---------------------------------------------------------------------------
+FROM python:3.11-slim AS train
+
+RUN apt-get update && apt-get install -y \
+    cmake \
+    g++ \
+    git \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    libboost-all-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy KenLM binaries from the builder stage
+COPY --from=builder /app/kenlm ./kenlm
+
+# Install Python dependencies (includes underthesea)
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy training scripts
+COPY preprocess_corpus.py train_lm.sh ./
+
 FROM rust:latest
 WORKDIR /app
 

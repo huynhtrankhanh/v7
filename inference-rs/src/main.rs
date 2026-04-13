@@ -33,6 +33,9 @@ struct Args {
     #[arg(long, default_value = "lm.binary")]
     model_path: String,
 
+    #[arg(long, default_value = "vocab.txt")]
+    vocab_path: String,
+
     #[arg(long)]
     server: bool,
 
@@ -399,6 +402,135 @@ fn normalize_rime_start_char(c: char) -> char {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Unified-slot stream types and helpers
+// ---------------------------------------------------------------------------
+
+/// One position in the unified input stream produced by flattening all islands.
+/// For V7 islands: multiple candidate syllables.
+/// For fixed-text islands: a single syllable candidate or a punctuation token.
+struct SyllableSlot {
+    candidates: Vec<String>,
+    is_punctuation: bool,
+}
+
+fn is_supported_punct(c: char) -> bool {
+    matches!(c, '.' | '!' | ',' | ';' | ':')
+}
+
+fn is_punct_str(s: &str) -> bool {
+    let mut chars = s.chars();
+    if let Some(c) = chars.next() {
+        chars.next().is_none() && is_supported_punct(c)
+    } else {
+        false
+    }
+}
+
+/// Tokenise fixed text into syllable / punctuation slots.
+/// Letters (Unicode) are grouped into word tokens, each becoming one slot.
+/// Supported punctuation characters become individual punctuation slots.
+/// All other content (digits, other symbols, whitespace) acts as a word
+/// boundary and is silently dropped so that the KenLM state stays clean.
+fn fixed_text_to_slots(text: &str) -> Vec<SyllableSlot> {
+    let mut slots = Vec::new();
+    let mut current_word = String::new();
+
+    for ch in text.to_lowercase().chars() {
+        if is_supported_punct(ch) {
+            if !current_word.is_empty() {
+                slots.push(SyllableSlot {
+                    candidates: vec![current_word.clone()],
+                    is_punctuation: false,
+                });
+                current_word.clear();
+            }
+            slots.push(SyllableSlot {
+                candidates: vec![ch.to_string()],
+                is_punctuation: true,
+            });
+        } else if ch.is_alphabetic() {
+            current_word.push(ch);
+        } else {
+            // Whitespace or other non-letter: end of current word
+            if !current_word.is_empty() {
+                slots.push(SyllableSlot {
+                    candidates: vec![current_word.clone()],
+                    is_punctuation: false,
+                });
+                current_word.clear();
+            }
+        }
+    }
+    if !current_word.is_empty() {
+        slots.push(SyllableSlot {
+            candidates: vec![current_word],
+            is_punctuation: false,
+        });
+    }
+    slots
+}
+
+/// Convert all islands into a flat, ordered sequence of `SyllableSlot`s so
+/// that the Viterbi algorithm can group syllables across island boundaries.
+fn flatten_islands_to_slots(
+    islands: &[String],
+    tokenizer: &Tokenizer,
+) -> Result<Vec<SyllableSlot>> {
+    let mut slots = Vec::new();
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
+
+    for (i, segment) in islands.iter().enumerate() {
+        let is_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(segment, tokenizer)
+        };
+
+        if is_v7 {
+            let templates = parse_v7_string(segment, tokenizer)?;
+            for template in templates {
+                let candidates = match get_candidates(&template, tokenizer) {
+                    Some(list) if !list.is_empty() => list.clone(),
+                    _ => vec![],
+                };
+                slots.push(SyllableSlot {
+                    candidates,
+                    is_punctuation: false,
+                });
+            }
+        } else {
+            slots.extend(fixed_text_to_slots(segment));
+        }
+    }
+
+    Ok(slots)
+}
+
+/// Join decoded words into display text.
+/// - Multi-syllable words are stored with `_` separating syllables; these are
+///   replaced with a space for display.
+/// - Punctuation attaches directly to the preceding token (no leading space).
+/// - Unknown-word sentinels ("???") are output as-is with a separating space.
+fn format_output_words(words: &[String]) -> String {
+    let mut result = String::new();
+    let mut need_space = false;
+
+    for word in words {
+        if is_punct_str(word) {
+            result.push_str(word);
+            need_space = true; // space after punctuation before next word
+        } else {
+            if need_space || !result.is_empty() {
+                result.push(' ');
+            }
+            result.push_str(&word.replace('_', " "));
+            need_space = false;
+        }
+    }
+    result
+}
+
 #[derive(Debug)]
 struct PartialSyllableTemplate {
     consonant: String,
@@ -477,10 +609,10 @@ struct IslandState {
 
 #[derive(Debug, Clone)]
 #[cfg(not(feature = "mocked-model"))]
-struct LatticeNode<'a> {
+struct LatticeNode {
     score: f32,
     state: kenlm::State,
-    word: Option<&'a str>,
+    word: Option<String>,
     parent_idx: Option<usize>,
     origin_idx: usize,
 }
@@ -558,20 +690,95 @@ fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usiz
     parts
 }
 
+/// Enumerate all vocabulary-known multi-syllable word candidates for a span of
+/// `k >= 2` consecutive syllable slots.
+///
+/// Starting from the first slot's candidates, each extension step joins the
+/// current set of prefixes with the next slot's candidates using `_` and
+/// discards any combination absent from *vocab*.  This incremental pruning
+/// keeps the search space manageable even for larger spans.
 #[cfg(not(feature = "mocked-model"))]
-fn lattice_viterbi_v7_island(
-    templates: &[PartialSyllableTemplate],
-    tokenizer: &Tokenizer,
+fn enumerate_multi_syllable_words(
+    slots: &[SyllableSlot],
     model: &kenlm::Model,
+    vocab: &HashSet<String>,
+) -> Vec<(String, u32)> {
+    debug_assert!(slots.len() >= 2);
+
+    let mut current: Vec<String> = slots[0].candidates.clone();
+
+    for slot in &slots[1..] {
+        let mut next = Vec::new();
+        for base in &current {
+            for cand in &slot.candidates {
+                let combined = format!("{}_{}", base, cand);
+                if vocab.contains(&combined) {
+                    next.push(combined);
+                }
+            }
+        }
+        current = next;
+        if current.is_empty() {
+            return vec![];
+        }
+    }
+
+    current
+        .into_iter()
+        .map(|w| {
+            let idx = model.lookup(&w);
+            (w, idx)
+        })
+        .collect()
+}
+
+/// Prune the node list at one position: group by LM state, keep the top
+/// `per_state_width` scoring nodes per unique state.
+#[cfg(not(feature = "mocked-model"))]
+fn prune_position_nodes(
+    nodes_at_pos: &mut Vec<usize>,
+    per_state_width: usize,
+    nodes: &[LatticeNode],
+) {
+    if nodes_at_pos.len() <= per_state_width {
+        return;
+    }
+    let mut by_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
+    for &idx in nodes_at_pos.iter() {
+        by_state.entry(nodes[idx].state.data).or_default().push(idx);
+    }
+    nodes_at_pos.clear();
+    for (_, mut indices) in by_state {
+        truncate_top_indices_by_score(&mut indices, per_state_width, |idx| nodes[idx].score);
+        nodes_at_pos.extend(indices);
+    }
+}
+
+/// Unified Viterbi decoder that operates on the flattened slot stream.
+///
+/// At each position the decoder tries consuming `k = 1 ..= MAX_WORD_SYLLABLES`
+/// consecutive non-punctuation slots as a single word.  For `k = 1` all
+/// per-slot candidates are tried (plus an unknown-word fallback).  For `k > 1`
+/// only vocabulary-confirmed compound forms are tried, which keeps the search
+/// space tractable.  Punctuation slots are always consumed alone.
+#[cfg(not(feature = "mocked-model"))]
+fn lattice_viterbi_unified(
+    slots: &[SyllableSlot],
+    model: &kenlm::Model,
+    vocab: &HashSet<String>,
     incoming_states: &[IslandState],
     per_state_width: usize,
     history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
-    const UNKNOWN_TOKEN: &str = "<?>";
     const UNKNOWN_PENALTY: f32 = -10.0;
+    const MAX_WORD_SYLLABLES: usize = 5;
 
-    let mut nodes: Vec<LatticeNode<'_>> = Vec::new();
-    let mut current_layer: Vec<usize> = Vec::with_capacity(incoming_states.len());
+    let n = slots.len();
+    let mut nodes: Vec<LatticeNode> = Vec::new();
+    // position_nodes[p] holds node indices whose path ends exactly at position p.
+    let mut position_nodes: Vec<Vec<usize>> = vec![Vec::new(); n + 1];
+
+    // Seed position 0 with the incoming states.
     for (origin_idx, state) in incoming_states.iter().enumerate() {
         nodes.push(LatticeNode {
             score: state.score,
@@ -580,129 +787,153 @@ fn lattice_viterbi_v7_island(
             parent_idx: None,
             origin_idx,
         });
-        current_layer.push(nodes.len() - 1);
+        position_nodes[0].push(nodes.len() - 1);
     }
+    prune_position_nodes(&mut position_nodes[0], per_state_width, &nodes);
 
-    for template in templates {
-        let candidates_opt = get_candidates(template, tokenizer);
-        let mut candidate_words = [UNKNOWN_TOKEN; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_indices = [0u32; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_penalties = [UNKNOWN_PENALTY; MAX_CANDIDATES_PER_SYLLABLE];
-        let mut candidate_count = 0usize;
-        let mut overflow_candidates: Option<Vec<(&str, u32)>> = None;
-
-        if let Some(list) = candidates_opt {
-            if list.is_empty() {
-                candidate_count = 1;
-            } else {
-                let inlined = list.len().min(MAX_CANDIDATES_PER_SYLLABLE);
-                for i in 0..inlined {
-                    let word = list[i].as_str();
-                    candidate_words[i] = word;
-                    candidate_indices[i] = model.lookup(word);
-                    candidate_penalties[i] = 0.0;
-                }
-                candidate_count = inlined;
-
-                if list.len() > MAX_CANDIDATES_PER_SYLLABLE {
-                    let mut overflow = Vec::with_capacity(list.len() - MAX_CANDIDATES_PER_SYLLABLE);
-                    for word in &list[MAX_CANDIDATES_PER_SYLLABLE..] {
-                        overflow.push((word.as_str(), model.lookup(word)));
-                    }
-                    overflow_candidates = Some(overflow);
-                }
-            }
-        } else {
-            candidate_count = 1;
+    for pos in 0..n {
+        // Clone to avoid borrow conflicts when pushing new nodes.
+        let parents = position_nodes[pos].clone();
+        if parents.is_empty() {
+            continue;
         }
 
-        let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
+        if slots[pos].is_punctuation {
+            // Punctuation: always consumed as a single token.
+            let punct = slots[pos].candidates[0].clone();
+            let punct_idx = model.lookup(&punct);
+            let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> =
+                HashMap::new();
 
-        for &parent_idx in &current_layer {
-            let (parent_score, parent_state, parent_origin_idx) = {
-                let parent_node = &nodes[parent_idx];
-                (
-                    parent_node.score,
-                    parent_node.state.clone(),
-                    parent_node.origin_idx,
-                )
-            };
-
-            for i in 0..candidate_count {
-                let word_str = candidate_words[i];
-                let word_idx = candidate_indices[i];
-                let penalty = candidate_penalties[i];
-
-                let (total_score, new_state) = if penalty < -1.0 && word_str == UNKNOWN_TOKEN {
-                    (parent_score + penalty, parent_state.clone())
-                } else {
-                    let (lm_score, next_state) = model.score_index(&parent_state, word_idx);
-                    (parent_score + lm_score + penalty, next_state)
+            for parent_idx in parents {
+                let (parent_score, parent_state, parent_origin) = {
+                    let n = &nodes[parent_idx];
+                    (n.score, n.state.clone(), n.origin_idx)
                 };
-
-                // `kenlm::State` is a fixed-size byte buffer initialized from zeros and then
-                // updated by KenLM's deterministic transition function (`score_index`), so
-                // identical linguistic contexts yield identical `data` bytes for dedup keys.
+                let (lm_score, new_state) = model.score_index(&parent_state, punct_idx);
                 let state_key = new_state.data;
                 nodes.push(LatticeNode {
-                    score: total_score,
+                    score: parent_score + lm_score,
                     state: new_state,
-                    word: Some(word_str),
+                    word: Some(punct.clone()),
                     parent_idx: Some(parent_idx),
-                    origin_idx: parent_origin_idx,
+                    origin_idx: parent_origin,
                 });
                 let new_idx = nodes.len() - 1;
-                let entry = best_for_state
-                    .entry(state_key)
-                    .or_insert_with(|| Vec::with_capacity(per_state_width));
+                let entry = best_for_state.entry(state_key).or_default();
                 entry.push(new_idx);
-                truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
+                truncate_top_indices_by_score(entry, per_state_width, |i| nodes[i].score);
+            }
+            for (_, indices) in best_for_state {
+                position_nodes[pos + 1].extend(indices);
+            }
+            prune_position_nodes(&mut position_nodes[pos + 1], per_state_width, &nodes);
+        } else {
+            // Syllable slot: try k = 1..=MAX_WORD_SYLLABLES.
+            for k in 1..=MAX_WORD_SYLLABLES {
+                let end = pos + k;
+                if end > n {
+                    break;
+                }
+                // Stop extending if we hit a punctuation slot.
+                if k > 1 && slots[end - 1].is_punctuation {
+                    break;
+                }
+
+                // Build the candidate list for this k-slot span.
+                // (None, _) = unknown word with UNKNOWN_PENALTY.
+                let word_candidates: Vec<(Option<String>, u32)> = if k == 1 {
+                    let cands = &slots[pos].candidates;
+                    if cands.is_empty() {
+                        vec![(None, 0)]
+                    } else {
+                        cands
+                            .iter()
+                            .map(|w| (Some(w.clone()), model.lookup(w)))
+                            .collect()
+                    }
+                } else {
+                    enumerate_multi_syllable_words(&slots[pos..end], model, vocab)
+                        .into_iter()
+                        .map(|(w, idx)| (Some(w), idx))
+                        .collect()
+                };
+
+                if word_candidates.is_empty() {
+                    continue;
+                }
+
+                let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> =
+                    HashMap::new();
+
+                for &parent_idx in &parents {
+                    let (parent_score, parent_state, parent_origin) = {
+                        let n = &nodes[parent_idx];
+                        (n.score, n.state.clone(), n.origin_idx)
+                    };
+
+                    for (word_opt, word_idx) in &word_candidates {
+                        let (total_score, new_state) = if word_opt.is_none() {
+                            (parent_score + UNKNOWN_PENALTY, parent_state.clone())
+                        } else {
+                            let (lm_score, ns) = model.score_index(&parent_state, *word_idx);
+                            (parent_score + lm_score, ns)
+                        };
+
+                        let word_str = word_opt
+                            .clone()
+                            .unwrap_or_else(|| "???".to_string());
+                        let state_key = new_state.data;
+
+                        nodes.push(LatticeNode {
+                            score: total_score,
+                            state: new_state,
+                            word: Some(word_str),
+                            parent_idx: Some(parent_idx),
+                            origin_idx: parent_origin,
+                        });
+                        let new_idx = nodes.len() - 1;
+                        let entry = best_for_state.entry(state_key).or_default();
+                        entry.push(new_idx);
+                        truncate_top_indices_by_score(entry, per_state_width, |i| nodes[i].score);
+                    }
+                }
+
+                for (_, indices) in best_for_state {
+                    position_nodes[end].extend(indices);
+                }
+                // Pruning deferred to when `end` becomes the active position.
             }
 
-            if let Some(overflow) = &overflow_candidates {
-                for (word_str, word_idx) in overflow {
-                    let (lm_score, next_state) = model.score_index(&parent_state, *word_idx);
-                    let total_score = parent_score + lm_score;
-                    let state_key = next_state.data;
-                    nodes.push(LatticeNode {
-                        score: total_score,
-                        state: next_state,
-                        word: Some(*word_str),
-                        parent_idx: Some(parent_idx),
-                        origin_idx: parent_origin_idx,
-                    });
-                    let new_idx = nodes.len() - 1;
-                    let entry = best_for_state
-                        .entry(state_key)
-                        .or_insert_with(|| Vec::with_capacity(per_state_width));
-                    entry.push(new_idx);
-                    truncate_top_indices_by_score(entry, per_state_width, |idx| nodes[idx].score);
+            // Prune all target positions that received new nodes from `pos`.
+            let max_end = (pos + MAX_WORD_SYLLABLES).min(n);
+            for end in (pos + 1)..=max_end {
+                if !position_nodes[end].is_empty() {
+                    prune_position_nodes(&mut position_nodes[end], per_state_width, &nodes);
                 }
             }
         }
-
-        current_layer = best_for_state.into_values().flatten().collect();
-        if current_layer.is_empty() {
-            break;
-        }
     }
 
-    let mut results = Vec::with_capacity(current_layer.len());
-    for node_idx in current_layer {
+    // Collect results from the final position.
+    let final_nodes = position_nodes[n].clone();
+    let mut results = Vec::with_capacity(final_nodes.len());
+
+    for node_idx in final_nodes {
         let node = &nodes[node_idx];
 
         let mut words = Vec::new();
         let mut cursor = Some(node_idx);
         while let Some(idx) = cursor {
-            let current = &nodes[idx];
-            if let Some(word) = &current.word {
-                words.push((*word).to_string());
+            let n = &nodes[idx];
+            if let Some(w) = &n.word {
+                words.push(w.clone());
             }
-            cursor = current.parent_idx;
+            cursor = n.parent_idx;
         }
         words.reverse();
 
-        let new_history_tail_idx = push_history(
+        let new_history = push_history(
             history_arena,
             incoming_states[node.origin_idx].history_tail_idx,
             words,
@@ -710,52 +941,25 @@ fn lattice_viterbi_v7_island(
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
-            history_tail_idx: new_history_tail_idx,
+            history_tail_idx: new_history,
         });
     }
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
     results
 }
 
 fn perform_mock_inference(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<Vec<String>>> {
-    let mut decoded_islands = Vec::new();
-    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
+    let slots = flatten_islands_to_slots(islands, tokenizer)?;
 
-    for (i, segment) in islands.iter().enumerate() {
-        let should_decode_v7 = if strict_alternating {
-            i % 2 == 1
-        } else {
-            is_v7_segment(segment, tokenizer)
-        };
-
-        if !should_decode_v7 {
-            // Fixed text
-            decoded_islands.push(segment.clone());
-        } else {
-            // V7 Code Island
-            let templates = parse_v7_string(segment, tokenizer)?;
-            let mut words = Vec::new();
-            for template in templates {
-                let candidates_opt = get_candidates(&template, tokenizer);
-                if let Some(list) = candidates_opt {
-                    if let Some(first) = list.first() {
-                        words.push(first.clone());
-                    } else {
-                        // Fallback if list is empty
-                        words.push(segment.clone());
-                    }
-                } else {
-                    // Fallback if no candidates found
-                    words.push(segment.clone());
-                }
-            }
-            decoded_islands.push(words.join(" "));
+    let mut words: Vec<String> = Vec::new();
+    for slot in &slots {
+        if let Some(first) = slot.candidates.first() {
+            words.push(first.clone());
         }
     }
 
-    // Return a single candidate containing the decoded islands
-    Ok(vec![decoded_islands])
+    Ok(vec![vec![format_output_words(&words)]])
 }
 
 #[cfg(not(feature = "mocked-model"))]
@@ -763,80 +967,42 @@ fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
     model: &kenlm::Model,
+    vocab: &HashSet<String>,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
-    // Initial state
-    let mut current_states = vec![IslandState {
+    let slots = flatten_islands_to_slots(islands, tokenizer)?;
+
+    let initial_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
         history_tail_idx: None,
     }];
     let mut history_arena: Vec<HistoryEntry> = Vec::new();
     let hypotheses_per_state = beam_width.max(1);
-    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
-    for (i, segment) in islands.iter().enumerate() {
-        let should_decode_v7 = if strict_alternating {
-            i % 2 == 1
-        } else {
-            is_v7_segment(segment, tokenizer)
-        };
+    let final_states = lattice_viterbi_unified(
+        &slots,
+        model,
+        vocab,
+        &initial_states,
+        hypotheses_per_state,
+        &mut history_arena,
+    );
 
-        if !should_decode_v7 {
-            // === MODIFIED SECTION: Fixed Text Island ===
-            if segment.is_empty() {
-                // Record empty history for alignment
-                for state in &mut current_states {
-                    state.history_tail_idx =
-                        push_history(&mut history_arena, state.history_tail_idx, Vec::new());
-                }
-                continue;
-            }
-
-            // 1. We still need purified words to update the LM State accurately
-            let purified_words = purify(segment);
-
-            // 2. Update states
-            for state in &mut current_states {
-                // Update Score/State using PURIFIED words
-                for word in &purified_words {
-                    let (lm_score, new_st) = model.score(&state.state, word);
-                    state.score += lm_score;
-                    state.state = new_st;
-                }
-
-                // Store ORIGINAL text in history
-                // We wrap it in a Vec to match the expected type,
-                // but this ensures the final output retains casing/punctuation.
-                state.history_tail_idx = push_history(
-                    &mut history_arena,
-                    state.history_tail_idx,
-                    vec![segment.clone()],
-                );
-            }
-            // ===========================================
-        } else {
-            // V7 Code Island
-            // eprintln!("Decoding V7 island: {}", segment);
-            let templates = parse_v7_string(segment, tokenizer)?;
-            current_states = lattice_viterbi_v7_island(
-                &templates,
-                tokenizer,
-                model,
-                &current_states,
-                hypotheses_per_state,
-                &mut history_arena,
-            );
-        }
-    }
-
-    // Sort final results
-    current_states.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-
-    let candidates: Vec<Vec<String>> = current_states
+    let candidates: Vec<Vec<String>> = final_states
         .into_iter()
         .take(beam_width)
-        .map(|s| materialize_history(&history_arena, s.history_tail_idx))
+        .map(|s| {
+            let words = materialize_history(&history_arena, s.history_tail_idx);
+            // materialize_history joins per-entry words with " "; for our unified
+            // approach there is exactly one entry whose island_words list holds
+            // every decoded token.  We re-flatten and format for display.
+            let all_tokens: Vec<String> = words
+                .iter()
+                .flat_map(|chunk| chunk.split_whitespace().map(|t| t.to_string()))
+                .collect();
+            vec![format_output_words(&all_tokens)]
+        })
         .collect();
 
     Ok(candidates)
@@ -905,6 +1071,8 @@ struct AppState {
     tokenizer: Tokenizer,
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
+    #[cfg(not(feature = "mocked-model"))]
+    vocab: HashSet<String>,
     plover: Option<PloverConfig>,
     plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
@@ -944,7 +1112,7 @@ async fn infer_handler(
     }
 
     #[cfg(not(feature = "mocked-model"))]
-    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
+    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, &state.vocab, 100);
 
     #[cfg(feature = "mocked-model")]
     let result = perform_mock_inference(&payload.islands, &state.tokenizer);
@@ -1071,6 +1239,14 @@ async fn main() -> Result<()> {
         kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
+    #[cfg(not(feature = "mocked-model"))]
+    let vocab: HashSet<String> = {
+        eprintln!("Loading vocabulary from {}...", args.vocab_path);
+        let content = std::fs::read_to_string(&args.vocab_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read vocab file '{}': {}", args.vocab_path, e))?;
+        content.lines().filter(|l| !l.is_empty()).map(str::to_string).collect()
+    };
+
     if args.server {
         let plover_host = args
             .stripped_plover_host
@@ -1087,6 +1263,8 @@ async fn main() -> Result<()> {
             tokenizer,
             #[cfg(not(feature = "mocked-model"))]
             model,
+            #[cfg(not(feature = "mocked-model"))]
+            vocab,
             plover,
             plover_status_cache: tokio::sync::Mutex::new(None),
         });
@@ -1131,7 +1309,7 @@ async fn main() -> Result<()> {
 
         let start_time = std::time::Instant::now();
         #[cfg(not(feature = "mocked-model"))]
-        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
+        let candidates = perform_inference(&islands, &tokenizer, &model, &vocab, 100)?;
 
         #[cfg(feature = "mocked-model")]
         let candidates = perform_mock_inference(&islands, &tokenizer)?;
