@@ -623,6 +623,63 @@ const KENLM_STATE_KEY_SIZE: usize = 128;
 const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
 const MAX_CANDIDATES_PER_SYLLABLE: usize = 38;
 
+// ---------------------------------------------------------------------------
+// Syllable-level vocabulary trie
+// ---------------------------------------------------------------------------
+
+/// One node in the syllable-level prefix trie.
+///
+/// Each edge label is a single Vietnamese syllable (or punctuation token).
+/// Multi-syllable vocabulary entries such as `"học_sinh"` are stored by
+/// following the edge `"học"` from the root and then the edge `"sinh"` from
+/// that child node.
+#[cfg(not(feature = "mocked-model"))]
+#[derive(Default)]
+struct TrieNode {
+    is_word: bool,
+    children: HashMap<String, TrieNode>,
+}
+
+/// Syllable-level trie built from the `vocab.txt` artifact produced by
+/// `preprocess_corpus.py`.  Supports O(k) exact-word and prefix-existence
+/// queries where k is the number of syllables.
+#[cfg(not(feature = "mocked-model"))]
+struct VocabTrie {
+    root: TrieNode,
+}
+
+#[cfg(not(feature = "mocked-model"))]
+impl VocabTrie {
+    fn new() -> Self {
+        VocabTrie {
+            root: TrieNode::default(),
+        }
+    }
+
+    /// Insert one vocabulary entry (syllables separated by `_`).
+    fn insert(&mut self, word: &str) {
+        let mut node = &mut self.root;
+        for syllable in word.split('_') {
+            node = node.children.entry(syllable.to_string()).or_default();
+        }
+        node.is_word = true;
+    }
+
+    /// Load from the vocab file produced by `preprocess_corpus.py`.
+    fn from_vocab_file(path: &str) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read vocab file '{}': {}", path, e))?;
+        let mut trie = VocabTrie::new();
+        for line in content.lines() {
+            let word = line.trim();
+            if !word.is_empty() {
+                trie.insert(word);
+            }
+        }
+        Ok(trie)
+    }
+}
+
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
     tokenizer: &'a Tokenizer,
@@ -691,29 +748,44 @@ fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usiz
 }
 
 /// Enumerate all vocabulary-known multi-syllable word candidates for a span of
-/// `k >= 2` consecutive syllable slots.
+/// `k >= 2` consecutive syllable slots, using the `VocabTrie` for fast prefix
+/// pruning.
 ///
-/// Starting from the first slot's candidates, each extension step joins the
-/// current set of prefixes with the next slot's candidates using `_` and
-/// discards any combination absent from *vocab*.  This incremental pruning
-/// keeps the search space manageable even for larger spans.
+/// The trie is traversed simultaneously with the extension of the syllable
+/// path so that branches with no trie node are pruned immediately — no
+/// `HashSet` round-trip and no missed 3+-syllable words whose 2-syllable
+/// prefix is not itself a vocabulary entry.
 #[cfg(not(feature = "mocked-model"))]
-fn enumerate_multi_syllable_words(
+fn enumerate_multi_syllable_words<'v>(
     slots: &[SyllableSlot],
     model: &kenlm::Model,
-    vocab: &HashSet<String>,
+    vocab: &'v VocabTrie,
 ) -> Vec<(String, u32)> {
     debug_assert!(slots.len() >= 2);
 
-    let mut current: Vec<String> = slots[0].candidates.clone();
+    // Each entry: (accumulated syllable path, reference to current trie node).
+    // The lifetime 'v ties the node references to the trie, which outlives
+    // both this function and the returned Vec.
+    let mut current: Vec<(Vec<String>, &'v TrieNode)> = slots[0]
+        .candidates
+        .iter()
+        .filter_map(|cand| {
+            vocab
+                .root
+                .children
+                .get(cand)
+                .map(|child| (vec![cand.clone()], child))
+        })
+        .collect();
 
     for slot in &slots[1..] {
-        let mut next = Vec::new();
-        for base in &current {
+        let mut next: Vec<(Vec<String>, &'v TrieNode)> = Vec::new();
+        for (path, node) in current {
             for cand in &slot.candidates {
-                let combined = format!("{}_{}", base, cand);
-                if vocab.contains(&combined) {
-                    next.push(combined);
+                if let Some(child) = node.children.get(cand) {
+                    let mut new_path = path.clone();
+                    new_path.push(cand.clone());
+                    next.push((new_path, child));
                 }
             }
         }
@@ -723,11 +795,17 @@ fn enumerate_multi_syllable_words(
         }
     }
 
+    // Emit only complete words (is_word == true at the final node).
     current
         .into_iter()
-        .map(|w| {
-            let idx = model.lookup(&w);
-            (w, idx)
+        .filter_map(|(path, node)| {
+            if node.is_word {
+                let word = path.join("_");
+                let idx = model.lookup(&word);
+                Some((word, idx))
+            } else {
+                None
+            }
         })
         .collect()
 }
@@ -765,7 +843,7 @@ fn prune_position_nodes(
 fn lattice_viterbi_unified(
     slots: &[SyllableSlot],
     model: &kenlm::Model,
-    vocab: &HashSet<String>,
+    vocab: &VocabTrie,
     incoming_states: &[IslandState],
     per_state_width: usize,
     history_arena: &mut Vec<HistoryEntry>,
@@ -967,7 +1045,7 @@ fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
     model: &kenlm::Model,
-    vocab: &HashSet<String>,
+    vocab: &VocabTrie,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
     let slots = flatten_islands_to_slots(islands, tokenizer)?;
@@ -1072,7 +1150,7 @@ struct AppState {
     #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
     #[cfg(not(feature = "mocked-model"))]
-    vocab: HashSet<String>,
+    vocab: VocabTrie,
     plover: Option<PloverConfig>,
     plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
@@ -1240,11 +1318,9 @@ async fn main() -> Result<()> {
     };
 
     #[cfg(not(feature = "mocked-model"))]
-    let vocab: HashSet<String> = {
+    let vocab: VocabTrie = {
         eprintln!("Loading vocabulary from {}...", args.vocab_path);
-        let content = std::fs::read_to_string(&args.vocab_path)
-            .map_err(|e| anyhow::anyhow!("Failed to read vocab file '{}': {}", args.vocab_path, e))?;
-        content.lines().filter(|l| !l.is_empty()).map(str::to_string).collect()
+        VocabTrie::from_vocab_file(&args.vocab_path)?
     };
 
     if args.server {
