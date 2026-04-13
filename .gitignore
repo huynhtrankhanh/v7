@@ -188,6 +188,7 @@ kenlm/
 *.binary
 lm.arpa
 lm.binary
+vocab.txt
 
 # Node
 node_modules/
