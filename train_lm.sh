@@ -27,7 +27,7 @@ if [ -f "${TOK}" ] && [ -f "${VOCAB}" ]; then
     echo "Corpus already preprocessed. Skipping..."
 else
     echo "Preprocessing corpus with KenLM n-gram based syllable grouping..."
-    python preprocess_corpus.py "${CORPUS}" "${TOK}" "${VOCAB}"
+    ./preprocess_corpus "${CORPUS}" "${TOK}" "${VOCAB}"
 fi
 
 # 2. Train KenLM (3-gram)
