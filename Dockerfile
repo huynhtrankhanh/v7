@@ -42,7 +42,7 @@ WORKDIR /app/inference-rs
 RUN cargo build --release
 
 # ---------------------------------------------------------------------------
-# Training stage: Python + underthesea + KenLM binaries
+# Training stage: Python + tqdm + KenLM binaries
 # Use this stage to preprocess the corpus and train the language model.
 # Run via:  docker compose run --rm train bash train_lm.sh
 # ---------------------------------------------------------------------------
