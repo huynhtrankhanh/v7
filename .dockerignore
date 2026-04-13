@@ -19,7 +19,7 @@
 !scripts/stripped-plover-agent.cjs
 !requirements.txt
 !train_lm.sh
-!preprocess_corpus.py
+!preprocess_corpus.cpp
 
 # Explicitly ignore unwanted files within the allowed directories
 ai/__pycache__/
