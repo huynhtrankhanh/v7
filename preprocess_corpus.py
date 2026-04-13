@@ -8,7 +8,7 @@ from tqdm import tqdm
 SUPPORTED_PUNCT = {'.', '!', ',', ';', ':'}
 
 # Number of most-frequent bigrams + trigrams to use for syllable grouping.
-TOP_NGRAMS = 14400
+TOP_NGRAMS = 144000
 
 
 def _is_valid_syllable(token: str) -> bool:
