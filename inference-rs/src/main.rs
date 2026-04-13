@@ -451,11 +451,13 @@ fn fixed_text_to_slots(text: &str) -> Vec<SyllableSlot> {
 fn flatten_islands_to_slots(
     islands: &[String],
     tokenizer: &Tokenizer,
-) -> Result<Vec<SyllableSlot>> {
+) -> Result<(Vec<SyllableSlot>, Vec<usize>)> {
     let mut slots = Vec::new();
+    let mut per_island_slot_counts = Vec::with_capacity(islands.len());
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
     for (i, segment) in islands.iter().enumerate() {
+        let start = slots.len();
         let is_v7 = if strict_alternating {
             i % 2 == 1
         } else {
@@ -477,9 +479,41 @@ fn flatten_islands_to_slots(
         } else {
             slots.extend(fixed_text_to_slots(segment));
         }
+
+        per_island_slot_counts.push(slots.len() - start);
     }
 
-    Ok(slots)
+    Ok((slots, per_island_slot_counts))
+}
+
+/// Distributes a flat token list back into per-island buckets using slot counts.
+/// Each token covers as many slots as it has syllables (underscore-separated parts).
+fn split_tokens_by_island_counts(
+    tokens: &[String],
+    per_island_slot_counts: &[usize],
+) -> Vec<Vec<String>> {
+    let mut result = Vec::with_capacity(per_island_slot_counts.len());
+    let mut token_idx = 0;
+    let mut slot_pos = 0usize;
+
+    for &count in per_island_slot_counts {
+        let island_end = slot_pos + count;
+        let mut island_tokens: Vec<String> = Vec::new();
+
+        while token_idx < tokens.len() && slot_pos < island_end {
+            let t = &tokens[token_idx];
+            let syllables = t.split('_').count();
+            island_tokens.push(t.clone());
+            slot_pos += syllables;
+            token_idx += 1;
+        }
+
+        result.push(island_tokens);
+        // Advance past any gap (e.g. a compound that slightly overshot a boundary).
+        slot_pos = slot_pos.max(island_end);
+    }
+
+    result
 }
 
 fn format_output_words(words: &[String]) -> String {
@@ -961,16 +995,35 @@ fn lattice_viterbi_unified(
 }
 
 fn perform_mock_inference(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<Vec<String>>> {
-    let slots = flatten_islands_to_slots(islands, tokenizer)?;
+    let (slots, per_island_slot_counts) = flatten_islands_to_slots(islands, tokenizer)?;
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
-    let mut words: Vec<String> = Vec::new();
-    for slot in &slots {
-        if let Some(first) = slot.candidates.first() {
-            words.push(first.to_string());
+    let mut result: Vec<String> = Vec::with_capacity(islands.len());
+    let mut slot_idx = 0usize;
+
+    for (i, (island, &count)) in islands.iter().zip(per_island_slot_counts.iter()).enumerate() {
+        let is_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(island, tokenizer)
+        };
+
+        if is_v7 {
+            let island_slots = &slots[slot_idx..slot_idx + count];
+            let words: Vec<String> = island_slots
+                .iter()
+                .filter_map(|s| s.candidates.first().map(|c| c.to_string()))
+                .collect();
+            result.push(format_output_words(&words));
+        } else {
+            // Preserve the original fixed-text island as-is (spaces included).
+            result.push(island.clone());
         }
+
+        slot_idx += count;
     }
 
-    Ok(vec![vec![format_output_words(&words)]])
+    Ok(vec![result])
 }
 
 #[cfg(not(feature = "mocked-model"))]
@@ -981,7 +1034,8 @@ fn perform_inference(
     vocab: &VocabTrie,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
-    let slots = flatten_islands_to_slots(islands, tokenizer)?;
+    let (slots, per_island_slot_counts) = flatten_islands_to_slots(islands, tokenizer)?;
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
     let initial_states = vec![IslandState {
         score: 0.0,
@@ -1009,7 +1063,27 @@ fn perform_inference(
                 .iter()
                 .flat_map(|chunk| chunk.split_whitespace().map(|t| t.to_string()))
                 .collect();
-            vec![format_output_words(&all_tokens)]
+
+            let per_island_tokens =
+                split_tokens_by_island_counts(&all_tokens, &per_island_slot_counts);
+
+            islands
+                .iter()
+                .zip(per_island_tokens.iter())
+                .enumerate()
+                .map(|(i, (island, island_tokens))| {
+                    let is_v7 = if strict_alternating {
+                        i % 2 == 1
+                    } else {
+                        is_v7_segment(island, tokenizer)
+                    };
+                    if is_v7 {
+                        format_output_words(island_tokens)
+                    } else {
+                        island.clone()
+                    }
+                })
+                .collect()
         })
         .collect();
 
@@ -1322,7 +1396,7 @@ async fn main() -> Result<()> {
         } else {
             println!("Top results:");
             for (i, parts) in candidates.iter().take(5).enumerate() {
-                let full_text = parts.join(" ");
+                let full_text = parts.join("");
                 println!("{}. {}", i + 1, full_text.trim());
             }
         }
