@@ -71,7 +71,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # The C++ version streams files line-by-line, keeping memory usage low even
 # for datasets in the tens of gigabytes (unlike the Python version which loads
 # entire files with f.read()).
-COPY preprocess_corpus.cpp preprocess_corpus.py train_lm.sh ./
+COPY preprocess_corpus.cpp train_lm.sh ./
 RUN g++ -O2 -std=c++17 -o preprocess_corpus preprocess_corpus.cpp
 
 FROM rust:latest
