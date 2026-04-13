@@ -4,7 +4,7 @@ set -e
 # Run this script inside the training Docker container:
 #   docker compose run --rm train bash train_lm.sh
 #
-# The container has Python (with underthesea), KenLM binaries, and the
+# The container has Python (with tqdm), KenLM binaries, and the
 # preprocess_corpus.py script pre-installed.
 #
 # Expected inputs (mounted into the container via docker-compose.yml):
@@ -22,11 +22,11 @@ ARPA="lm.arpa"
 BINARY="lm.binary"
 KENLM_BIN="./kenlm/build/bin"
 
-# 1. Preprocess with underthesea word segmentation
+# 1. Preprocess with KenLM n-gram based syllable grouping
 if [ -f "${TOK}" ] && [ -f "${VOCAB}" ]; then
     echo "Corpus already preprocessed. Skipping..."
 else
-    echo "Preprocessing corpus with underthesea word segmentation..."
+    echo "Preprocessing corpus with KenLM n-gram based syllable grouping..."
     python preprocess_corpus.py "${CORPUS}" "${TOK}" "${VOCAB}"
 fi
 
