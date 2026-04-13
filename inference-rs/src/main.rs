@@ -19,7 +19,6 @@ use std::time::{Duration, Instant};
 use tower_http::services::{ServeDir, ServeFile};
 use unicode_normalization::UnicodeNormalization;
 
-#[cfg(not(feature = "mocked-model"))]
 mod kenlm;
 mod plover;
 mod regex_enum;
@@ -451,11 +450,13 @@ fn fixed_text_to_slots(text: &str) -> Vec<SyllableSlot> {
 fn flatten_islands_to_slots(
     islands: &[String],
     tokenizer: &Tokenizer,
-) -> Result<Vec<SyllableSlot>> {
+) -> Result<(Vec<SyllableSlot>, Vec<usize>)> {
     let mut slots = Vec::new();
+    let mut per_island_slot_counts = Vec::with_capacity(islands.len());
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
     for (i, segment) in islands.iter().enumerate() {
+        let start = slots.len();
         let is_v7 = if strict_alternating {
             i % 2 == 1
         } else {
@@ -477,9 +478,41 @@ fn flatten_islands_to_slots(
         } else {
             slots.extend(fixed_text_to_slots(segment));
         }
+
+        per_island_slot_counts.push(slots.len() - start);
     }
 
-    Ok(slots)
+    Ok((slots, per_island_slot_counts))
+}
+
+/// Distributes a flat token list back into per-island buckets using slot counts.
+/// Each token covers as many slots as it has syllables (underscore-separated parts).
+fn split_tokens_by_island_counts(
+    tokens: &[String],
+    per_island_slot_counts: &[usize],
+) -> Vec<Vec<String>> {
+    let mut result = Vec::with_capacity(per_island_slot_counts.len());
+    let mut token_idx = 0;
+    let mut slot_pos = 0usize;
+
+    for &count in per_island_slot_counts {
+        let island_end = slot_pos + count;
+        let mut island_tokens: Vec<String> = Vec::new();
+
+        while token_idx < tokens.len() && slot_pos < island_end {
+            let t = &tokens[token_idx];
+            let syllables = t.split('_').count();
+            island_tokens.push(t.clone());
+            slot_pos += syllables;
+            token_idx += 1;
+        }
+
+        result.push(island_tokens);
+        // Advance past any gap (e.g. a compound that slightly overshot a boundary).
+        slot_pos = slot_pos.max(island_end);
+    }
+
+    result
 }
 
 fn format_output_words(words: &[String]) -> String {
@@ -563,14 +596,12 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 }
 
 #[derive(Debug, Clone)]
-#[cfg(not(feature = "mocked-model"))]
 struct HistoryEntry {
     prev_idx: Option<usize>,
     island_words: Vec<Arc<str>>,
 }
 
 #[derive(Debug, Clone)]
-#[cfg(not(feature = "mocked-model"))]
 struct IslandState {
     score: f32,
     state: kenlm::State,
@@ -578,7 +609,6 @@ struct IslandState {
 }
 
 #[derive(Debug, Clone)]
-#[cfg(not(feature = "mocked-model"))]
 struct LatticeNode {
     score: f32,
     state: kenlm::State,
@@ -587,34 +617,27 @@ struct LatticeNode {
     origin_idx: usize,
 }
 
-#[cfg(not(feature = "mocked-model"))]
 const KENLM_STATE_KEY_SIZE: usize = 128;
-#[cfg(not(feature = "mocked-model"))]
 const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
 
-#[cfg(not(feature = "mocked-model"))]
 const UNKNOWN_PENALTY: f32 = -10.0;
 
-#[cfg(not(feature = "mocked-model"))]
 const UNKNOWN_TOKEN: &str = "<?>"; 
 
 // ---------------------------------------------------------------------------
 // Syllable-level vocabulary trie
 // ---------------------------------------------------------------------------
 
-#[cfg(not(feature = "mocked-model"))]
 #[derive(Default)]
 struct TrieNode {
     is_word: bool,
     children: HashMap<String, TrieNode>,
 }
 
-#[cfg(not(feature = "mocked-model"))]
 struct VocabTrie {
     root: TrieNode,
 }
 
-#[cfg(not(feature = "mocked-model"))]
 impl VocabTrie {
     fn new() -> Self {
         VocabTrie {
@@ -682,7 +705,6 @@ where
     }
 }
 
-#[cfg(not(feature = "mocked-model"))]
 fn push_history(
     history_arena: &mut Vec<HistoryEntry>,
     prev_idx: Option<usize>,
@@ -695,7 +717,6 @@ fn push_history(
     Some(history_arena.len() - 1)
 }
 
-#[cfg(not(feature = "mocked-model"))]
 fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usize>) -> Vec<String> {
     let mut index_chain = Vec::new();
     while let Some(idx) = tail_idx {
@@ -709,7 +730,6 @@ fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usiz
     parts
 }
 
-#[cfg(not(feature = "mocked-model"))]
 fn enumerate_multi_syllable_words<'v>(
     slots: &[SyllableSlot],
     model: &kenlm::Model,
@@ -760,7 +780,6 @@ fn enumerate_multi_syllable_words<'v>(
         .collect()
 }
 
-#[cfg(not(feature = "mocked-model"))]
 fn prune_position_nodes(
     nodes_at_pos: &mut Vec<usize>,
     per_state_width: usize,
@@ -780,7 +799,6 @@ fn prune_position_nodes(
     }
 }
 
-#[cfg(not(feature = "mocked-model"))]
 fn lattice_viterbi_unified(
     slots: &[SyllableSlot],
     model: &kenlm::Model,
@@ -960,20 +978,7 @@ fn lattice_viterbi_unified(
     results
 }
 
-fn perform_mock_inference(islands: &[String], tokenizer: &Tokenizer) -> Result<Vec<Vec<String>>> {
-    let slots = flatten_islands_to_slots(islands, tokenizer)?;
 
-    let mut words: Vec<String> = Vec::new();
-    for slot in &slots {
-        if let Some(first) = slot.candidates.first() {
-            words.push(first.to_string());
-        }
-    }
-
-    Ok(vec![vec![format_output_words(&words)]])
-}
-
-#[cfg(not(feature = "mocked-model"))]
 fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
@@ -981,7 +986,8 @@ fn perform_inference(
     vocab: &VocabTrie,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
-    let slots = flatten_islands_to_slots(islands, tokenizer)?;
+    let (slots, per_island_slot_counts) = flatten_islands_to_slots(islands, tokenizer)?;
+    let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
     let initial_states = vec![IslandState {
         score: 0.0,
@@ -1009,7 +1015,27 @@ fn perform_inference(
                 .iter()
                 .flat_map(|chunk| chunk.split_whitespace().map(|t| t.to_string()))
                 .collect();
-            vec![format_output_words(&all_tokens)]
+
+            let per_island_tokens =
+                split_tokens_by_island_counts(&all_tokens, &per_island_slot_counts);
+
+            islands
+                .iter()
+                .zip(per_island_tokens.iter())
+                .enumerate()
+                .map(|(i, (island, island_tokens))| {
+                    let is_v7 = if strict_alternating {
+                        i % 2 == 1
+                    } else {
+                        is_v7_segment(island, tokenizer)
+                    };
+                    if is_v7 {
+                        format_output_words(island_tokens)
+                    } else {
+                        island.clone()
+                    }
+                })
+                .collect()
         })
         .collect();
 
@@ -1077,9 +1103,7 @@ struct PloverConfig {
 
 struct AppState {
     tokenizer: Tokenizer,
-    #[cfg(not(feature = "mocked-model"))]
     model: kenlm::Model,
-    #[cfg(not(feature = "mocked-model"))]
     vocab: VocabTrie,
     plover: Option<PloverConfig>,
     plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
@@ -1118,11 +1142,7 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
-    #[cfg(not(feature = "mocked-model"))]
     let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, &state.vocab, 100);
-
-    #[cfg(feature = "mocked-model")]
-    let result = perform_mock_inference(&payload.islands, &state.tokenizer);
 
     match result {
         Ok(candidates) => Json(InferResponse { candidates }),
@@ -1240,13 +1260,11 @@ async fn main() -> Result<()> {
     eprintln!("Loading tokenizer (from structured regex logic)...");
     let tokenizer = Tokenizer::new()?;
 
-    #[cfg(not(feature = "mocked-model"))]
     let model = {
         eprintln!("Loading model from {}...", args.model_path);
         kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
-    #[cfg(not(feature = "mocked-model"))]
     let vocab: VocabTrie = {
         eprintln!("Loading vocabulary from {}...", args.vocab_path);
         VocabTrie::from_vocab_file(&args.vocab_path)?
@@ -1266,9 +1284,7 @@ async fn main() -> Result<()> {
         });
         let app_state = Arc::new(AppState {
             tokenizer,
-            #[cfg(not(feature = "mocked-model"))]
             model,
-            #[cfg(not(feature = "mocked-model"))]
             vocab,
             plover,
             plover_status_cache: tokio::sync::Mutex::new(None),
@@ -1310,11 +1326,7 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
-        #[cfg(not(feature = "mocked-model"))]
         let candidates = perform_inference(&islands, &tokenizer, &model, &vocab, 100)?;
-
-        #[cfg(feature = "mocked-model")]
-        let candidates = perform_mock_inference(&islands, &tokenizer)?;
         let duration = start_time.elapsed();
 
         if is_islands_mode {
@@ -1322,7 +1334,7 @@ async fn main() -> Result<()> {
         } else {
             println!("Top results:");
             for (i, parts) in candidates.iter().take(5).enumerate() {
-                let full_text = parts.join(" ");
+                let full_text = parts.join("");
                 println!("{}. {}", i + 1, full_text.trim());
             }
         }

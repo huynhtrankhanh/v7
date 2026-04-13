@@ -193,3 +193,6 @@ vocab.txt
 # Node
 node_modules/
 static/script.js
+lm.binary
+vocab.txt
+kenlm/
