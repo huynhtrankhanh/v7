@@ -486,30 +486,38 @@ fn flatten_islands_to_slots(
 }
 
 /// Distributes a flat token list back into per-island buckets using slot counts.
-/// Each token covers as many slots as it has syllables (underscore-separated parts).
+/// This safely handles multi-syllable tokens that cross island boundaries by strictly splitting
+/// them by syllabus count, preventing overlap printing in consecutive blocks.
 fn split_tokens_by_island_counts(
     tokens: &[String],
     per_island_slot_counts: &[usize],
 ) -> Vec<Vec<String>> {
     let mut result = Vec::with_capacity(per_island_slot_counts.len());
     let mut token_idx = 0;
-    let mut slot_pos = 0usize;
+    let mut current_token_syllables: Vec<String> = Vec::new();
+    let mut syl_idx = 0;
 
     for &count in per_island_slot_counts {
-        let island_end = slot_pos + count;
         let mut island_tokens: Vec<String> = Vec::new();
+        let mut slots_to_fill = count;
 
-        while token_idx < tokens.len() && slot_pos < island_end {
-            let t = &tokens[token_idx];
-            let syllables = t.split('_').count();
-            island_tokens.push(t.clone());
-            slot_pos += syllables;
-            token_idx += 1;
+        while slots_to_fill > 0 && (token_idx < tokens.len() || syl_idx < current_token_syllables.len()) {
+            if syl_idx >= current_token_syllables.len() {
+                current_token_syllables = tokens[token_idx].split('_').map(|s| s.to_string()).collect();
+                token_idx += 1;
+                syl_idx = 0;
+            }
+
+            let remaining_in_token = current_token_syllables.len() - syl_idx;
+            let take_count = std::cmp::min(slots_to_fill, remaining_in_token);
+
+            let part = current_token_syllables[syl_idx..syl_idx + take_count].join("_");
+            island_tokens.push(part);
+
+            syl_idx += take_count;
+            slots_to_fill -= take_count;
         }
-
         result.push(island_tokens);
-        // Advance past any gap (e.g. a compound that slightly overshot a boundary).
-        slot_pos = slot_pos.max(island_end);
     }
 
     result
