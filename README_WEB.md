@@ -434,7 +434,7 @@ The `*` key (Spacebar) pressed by itself undoes the previous action (syllable en
 
 - **Frontend:** Written in TypeScript (`src/main.ts` and supporting modules in `src/`). Compiled by Vite into `static/script.js`. Uses `fetch` to communicate with the `/infer` endpoint and a WebSocket for Stripped Plover proxy calls.
 - **Backend:** The Rust binary `inference-rs` serves static files from `static/` and handles API requests using the `axum` framework.
-- **Inference Mode:** Utilises the "Fixed Text Islands" mode of the inference engine to provide context-aware predictions.
+- **Inference Mode:** Utilizes the "Fixed Text Islands" mode of the inference engine to provide context-aware predictions.
 
 ### Building the Frontend
 
