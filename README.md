@@ -1,129 +1,153 @@
 # V7 Text Prediction Engine
 
-This project implements a high-performance Vietnamese text prediction engine using a specialized "V7" input format. It utilizes a 3-gram language model trained with KenLM to disambiguate and reconstruct Vietnamese sentences from compact encoded strings.
+This project implements a high-performance Vietnamese text prediction engine using a specialized "V7" input format. It utilizes a 3-gram language model trained with KenLM to disambiguate and reconstruct Vietnamese sentences from compact encoded strings. A web demo with a stenographic input interface is also included.
 
 ## Project Structure
 
-*   `inference-rs/`: Rust source code for the inference engine (the core application).
-*   `kenlm/`: The KenLM language model toolkit (used for training).
-*   `data/`: Directory for corpus data (input text).
-*   `preprocess_corpus.py`: Python script to clean and tokenize raw text.
-*   `train_lm.sh`: Shell script to train and binarize the language model.
-*   Structured regex generation: Runtime builds V7 regex mappings directly from in-code structured logic.
-*   `lm.binary`: The trained binary language model (generated artifact).
-
-## Prerequisites
-
-*   **OS:** Linux (Ubuntu recommended).
-*   **Python:** 3.12+ (for preprocessing).
-*   **Rust:** Latest stable toolchain (for inference).
-*   **System Libraries:** `cmake`, `build-essential`, `libboost-all-dev`, `zlib1g-dev`, `libbz2-dev`, `liblzma-dev`.
-
-## Installation & Setup
-
-### 1. Install Python Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Build KenLM
-The project relies on KenLM for model training.
-
-```bash
-cd kenlm
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-cd ../..
-```
-
-### 3. Build Inference Engine (Rust)
-
-```bash
-cd inference-rs
-cargo build --release
-cd ..
-```
+*   `inference-rs/`: Rust source code for the inference engine (the core application, serves the web demo).
+*   `src/`: TypeScript source for the web frontend (compiled by Vite into `static/script.js`).
+*   `static/`: Static web assets (HTML, SVG diagrams, and the compiled `script.js`).
+*   `tests/`: Jest unit tests for the web frontend logic.
+*   `scripts/`: Helper scripts (e2e tests, Stripped Plover agent, etc.).
+*   `getInference.ts`: TypeScript port of the V7 tokenizer/candidate-enumeration logic (used for client-side inference).
+*   `preprocess_corpus.cpp`: C++ source for the corpus preprocessor (compiled during the Docker training build).
+*   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).
+*   `Dockerfile` / `docker-compose.yml`: Multi-stage Docker build and compose configuration.
+*   `lm.binary`: Trained binary language model — **generated artifact**, not in the repository.
+*   `vocab.txt`: Sorted vocabulary list used by the inference engine — **generated artifact**, not in the repository.
 
 ## Docker Support
 
-The project includes `docker-compose` support to simplify running the inference engine with the necessary file mounts.
+Docker is the recommended way to build and run the project. The `docker-compose.yml` defines three services:
 
-### 1. Build the Service
+| Service | Purpose |
+| :--- | :--- |
+| `inference` | Runs the Rust inference engine in server mode (web demo). |
+| `train` | Preprocesses the corpus and trains the KenLM language model. |
+| `stripped-plover` | Optional Stripped Plover TCP proxy for dictionary-based fallback strokes. |
+
+### Build all services
 
 ```bash
-docker-compose build
+docker compose build
 ```
 
-### 2. Run Inference
+### Run the Web Demo (Server Mode)
 
-Use `docker-compose run` to pass arguments to the container. The configuration automatically mounts `lm.binary` from your local directory.
-
-**Requirement:** You must have `lm.binary` generated in the project root (see "Usage Workflow" below).
+**Requirements:** `lm.binary` and `vocab.txt` must exist in the project root (see "Training" below). These are mounted into the container automatically.
 
 ```bash
-docker-compose run --rm inference [v7_string]
+docker compose up inference
+```
+
+Access the demo at `http://localhost:3000`.
+
+### Run Inference from the Command Line
+
+```bash
+docker compose run --rm --entrypoint ./inference-rs/target/release/inference-rs inference <v7_string>
 ```
 
 **Example:**
 ```bash
-docker-compose run --rm inference na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
+docker compose run --rm --entrypoint ./inference-rs/target/release/inference-rs inference na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
 ```
 
 ### Optional Stripped Plover Service
 
-The `docker-compose.yml` file includes an optional `stripped-plover` service that clones and builds the Stripped Plover repository at container build time. It exposes a TCP proxy on port `4020` and stores the dictionary database in a Docker volume so it persists across restarts.
+The `stripped-plover` service clones and builds the Stripped Plover repository at container build time. It exposes a TCP proxy on port `4020` and stores the dictionary database in a Docker volume so it persists across restarts.
 
 ```bash
-docker-compose up stripped-plover
+docker compose up stripped-plover
 ```
 
-The inference service is configured to connect to Stripped Plover via `STRIPPED_PLOVER_HOST` and `STRIPPED_PLOVER_PORT` when the container is available. This service is optional; the inference engine continues to run normally without it.
+The inference service automatically connects to Stripped Plover via the `STRIPPED_PLOVER_HOST` and `STRIPPED_PLOVER_PORT` environment variables when the service is running. It is optional; the inference engine works normally without it.
 
-## Usage Workflow
+## Training the Language Model
 
 ### 1. Prepare Corpus
-Place your raw text corpus in `data/corpus-full.txt`. The file should contain raw Vietnamese text.
 
-### 2. Preprocess & Train
-Run the training script. This will:
-1.  Preprocess `data/corpus-full.txt` into `data/corpus.tok` (tokenized, lowercased).
-2.  Train a 3-gram language model (`lm.arpa`).
-3.  Binarize the model into `lm.binary` for efficient loading.
+Place your raw Vietnamese text corpus at `data/corpus-full.txt` (one sentence per line).
+
+### 2. Run the Training Container
+
+The `train` Docker service handles everything: compiling the C++ preprocessor, running it on your corpus, training a 3-gram KenLM model, and binarizing it.
 
 ```bash
-./train_lm.sh
+docker compose run --rm train bash train_lm.sh
 ```
 
-**Artifacts:**
-*   `lm.binary`: The trained model file (placed in project root).
+This will:
+1.  Preprocess `data/corpus-full.txt` into `data/corpus.tok` and build a sorted vocabulary list.
+2.  Train a 3-gram language model (`lm.arpa`).
+3.  Binarize the model into `lm.binary` for efficient runtime loading.
 
-### 3. Run Inference
-Use the compiled Rust binary to decode V7 strings. The binary expects `lm.binary` to be in the current working directory.
+**Output artifacts (written to the project root):**
+*   `lm.binary` — the trained model file required by the inference engine.
+*   `vocab.txt` — the vocabulary list required by the inference engine.
 
-#### Input Modes
+## Building Locally (Without Docker)
 
-The engine supports two modes of operation:
+If you prefer a local build, you will need to install the system dependencies and build KenLM yourself. Docker is strongly recommended instead.
 
-**A. Legacy Mode (Single String)**
-Pass a single raw V7 string. The engine will decode it as a standalone sentence.
+### Prerequisites
+
+*   **Rust:** Latest stable toolchain.
+*   **System Libraries:** `cmake`, `build-essential`, `libboost-all-dev`, `zlib1g-dev`, `libbz2-dev`, `liblzma-dev`.
+*   **Python 3.11+** with `tqdm` (for the training script's progress display).
+*   **C++17 compiler** (for building `preprocess_corpus`).
+
+### Build Steps
+
+```bash
+# 1. Build KenLM
+git clone https://github.com/kpu/kenlm.git
+cd kenlm && mkdir -p build && cd build && cmake .. && make -j$(nproc) && cd ../..
+
+# 2. Build the C++ preprocessor
+g++ -O2 -std=c++17 -o preprocess_corpus preprocess_corpus.cpp
+
+# 3. Build the Rust inference engine
+cd inference-rs && cargo build --release && cd ..
+
+# 4. Build the web frontend
+npm ci && npm run build
+```
+
+## Running Inference
+
+### Command-Line Mode
+
+The compiled Rust binary expects `lm.binary` and `vocab.txt` in the current working directory.
+
+#### A. Legacy Mode (Single String)
+
+Pass a single raw V7 string. The engine decodes it as a standalone sentence.
 
 ```bash
 ./inference-rs/target/release/inference-rs na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
 ```
 
-**B. Fixed Text Islands Mode (JSON)**
-Pass a JSON array of strings to interleave existing fixed text with V7 code islands. This is ideal for editing within existing sentences, as the fixed text provides context for the prediction.
+**Output:**
+```
+Top results:
+1. nay trời đẹp lắm nhưng mà khi trời mưa thì nó rất mệt
+...
+
+Inference time: Xms
+```
+
+#### B. Fixed Text Islands Mode (JSON)
+
+Pass a JSON array of strings to interleave existing fixed text with V7 code islands. Fixed text provides context for the prediction.
 
 **Format:** `["Fixed Text", "V7 Code", "Fixed Text", "V7 Code", ...]`
 *   The array **must** start with a Fixed Text element (use an empty string `""` if there is no preceding text).
 *   **Alternating structure:** Even indices are Fixed Text, odd indices are V7 Code.
-*   **Context Propagation:** The engine "reads" the fixed text to update its internal state, ensuring that subsequent V7 predictions are contextually appropriate. Fixed text is automatically "purified" (punctuation removed) to match the model's training data.
+*   **Context Propagation:** The engine "reads" the fixed text to update its internal state, ensuring that subsequent V7 predictions are contextually appropriate.
 
 **Example:**
 ```bash
-# Context: "hôm nay " -> Prediction for "tro2" -> Context " rất " -> Prediction for "dde7"
 ./inference-rs/target/release/inference-rs '["hôm nay ", "tro2", " rất ", "dde7"]'
 ```
 
@@ -134,15 +158,13 @@ Returns a JSON array of candidate lists. Each list contains the predicted text f
 [["trời","tròn",...], ["đẹp","đến",...]]
 ```
 
-### Mocked Model Mode
-If the KenLM model file (`lm.binary`) is not available, or you wish to test the server integration without loading the heavy model, you can run the server in mocked mode. This mode uses a simple "dumb" inference strategy that returns valid candidates based on the dictionary but without context-aware scoring. The mocked mode is a compile-time feature flag, which also skips building KenLM.
+### Server Mode (Web Demo)
 
 ```bash
-cd inference-rs
-cargo build --release --features mocked-model
-cd ..
-./inference-rs/target/release/inference-rs --server
+./inference-rs/target/release/inference-rs --server --port 3000 --static-dir static
 ```
+
+Access the demo at `http://localhost:3000`. See `README_WEB.md` for the full web demo documentation.
 
 ## V7 Input Format: Deep Dive
 
