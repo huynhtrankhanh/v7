@@ -41,14 +41,24 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 
 ### Prerequisites
 
-- Build the Rust inference engine: `cd inference-rs && cargo build --release`.
-- Ensure `lm.binary` is in the project root.
+- `lm.binary` and `vocab.txt` in the project root (see `README_KENLM.md` for how to train the model).
+- Either Docker (recommended) or a local Rust build of the inference engine.
 
-### Running the Server
-
-Start the inference engine in server mode:
+### Running the Server with Docker
 
 ```bash
+docker compose up inference
+```
+
+Access the demo at `http://localhost:3000`.
+
+### Running the Server Locally
+
+Build the Rust inference engine and the web frontend, then start the server:
+
+```bash
+cd inference-rs && cargo build --release && cd ..
+npm ci && npm run build
 ./inference-rs/target/release/inference-rs --server --port 3000 --static-dir static
 ```
 
@@ -422,6 +432,19 @@ The `*` key (Spacebar) pressed by itself undoes the previous action (syllable en
 
 ## Implementation Details
 
-- **Frontend:** Written in vanilla JavaScript (`static/script.js`). Uses `fetch` to communicate with the `/infer` endpoint.
+- **Frontend:** Written in TypeScript (`src/main.ts` and supporting modules in `src/`). Compiled by Vite into `static/script.js`. Uses `fetch` to communicate with the `/infer` endpoint and a WebSocket for Stripped Plover proxy calls.
 - **Backend:** The Rust binary `inference-rs` serves static files from `static/` and handles API requests using the `axum` framework.
-- **Inference Mode:** Utilizes the "Fixed Text Islands" mode of the inference engine to provide context-aware predictions.
+- **Inference Mode:** Utilises the "Fixed Text Islands" mode of the inference engine to provide context-aware predictions.
+
+### Building the Frontend
+
+```bash
+npm ci
+npm run build   # compiles src/main.ts → static/script.js via Vite
+```
+
+Unit tests can be run with:
+
+```bash
+npm test
+```

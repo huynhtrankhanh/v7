@@ -1,62 +1,81 @@
-# KenLM Text Prediction
+# KenLM Model Training
 
-This document describes the steps taken to train a KenLM language model and use it for Vietnamese text prediction based on v7 regex constraints.
+This document describes how to train the KenLM language model used by the V7 inference engine.
 
-## Prerequisites
+## Overview
 
-- Ubuntu environment
-- Python 3.12
-- `p7zip-full`, `build-essential`, `libboost-all-dev`, `cmake` (installed via apt)
-- `kenlm` (built from source)
+The training pipeline uses:
+- A **C++ preprocessor** (`preprocess_corpus.cpp`) to tokenize the raw corpus and build a vocabulary list.
+- **KenLM** (`lmplz` + `build_binary`) to train and binarize a 3-gram language model.
 
-## 1. Corpus Preparation
+Both are run inside a dedicated **Docker training container**. No manual installation of KenLM or Python packages is required on the host.
 
-The corpus was extracted from `../corpus-full.7z` into `data/corpus-full.txt`.
+## Training with Docker (Recommended)
 
-A preprocessing script `preprocess_corpus.py` was created to:
-- Lowercase the text.
-- Remove non-alphanumeric characters (keeping Vietnamese characters).
-- Normalize whitespace.
+### Prerequisites
 
-Command used:
-```bash
-./bin/python preprocess_corpus.py data/corpus-full.txt data/corpus.tok
-```
+- Docker and Docker Compose installed on the host.
+- A raw Vietnamese text corpus at `data/corpus-full.txt` (one sentence per line).
 
-## 2. KenLM Model Training
-
-We trained a 3-gram language model using `lmplz` and converted it to binary format for faster loading.
-
-Commands used:
-```bash
-# Train ARPA model
-./kenlm/build/bin/lmplz -o 3 < data/corpus.tok > lm.arpa
-
-# Convert to binary
-./kenlm/build/bin/build_binary lm.arpa lm.binary
-```
-
-The resulting `lm.binary` is placed in the project root.
-
-## 3. Inference
-
-The `inference.py` script reproduces the parsing logic from `demo.py` and adds a beam search decoding step using the trained KenLM model.
-
-It takes a v7 compact string as input, parses it into syllable templates, finds candidate words for each template, and uses the language model to find the most probable sentence.
-
-### Usage
+### Run Training
 
 ```bash
-./bin/python inference.py [v7_string]
+docker compose run --rm train bash train_lm.sh
 ```
 
-Example:
+This single command will:
+1. Compile the C++ preprocessor (if not already done in the image).
+2. Preprocess `data/corpus-full.txt` into `data/corpus.tok` and generate `vocab.txt`.
+3. Train a 3-gram KenLM model (`lm.arpa`).
+4. Binarize the model into `lm.binary` using the trie format with 8-bit quantization.
+
+### Output Artifacts
+
+Both artifacts are written to the project root (mounted from the host via `docker-compose.yml`):
+
+| File | Description |
+| :--- | :--- |
+| `lm.binary` | Compiled KenLM binary model — loaded by the inference engine at startup. |
+| `vocab.txt` | Sorted vocabulary list — used by the inference engine for multi-syllable word lookup. |
+
+Both files must be present in the project root before starting the inference server.
+
+## What the Preprocessor Does
+
+`preprocess_corpus.cpp` is a streaming C++ program that:
+- Lowercases the text.
+- Removes non-alphanumeric characters (keeping Vietnamese diacritics).
+- Normalizes whitespace.
+- Streams output line-by-line, keeping memory usage low even for very large corpora.
+
+It replaces an earlier Python-based preprocessing script and is compiled automatically inside the Docker training image.
+
+## Training Parameters
+
+The training script (`train_lm.sh`) uses these KenLM options:
+
 ```bash
-./bin/python inference.py na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
+lmplz -o 3 -S 50% --prune 0 0 1 < data/corpus.tok > lm.arpa
+build_binary -a 256 -q 8 trie lm.arpa lm.binary
 ```
 
-Output:
+- **3-gram** order.
+- **50% of RAM** allocated to `lmplz`.
+- **Trigram pruning:** unigrams and bigrams are kept in full; trigrams with count 1 are pruned.
+- **Trie format** with 8-bit quantization for a compact binary file.
+
+## Using the Trained Model
+
+Once `lm.binary` and `vocab.txt` are in the project root, start the inference server:
+
+```bash
+docker compose up inference
 ```
-1. [-27.8713] nay trời đẹp lắm nhưng mà khi trời mưa thì nó rất mệt
-...
+
+Or run CLI inference directly:
+
+```bash
+docker compose run --rm --entrypoint ./inference-rs/target/release/inference-rs inference na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7
 ```
+
+See `README.md` for the full usage documentation.
