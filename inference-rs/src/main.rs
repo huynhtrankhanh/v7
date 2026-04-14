@@ -485,9 +485,6 @@ fn flatten_islands_to_slots(
     Ok((slots, per_island_slot_counts))
 }
 
-/// Distributes a flat token list back into per-island buckets using slot counts.
-/// This safely handles multi-syllable tokens that cross island boundaries by strictly splitting
-/// them by syllabus count, preventing overlap printing in consecutive blocks.
 fn split_tokens_by_island_counts(
     tokens: &[String],
     per_island_slot_counts: &[usize],
@@ -788,23 +785,53 @@ fn enumerate_multi_syllable_words<'v>(
         .collect()
 }
 
+/// A Hybrid Viterbi-Beam Pruning approach. 
+/// Guarantees strict global optimality for the Top 1 result by giving the 
+/// best path for *every* unique KenLM state immunity from global pruning.
+/// Maintains a healthy N-Best pool for UI candidates without exploding memory.
 fn prune_position_nodes(
     nodes_at_pos: &mut Vec<usize>,
     per_state_width: usize,
+    global_width: usize,
     nodes: &[LatticeNode],
 ) {
-    if nodes_at_pos.len() <= per_state_width {
+    if nodes_at_pos.is_empty() {
         return;
     }
+
     let mut by_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
     for &idx in nodes_at_pos.iter() {
         by_state.entry(nodes[idx].state.data).or_default().push(idx);
     }
-    nodes_at_pos.clear();
+
+    let mut viterbi_survivors = Vec::with_capacity(by_state.len());
+    let mut n_best_candidates = Vec::new();
+
     for (_, mut indices) in by_state {
+        // Sort the paths sharing this state by score (descending)
         truncate_top_indices_by_score(&mut indices, per_state_width, |idx| nodes[idx].score);
-        nodes_at_pos.extend(indices);
+        
+        // Tier 1: The absolute best path for this state gets "Viterbi Immunity".
+        // This mathematically ensures the strict global optimum is never pruned.
+        if let Some(&best) = indices.first() {
+            viterbi_survivors.push(best);
+        }
+        
+        // Tier 2: The remaining paths compete globally for N-best slots.
+        if indices.len() > 1 {
+            n_best_candidates.extend(indices.into_iter().skip(1));
+        }
     }
+
+    // Globally cap the N-best candidates to prevent exponential memory explosion
+    if n_best_candidates.len() > global_width {
+        truncate_top_indices_by_score(&mut n_best_candidates, global_width, |idx| nodes[idx].score);
+    }
+
+    // Reconstruct the nodes at this position
+    nodes_at_pos.clear();
+    nodes_at_pos.extend(viterbi_survivors);
+    nodes_at_pos.extend(n_best_candidates);
 }
 
 fn lattice_viterbi_unified(
@@ -813,6 +840,7 @@ fn lattice_viterbi_unified(
     vocab: &VocabTrie,
     incoming_states: &[IslandState],
     per_state_width: usize,
+    global_width: usize,
     history_arena: &mut Vec<HistoryEntry>,
 ) -> Vec<IslandState> {
     const MAX_WORD_SYLLABLES: usize = 5;
@@ -831,7 +859,7 @@ fn lattice_viterbi_unified(
         });
         position_nodes[0].push(nodes.len() - 1);
     }
-    prune_position_nodes(&mut position_nodes[0], per_state_width, &nodes);
+    prune_position_nodes(&mut position_nodes[0], per_state_width, global_width, &nodes);
 
     for pos in 0..n {
         let parents = position_nodes[pos].clone();
@@ -867,7 +895,7 @@ fn lattice_viterbi_unified(
             for (_, indices) in best_for_state {
                 position_nodes[pos + 1].extend(indices);
             }
-            prune_position_nodes(&mut position_nodes[pos + 1], per_state_width, &nodes);
+            prune_position_nodes(&mut position_nodes[pos + 1], per_state_width, global_width, &nodes);
         } else {
             for k in 1..=MAX_WORD_SYLLABLES {
                 let end = pos + k;
@@ -943,7 +971,7 @@ fn lattice_viterbi_unified(
             let max_end = (pos + MAX_WORD_SYLLABLES).min(n);
             for end in (pos + 1)..=max_end {
                 if !position_nodes[end].is_empty() {
-                    prune_position_nodes(&mut position_nodes[end], per_state_width, &nodes);
+                    prune_position_nodes(&mut position_nodes[end], per_state_width, global_width, &nodes);
                 }
             }
         }
@@ -986,7 +1014,6 @@ fn lattice_viterbi_unified(
     results
 }
 
-
 fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
@@ -1003,7 +1030,11 @@ fn perform_inference(
         history_tail_idx: None,
     }];
     let mut history_arena: Vec<HistoryEntry> = Vec::new();
+    
+    // We can safely allow a healthy N-Best pool because the Viterbi survivors 
+    // are immune to this cap and scale strictly linearly, not exponentially.
     let hypotheses_per_state = beam_width.max(1);
+    let global_hypotheses = beam_width.max(1); 
 
     let final_states = lattice_viterbi_unified(
         &slots,
@@ -1011,6 +1042,7 @@ fn perform_inference(
         vocab,
         &initial_states,
         hypotheses_per_state,
+        global_hypotheses,
         &mut history_arena,
     );
 
