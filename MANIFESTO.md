@@ -9,3 +9,4 @@ But:
   * There is a recognizable "core" of the frontend that doesn't interact with the DOM. Use it to run on Android.
   * However, it contains a fetch() call to get inferred text. Since on Android, opening a port creates security risk, we **make the Rust code offer an STDIO interface for inference** and then send inference requests via STDIO.
 * Stripped Plover integration:
+* lm.binary: The user should be able to select an lm.binary file with a file picker.
