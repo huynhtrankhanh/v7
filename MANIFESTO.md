@@ -10,4 +10,6 @@ But:
   * However, it contains a fetch() call to get inferred text. Since on Android, opening a port creates security risk, we **make the Rust code offer an STDIO interface for inference** and then send inference requests via STDIO.
 * Stripped Plover integration:
   * **DO NOT DISTRIBUTE STRIPPED PLOVER.** Instead, we communicate with Stripped Plover through a TCP encryption agent.
+    * Add a folder named stripped-plover-agent. It launches Stripped Plover and uses TCP to encrypt and transport requests and responses. Use libsodium with forward secrecy key exchange: use HMAC to authenticate key exchange, so both sides mutually authenticate each other with a shared secret.
+    * 
 * lm.binary: The user should be able to select an lm.binary file with a file picker.
