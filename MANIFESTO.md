@@ -11,5 +11,5 @@ But:
 * Stripped Plover integration:
   * **DO NOT DISTRIBUTE STRIPPED PLOVER.** Instead, we communicate with Stripped Plover through a TCP encryption agent.
     * Add a folder named stripped-plover-agent. It launches Stripped Plover and uses TCP to encrypt and transport requests and responses. Use libsodium with forward secrecy key exchange: use HMAC to authenticate key exchange, so both sides mutually authenticate each other with a shared secret.
-    * 
+    * The Android side, of course, also has to do add code to connect to Stripped Plover through the encrypted protocol.
 * lm.binary: The user should be able to select an lm.binary file with a file picker.
