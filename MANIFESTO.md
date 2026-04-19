@@ -1,16 +1,7 @@
-# Improve training and inference
-## Word segmentation
-Use underthesea to perform word segmentation prior to KenLM training. This also means the inference algorithm in the inference-rs folder has to account for word segmentation now. It has to calculate how many syllables to consume to make a word. I recommend that we consume from 1 to 5 syllables, don't go beyond 5. Of course, how many syllables to consume **ultimately depends on whether the decision leads to a high KenLM score or not**, so this is fundamentally an optimization problem. **That's right, segmenting into words is an optimization problem.** A word can cross island boundaries. So both fixed text islands and v7 islands have to be segmented as a whole, not in a siloed manner.
+# Android IME
 
-## Punctuation
-Punctuation should be considered tokens in their own right. Only these punctuation marks are supported: full stop, exclamation mark, comma, semicolon, colon.
+The engine consists of a "frontend" and a "backend". In reality, the "backend" is only responsible for inference, whereas the "frontend" is responsible for most of the steno logic. This is not a problem.
 
-## KenLM installation
-KenLM is already installed in the docker-compose.yml file. You just need to run in the context of the container.
-
-## Dataset
-Use this dataset when testing. Do not commit the dataset or the resulting model to the repository. This is only to test the approach. The model will be trained on the complete dataset later. This is a small dataset for testing and validation.
-
-https://github.com/hoanganhpham1006/Vietnamese_Language_Model/blob/master/Train_Full.zip
-
-To check whether your code is doing a good job, take a small sentence in the dataset, turn into v7 and run inference. If inference returns a wildly inaccurate result, you are doing something wrong, and must reexamine the code.
+But:
+* The Rust code has to be compiled to various Android targets.
+* JavaScript code:
