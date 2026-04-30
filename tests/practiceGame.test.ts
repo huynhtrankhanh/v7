@@ -15,7 +15,9 @@ const {
   parseCodeKey,
   buildExpectedChordSymbols,
   buildExpectedChordSymbolOptions,
-  strokeSetToSyllable
+  strokeSetToSyllable,
+  buildEmilyEntries,
+  buildExpectedEmilyChord
 } = sandbox.module.exports;
 
 describe("practice game helpers", () => {
@@ -77,6 +79,61 @@ describe("practice game helpers", () => {
     expect(map["z_i_1"]).toBe("g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)");
     expect(map["z_e_1"]).toBe("gié(?:(?:ng?|[mo]))?");
     expect(map["z_e_1"]).not.toContain("ế");
+  });
+
+  test("buildEmilyEntries produces entries for all symbol variants", () => {
+    const entries = buildEmilyEntries();
+    expect(entries.length).toBeGreaterThan(0);
+    // Every printable symbol pattern should have 4 variants
+    const frEntries = entries.filter((e: { pattern: string }) => e.pattern === "FR");
+    expect(frEntries).toHaveLength(4);
+    expect(frEntries[0].symbol).toBe("!");
+    expect(frEntries[1].symbol).toBe("¬");
+    expect(frEntries[2].symbol).toBe("↦");
+    expect(frEntries[3].symbol).toBe("¡");
+  });
+
+  test("buildExpectedEmilyChord always includes W and H as starter", () => {
+    const chord = buildExpectedEmilyChord("FR", 0);
+    expect(chord.has("W")).toBe(true);
+    expect(chord.has("H")).toBe(true);
+  });
+
+  test("buildExpectedEmilyChord maps pattern letters to game symbols", () => {
+    // Pattern "FR" -> right-hand F (game "F") + right-hand R (game "RR")
+    const chord = buildExpectedEmilyChord("FR", 0);
+    expect(chord.has("F")).toBe(true);
+    expect(chord.has("RR")).toBe(true);
+    expect(chord.has("PP")).toBe(false);
+  });
+
+  test("buildExpectedEmilyChord adds E for variant 1", () => {
+    const chord = buildExpectedEmilyChord("FR", 1);
+    expect(chord.has("E")).toBe(true);
+    expect(chord.has("U")).toBe(false);
+  });
+
+  test("buildExpectedEmilyChord adds U for variant 2", () => {
+    const chord = buildExpectedEmilyChord("FR", 2);
+    expect(chord.has("E")).toBe(false);
+    expect(chord.has("U")).toBe(true);
+  });
+
+  test("buildExpectedEmilyChord adds E and U for variant 3", () => {
+    const chord = buildExpectedEmilyChord("FR", 3);
+    expect(chord.has("E")).toBe(true);
+    expect(chord.has("U")).toBe(true);
+  });
+
+  test("buildExpectedEmilyChord handles empty pattern (no extra keys beyond WH)", () => {
+    // Pattern "" -> just W and H (no pattern keys)
+    const chord = buildExpectedEmilyChord("", 0);
+    expect(chord).toEqual(new Set(["W", "H"]));
+  });
+
+  test("buildExpectedEmilyChord handles complex pattern FRPBLG", () => {
+    const chord = buildExpectedEmilyChord("FRPBLG", 0);
+    expect(chord).toEqual(new Set(["W", "H", "F", "RR", "PP", "B", "L", "G"]));
   });
 });
 

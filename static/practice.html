@@ -25,6 +25,18 @@
     .status.bad { color: #991b1b; }
     ol { margin: 8px 0 0; padding-left: 20px; }
     code { background: #eef2ff; padding: 1px 4px; border-radius: 4px; }
+    /* Emily help dialog */
+    .dialog-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 12px; }
+    .dialog-backdrop.open { display: flex; }
+    .dialog { background: #fff; border-radius: 14px; padding: 20px; max-width: 680px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.18); position: relative; }
+    .dialog h2 { margin: 0 0 4px; font-size: 1.2rem; }
+    .dialog h3 { font-size: 1rem; margin: 14px 0 4px; }
+    .dialog table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-top: 6px; }
+    .dialog th, .dialog td { border: 1px solid #e5e7eb; padding: 5px 8px; text-align: left; }
+    .dialog th { background: #f3f4f6; }
+    .dialog-close { position: absolute; top: 12px; right: 14px; background: none; border: none; color: #6b7280; font-size: 1.3rem; cursor: pointer; padding: 2px 6px; line-height: 1; }
+    .dialog-close:hover { color: #111827; }
+    #emily-help-btn { background: #6366f1; display: none; }
     @media (max-width: 600px) {
       .target { font-size: 1.7rem; }
       .wrap { padding: 12px; }
@@ -43,6 +55,7 @@
         <label for="mode-select">Mode</label>
         <select id="mode-select"></select>
         <button id="start-btn">Start 60s Game</button>
+        <button id="emily-help-btn" type="button">Help</button>
       </div>
       <div class="stats" style="margin-top:10px;">
         <div class="stat"><div class="label">Time</div><div class="value" id="time-left">60</div></div>
@@ -66,6 +79,54 @@
 
     <div class="card muted">
       Tip: For partial modes, <code>*</code> (spacebar) must be held for the chord to count.
+      For Emily mode, press <code>d</code>+<code>r</code> (W+H) as the starter.
+      Add right-hand pattern keys — <code>u j i k o l</code> map to F R P B L G.
+      Use <code>n</code> (E) for variant 1, <code>m</code> (U) for variant 2, both for variant 3.
+    </div>
+  </div>
+
+  <!-- Emily Help Dialog -->
+  <div class="dialog-backdrop" id="emily-help-backdrop" role="dialog" aria-modal="true" aria-labelledby="emily-help-title">
+    <div class="dialog">
+      <button class="dialog-close" id="emily-help-close" aria-label="Close help">✕</button>
+      <h2 id="emily-help-title">Emily Symbols — Chord Rules</h2>
+      <p class="muted" style="margin:4px 0 0;">The Emily symbols dictionary lets you type punctuation and special characters using steno chords.</p>
+
+      <h3>1 · Starter (always required)</h3>
+      <p class="muted" style="margin:0;">Every Emily chord must begin with <code>d</code>&thinsp;+&thinsp;<code>r</code> — the left-hand keys <strong>W&thinsp;+&thinsp;H</strong>.</p>
+
+      <h3>2 · Pattern keys (right hand)</h3>
+      <p class="muted" style="margin:0 0 4px;">Add any combination of the right-hand keys to select a symbol group:</p>
+      <table>
+        <thead><tr><th>Steno letter</th><th>Physical key</th></tr></thead>
+        <tbody>
+          <tr><td>F</td><td><code>u</code></td></tr>
+          <tr><td>R</td><td><code>j</code></td></tr>
+          <tr><td>P</td><td><code>i</code></td></tr>
+          <tr><td>B</td><td><code>k</code></td></tr>
+          <tr><td>L</td><td><code>o</code></td></tr>
+          <tr><td>G</td><td><code>l</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>3 · Variant keys (middle — optional)</h3>
+      <p class="muted" style="margin:0 0 4px;">Use middle keys to pick one of four variants within the symbol group:</p>
+      <table>
+        <thead><tr><th>Variant</th><th>Keys to add</th><th>Physical</th></tr></thead>
+        <tbody>
+          <tr><td>0 (default)</td><td><em>none</em></td><td><em>none</em></td></tr>
+          <tr><td>1</td><td>E</td><td><code>n</code></td></tr>
+          <tr><td>2</td><td>U</td><td><code>m</code></td></tr>
+          <tr><td>3</td><td>E + U</td><td><code>n</code>&thinsp;+&thinsp;<code>m</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>4 · Symbol table</h3>
+      <p class="muted" style="margin:0 0 4px;">Pattern → physical keys, then the four variants (0 / 1 / 2 / 3).</p>
+      <table id="emily-symbol-table">
+        <thead><tr><th>Pattern</th><th>Physical keys</th><th>Var 0</th><th>Var 1 (<code>n</code>)</th><th>Var 2 (<code>m</code>)</th><th>Var 3 (<code>n</code>+<code>m</code>)</th></tr></thead>
+        <tbody id="emily-symbol-tbody"></tbody>
+      </table>
     </div>
   </div>
   <script id="embedded-generated-regexes" type="application/x-g4-format">G4</script>
@@ -75,12 +136,71 @@
   const ROUND_SECONDS = 60;
   const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
 
+  const EMILY_SYMBOLS_TABLE = {
+    "FR": ["!", "¬", "↦", "¡"],
+    "FP": ["\"", "\u201c", "\u201d", "\u201e"],
+    "FRLG": ["#", "©", "®", "™"],
+    "RPBL": ["$", "¥", "€", "£"],
+    "FRPB": ["%", "‰", "‱", "φ"],
+    "FBG": ["&", "∩", "∧", "∈"],
+    "F": ["'", "\u2018", "\u2019", "\u201a"],
+    "FPL": ["(", "[", "<", "{"],
+    "RBG": [")", "]", ">", "}"],
+    "L": ["*", "∏", "§", "×"],
+    "G": ["+", "∑", "¶", "±"],
+    "B": [",", "∪", "∨", "∉"],
+    "PL": ["-", "−", "–", "—"],
+    "R": [".", "•", "·", "…"],
+    "RP": ["/", "⇒", "⇔", "÷"],
+    "LG": [":", "∋", "∵", "∴"],
+    "RB": [";", "∀", "∃", "∄"],
+    "PBLG": ["=", "≡", "≈", "≠"],
+    "FPB": ["?", "¿", "∝", "‽"],
+    "FRPBLG": ["@", "⊕", "⊗", "∅"],
+    "FB": ["\\", "Δ", "√", "∞"],
+    "RPG": ["^", "«", "»", "°"],
+    "BG": ["_", "≤", "≥", "µ"],
+    "P": ["`", "⊂", "⊃", "π"],
+    "PB": ["|", "⊤", "⊥", "¦"],
+    "FPBG": ["~", "⊆", "⊇", "˜"],
+    "FPBL": ["↑", "←", "→", "↓"]
+  };
+
+  // Maps Emily pattern letters (FRPBLG) to practice-game symbol names
+  const EMILY_PATTERN_TO_GAME_KEY = { "F": "F", "R": "RR", "P": "PP", "B": "B", "L": "L", "G": "G" };
+
+  function buildEmilyEntries() {
+    const entries = [];
+    for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
+      for (let variant = 0; variant < 4; variant++) {
+        const symbol = symbols[variant];
+        if (!symbol) continue;
+        entries.push({ symbol, pattern, variant });
+      }
+    }
+    return entries;
+  }
+
+  const EMILY_ENTRIES = buildEmilyEntries();
+
+  function buildExpectedEmilyChord(pattern, variant) {
+    const chord = new Set(["W", "H"]);
+    if (variant === 1 || variant === 3) chord.add("E");
+    if (variant === 2 || variant === 3) chord.add("U");
+    for (const ch of pattern) {
+      const gameKey = EMILY_PATTERN_TO_GAME_KEY[ch];
+      if (gameKey) chord.add(gameKey);
+    }
+    return chord;
+  }
+
   const MODES = [
     { id: "partial-left", label: "Partial syllable, left hand", type: "partial", hand: "left" },
     { id: "partial-right", label: "Partial syllable, right hand", type: "partial", hand: "right" },
     { id: "partial-random", label: "Partial syllable, random hand", type: "partial", hand: "random" },
     { id: "full", label: "Full syllable", type: "full", hand: "both" },
-    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" }
+    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" },
+    { id: "emily", label: "Emily symbols", type: "emily", hand: "both" }
   ];
 
   const qwertyToUnique = {
@@ -624,6 +744,19 @@
 
     function pickPrompt() {
       const mode = currentMode();
+      if (mode.id === "emily") {
+        let entry = EMILY_ENTRIES[Math.floor(Math.random() * EMILY_ENTRIES.length)];
+        if (EMILY_ENTRIES.length > 1 && state.lastSyllable === entry.symbol) {
+          entry = EMILY_ENTRIES.find((e) => e.symbol !== state.lastSyllable) || entry;
+        }
+        state.prompt = { type: "emily", entry };
+        state.lastSyllable = entry.symbol;
+        targetEl.textContent = entry.symbol;
+        promptLabel.textContent = "EMILY";
+        promptLabel.classList.remove("muted");
+        promptLabel.classList.add("hand-indicator");
+        return;
+      }
       if (!state.entries.length) {
         state.prompt = null;
         targetEl.textContent = "(loading...)";
@@ -678,7 +811,7 @@
     }
 
     function startRound() {
-      if (!state.entries.length) return;
+      if (currentMode().id !== "emily" && !state.entries.length) return;
       state.running = true;
       state.score = 0;
       state.time = ROUND_SECONDS;
@@ -698,6 +831,18 @@
 
     function handleStroke(strokeSet) {
       if (!state.running || !state.prompt) return;
+      if (state.modeId === "emily") {
+        const expected = buildExpectedEmilyChord(state.prompt.entry.pattern, state.prompt.entry.variant);
+        if (setsEqual(strokeSet, expected)) {
+          state.score += 1;
+          scoreEl.textContent = String(state.score);
+          setStatus("Correct", "ok");
+          pickPrompt();
+        } else {
+          setStatus("Wrong chord. Try again.", "bad");
+        }
+        return;
+      }
       if (state.modeId === "full" || (state.modeId === "realistic" && state.prompt.type === "realistic-single")) {
         const targetSyllable = state.prompt.entry.syllable;
         const syllable = strokeSetToSyllable(strokeSet);
@@ -735,6 +880,7 @@
     modeSelect.addEventListener("change", () => {
       state.modeId = modeSelect.value;
       refreshLeaderboard();
+      emilyHelpBtn.style.display = state.modeId === "emily" ? "" : "none";
       if (!state.running) {
         targetEl.textContent = "-";
         promptLabel.textContent = "Press Start";
@@ -743,6 +889,52 @@
         setStatus("", "");
       }
     });
+
+    // --- Emily Help dialog ---
+    const emilyHelpBtn = document.getElementById("emily-help-btn");
+    const emilyHelpBackdrop = document.getElementById("emily-help-backdrop");
+    const emilyHelpClose = document.getElementById("emily-help-close");
+    const emilySymbolTbody = document.getElementById("emily-symbol-tbody");
+
+    const PATTERN_LETTER_TO_PHYSICAL = { F: "u", R: "j", P: "i", B: "k", L: "o", G: "l" };
+
+    function patternToPhysical(pattern) {
+      return pattern.split("").map((ch) => PATTERN_LETTER_TO_PHYSICAL[ch] || ch).join(" + ");
+    }
+
+    function buildEmilyHelpTable() {
+      emilySymbolTbody.innerHTML = "";
+      for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
+        const tr = document.createElement("tr");
+        const physKeys = patternToPhysical(pattern);
+        tr.innerHTML = `<td><code>${pattern || "(none)"}</code></td><td>${physKeys}</td>` +
+          symbols.map((s) => `<td>${s}</td>`).join("");
+        emilySymbolTbody.appendChild(tr);
+      }
+    }
+
+    function openEmilyHelp() {
+      buildEmilyHelpTable();
+      emilyHelpBackdrop.classList.add("open");
+      emilyHelpClose.focus();
+    }
+
+    function closeEmilyHelp() {
+      emilyHelpBackdrop.classList.remove("open");
+      emilyHelpBtn.focus();
+    }
+
+    emilyHelpBtn.addEventListener("click", openEmilyHelp);
+    emilyHelpClose.addEventListener("click", closeEmilyHelp);
+    emilyHelpBackdrop.addEventListener("click", (e) => {
+      if (e.target === emilyHelpBackdrop) closeEmilyHelp();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && emilyHelpBackdrop.classList.contains("open")) {
+        e.preventDefault();
+        closeEmilyHelp();
+      }
+    }, true);
 
     startBtn.addEventListener("click", startRound);
 
@@ -796,7 +988,9 @@
     parseCodeKey,
     buildExpectedChordSymbols,
     buildExpectedChordSymbolOptions,
-    strokeSetToSyllable
+    strokeSetToSyllable,
+    buildEmilyEntries,
+    buildExpectedEmilyChord
   };
 
   if (typeof module !== "undefined" && module.exports) {
