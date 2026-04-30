@@ -880,7 +880,7 @@
     modeSelect.addEventListener("change", () => {
       state.modeId = modeSelect.value;
       refreshLeaderboard();
-      emilyHelpBtn.style.display = state.modeId === "emily" ? "" : "none";
+      emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
       if (!state.running) {
         targetEl.textContent = "-";
         promptLabel.textContent = "Press Start";
