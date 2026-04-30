@@ -66,6 +66,7 @@
 
     <div class="card muted">
       Tip: For partial modes, <code>*</code> (spacebar) must be held for the chord to count.
+      For Emily mode, press <code>d</code>+<code>r</code> (W+H) as the starter plus right-hand pattern keys (<code>u j i k o l</code> = F R P B L G); use <code>n</code>/<code>m</code> for variants.
     </div>
   </div>
   <script id="embedded-generated-regexes" type="application/x-g4-format">G4</script>
@@ -75,12 +76,71 @@
   const ROUND_SECONDS = 60;
   const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
 
+  const EMILY_SYMBOLS_TABLE = {
+    "FR": ["!", "¬", "↦", "¡"],
+    "FP": ["\"", "\u201c", "\u201d", "\u201e"],
+    "FRLG": ["#", "©", "®", "™"],
+    "RPBL": ["$", "¥", "€", "£"],
+    "FRPB": ["%", "‰", "‱", "φ"],
+    "FBG": ["&", "∩", "∧", "∈"],
+    "F": ["'", "\u2018", "\u2019", "\u201a"],
+    "FPL": ["(", "[", "<", "{"],
+    "RBG": [")", "]", ">", "}"],
+    "L": ["*", "∏", "§", "×"],
+    "G": ["+", "∑", "¶", "±"],
+    "B": [",", "∪", "∨", "∉"],
+    "PL": ["-", "−", "–", "—"],
+    "R": [".", "•", "·", "…"],
+    "RP": ["/", "⇒", "⇔", "÷"],
+    "LG": [":", "∋", "∵", "∴"],
+    "RB": [";", "∀", "∃", "∄"],
+    "PBLG": ["=", "≡", "≈", "≠"],
+    "FPB": ["?", "¿", "∝", "‽"],
+    "FRPBLG": ["@", "⊕", "⊗", "∅"],
+    "FB": ["\\", "Δ", "√", "∞"],
+    "RPG": ["^", "«", "»", "°"],
+    "BG": ["_", "≤", "≥", "µ"],
+    "P": ["`", "⊂", "⊃", "π"],
+    "PB": ["|", "⊤", "⊥", "¦"],
+    "FPBG": ["~", "⊆", "⊇", "˜"],
+    "FPBL": ["↑", "←", "→", "↓"]
+  };
+
+  // Maps Emily pattern letters (FRPBLG) to practice-game symbol names
+  const EMILY_PATTERN_TO_GAME_KEY = { "F": "F", "R": "RR", "P": "PP", "B": "B", "L": "L", "G": "G" };
+
+  function buildEmilyEntries() {
+    const entries = [];
+    for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
+      for (let variant = 0; variant < 4; variant++) {
+        const symbol = symbols[variant];
+        if (!symbol) continue;
+        entries.push({ symbol, pattern, variant });
+      }
+    }
+    return entries;
+  }
+
+  const EMILY_ENTRIES = buildEmilyEntries();
+
+  function buildExpectedEmilyChord(pattern, variant) {
+    const chord = new Set(["W", "H"]);
+    if (variant === 1 || variant === 3) chord.add("E");
+    if (variant === 2 || variant === 3) chord.add("U");
+    for (const ch of pattern) {
+      const gameKey = EMILY_PATTERN_TO_GAME_KEY[ch];
+      if (gameKey) chord.add(gameKey);
+    }
+    return chord;
+  }
+
   const MODES = [
     { id: "partial-left", label: "Partial syllable, left hand", type: "partial", hand: "left" },
     { id: "partial-right", label: "Partial syllable, right hand", type: "partial", hand: "right" },
     { id: "partial-random", label: "Partial syllable, random hand", type: "partial", hand: "random" },
     { id: "full", label: "Full syllable", type: "full", hand: "both" },
-    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" }
+    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" },
+    { id: "emily", label: "Emily symbols", type: "emily", hand: "both" }
   ];
 
   const qwertyToUnique = {
@@ -624,6 +684,19 @@
 
     function pickPrompt() {
       const mode = currentMode();
+      if (mode.id === "emily") {
+        let entry = EMILY_ENTRIES[Math.floor(Math.random() * EMILY_ENTRIES.length)];
+        if (EMILY_ENTRIES.length > 1 && state.lastSyllable === entry.symbol) {
+          entry = EMILY_ENTRIES.find((e) => e.symbol !== state.lastSyllable) || entry;
+        }
+        state.prompt = { type: "emily", entry };
+        state.lastSyllable = entry.symbol;
+        targetEl.textContent = entry.symbol;
+        promptLabel.textContent = "EMILY";
+        promptLabel.classList.remove("muted");
+        promptLabel.classList.add("hand-indicator");
+        return;
+      }
       if (!state.entries.length) {
         state.prompt = null;
         targetEl.textContent = "(loading...)";
@@ -678,7 +751,7 @@
     }
 
     function startRound() {
-      if (!state.entries.length) return;
+      if (currentMode().id !== "emily" && !state.entries.length) return;
       state.running = true;
       state.score = 0;
       state.time = ROUND_SECONDS;
@@ -698,6 +771,18 @@
 
     function handleStroke(strokeSet) {
       if (!state.running || !state.prompt) return;
+      if (state.modeId === "emily") {
+        const expected = buildExpectedEmilyChord(state.prompt.entry.pattern, state.prompt.entry.variant);
+        if (setsEqual(strokeSet, expected)) {
+          state.score += 1;
+          scoreEl.textContent = String(state.score);
+          setStatus("Correct", "ok");
+          pickPrompt();
+        } else {
+          setStatus("Wrong chord. Try again.", "bad");
+        }
+        return;
+      }
       if (state.modeId === "full" || (state.modeId === "realistic" && state.prompt.type === "realistic-single")) {
         const targetSyllable = state.prompt.entry.syllable;
         const syllable = strokeSetToSyllable(strokeSet);
@@ -796,7 +881,9 @@
     parseCodeKey,
     buildExpectedChordSymbols,
     buildExpectedChordSymbolOptions,
-    strokeSetToSyllable
+    strokeSetToSyllable,
+    buildEmilyEntries,
+    buildExpectedEmilyChord
   };
 
   if (typeof module !== "undefined" && module.exports) {
