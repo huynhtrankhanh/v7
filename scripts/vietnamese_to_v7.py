@@ -72,6 +72,38 @@ def tone_digit(word: str) -> str:
     }.get(tone, "0")
 
 
+VALID_V7_CONSONANTS = frozenset({
+    "0", "b", "ch", "d", "dd", "g", "h", "k", "kh", "l", "m", "n",
+    "ng", "nh", "p", "ph", "r", "s", "t", "th", "tr", "v", "w", "x", "z",
+})
+VALID_V7_VOWELS = frozenset({"a", "e", "i", "o", "u"})
+
+
+def is_syllable_valid(word: str) -> bool:
+    """Return True if *word* can be faithfully represented as a v7 code.
+
+    A syllable is valid when its v7 encoding (onset + rime-start vowel + tone)
+    falls within the set of combinations that the inference engine can decode
+    back to at least one Vietnamese syllable.  Concretely this means:
+      - The rime-start character (after NFD normalisation and diacritic removal)
+        must be one of {a, e, i, o, u}.
+      - The (onset, vowel) pair must not be the unsupported combination (w, u).
+    """
+    if not word:
+        return False
+    onset_code, rime = split_onset(word)
+    if not rime:
+        rime = word
+    if not rime:
+        return False
+    rime_start = normalize_rime_start(rime[0])
+    if not rime_start or rime_start not in VALID_V7_VOWELS:
+        return False
+    if onset_code == "w" and rime_start == "u":
+        return False
+    return True
+
+
 def encode_word(word: str) -> str:
     onset_code, rime = split_onset(word)
     if not rime:
