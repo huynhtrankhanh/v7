@@ -359,106 +359,112 @@ export class V7DatasetGenerator {
     return corpus.map((sentence) => this.generateSample(sentence, v7Probability));
   }
 
-  public generateSample(sentence: string, v7Probability: number): TrainingSample {
-    type Token = 
-      | { type: "SYLLABLE"; text: string; v7: string } 
-      | { type: "FIXED"; text: string };
-      
-    const tokens: Token[] = [];
-    let i = 0;
+public generateSample(sentence: string, v7Probability: number): TrainingSample {
+  type Token = 
+    | { type: "SYLLABLE"; text: string; v7: string } 
+    | { type: "FIXED"; text: string };
+    
+  const tokens: Token[] = [];
+  let i = 0;
 
-    // Phase 1: Greedily tokenize into valid syllables and fixed characters
-    while (i < sentence.length) {
-      let matched = false;
+  // Unicode-aware word character check
+  const isWordChar = (char: string | undefined) => 
+    char ? /[\p{L}\p{N}]/u.test(char) : false;
+
+  // --- Phase 1: Boundary-Aware Tokenization ---
+  while (i < sentence.length) {
+    let matched = false;
+    
+    for (let len = Math.min(this.maxSylLength, sentence.length - i); len > 0; len--) {
+      const sub = sentence.substring(i, i + len);
+      const v7 = this.invertedIndex.get(sub);
       
-      for (let len = Math.min(this.maxSylLength, sentence.length - i); len > 0; len--) {
-        const sub = sentence.substring(i, i + len);
-        const v7 = this.invertedIndex.get(sub);
-        
-        if (v7 !== undefined) {
+      if (v7 !== undefined) {
+        // Ensure syllable is not a sub-part of a larger word
+        const isAtStart = i === 0 || !isWordChar(sentence[i - 1]);
+        const isAtEnd = i + len === sentence.length || !isWordChar(sentence[i + len]);
+
+        if (isAtStart && isAtEnd) {
           tokens.push({ type: "SYLLABLE", text: sub, v7 });
           i += len;
           matched = true;
           break;
         }
       }
-
-      if (!matched) {
-        const char = sentence[i];
-        const last = tokens[tokens.length - 1];
-        if (last && last.type === "FIXED") {
-          last.text += char;
-        } else {
-          tokens.push({ type: "FIXED", text: char });
-        }
-        i += 1;
-      }
     }
 
-    // Phase 2: Randomly mask out some SYLLABLE tokens back to FIXED text
-    const maskedTokens = tokens.map((t) => {
-      if (t.type === "SYLLABLE" && Math.random() > v7Probability) {
-        return { type: "FIXED", text: t.text } as Token;
-      }
-      return t;
-    });
-
-    // Phase 3: Merge tokens and ALLOW spaces to be absorbed between V7 syllables
-    type MergedToken = 
-      | { type: "FIXED"; text: string } 
-      | { type: "V7"; v7String: string; originalText: string };
-      
-    const mergedTokens: MergedToken[] = [];
-
-    for (let j = 0; j < maskedTokens.length; j++) {
-      const t = maskedTokens[j];
-      const last = mergedTokens[mergedTokens.length - 1];
-
-      if (t.type === "FIXED") {
-        // Check if the fixed text is ONLY whitespace
-        const isWhitespaceOnly = /^\s+$/.test(t.text);
-        const nextT = maskedTokens[j + 1];
-
-        // If it's pure whitespace bridging two V7 syllables, absorb the space into the V7 island!
-        if (isWhitespaceOnly && nextT && nextT.type === "SYLLABLE" && last && last.type === "V7") {
-          last.originalText += t.text;
-        } else {
-          if (last && last.type === "FIXED") {
-            last.text += t.text;
-          } else {
-            mergedTokens.push({ type: "FIXED", text: t.text });
-          }
-        }
-      } else { 
-        // t.type === "SYLLABLE"
-        if (last && last.type === "V7") {
-          last.v7String += t.v7;
-          last.originalText += t.text;
-        } else {
-          mergedTokens.push({ type: "V7", v7String: t.v7, originalText: t.text });
-        }
-      }
-    }
-
-    // Phase 4: Construct mathematically perfect alternating array
-    const input: string[] = [];
-    const output: string[] = [];
-
-    for (let j = 0; j < mergedTokens.length; j++) {
-      const current = mergedTokens[j];
-      
-      if (j === 0 && current.type === "V7") {
-        input.push(""); 
-      }
-
-      if (current.type === "FIXED") {
-        input.push(current.text);
+    if (!matched) {
+      const char = sentence[i];
+      const last = tokens[tokens.length - 1];
+      if (last && last.type === "FIXED") {
+        last.text += char;
       } else {
-        input.push(current.v7String);
-        output.push(current.originalText);
+        tokens.push({ type: "FIXED", text: char });
+      }
+      i += 1;
+    }
+  }
+
+  // --- Phase 2: Masking (unchanged) ---
+  const maskedTokens = tokens.map((t) => {
+    if (t.type === "SYLLABLE" && Math.random() > v7Probability) {
+      return { type: "FIXED", text: t.text } as Token;
+    }
+    return t;
+  });
+
+  // --- Phase 3: Stitched Merging ---
+  type MergedToken = 
+    | { type: "FIXED"; text: string } 
+    | { type: "V7"; v7String: string; originalText: string };
+    
+  const mergedTokens: MergedToken[] = [];
+
+  for (let j = 0; j < maskedTokens.length; j++) {
+    const t = maskedTokens[j];
+    const last = mergedTokens[mergedTokens.length - 1];
+
+    if (t.type === "FIXED") {
+      const isWhitespaceOnly = /^\s+$/.test(t.text);
+      const nextT = maskedTokens[j + 1];
+
+      // If whitespace bridges two syllables, keep it in originalText but SKIP v7String
+      if (isWhitespaceOnly && nextT && nextT.type === "SYLLABLE" && last && last.type === "V7") {
+        last.originalText += t.text; 
+      } else {
+        if (last && last.type === "FIXED") {
+          last.text += t.text;
+        } else {
+          mergedTokens.push({ type: "FIXED", text: t.text });
+        }
+      }
+    } else { 
+      // t.type === "SYLLABLE"
+      if (last && last.type === "V7") {
+        last.v7String += t.v7; // Stitched together (no spaces)
+        last.originalText += t.text;
+      } else {
+        mergedTokens.push({ type: "V7", v7String: t.v7, originalText: t.text });
       }
     }
-
-    return { input, output };
   }
+
+  // --- Phase 4: Construct alternating array (unchanged) ---
+  const input: string[] = [];
+  const output: string[] = [];
+
+  for (let j = 0; j < mergedTokens.length; j++) {
+    const current = mergedTokens[j];
+    if (j === 0 && current.type === "V7") input.push(""); 
+
+    if (current.type === "FIXED") {
+      input.push(current.text);
+    } else {
+      input.push(current.v7String);
+      output.push(current.originalText);
+    }
+  }
+
+  return { input, output };
+}
 }
