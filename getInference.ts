@@ -315,3 +315,157 @@ export function getInference(rawInput: string[]): InferencePosition[] {
 
   return result;
 }
+
+export type TrainingSample = {
+  /**
+   * Alternating array where even indices are fixed text and odd indices are v7 strings.
+   * Mirrors the exact structure of `rawInput` in `getInference`.
+   */
+  input: string[];
+  /**
+   * The ground truth array of strings. Each element corresponds to the decoded 
+   * string for the v7 island at the respective odd index in the `input` array.
+   */
+  output: string[];
+};
+
+export class V7DatasetGenerator {
+  private invertedIndex: Map<string, string>;
+  private maxSylLength: number;
+
+  constructor(tokenizer: Tokenizer) {
+    this.invertedIndex = new Map<string, string>();
+    const reverseConsonantMap = new Map<string, string>();
+
+    // 1. Build a reverse map to get the original input consonant (e.g., "đ" -> "dd")
+    for (const [k, v] of tokenizer.validConsonantsMap.entries()) {
+      if (!reverseConsonantMap.has(v)) {
+        reverseConsonantMap.set(v, k);
+      }
+    }
+
+    let maxLen = 0;
+
+    // 2. Build the inverted index mapping every valid syllable to its v7 string
+    for (const [key, candidates] of tokenizer.candidatesIndex.entries()) {
+      const [c, v, t] = key.split("_");
+      const inputC = reverseConsonantMap.get(c) ?? c;
+      const v7Part = `${inputC}${v}${t}`; // e.g., "dd" + "a" + "0" -> "dda0"
+
+      for (const candidate of candidates) {
+        if (!this.invertedIndex.has(candidate)) {
+          this.invertedIndex.set(candidate, v7Part);
+          if (candidate.length > maxLen) {
+            maxLen = candidate.length;
+          }
+        }
+      }
+    }
+    
+    this.maxSylLength = maxLen;
+  }
+
+  /**
+   * Generates a complete dataset from an array of corpus sentences.
+   */
+  public generateFromCorpus(corpus: string[], v7Probability: number = 0.5): TrainingSample[] {
+    return corpus.map((sentence) => this.generateSample(sentence, v7Probability));
+  }
+
+  /**
+   * Generates a single mathematically lossless training sample from a sentence.
+   */
+  public generateSample(sentence: string, v7Probability: number): TrainingSample {
+    type Token = 
+      | { type: "SYLLABLE"; text: string; v7: string } 
+      | { type: "FIXED"; text: string };
+      
+    const tokens: Token[] = [];
+    let i = 0;
+
+    // Phase 1: Greedily tokenize into valid syllables and fixed characters
+    while (i < sentence.length) {
+      let matched = false;
+      
+      // Look for the longest matching valid lowercase syllable
+      for (let len = Math.min(this.maxSylLength, sentence.length - i); len > 0; len--) {
+        const sub = sentence.substring(i, i + len);
+        const v7 = this.invertedIndex.get(sub);
+        
+        if (v7 !== undefined) {
+          tokens.push({ type: "SYLLABLE", text: sub, v7 });
+          i += len;
+          matched = true;
+          break;
+        }
+      }
+
+      // If it's not a recognized syllable (spaces, caps, punctuation), treat as fixed text
+      if (!matched) {
+        const char = sentence[i];
+        const last = tokens[tokens.length - 1];
+        if (last && last.type === "FIXED") {
+          last.text += char;
+        } else {
+          tokens.push({ type: "FIXED", text: char });
+        }
+        i += 1;
+      }
+    }
+
+    // Phase 2: Randomly convert some SYLLABLE tokens back to FIXED text
+    const maskedTokens = tokens.map((t) => {
+      if (t.type === "SYLLABLE" && Math.random() > v7Probability) {
+        return { type: "FIXED", text: t.text } as Token;
+      }
+      return t;
+    });
+
+    // Phase 3: Merge adjacent tokens of the same type to form cohesive islands
+    type MergedToken = 
+      | { type: "FIXED"; text: string } 
+      | { type: "V7"; v7String: string; originalText: string };
+      
+    const mergedTokens: MergedToken[] = [];
+
+    for (const t of maskedTokens) {
+      const last = mergedTokens[mergedTokens.length - 1];
+      if (t.type === "FIXED") {
+        if (last && last.type === "FIXED") {
+          last.text += t.text;
+        } else {
+          mergedTokens.push({ type: "FIXED", text: t.text });
+        }
+      } else {
+        if (last && last.type === "V7") {
+          last.v7String += t.v7;
+          last.originalText += t.text;
+        } else {
+          mergedTokens.push({ type: "V7", v7String: t.v7, originalText: t.text });
+        }
+      }
+    }
+
+    // Phase 4: Construct strictly alternating rawInput arrays (Fixed at even, V7 at odd)
+    const input: string[] = [];
+    const output: string[] = [];
+
+    for (let j = 0; j < mergedTokens.length; j++) {
+      const current = mergedTokens[j];
+      
+      // If the very first merged token is a V7 island, pad index 0 with an empty fixed text
+      if (j === 0 && current.type === "V7") {
+        input.push(""); 
+      }
+
+      if (current.type === "FIXED") {
+        input.push(current.text);
+      } else {
+        input.push(current.v7String);
+        output.push(current.originalText);
+      }
+    }
+
+    return { input, output };
+  }
+}
