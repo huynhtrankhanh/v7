@@ -459,12 +459,6 @@ export class V7DatasetGenerator {
       }
     }
 
-    // Ensure the array always ends with a FIXED token (even if it's empty) 
-    // to strictly preserve the even/odd index expectations.
-    if (input.length % 2 === 0) {
-      input.push("");
-    }
-
     return { input, output };
   }
 }
