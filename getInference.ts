@@ -325,7 +325,7 @@ export class V7DatasetGenerator {
   private invertedIndex: Map<string, string>;
   private maxSylLength: number;
 
-  constructor(tokenizer: Tokenizer) {
+  constructor(tokenizer: Tokenizer = TOKENIZER) {
     this.invertedIndex = new Map<string, string>();
     const reverseConsonantMap = new Map<string, string>();
 
