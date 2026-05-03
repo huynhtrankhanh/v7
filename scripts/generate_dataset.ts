@@ -173,15 +173,7 @@ function buildOpenAILine(
   // Reconstruct the expected full-resolution array
   // input is: [fixed0, v7_1, fixed2, v7_3, ...] (alternating)
   // output is the resolved text for each v7 island [resolved_1, resolved_3, ...]
-  const resolved: string[] = [];
-  let v7Idx = 0;
-  for (let i = 0; i < input.length; i++) {
-    if (i % 2 === 0) {
-      resolved.push(input[i]); // fixed text island
-    } else {
-      resolved.push(output[v7Idx++] ?? ""); // resolved v7 island
-    }
-  }
+  const resolved: string[] = output;
 
   const userContent =
     "Perform the following v7 inference request: " + JSON.stringify(input);
