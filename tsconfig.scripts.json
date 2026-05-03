@@ -3,6 +3,8 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "ignoreDeprecations": "5.0",
+    "rootDir": ".",
     "outDir": "./.ts-scripts"
   },
   "include": ["scripts/**/*.ts", "getInference.ts"]

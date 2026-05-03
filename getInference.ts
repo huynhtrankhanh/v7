@@ -203,8 +203,6 @@ function generateStructuredRegexMap(): Map<string, string> {
           case "u":
             s = u[i];
             break;
-          case "i":
-            throw new Error(`Unexpected vowel "i" in non-i branch for consonant "${c}".`);
         }
         if (c === "k" && v === "o") s = ko[i];
         if (c === "k" && v === "u") s = ku[i];
