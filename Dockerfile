@@ -86,3 +86,19 @@ COPY --from=frontend /app/static ./static
 # Usage: docker run ... <v7_string>
 # Arguments are passed to the binary
 ENTRYPOINT ["./inference-rs/target/release/inference-rs", "--server"]
+
+# ---------------------------------------------------------------------------
+# Dataset generation stage
+# ---------------------------------------------------------------------------
+FROM node:22 AS generate-dataset
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.json tsconfig.scripts.json ./
+COPY getInference.ts ./
+COPY scripts ./scripts
+RUN npm ci
+
+ENV OUTPUT_FILE=/output/dataset.jsonl
+ENV COVERAGE_FILE=/output/dataset_coverage.json
+
+CMD ["npx", "ts-node", "-P", "tsconfig.scripts.json", "scripts/generate_dataset.ts"]

@@ -27,7 +27,9 @@ if (!GEMINI_API_KEY) {
   process.exit(1);
 }
 const OUTPUT_FILE = process.env.OUTPUT_FILE ?? path.join(__dirname, "..", "dataset.jsonl");
+const COVERAGE_FILE = process.env.COVERAGE_FILE ?? path.join(__dirname, "..", "dataset_coverage.json");
 const TARGET_SAMPLES = parseInt(process.env.TARGET_SAMPLES ?? "50000", 10);
+const PARALLELISM = parseInt(process.env.PARALLELISM ?? "10", 10);
 
 // ---------------------------------------------------------------------------
 // Gemini Flash helpers
@@ -269,43 +271,55 @@ async function main() {
     }
   };
 
-  console.log(`Generating dataset… target: ${TARGET_SAMPLES} samples`);
+  console.log(`Generating dataset… target: ${TARGET_SAMPLES} samples, parallelism: ${PARALLELISM}`);
   console.log(`Output: ${OUTPUT_FILE}`);
 
   while (totalLines < TARGET_SAMPLES && promptIndex < PROMPTS.length * 60) {
-    const prompt = PROMPTS[promptIndex % PROMPTS.length];
-    promptIndex++;
-
-    process.stdout.write(
-      `[${totalLines}/${TARGET_SAMPLES}] Prompt ${promptIndex}/${PROMPTS.length * 3}… `
-    );
-
-    const raw = await geminiGenerate(prompt);
-    if (!raw) {
-      console.log("skipped (no response)");
-      continue;
+    // Fire up to PARALLELISM prompts in parallel
+    const batchPromises: Promise<string>[] = [];
+    for (
+      let p = 0;
+      p < PARALLELISM &&
+      promptIndex < PROMPTS.length * 60 &&
+      totalLines + batchPromises.length * 4 * 10 < TARGET_SAMPLES + PARALLELISM * 40;
+      p++
+    ) {
+      const prompt = PROMPTS[promptIndex % PROMPTS.length];
+      promptIndex++;
+      batchPromises.push(geminiGenerate(prompt));
     }
 
-    const sentences = extractSentences(raw);
-    console.log(`got ${sentences.length} lines`);
+    process.stdout.write(
+      `[${totalLines}/${TARGET_SAMPLES}] Fetching batch of ${batchPromises.length} prompts… `
+    );
 
-    for (const sentence of sentences) {
-      // Generate multiple samples per sentence with varying v7Probability
-      for (const v7Prob of [0.3, 0.5, 0.7, 0.9]) {
-        try {
-          const sample = generator.generateSample(sentence, v7Prob);
-          if (sample.input.length === 0 || sample.output.length === 0) continue;
-          // Only include samples that have at least one v7 island
-          const hasV7Island = sample.input.some((_, i) => i % 2 === 1);
-          if (!hasV7Island) continue;
-          writeLineIfValid(sample.input, sample.output);
-        } catch {
-          // skip unparseable
+    const raws = await Promise.all(batchPromises);
+    let batchLines = 0;
+
+    for (const raw of raws) {
+      if (!raw) continue;
+      const sentences = extractSentences(raw);
+      for (const sentence of sentences) {
+        // Generate multiple samples per sentence with varying v7Probability
+        for (const v7Prob of [0.3, 0.5, 0.7, 0.9]) {
+          try {
+            const sample = generator.generateSample(sentence, v7Prob);
+            if (sample.input.length === 0 || sample.output.length === 0) continue;
+            // Only include samples that have at least one v7 island
+            const hasV7Island = sample.input.some((_, i) => i % 2 === 1);
+            if (!hasV7Island) continue;
+            writeLineIfValid(sample.input, sample.output);
+            batchLines++;
+          } catch {
+            // skip unparseable
+          }
         }
       }
     }
 
-    // Small delay to be kind to the API
+    console.log(`got ${batchLines} lines`);
+
+    // Small delay between batches to be kind to the API
     await new Promise((r) => setTimeout(r, 300));
   }
 
@@ -318,9 +332,8 @@ async function main() {
   console.log(`Unique Vietnamese syllables covered: ${coveredSyllables.size}`);
 
   // Write a coverage JSON for the tracking script
-  const coverageFile = path.join(__dirname, "..", "dataset_coverage.json");
   fs.writeFileSync(
-    coverageFile,
+    COVERAGE_FILE,
     JSON.stringify(
       {
         totalSamples: totalLines,
@@ -333,7 +346,7 @@ async function main() {
       2
     )
   );
-  console.log(`Coverage report written to ${coverageFile}`);
+  console.log(`Coverage report written to ${COVERAGE_FILE}`);
 }
 
 main().catch((e) => {
