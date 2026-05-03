@@ -27,7 +27,9 @@ if (!GEMINI_API_KEY) {
   process.exit(1);
 }
 const OUTPUT_FILE = process.env.OUTPUT_FILE ?? path.join(__dirname, "..", "dataset.jsonl");
-const TARGET_SAMPLES = parseInt(process.env.TARGET_SAMPLES ?? "10000", 10);
+const COVERAGE_FILE = process.env.COVERAGE_FILE ?? path.join(__dirname, "..", "dataset_coverage.json");
+const TARGET_SAMPLES = parseInt(process.env.TARGET_SAMPLES ?? "50000", 10);
+const PARALLELISM = parseInt(process.env.PARALLELISM ?? "10", 10);
 
 // ---------------------------------------------------------------------------
 // Gemini Flash helpers
@@ -143,6 +145,44 @@ const PROMPTS: string[] = [
   "Viết 10 câu về làng nghề truyền thống Việt Nam. Chỉ trả lời bằng các câu văn.",
   "Viết 10 câu về tôn giáo và tín ngưỡng dân gian người Việt. Chỉ trả lời bằng các câu văn.",
   "Viết 10 câu mô tả khu phố cổ Hội An. Chỉ trả lời bằng các câu văn.",
+  // --- Questions ---
+  "Viết 10 câu hỏi tiếng Việt về cuộc sống thường ngày. Chỉ trả lời bằng các câu hỏi, không giải thích.",
+  "Viết 10 câu hỏi tiếng Việt thể hiện sự tò mò, ngạc nhiên về thiên nhiên và vũ trụ. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tu từ tiếng Việt trong phong cách văn học. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tiếng Việt dùng trong hội thoại giữa bạn bè, gia đình. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tiếng Việt về lịch sử, văn hóa và phong tục tập quán. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tiếng Việt thể hiện sự băn khoăn, suy nghĩ về cuộc đời. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tiếng Việt về ẩm thực, du lịch và lối sống. Chỉ trả lời bằng các câu hỏi.",
+  "Viết 10 câu hỏi tiếng Việt bắt đầu bằng: Tại sao, Làm thế nào, Khi nào, Ở đâu, Ai. Chỉ trả lời bằng các câu hỏi.",
+  // --- Exclamations ---
+  "Viết 10 câu cảm thán tiếng Việt thể hiện sự vui mừng, ngạc nhiên, xúc động. Chỉ trả lời bằng các câu cảm thán.",
+  "Viết 10 câu cảm thán tiếng Việt thể hiện tình yêu quê hương đất nước. Chỉ trả lời bằng các câu cảm thán.",
+  "Viết 10 câu cảm thán tiếng Việt bắt đầu bằng: Ôi, Ồ, Chao ôi, Trời ơi, Thật là. Chỉ trả lời bằng các câu cảm thán.",
+  "Viết 10 câu cảm thán tiếng Việt về vẻ đẹp thiên nhiên và phong cảnh. Chỉ trả lời bằng các câu cảm thán.",
+  "Viết 10 câu cảm thán tiếng Việt thể hiện lòng biết ơn và trân trọng. Chỉ trả lời bằng các câu cảm thán.",
+  "Viết 10 câu cảm thán tiếng Việt dùng trong sinh hoạt hàng ngày và giao tiếp. Chỉ trả lời bằng các câu cảm thán.",
+  // --- Poems ---
+  "Viết một bài thơ lục bát tiếng Việt 8 câu về mùa xuân và hy vọng. Chỉ trả lời bằng bài thơ, không giải thích.",
+  "Viết một bài thơ lục bát tiếng Việt 8 câu về tình mẹ và lòng hiếu thảo. Chỉ trả lời bằng bài thơ, không giải thích.",
+  "Viết một bài thơ tứ tuyệt tiếng Việt 4 câu về cảnh đêm trăng. Chỉ trả lời bằng bài thơ.",
+  "Viết 3 khổ thơ tiếng Việt theo thể thơ 7 chữ về quê hương. Chỉ trả lời bằng bài thơ.",
+  "Viết một bài thơ tiếng Việt 8 câu theo thể thơ 5 chữ về tuổi thơ và kỷ niệm. Chỉ trả lời bằng bài thơ.",
+  "Viết 3 khổ thơ tiếng Việt theo thể thơ 8 chữ về tình yêu đôi lứa. Chỉ trả lời bằng bài thơ.",
+  "Viết một bài thơ lục bát tiếng Việt 10 câu về biển và sóng gió. Chỉ trả lời bằng bài thơ.",
+  "Viết một bài thơ tiếng Việt 4 khổ về mùa thu lá rụng và nỗi nhớ. Chỉ trả lời bằng bài thơ.",
+  "Viết 10 câu thơ tiếng Việt về nỗi nhớ quê hương khi xa xứ. Chỉ trả lời bằng câu thơ.",
+  "Viết một bài thơ vui tiếng Việt 8 câu về cuộc sống đô thị hiện đại. Chỉ trả lời bằng bài thơ.",
+  "Viết 3 khổ thơ tiếng Việt ca ngợi người nông dân và đồng lúa. Chỉ trả lời bằng bài thơ.",
+  "Viết một bài thơ tiếng Việt 4 khổ về trẻ em và tuổi học trò. Chỉ trả lời bằng bài thơ.",
+  // --- Hymns & songs ---
+  "Viết lời một bài ca ngợi tiếng Việt về Tổ quốc và anh hùng dân tộc, gồm 2 đoạn mỗi đoạn 4 câu. Chỉ trả lời bằng lời bài ca.",
+  "Viết lời một bài hát ru tiếng Việt 8 câu về mẹ và con. Chỉ trả lời bằng lời bài hát.",
+  "Viết lời một bài dân ca tiếng Việt về mùa gặt và niềm vui lao động, 8 câu. Chỉ trả lời bằng lời bài ca.",
+  "Viết lời một bài thánh ca tiếng Việt về lòng biết ơn và hy vọng, 2 đoạn mỗi đoạn 4 câu. Chỉ trả lời bằng lời bài ca.",
+  "Viết lời một bài ca ngợi tiếng Việt về biển đảo và ngư dân, gồm 2 đoạn. Chỉ trả lời bằng lời bài ca.",
+  "Viết lời một bài hát thiếu nhi tiếng Việt vui tươi về mùa hè, 8 câu. Chỉ trả lời bằng lời bài hát.",
+  "Viết lời một bài ca ngợi tiếng Việt về Hà Nội ngàn năm văn hiến, 2 đoạn. Chỉ trả lời bằng lời bài ca.",
+  "Viết lời một bài hát ru tiếng Việt của người miền Trung về biển và mưa, 8 câu. Chỉ trả lời bằng lời bài hát.",
 ];
 
 // ---------------------------------------------------------------------------
@@ -231,43 +271,55 @@ async function main() {
     }
   };
 
-  console.log(`Generating dataset… target: ${TARGET_SAMPLES} samples`);
+  console.log(`Generating dataset… target: ${TARGET_SAMPLES} samples, parallelism: ${PARALLELISM}`);
   console.log(`Output: ${OUTPUT_FILE}`);
 
-  while (totalLines < TARGET_SAMPLES && promptIndex < PROMPTS.length * 20) {
-    const prompt = PROMPTS[promptIndex % PROMPTS.length];
-    promptIndex++;
-
-    process.stdout.write(
-      `[${totalLines}/${TARGET_SAMPLES}] Prompt ${promptIndex}/${PROMPTS.length * 3}… `
-    );
-
-    const raw = await geminiGenerate(prompt);
-    if (!raw) {
-      console.log("skipped (no response)");
-      continue;
+  while (totalLines < TARGET_SAMPLES && promptIndex < PROMPTS.length * 60) {
+    // Fire up to PARALLELISM prompts in parallel
+    const batchPromises: Promise<string>[] = [];
+    for (
+      let p = 0;
+      p < PARALLELISM &&
+      promptIndex < PROMPTS.length * 60 &&
+      totalLines + batchPromises.length * 4 * 10 < TARGET_SAMPLES + PARALLELISM * 40;
+      p++
+    ) {
+      const prompt = PROMPTS[promptIndex % PROMPTS.length];
+      promptIndex++;
+      batchPromises.push(geminiGenerate(prompt));
     }
 
-    const sentences = extractSentences(raw);
-    console.log(`got ${sentences.length} lines`);
+    process.stdout.write(
+      `[${totalLines}/${TARGET_SAMPLES}] Fetching batch of ${batchPromises.length} prompts… `
+    );
 
-    for (const sentence of sentences) {
-      // Generate multiple samples per sentence with varying v7Probability
-      for (const v7Prob of [0.3, 0.5, 0.7, 0.9]) {
-        try {
-          const sample = generator.generateSample(sentence, v7Prob);
-          if (sample.input.length === 0 || sample.output.length === 0) continue;
-          // Only include samples that have at least one v7 island
-          const hasV7Island = sample.input.some((_, i) => i % 2 === 1);
-          if (!hasV7Island) continue;
-          writeLineIfValid(sample.input, sample.output);
-        } catch {
-          // skip unparseable
+    const raws = await Promise.all(batchPromises);
+    let batchLines = 0;
+
+    for (const raw of raws) {
+      if (!raw) continue;
+      const sentences = extractSentences(raw);
+      for (const sentence of sentences) {
+        // Generate multiple samples per sentence with varying v7Probability
+        for (const v7Prob of [0.3, 0.5, 0.7, 0.9]) {
+          try {
+            const sample = generator.generateSample(sentence, v7Prob);
+            if (sample.input.length === 0 || sample.output.length === 0) continue;
+            // Only include samples that have at least one v7 island
+            const hasV7Island = sample.input.some((_, i) => i % 2 === 1);
+            if (!hasV7Island) continue;
+            writeLineIfValid(sample.input, sample.output);
+            batchLines++;
+          } catch {
+            // skip unparseable
+          }
         }
       }
     }
 
-    // Small delay to be kind to the API
+    console.log(`got ${batchLines} lines`);
+
+    // Small delay between batches to be kind to the API
     await new Promise((r) => setTimeout(r, 300));
   }
 
@@ -280,9 +332,8 @@ async function main() {
   console.log(`Unique Vietnamese syllables covered: ${coveredSyllables.size}`);
 
   // Write a coverage JSON for the tracking script
-  const coverageFile = path.join(__dirname, "..", "dataset_coverage.json");
   fs.writeFileSync(
-    coverageFile,
+    COVERAGE_FILE,
     JSON.stringify(
       {
         totalSamples: totalLines,
@@ -295,7 +346,7 @@ async function main() {
       2
     )
   );
-  console.log(`Coverage report written to ${coverageFile}`);
+  console.log(`Coverage report written to ${COVERAGE_FILE}`);
 }
 
 main().catch((e) => {

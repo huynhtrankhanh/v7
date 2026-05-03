@@ -15,8 +15,11 @@
 !package-lock.json
 !tsconfig.json
 !tsconfig.jest.json
+!tsconfig.scripts.json
 !vite.config.ts
+!getInference.ts
 !scripts/stripped-plover-agent.cjs
+!scripts/generate_dataset.ts
 !requirements.txt
 !train_lm.sh
 !preprocess_corpus.cpp
