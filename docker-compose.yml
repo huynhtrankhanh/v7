@@ -36,14 +36,6 @@ services:
       - ./lm.binary:/app/lm.binary
       - ./vocab.txt:/app/vocab.txt
     # Override with: docker compose run --rm train bash train_lm.sh
-  generate-dataset:
-    build:
-      context: .
-      target: generate-dataset
-    environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-    volumes:
-      - ./:/output
 
 volumes:
   stripped-plover-data:

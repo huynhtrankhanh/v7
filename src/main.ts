@@ -433,9 +433,7 @@ const state = {
     set islands(next) { buffer.setIslands(next); },
     get pendingCapitalization() { return buffer.pendingCapitalization; },
     set pendingCapitalization(next) { buffer.pendingCapitalization = next; },
-    candidates: [],
-    segmentation: [],
-    showSegmentation: false
+    candidates: []
 };
 let isRawMode = false;
 let inferenceAbortController = null;
@@ -469,7 +467,6 @@ function isDictionaryTextInputFocused(target = document.activeElement) {
 
 const undoManager = createUndoManager(buffer, () => {
         state.candidates = [];
-        state.segmentation = [];
         syncPloverPreeditIndex();
         updateDisplay();
         runInference();
@@ -778,7 +775,6 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     }
 
     state.candidates = [];
-    state.segmentation = [];
     updateDisplay();
     if (allowInference) {
         runInference();
@@ -1225,7 +1221,6 @@ async function runInference() {
     if (!hasV7) {
         abortInferenceRequest(true);
         state.candidates = [];
-        state.segmentation = [];
         updateDisplay();
         return;
     }
@@ -1255,8 +1250,7 @@ async function runInference() {
             // A newer request may have started while parsing the response.
             return;
         }
-        state.candidates = Array.isArray(data.candidates) ? data.candidates : [];
-        state.segmentation = Array.isArray(data.segmentation) ? data.segmentation : [];
+        state.candidates = data.candidates;
         updateDisplay();
     } catch (e) {
         if (e && e.name === "AbortError") {
@@ -1284,7 +1278,6 @@ function selectCandidate(index, options: SelectCandidateOptions = { saveHistory:
     }
     buffer.setIslands(nextIslands);
     state.candidates = [];
-    state.segmentation = [];
     if (options.refreshDisplay) {
         updateDisplay();
     }
@@ -1338,40 +1331,6 @@ function scrollToBottom(element) {
     });
 }
 
-function isSegmentationPunctuation(token: string) {
-    return token.length === 1 && ".,!;:".includes(token);
-}
-
-function renderSegmentedText(container: HTMLElement, segments: string[]) {
-    let needSpace = false;
-    let hasContent = false;
-
-    for (const rawToken of segments) {
-        const token = ensureString(rawToken);
-        if (!token) continue;
-        const punct = isSegmentationPunctuation(token);
-
-        if (punct) {
-            container.appendChild(document.createTextNode(token));
-            needSpace = true;
-            hasContent = true;
-            continue;
-        }
-
-        if (needSpace || hasContent) {
-            container.appendChild(document.createTextNode(" "));
-        }
-
-        const span = document.createElement("span");
-        span.style.textDecoration = "underline";
-        span.style.textUnderlineOffset = "0.2em";
-        span.textContent = token;
-        container.appendChild(span);
-        needSpace = false;
-        hasContent = true;
-    }
-}
-
 function updateDisplay() {
     const display = document.getElementById("text-display");
     const textArea = document.getElementById("text-input");
@@ -1410,19 +1369,8 @@ function updateDisplay() {
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            const showSegmentedPreview =
-                state.showSegmentation &&
-                state.candidates.length > 0 &&
-                state.segmentation.length > 0;
-
-            if (showSegmentedPreview) {
-                display.replaceChildren();
-                renderSegmentedText(display, state.segmentation);
-                display.appendChild(cursor);
-            } else {
-                const textNode = document.createTextNode(text);
-                display.insertBefore(textNode, cursor); // Text before cursor
-            }
+            const textNode = document.createTextNode(text);
+            display.insertBefore(textNode, cursor); // Text before cursor
             display.style.color = "#000";
         }
         // Render Candidates
@@ -1531,7 +1479,6 @@ document.addEventListener("keydown", (e) => {
              // Update state
              buffer.setIslands([createIsland('vietnamese', newText)]);
              state.candidates = [];
-             state.segmentation = [];
              buffer.clearHistory();
              isRawMode = false;
              
@@ -1607,7 +1554,6 @@ document.addEventListener("keyup", (e) => {
 
 function setupPloverControls() {
     const toggleButton = document.getElementById("plover-toggle");
-    const segmentationToggleButton = document.getElementById("segmentation-toggle");
     const dictionaryOpenButton = document.getElementById("plover-dictionary-open");
     const dictionaryDialog = document.getElementById("plover-dictionary-dialog");
     const dictionaryCloseButton = document.getElementById("plover-dictionary-close");
@@ -1617,22 +1563,6 @@ function setupPloverControls() {
     const updateButton = document.getElementById("plover-entry-update");
     const removeButton = document.getElementById("plover-entry-remove");
     const dictSelect = document.getElementById("plover-entry-dict");
-
-    const syncSegmentationToggleLabel = () => {
-        if (!segmentationToggleButton) return;
-        segmentationToggleButton.textContent = state.showSegmentation
-            ? "Hide segmentation"
-            : "Show segmentation";
-    };
-
-    syncSegmentationToggleLabel();
-    if (segmentationToggleButton) {
-        segmentationToggleButton.addEventListener("click", () => {
-            state.showSegmentation = !state.showSegmentation;
-            syncSegmentationToggleLabel();
-            updateDisplay();
-        });
-    }
 
     if (toggleButton) {
         toggleButton.addEventListener("click", () => {
