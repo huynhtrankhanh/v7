@@ -1338,11 +1338,11 @@ function scrollToBottom(element) {
     });
 }
 
-function isSegmentationPunctuation(token) {
+function isSegmentationPunctuation(token: string) {
     return token.length === 1 && ".,!;:".includes(token);
 }
 
-function renderSegmentedText(container, segments) {
+function renderSegmentedText(container: HTMLElement, segments: string[]) {
     let needSpace = false;
     let hasContent = false;
 

@@ -1168,6 +1168,7 @@ struct InferResponse {
     segmentation: Vec<String>,
 }
 
+#[derive(Serialize)]
 struct InferenceResult {
     candidates: Vec<Vec<String>>,
     segmentation: Vec<String>,
