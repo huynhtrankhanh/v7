@@ -1020,7 +1020,7 @@ fn perform_inference(
     model: &kenlm::Model,
     vocab: &VocabTrie,
     beam_width: usize,
-) -> Result<Vec<Vec<String>>> {
+) -> Result<InferenceResult> {
     let (slots, per_island_slot_counts) = flatten_islands_to_slots(islands, tokenizer)?;
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
 
@@ -1046,11 +1046,14 @@ fn perform_inference(
         &mut history_arena,
     );
 
-    let candidates: Vec<Vec<String>> = final_states
-        .into_iter()
-        .take(beam_width)
-        .map(|s| {
+    let mut candidates: Vec<Vec<String>> = Vec::new();
+    let mut segmentation: Vec<String> = Vec::new();
+
+    for (idx, s) in final_states.into_iter().take(beam_width).enumerate() {
             let words = materialize_history(&history_arena, s.history_tail_idx);
+            if idx == 0 {
+                segmentation = words.iter().map(|chunk| chunk.replace('_', " ")).collect();
+            }
             let all_tokens: Vec<String> = words
                 .iter()
                 .flat_map(|chunk| chunk.split_whitespace().map(|t| t.to_string()))
@@ -1059,7 +1062,7 @@ fn perform_inference(
             let per_island_tokens =
                 split_tokens_by_island_counts(&all_tokens, &per_island_slot_counts);
 
-            islands
+            let candidate: Vec<String> = islands
                 .iter()
                 .zip(per_island_tokens.iter())
                 .enumerate()
@@ -1075,11 +1078,14 @@ fn perform_inference(
                         island.clone()
                     }
                 })
-                .collect()
-        })
-        .collect();
+                .collect();
+            candidates.push(candidate);
+    }
 
-    Ok(candidates)
+    Ok(InferenceResult {
+        candidates,
+        segmentation,
+    })
 }
 
 #[cfg(test)]
@@ -1159,6 +1165,13 @@ struct InferRequest {
 #[derive(Serialize)]
 struct InferResponse {
     candidates: Vec<Vec<String>>,
+    segmentation: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct InferenceResult {
+    candidates: Vec<Vec<String>>,
+    segmentation: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -1179,16 +1192,25 @@ async fn infer_handler(
     Json(payload): Json<InferRequest>,
 ) -> Json<InferResponse> {
     if payload.is_empty() {
-        return Json(InferResponse { candidates: vec![] });
+        return Json(InferResponse {
+            candidates: vec![],
+            segmentation: vec![],
+        });
     }
 
     let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, &state.vocab, 100);
 
     match result {
-        Ok(candidates) => Json(InferResponse { candidates }),
+        Ok(result) => Json(InferResponse {
+            candidates: result.candidates,
+            segmentation: result.segmentation,
+        }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
-            Json(InferResponse { candidates: vec![] })
+            Json(InferResponse {
+                candidates: vec![],
+                segmentation: vec![],
+            })
         }
     }
 }
@@ -1366,14 +1388,14 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
-        let candidates = perform_inference(&islands, &tokenizer, &model, &vocab, 100)?;
+        let result = perform_inference(&islands, &tokenizer, &model, &vocab, 100)?;
         let duration = start_time.elapsed();
 
         if is_islands_mode {
-            println!("{}", serde_json::to_string(&candidates)?);
+            println!("{}", serde_json::to_string(&result.candidates)?);
         } else {
             println!("Top results:");
-            for (i, parts) in candidates.iter().take(5).enumerate() {
+            for (i, parts) in result.candidates.iter().take(5).enumerate() {
                 let full_text = parts.join("");
                 println!("{}. {}", i + 1, full_text.trim());
             }
