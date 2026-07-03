@@ -84,6 +84,20 @@
             animation: blink 1s step-end infinite;
             vertical-align: text-bottom;
         }
+        .piecemeal-syllable {
+            background: #fff3bf;
+            border-radius: 4px;
+            padding: 0 1px;
+        }
+        .piecemeal-syllable.active {
+            background: #c7f9cc;
+            box-shadow: inset 0 -2px 0 #2f9e44;
+        }
+        .piecemeal-number {
+            color: #666;
+            font-size: 0.65em;
+            margin-right: 1px;
+        }
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0; }

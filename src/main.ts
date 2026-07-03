@@ -1,46 +1,17 @@
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import { getCandidateSelectionMatch } from "./candidateSelection";
-import { KeyboardStrokeTracker, mapKeyUnique, renderVisibleText, selectCandidateIslands } from "./webCore";
-
-// --- Mappings & Constants ---
-
-const stenographyMap = {
-    "PW": "b", "K": "c", "KH": "ch", "KWR": "d", "TK": "đ", "TP": "ph",
-    "TKPW": "g", "H": "h", "KWH": "gi", "KHR": "kh", "HR": "l", "PH": "m",
-    "TPH": "n", "TPR": "nh", "TPW": "ng/ngh", "P": "p", "R": "r", "KP": "s",
-    "T": "t", "TH": "th", "TR": "tr", "W": "v", "WR": "x",
-};
-
-const vowelMap = {
-    "OEU": "iê/ia", "AEU": "ua/uô", "AOE": "ưa/ươ", "AOU": "ư", "OU": "ơ",
-    "OE": "ô", "O": "o", "AU": "ê", "E": "e", "EU": "i", "A": "a",
-    "AE": "ă", "AO": "â", "U": "u", "AOEU": "y",
-};
-
-const finalMap = {
-    "FP": "j", "F": "w", "P": "m", "R": "n", "FR": "ng", "RP": "nh"
-};
-
-const toneMap = {
-    "L": "sắc", "G": "huyền", "B": "hỏi", "LG": "ngã", "BG": "nặng",
-    "BL": "ách", "BLG": "ạch"
-};
-
-const toneAccents = {
-    "a": { "": "a", "sắc": "á", "huyền": "à", "hỏi": "ả", "ngã": "ã", "nặng": "ạ" },
-    "ă": { "": "ă", "sắc": "ắ", "huyền": "ằ", "hỏi": "ẳ", "ngã": "ẵ", "nặng": "ặ" },
-    "â": { "": "â", "sắc": "ấ", "huyền": "ầ", "hỏi": "ẩ", "ngã": "ẫ", "nặng": "ậ" },
-    "e": { "": "e", "sắc": "é", "huyền": "è", "hỏi": "ẻ", "ngã": "ẽ", "nặng": "ẹ" },
-    "ê": { "": "ê", "sắc": "ế", "huyền": "ề", "hỏi": "ể", "ngã": "ễ", "nặng": "ệ" },
-    "i": { "": "i", "sắc": "í", "huyền": "ì", "hỏi": "ỉ", "ngã": "ĩ", "nặng": "ị" },
-    "o": { "": "o", "sắc": "ó", "huyền": "ò", "hỏi": "ỏ", "ngã": "õ", "nặng": "ọ" },
-    "ô": { "": "ô", "sắc": "ố", "huyền": "ồ", "hỏi": "ổ", "ngã": "ỗ", "nặng": "ộ" },
-    "ơ": { "": "ơ", "sắc": "ớ", "huyền": "ờ", "hỏi": "ở", "ngã": "ỡ", "nặng": "ợ" },
-    "u": { "": "u", "sắc": "ú", "huyền": "ù", "hỏi": "ủ", "ngã": "ũ", "nặng": "ụ" },
-    "ư": { "": "ư", "sắc": "ứ", "huyền": "ừ", "hỏi": "ử", "ngã": "ữ", "nặng": "ự" },
-    "y": { "": "y", "sắc": "ý", "huyền": "ỳ", "hỏi": "ỷ", "ngã": "ỹ", "nặng": "ỵ" },
-};
+import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
+import {
+    KeyboardStrokeTracker,
+    findPiecemealSyllableTargets,
+    getPiecemealEntryIndex,
+    mapKeyUnique,
+    renderVisibleText,
+    renderVisibleTextSegments,
+    replacePiecemealSyllable,
+    selectCandidateIslands
+} from "./webCore";
 
 // Maps for V7 Decoding
 const consonantIntMap = {};
@@ -194,187 +165,6 @@ function applyRetroactiveSpace(action, repeat) {
     return changed;
 }
 
-// --- Parse / Assemble ---
-
-function parse(stroke) {
-    let currentStroke = stroke;
-    let capitalize = false;
-    if (currentStroke.startsWith("#")) {
-        capitalize = true;
-        currentStroke = currentStroke.substring(1);
-    }
-
-    const onGlide = currentStroke.startsWith("S");
-    if (onGlide) currentStroke = currentStroke.substring(1);
-
-    let initialConsonant = "";
-    let survived = false;
-    
-    // Match Initial Consonant (4 -> 1)
-    for (let length = 4; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (stenographyMap[candidate] !== undefined) {
-            initialConsonant = stenographyMap[candidate];
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-
-    let vowel = "";
-    survived = false;
-    // Match Vowel (4 -> 1)
-    for (let length = 4; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (vowelMap[candidate] !== undefined) {
-            vowel = vowelMap[candidate];
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-    if (!survived) return null;
-
-    let finalConsonant = "";
-    let finalSteno = "";
-    // Match Final Consonant (2 -> 1)
-    for (let length = 2; length > 0; length--) {
-        if (length > currentStroke.length) continue;
-        const candidate = currentStroke.substring(0, length);
-        if (finalMap[candidate] !== undefined) {
-            finalConsonant = finalMap[candidate];
-            finalSteno = candidate;
-            currentStroke = currentStroke.substring(length);
-            survived = true;
-            break;
-        }
-    }
-
-    let tone = "";
-    let toneSteno = "";
-    survived = currentStroke.length === 0;
-    if (currentStroke.length > 0) {
-        if (toneMap[currentStroke] !== undefined) {
-            tone = toneMap[currentStroke];
-            toneSteno = currentStroke;
-            currentStroke = "";
-            survived = true;
-        }
-    }
-
-    if (!survived) return null;
-    if (toneSteno === "BL" || toneSteno === "BLG") {
-        const stopFinals = { "P": "p", "R": "t", "FR": "c", "RP": "ch" };
-        if (stopFinals[finalSteno]) {
-            finalConsonant = stopFinals[finalSteno];
-            tone = toneSteno === "BL" ? "sắc" : "nặng";
-        } else {
-            return null;
-        }
-    }
-
-    return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
-}
-
-function assemble(parsed) {
-    const initial = () => {
-        const f = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
-        if (parsed.initialConsonant === "ng/ngh") {
-            return (parsed.onGlide || f) ? "ng" : "ngh";
-        }
-        if (parsed.initialConsonant === "g") {
-            return (parsed.onGlide || f) ? "g" : "gh";
-        }
-        if (parsed.initialConsonant === "gi") {
-            return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
-        }
-        if (parsed.initialConsonant === "c") {
-            return parsed.onGlide ? "q" : (f ? "c" : "k");
-        }
-        return parsed.initialConsonant;
-    };
-
-    const middle = () => {
-        if (parsed.vowel === "iê/ia") {
-            if (parsed.initialConsonant === "") {
-                if (parsed.onGlide) {
-                    if (parsed.finalConsonant === "") return "uy" + toneAccents["a"][parsed.tone];
-                    return "uy" + toneAccents["ê"][parsed.tone];
-                }
-                if (parsed.finalConsonant === "") return toneAccents["i"][parsed.tone] + "a";
-                return "y" + toneAccents["ê"][parsed.tone];
-            }
-            // Has initial consonant
-            if (parsed.onGlide) {
-                if (parsed.finalConsonant === "") return "uy" + toneAccents["a"][parsed.tone];
-                return "uy" + toneAccents["ê"][parsed.tone];
-            }
-            if (parsed.finalConsonant === "") return toneAccents["i"][parsed.tone] + "a";
-            return "i" + toneAccents["ê"][parsed.tone];
-        }
-        if (parsed.vowel === "ua/uô") {
-            return parsed.finalConsonant === ""
-                ? toneAccents["u"][parsed.tone] + "a"
-                : "u" + toneAccents["ô"][parsed.tone];
-        }
-        if (parsed.vowel === "ưa/ươ") {
-            return parsed.finalConsonant === ""
-                ? toneAccents["ư"][parsed.tone] + "a"
-                : "ư" + toneAccents["ơ"][parsed.tone];
-        }
-        if (parsed.vowel === "i") {
-            if (parsed.onGlide) {
-                if (parsed.finalConsonant === "") {
-                    return parsed.initialConsonant !== "c"
-                        ? toneAccents["u"][parsed.tone] + "y"
-                        : "u" + toneAccents["y"][parsed.tone];
-                }
-                return "u" + toneAccents["y"][parsed.tone];
-            }
-            return toneAccents["i"][parsed.tone];
-        }
-        if (parsed.vowel === "ă" && ["w", "j"].includes(parsed.finalConsonant)) {
-            const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
-            return prefix + toneAccents["a"][parsed.tone];
-        }
-        if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide) {
-            return "u" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        if (parsed.initialConsonant === "c" && parsed.onGlide) {
-            return "u" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        if (parsed.onGlide) {
-            return parsed.finalConsonant === ""
-                ? toneAccents["o"][parsed.tone] + parsed.vowel
-                : "o" + toneAccents[parsed.vowel][parsed.tone];
-        }
-        return toneAccents[parsed.vowel][parsed.tone];
-    };
-
-const final = () => {
-        if (parsed.finalConsonant === "w") {
-            if ([ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel)) {
-                return "u";
-            }
-            return "o";
-        }
-        if (parsed.finalConsonant === "j") {
-            if ([ "ă", "â" ].includes(parsed.vowel)) {
-                return "y";
-            }
-            return "i";
-        }
-        return parsed.finalConsonant;
-    };
-
-    const text = initial() + middle() + final();
-    return parsed.capitalize 
-        ? text.charAt(0).toUpperCase() + text.slice(1)
-        : text;
-}
-
 // --- V7 Decoding ---
 
 function remapTone(t) {
@@ -436,6 +226,7 @@ const state = {
     candidates: []
 };
 let isRawMode = false;
+let piecemealCursorIndex: number | null = null;
 let inferenceAbortController = null;
 let strippedPlover = {
     available: false,
@@ -467,6 +258,7 @@ function isDictionaryTextInputFocused(target = document.activeElement) {
 
 const undoManager = createUndoManager(buffer, () => {
         state.candidates = [];
+        piecemealCursorIndex = null;
         syncPloverPreeditIndex();
         updateDisplay();
         runInference();
@@ -758,6 +550,7 @@ function applyPloverOutput(output, { recordHistory, allowInference, finalizePree
     const normalizedPreedit = finalizePreedit ? "" : ensureString(preeditText);
     const shouldSave = hadPreedit || committedText !== "" || normalizedPreedit !== "";
     if (shouldSave) {
+        piecemealCursorIndex = null;
         undoManager.savePlover({ recordHistory: !!recordHistory, hadPreedit });
     }
 
@@ -1087,6 +880,7 @@ async function handleChord(stroke) {
         if (state.candidates.length > 0) {
             selectCandidate(0); // Select top candidate
         }
+        piecemealCursorIndex = null;
         isRawMode = true;
         buffer.clearHistory();
         updateDisplay();
@@ -1100,14 +894,53 @@ async function handleChord(stroke) {
     }
 
     if (stroke === "*") {
+        piecemealCursorIndex = null;
         restoreState();
         return;
+    }
+
+    let suppressPiecemealEntry = false;
+    if (piecemealCursorIndex !== null) {
+        const parsedPiecemeal = parse(stroke);
+        if (parsedPiecemeal) {
+            const targets = findPiecemealSyllableTargets(state.islands);
+            const target = targets[piecemealCursorIndex];
+            if (target) {
+                saveState();
+                const replacement = assemble(parsedPiecemeal);
+                buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
+                state.candidates = [];
+                const nextTargets = findPiecemealSyllableTargets(state.islands);
+                piecemealCursorIndex += 1;
+                if (piecemealCursorIndex >= nextTargets.length || piecemealCursorIndex >= 9) {
+                    piecemealCursorIndex = null;
+                }
+                runInference();
+                return;
+            }
+        }
+        piecemealCursorIndex = null;
+        suppressPiecemealEntry = true;
+        updateDisplay();
+    }
+
+    if (!suppressPiecemealEntry && state.candidates.length === 0) {
+        const entryIndex = getPiecemealEntryIndex(stroke);
+        if (entryIndex !== null) {
+            const targets = findPiecemealSyllableTargets(state.islands);
+            if (targets[entryIndex]) {
+                piecemealCursorIndex = entryIndex;
+                updateDisplay();
+                return;
+            }
+        }
     }
     
     // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
     if (stroke.includes("*")) {
         const v7Code = getV7FromStroke(stroke);
         if (v7Code) {
+            piecemealCursorIndex = null;
             saveState();
             buffer.appendIsland(createIsland('vietnamese', v7Code, true));
             runInference();
@@ -1139,6 +972,7 @@ async function handleChord(stroke) {
             explicitSpacing: emilyResult.explicitSpacing
         }));
         state.pendingCapitalization = emilyResult.capNext || false;
+        piecemealCursorIndex = null;
         runInference();
         updateDisplay();
         return;
@@ -1153,6 +987,7 @@ async function handleChord(stroke) {
         if (combinedPunctuation) {
             saveState();
             if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                piecemealCursorIndex = null;
                 buffer.appendIsland(createIsland('punctuation', combinedPunctuation));
                 updateDisplay();
                 return;
@@ -1163,6 +998,7 @@ async function handleChord(stroke) {
             const syllableText = assemble(parsedSelection);
             saveState();
             if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                piecemealCursorIndex = null;
                 appendText(syllableText);
                 runInference();
                 return;
@@ -1173,6 +1009,7 @@ async function handleChord(stroke) {
     // 2. Space Stroke: S-P
     if (stroke === "S-P") {
         saveState();
+        piecemealCursorIndex = null;
         buffer.appendIsland(createIsland('spacing', ' '));
         runInference();
         updateDisplay();
@@ -1187,6 +1024,7 @@ async function handleChord(stroke) {
         }
 
         saveState();
+        piecemealCursorIndex = null;
         const punct = PUNCTUATION_MAP[stroke];
         buffer.appendIsland(createIsland('punctuation', punct));
         updateDisplay();
@@ -1197,6 +1035,7 @@ async function handleChord(stroke) {
     if (parsed) {
         const text = assemble(parsed);
         saveState();
+        piecemealCursorIndex = null;
         appendText(text);
         runInference();
         return;
@@ -1278,6 +1117,7 @@ function selectCandidate(index, options: SelectCandidateOptions = { saveHistory:
     }
     buffer.setIslands(nextIslands);
     state.candidates = [];
+    piecemealCursorIndex = null;
     if (options.refreshDisplay) {
         updateDisplay();
     }
@@ -1369,8 +1209,22 @@ function updateDisplay() {
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            const textNode = document.createTextNode(text);
-            display.insertBefore(textNode, cursor); // Text before cursor
+            for (const segment of renderVisibleTextSegments(state.islands, state.candidates, piecemealCursorIndex)) {
+                if (segment.piecemealNumber === undefined) {
+                    display.insertBefore(document.createTextNode(segment.text), cursor);
+                    continue;
+                }
+                const span = document.createElement("span");
+                span.className = segment.piecemealCursor ? "piecemeal-syllable active" : "piecemeal-syllable";
+                span.textContent = segment.text;
+                display.insertBefore(span, cursor);
+                if (!segment.piecemealCursor) {
+                    const sup = document.createElement("sup");
+                    sup.className = "piecemeal-number";
+                    sup.textContent = String(segment.piecemealNumber);
+                    display.insertBefore(sup, cursor);
+                }
+            }
             display.style.color = "#000";
         }
         // Render Candidates
@@ -1479,6 +1333,7 @@ document.addEventListener("keydown", (e) => {
              // Update state
              buffer.setIslands([createIsland('vietnamese', newText)]);
              state.candidates = [];
+             piecemealCursorIndex = null;
              buffer.clearHistory();
              isRawMode = false;
              
@@ -1498,6 +1353,7 @@ document.addEventListener("keydown", (e) => {
          const isNumber = e.key.match(/[0-9]/);
          if ((e.shiftKey && isLetter) || isNumber) {
              saveState();
+             piecemealCursorIndex = null;
              const value = isNumber ? e.key : e.key.toUpperCase();
              buffer.appendIsland(createIsland('capital', value));
              runInference();
@@ -1511,6 +1367,7 @@ document.addEventListener("keydown", (e) => {
         if (state.candidates.length > 0) {
             selectCandidate(0);
         }
+        piecemealCursorIndex = null;
         buffer.trimTrailingSpaceFromLastVietnameseIsland();
         saveState();
         buffer.appendIsland(createIsland('spacing', '\n'));
@@ -1529,6 +1386,7 @@ document.addEventListener("keydown", (e) => {
     if (immediateDigit) {
         // Emit as capital/number island immediately
         saveState();
+        piecemealCursorIndex = null;
         buffer.appendIsland(createIsland('capital', mapped));
         runInference();
         e.preventDefault();

@@ -424,6 +424,14 @@ Selecting a candidate collapses the ambiguity and merges the choice into the fix
 Candidate selection keys can also be combined with **single-syllable** strokes in the same chord: the candidate is selected first, then the syllable is appended, and this combined action is treated as a single undo step.
 If the combined chord does not form a valid single-syllable stroke, it is ignored.
 
+### Piecemeal Syllable Edit
+
+When no candidates are displayed, the text buffer marks the nine rightmost Vietnamese syllables. Enter piecemeal edit mode with `T-` for syllable 1, `P-` for syllable 2, `H-` for syllable 3, `TK-` for syllable 4, `PW-` for syllable 5, `HR-` for syllable 6, `K-` for syllable 7, `W-` for syllable 8, or `R-` for syllable 9.
+
+The selected syllable is shown without its number. Type a valid one-syllable Vietnamese stroke to replace it; the cursor advances to the next marked syllable and exits after syllable 9. Any invalid stroke or non-syllable stroke exits piecemeal edit mode and is then handled normally.
+
+Fixed text syllables are validated against the generated Vietnamese syllable set. Editing a syllable inside a V7 island splits that island around the replacement and inserts the new syllable as fixed Vietnamese text. Each replacement is undoable with the normal `*` undo stroke.
+
 ### Undo
 
 The `*` key (Spacebar) pressed by itself undoes the previous action (syllable entry, island entry, or candidate selection).

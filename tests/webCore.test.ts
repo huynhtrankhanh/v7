@@ -1,8 +1,12 @@
 import {
   KeyboardStrokeTracker,
+  findPiecemealSyllableTargets,
+  getPiecemealEntryIndex,
   getSelectedCandidateText,
   mapKeyUnique,
+  renderVisibleTextSegments,
   renderVisibleText,
+  replacePiecemealSyllable,
   serializeStrokeKeys,
   selectCandidateIslands
 } from "../src/webCore";
@@ -63,5 +67,65 @@ describe("webCore screen output", () => {
       createIsland("punctuation", ".")
     ];
     expect(renderVisibleText(islands, [])).toBe("xin [tro2].");
+  });
+});
+
+describe("webCore piecemeal syllable edit", () => {
+  test("maps entry strokes to the nine rightmost syllable slots", () => {
+    expect(getPiecemealEntryIndex("T")).toBe(0);
+    expect(getPiecemealEntryIndex("TK")).toBe(3);
+    expect(getPiecemealEntryIndex("R")).toBe(8);
+    expect(getPiecemealEntryIndex("A")).toBeNull();
+  });
+
+  test("finds fixed Vietnamese syllables using the generated valid syllable set", () => {
+    const targets = findPiecemealSyllableTargets([
+      createIsland("vietnamese", "hello tôi không xyz thẹn")
+    ]);
+
+    expect(targets.map((target) => target.text)).toEqual(["tôi", "không", "thẹn"]);
+  });
+
+  test("keeps only the nine rightmost syllables across fixed text and v7 islands", () => {
+    const targets = findPiecemealSyllableTargets([
+      createIsland("vietnamese", "a à ả ã á ạ ai"),
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "tôi")
+    ]);
+
+    expect(targets.map((target) => target.text)).toEqual(["à", "ả", "ã", "á", "ạ", "ai", "tro2", "ma1", "tôi"]);
+  });
+
+  test("renders piecemeal numbering and hides the number on the active cursor", () => {
+    const segments = renderVisibleTextSegments([
+      createIsland("vietnamese", "tôi không thẹn")
+    ], [], 1);
+
+    expect(segments).toEqual([
+      { text: "tôi", piecemealNumber: 1, piecemealCursor: false },
+      { text: " " },
+      { text: "không", piecemealNumber: 2, piecemealCursor: true },
+      { text: " " },
+      { text: "thẹn", piecemealNumber: 3, piecemealCursor: false }
+    ]);
+  });
+
+  test("replaces fixed text syllables in place", () => {
+    const islands = [createIsland("vietnamese", "tôi không thẹn")];
+    const target = findPiecemealSyllableTargets(islands)[1];
+    const next = replacePiecemealSyllable(islands, target, "có");
+
+    expect(next).toEqual([createIsland("vietnamese", "tôi có thẹn")]);
+  });
+
+  test("splits v7 islands when replacing a v7 syllable", () => {
+    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+    const target = findPiecemealSyllableTargets(islands)[0];
+    const next = replacePiecemealSyllable(islands, target, "tôi");
+
+    expect(next).toEqual([
+      createIsland("vietnamese", "tôi"),
+      createIsland("vietnamese", "ma1", true)
+    ]);
   });
 });
