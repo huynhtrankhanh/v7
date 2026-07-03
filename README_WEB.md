@@ -409,7 +409,7 @@ Most common Vietnamese syllables can be fully specified using standard steno cho
 A V7 island represents two syllables partially specified. This mode leverages the V7 inference engine to predict the best candidates based on the surrounding context.
 
 *   **Action:** Hold down the `*` key (Spacebar) while pressing the keys for the two syllables.
-*   **Result:** A list of 5 candidates appears at the bottom. The main text display shows a preview of the top candidate.
+*   **Result:** A list of 5 candidates appears at the bottom. The main text buffer shows the inferred text from the top candidate. Raw V7 blocks are shown only when inference is unavailable.
 
 ### Candidate Selection
 
@@ -426,7 +426,7 @@ If the combined chord does not form a valid single-syllable stroke, it is ignore
 
 ### Piecemeal Syllable Edit
 
-The text buffer always marks the nine rightmost Vietnamese syllables, including while V7 inference candidates are displayed. Enter piecemeal edit mode with `T-` for syllable 1, `P-` for syllable 2, `H-` for syllable 3, `TK-` for syllable 4, `PW-` for syllable 5, `HR-` for syllable 6, `K-` for syllable 7, `W-` for syllable 8, or `R-` for syllable 9.
+The text buffer always marks the nine rightmost Vietnamese syllables, including inferred syllables from unresolved V7 islands while candidates are displayed. Enter piecemeal edit mode with `T-` for syllable 1, `P-` for syllable 2, `H-` for syllable 3, `TK-` for syllable 4, `PW-` for syllable 5, `HR-` for syllable 6, `K-` for syllable 7, `W-` for syllable 8, or `R-` for syllable 9.
 
 The selected syllable is shown without its number. Type a valid one-syllable Vietnamese stroke to replace it; the cursor advances to the next marked syllable and exits after syllable 9. Any invalid stroke or non-syllable stroke exits piecemeal edit mode and is then handled normally. Candidate-selection chords are never combined with piecemeal replacement; when a chord selects a candidate, piecemeal edit exits and the chord is handled by the normal candidate-selection path.
 

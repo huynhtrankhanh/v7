@@ -130,6 +130,7 @@ export function renderVisibleTextSegments(
   targets.forEach((target, index) => {
     targetIds.set(targetId(target), { number: index + 1, cursor: index === piecemealCursorIndex });
   });
+  const inferredV7Parts = mapInferredPartsToV7Islands(islands, candidates[0] ?? null);
 
   const segments: VisibleTextSegment[] = [];
   for (let i = 0; i < islands.length; i++) {
@@ -139,7 +140,19 @@ export function renderVisibleTextSegments(
       segments.push({ text: " " });
     }
     if (curr.isV7) {
-      segments.push(...renderIslandWithPiecemealTargets(`[${curr.value}]`, curr, i, targetIds, 1));
+      const inferredPart = inferredV7Parts.get(i);
+      if (inferredPart) {
+        segments.push(...renderIslandWithPiecemealTargets(
+          inferredPart,
+          curr,
+          i,
+          targetIds,
+          0,
+          findInferredV7DisplayTargets(inferredPart, curr, i)
+        ));
+      } else {
+        segments.push(...renderIslandWithPiecemealTargets(`[${curr.value}]`, curr, i, targetIds, 1));
+      }
     } else {
       segments.push(...renderIslandWithPiecemealTargets(curr.value, curr, i, targetIds, 0));
     }
@@ -243,14 +256,15 @@ function renderIslandWithPiecemealTargets(
   island: Island,
   islandIndex: number,
   targetIds: Map<string, { number: number; cursor: boolean }>,
-  offset: number
+  offset: number,
+  displayTargets?: PiecemealSyllableTarget[]
 ): VisibleTextSegment[] {
   if (targetIds.size === 0 || island.type !== "vietnamese") {
     return [{ text: renderedValue }];
   }
-  const targets = island.isV7
+  const targets = displayTargets ?? (island.isV7
     ? findV7Syllables(island.value, islandIndex)
-    : findFixedVietnameseSyllables(island.value, islandIndex);
+    : findFixedVietnameseSyllables(island.value, islandIndex));
   const activeTargets = targets.filter((target) => targetIds.has(targetId(target)));
   if (activeTargets.length === 0) return [{ text: renderedValue }];
 
@@ -290,5 +304,37 @@ function mergePlainSegments(segments: VisibleTextSegment[]): VisibleTextSegment[
 }
 
 function targetId(target: PiecemealSyllableTarget): string {
-  return `${target.islandIndex}:${target.isV7 ? "v7" : "fixed"}:${target.start}:${target.end}`;
+  return `${target.islandIndex}:${target.isV7 ? "v7" : "fixed"}:${target.syllableIndex}`;
+}
+
+function mapInferredPartsToV7Islands(islands: Island[], topCandidate: string[] | null): Map<number, string> {
+  const mapped = new Map<number, string>();
+  if (!topCandidate) return mapped;
+
+  let candidatePartIndex = 0;
+  for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
+    const island = islands[islandIndex];
+    if (!island.isV7) continue;
+    const inferred = topCandidate[candidatePartIndex + 1];
+    if (inferred) {
+      mapped.set(islandIndex, inferred);
+    }
+    candidatePartIndex += 2;
+  }
+  return mapped;
+}
+
+function findInferredV7DisplayTargets(
+  inferredText: string,
+  island: Island,
+  islandIndex: number
+): PiecemealSyllableTarget[] {
+  const rawTargets = findV7Syllables(island.value, islandIndex);
+  const inferredTargets = findFixedVietnameseSyllables(inferredText, islandIndex);
+
+  return inferredTargets.slice(0, rawTargets.length).map((target, index) => ({
+    ...target,
+    syllableIndex: index,
+    isV7: true
+  }));
 }
