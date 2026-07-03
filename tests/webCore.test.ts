@@ -110,6 +110,21 @@ describe("webCore piecemeal syllable edit", () => {
     ]);
   });
 
+  test("keeps rendering editable buffer syllables while candidates are active", () => {
+    const segments = renderVisibleTextSegments([
+      createIsland("vietnamese", "tôi"),
+      createIsland("vietnamese", "tro2ma1", true)
+    ], [["candidate preview"]], 0);
+
+    expect(segments).toEqual([
+      { text: "tôi", piecemealNumber: 1, piecemealCursor: true },
+      { text: " [" },
+      { text: "tro2", piecemealNumber: 2, piecemealCursor: false },
+      { text: "ma1", piecemealNumber: 3, piecemealCursor: false },
+      { text: "]" }
+    ]);
+  });
+
   test("replaces fixed text syllables in place", () => {
     const islands = [createIsland("vietnamese", "tôi không thẹn")];
     const target = findPiecemealSyllableTargets(islands)[1];

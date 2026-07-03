@@ -901,30 +901,39 @@ async function handleChord(stroke) {
 
     let suppressPiecemealEntry = false;
     if (piecemealCursorIndex !== null) {
-        const parsedPiecemeal = parse(stroke);
-        if (parsedPiecemeal) {
-            const targets = findPiecemealSyllableTargets(state.islands);
-            const target = targets[piecemealCursorIndex];
-            if (target) {
-                saveState();
-                const replacement = assemble(parsedPiecemeal);
-                buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
-                state.candidates = [];
-                const nextTargets = findPiecemealSyllableTargets(state.islands);
-                piecemealCursorIndex += 1;
-                if (piecemealCursorIndex >= nextTargets.length || piecemealCursorIndex >= 9) {
-                    piecemealCursorIndex = null;
+        const piecemealSelection = state.candidates.length > 0
+            ? getCandidateSelectionMatch(stroke, state.candidates.length)
+            : null;
+        if (piecemealSelection) {
+            piecemealCursorIndex = null;
+            suppressPiecemealEntry = true;
+            updateDisplay();
+        } else {
+            const parsedPiecemeal = parse(stroke);
+            if (parsedPiecemeal) {
+                const targets = findPiecemealSyllableTargets(state.islands);
+                const target = targets[piecemealCursorIndex];
+                if (target) {
+                    saveState();
+                    const replacement = assemble(parsedPiecemeal);
+                    buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
+                    state.candidates = [];
+                    const nextTargets = findPiecemealSyllableTargets(state.islands);
+                    piecemealCursorIndex += 1;
+                    if (piecemealCursorIndex >= nextTargets.length || piecemealCursorIndex >= 9) {
+                        piecemealCursorIndex = null;
+                    }
+                    runInference();
+                    return;
                 }
-                runInference();
-                return;
             }
+            piecemealCursorIndex = null;
+            suppressPiecemealEntry = true;
+            updateDisplay();
         }
-        piecemealCursorIndex = null;
-        suppressPiecemealEntry = true;
-        updateDisplay();
     }
 
-    if (!suppressPiecemealEntry && state.candidates.length === 0) {
+    if (!suppressPiecemealEntry) {
         const entryIndex = getPiecemealEntryIndex(stroke);
         if (entryIndex !== null) {
             const targets = findPiecemealSyllableTargets(state.islands);

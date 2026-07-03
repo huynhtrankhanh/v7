@@ -125,10 +125,6 @@ export function renderVisibleTextSegments(
   candidates: string[][],
   piecemealCursorIndex: number | null = null
 ): VisibleTextSegment[] {
-  if (candidates.length > 0) {
-    return [{ text: candidates[0].join("") }];
-  }
-
   const targets = findPiecemealSyllableTargets(islands);
   const targetIds = new Map<string, { number: number; cursor: boolean }>();
   targets.forEach((target, index) => {
