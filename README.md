@@ -10,11 +10,10 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `tests/`: Jest unit tests for the web frontend logic.
 *   `scripts/`: Helper scripts (e2e tests, Stripped Plover agent, etc.).
 *   `getInference.ts`: TypeScript port of the V7 tokenizer/candidate-enumeration logic (used for client-side inference).
-*   `preprocess_corpus.cpp`: C++ source for the corpus preprocessor (compiled during the Docker training build).
+*   `preprocess_corpus.py`: Python corpus preprocessor used by the Docker training build.
 *   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).
 *   `Dockerfile` / `docker-compose.yml`: Multi-stage Docker build and compose configuration.
 *   `lm.binary`: Trained binary language model — **generated artifact**, not in the repository.
-*   `vocab.txt`: Sorted vocabulary list used by the inference engine — **generated artifact**, not in the repository.
 
 ## Docker Support
 
@@ -34,7 +33,7 @@ docker compose build
 
 ### Run the Web Demo (Server Mode)
 
-**Requirements:** `lm.binary` and `vocab.txt` must exist in the project root (see "Training" below). These are mounted into the container automatically.
+**Requirements:** `lm.binary` must exist in the project root (see "Training" below). It is mounted into the container automatically.
 
 ```bash
 docker compose up inference
@@ -71,20 +70,19 @@ Place your raw Vietnamese text corpus at `data/corpus-full.txt` (one sentence pe
 
 ### 2. Run the Training Container
 
-The `train` Docker service handles everything: compiling the C++ preprocessor, running it on your corpus, training a 3-gram KenLM model, and binarizing it.
+The `train` Docker service handles everything: preprocessing your corpus, training a 3-gram KenLM model, and binarizing it.
 
 ```bash
 docker compose run --rm train bash train_lm.sh
 ```
 
 This will:
-1.  Preprocess `data/corpus-full.txt` into `data/corpus.tok` and build a sorted vocabulary list.
+1.  Preprocess `data/corpus-full.txt` into `data/corpus.tok`.
 2.  Train a 3-gram language model (`lm.arpa`).
 3.  Binarize the model into `lm.binary` for efficient runtime loading.
 
 **Output artifacts (written to the project root):**
 *   `lm.binary` — the trained model file required by the inference engine.
-*   `vocab.txt` — the vocabulary list required by the inference engine.
 
 ## Building Locally (Without Docker)
 
@@ -95,7 +93,6 @@ If you prefer a local build, you will need to install the system dependencies an
 *   **Rust:** Latest stable toolchain.
 *   **System Libraries:** `cmake`, `build-essential`, `libboost-all-dev`, `zlib1g-dev`, `libbz2-dev`, `liblzma-dev`.
 *   **Python 3.11+** with `tqdm` (for the training script's progress display).
-*   **C++17 compiler** (for building `preprocess_corpus`).
 
 ### Build Steps
 
@@ -104,13 +101,10 @@ If you prefer a local build, you will need to install the system dependencies an
 git clone https://github.com/kpu/kenlm.git
 cd kenlm && mkdir -p build && cd build && cmake .. && make -j$(nproc) && cd ../..
 
-# 2. Build the C++ preprocessor
-g++ -O2 -std=c++17 -o preprocess_corpus preprocess_corpus.cpp
-
-# 3. Build the Rust inference engine
+# 2. Build the Rust inference engine
 cd inference-rs && cargo build --release && cd ..
 
-# 4. Build the web frontend
+# 3. Build the web frontend
 npm ci && npm run build
 ```
 
@@ -118,7 +112,7 @@ npm ci && npm run build
 
 ### Command-Line Mode
 
-The compiled Rust binary expects `lm.binary` and `vocab.txt` in the current working directory.
+The compiled Rust binary expects `lm.binary` in the current working directory.
 
 #### A. Legacy Mode (Single String)
 

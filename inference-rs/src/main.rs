@@ -12,7 +12,6 @@ use clap::Parser;
 use futures_util::StreamExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -31,9 +30,6 @@ struct Args {
 
     #[arg(long, default_value = "lm.binary")]
     model_path: String,
-
-    #[arg(long, default_value = "vocab.txt")]
-    vocab_path: String,
 
     #[arg(long)]
     server: bool,
@@ -318,11 +314,21 @@ impl Tokenizer {
 
         for (key, regex) in regex_map {
             let mut parts = key.split('_');
-            let Some(consonant_part) = parts.next() else { continue; };
-            let Some(rime_part) = parts.next() else { continue; };
-            let Some(tone_part) = parts.next() else { continue; };
-            let Some(rime_start) = rime_part.chars().next() else { continue; };
-            let Ok(tone) = tone_part.parse::<i32>() else { continue; };
+            let Some(consonant_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_part) = parts.next() else {
+                continue;
+            };
+            let Some(tone_part) = parts.next() else {
+                continue;
+            };
+            let Some(rime_start) = rime_part.chars().next() else {
+                continue;
+            };
+            let Ok(tone) = tone_part.parse::<i32>() else {
+                continue;
+            };
             let consonant = consonant_part.to_string();
 
             valid_consonants_map.insert(consonant.clone(), consonant.clone());
@@ -331,7 +337,7 @@ impl Tokenizer {
                 .into_iter()
                 .map(Arc::from)
                 .collect();
-            
+
             candidates_index.insert((consonant, rime_start, tone), candidates);
         }
 
@@ -498,9 +504,14 @@ fn split_tokens_by_island_counts(
         let mut island_tokens: Vec<String> = Vec::new();
         let mut slots_to_fill = count;
 
-        while slots_to_fill > 0 && (token_idx < tokens.len() || syl_idx < current_token_syllables.len()) {
+        while slots_to_fill > 0
+            && (token_idx < tokens.len() || syl_idx < current_token_syllables.len())
+        {
             if syl_idx >= current_token_syllables.len() {
-                current_token_syllables = tokens[token_idx].split('_').map(|s| s.to_string()).collect();
+                current_token_syllables = tokens[token_idx]
+                    .split('_')
+                    .map(|s| s.to_string())
+                    .collect();
                 token_idx += 1;
                 syl_idx = 0;
             }
@@ -527,7 +538,7 @@ fn format_output_words(words: &[String]) -> String {
     for word in words {
         if is_punct_str(word) {
             result.push_str(word);
-            need_space = true; 
+            need_space = true;
         } else {
             if need_space || !result.is_empty() {
                 result.push(' ');
@@ -601,76 +612,23 @@ fn parse_v7_string(v7_string: &str, tokenizer: &Tokenizer) -> Result<Vec<Partial
 }
 
 #[derive(Debug, Clone)]
-struct HistoryEntry {
-    prev_idx: Option<usize>,
-    island_words: Vec<Arc<str>>,
-}
-
-#[derive(Debug, Clone)]
 struct IslandState {
     score: f32,
     state: kenlm::State,
-    history_tail_idx: Option<usize>,
+    history: Vec<Vec<Arc<str>>>,
 }
 
 #[derive(Debug, Clone)]
-struct LatticeNode {
+struct BeamNode {
     score: f32,
     state: kenlm::State,
-    word: Option<Arc<str>>,
+    word: Arc<str>,
     parent_idx: Option<usize>,
     origin_idx: usize,
 }
 
-const KENLM_STATE_KEY_SIZE: usize = 128;
-const _: [(); KENLM_STATE_KEY_SIZE] = [(); std::mem::size_of::<kenlm::State>()];
-
 const UNKNOWN_PENALTY: f32 = -10.0;
-
-const UNKNOWN_TOKEN: &str = "<?>"; 
-
-// ---------------------------------------------------------------------------
-// Syllable-level vocabulary trie
-// ---------------------------------------------------------------------------
-
-#[derive(Default)]
-struct TrieNode {
-    is_word: bool,
-    children: HashMap<String, TrieNode>,
-}
-
-struct VocabTrie {
-    root: TrieNode,
-}
-
-impl VocabTrie {
-    fn new() -> Self {
-        VocabTrie {
-            root: TrieNode::default(),
-        }
-    }
-
-    fn insert(&mut self, word: &str) {
-        let mut node = &mut self.root;
-        for syllable in word.split('_') {
-            node = node.children.entry(syllable.to_string()).or_default();
-        }
-        node.is_word = true;
-    }
-
-    fn from_vocab_file(path: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| anyhow::anyhow!("Failed to read vocab file '{}': {}", path, e))?;
-        let mut trie = VocabTrie::new();
-        for line in content.lines() {
-            let word = line.trim();
-            if !word.is_empty() {
-                trie.insert(word);
-            }
-        }
-        Ok(trie)
-    }
-}
+const UNKNOWN_TOKEN: &str = "<?>";
 
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
@@ -696,321 +654,115 @@ fn uses_strict_alternating_island_mode(islands: &[String], tokenizer: &Tokenizer
     })
 }
 
-fn truncate_top_indices_by_score<F>(indices: &mut Vec<usize>, limit: usize, mut score_of: F)
-where
-    F: FnMut(usize) -> f32,
-{
-    indices.sort_by(|a, b| {
-        score_of(*b)
-            .partial_cmp(&score_of(*a))
-            .unwrap_or(Ordering::Equal)
-    });
-    if indices.len() > limit {
-        indices.truncate(limit);
-    }
-}
-
-fn push_history(
-    history_arena: &mut Vec<HistoryEntry>,
-    prev_idx: Option<usize>,
-    island_words: Vec<Arc<str>>,
-) -> Option<usize> {
-    history_arena.push(HistoryEntry {
-        prev_idx,
-        island_words,
-    });
-    Some(history_arena.len() - 1)
-}
-
-fn materialize_history(history_arena: &[HistoryEntry], mut tail_idx: Option<usize>) -> Vec<String> {
-    let mut index_chain = Vec::new();
-    while let Some(idx) = tail_idx {
-        index_chain.push(idx);
-        tail_idx = history_arena[idx].prev_idx;
-    }
-    let mut parts = Vec::with_capacity(index_chain.len());
-    for idx in index_chain.into_iter().rev() {
-        parts.push(history_arena[idx].island_words.join(" "));
-    }
-    parts
-}
-
-fn enumerate_multi_syllable_words<'v>(
-    slots: &[SyllableSlot],
+fn beam_search_v7_island(
+    templates: &[PartialSyllableTemplate],
+    tokenizer: &Tokenizer,
     model: &kenlm::Model,
-    vocab: &'v VocabTrie,
-) -> Vec<(Arc<str>, u32)> {
-    debug_assert!(slots.len() >= 2);
-
-    let mut current: Vec<(Vec<Arc<str>>, &'v TrieNode)> = slots[0]
-        .candidates
+    beam_width: usize,
+    incoming_states: &[IslandState],
+) -> Vec<IslandState> {
+    let mut current_beam: Vec<BeamNode> = incoming_states
         .iter()
-        .filter_map(|cand| {
-            vocab
-                .root
-                .children
-                .get(cand.as_ref())
-                .map(|child| (vec![cand.clone()], child))
+        .enumerate()
+        .map(|(origin_idx, state)| BeamNode {
+            score: state.score,
+            state: state.state.clone(),
+            word: Arc::from(""),
+            parent_idx: None,
+            origin_idx,
         })
         .collect();
 
-    for slot in &slots[1..] {
-        let mut next: Vec<(Vec<Arc<str>>, &'v TrieNode)> = Vec::new();
-        for (path, node) in current {
-            for cand in &slot.candidates {
-                if let Some(child) = node.children.get(cand.as_ref()) {
-                    let mut new_path = path.clone();
-                    new_path.push(cand.clone());
-                    next.push((new_path, child));
-                }
-            }
-        }
-        current = next;
-        if current.is_empty() {
-            return vec![];
-        }
-    }
-
-    current
-        .into_iter()
-        .filter_map(|(path, node)| {
-            if node.is_word {
-                let word = path.join("_");
-                let idx = model.lookup(&word);
-                Some((Arc::from(word), idx))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
-/// A Hybrid Viterbi-Beam Pruning approach. 
-/// Guarantees strict global optimality for the Top 1 result by giving the 
-/// best path for *every* unique KenLM state immunity from global pruning.
-/// Maintains a healthy N-Best pool for UI candidates without exploding memory.
-fn prune_position_nodes(
-    nodes_at_pos: &mut Vec<usize>,
-    per_state_width: usize,
-    global_width: usize,
-    nodes: &[LatticeNode],
-) {
-    if nodes_at_pos.is_empty() {
-        return;
-    }
-
-    let mut by_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> = HashMap::new();
-    for &idx in nodes_at_pos.iter() {
-        by_state.entry(nodes[idx].state.data).or_default().push(idx);
-    }
-
-    let mut viterbi_survivors = Vec::with_capacity(by_state.len());
-    let mut n_best_candidates = Vec::new();
-
-    for (_, mut indices) in by_state {
-        // Sort the paths sharing this state by score (descending)
-        truncate_top_indices_by_score(&mut indices, per_state_width, |idx| nodes[idx].score);
-        
-        // Tier 1: The absolute best path for this state gets "Viterbi Immunity".
-        // This mathematically ensures the strict global optimum is never pruned.
-        if let Some(&best) = indices.first() {
-            viterbi_survivors.push(best);
-        }
-        
-        // Tier 2: The remaining paths compete globally for N-best slots.
-        if indices.len() > 1 {
-            n_best_candidates.extend(indices.into_iter().skip(1));
-        }
-    }
-
-    // Globally cap the N-best candidates to prevent exponential memory explosion
-    if n_best_candidates.len() > global_width {
-        truncate_top_indices_by_score(&mut n_best_candidates, global_width, |idx| nodes[idx].score);
-    }
-
-    // Reconstruct the nodes at this position
-    nodes_at_pos.clear();
-    nodes_at_pos.extend(viterbi_survivors);
-    nodes_at_pos.extend(n_best_candidates);
-}
-
-fn lattice_viterbi_unified(
-    slots: &[SyllableSlot],
-    model: &kenlm::Model,
-    vocab: &VocabTrie,
-    incoming_states: &[IslandState],
-    per_state_width: usize,
-    global_width: usize,
-    history_arena: &mut Vec<HistoryEntry>,
-) -> Vec<IslandState> {
-    const MAX_WORD_SYLLABLES: usize = 5;
-
-    let n = slots.len();
-    let mut nodes: Vec<LatticeNode> = Vec::new();
-    let mut position_nodes: Vec<Vec<usize>> = vec![Vec::new(); n + 1];
-
-    for (origin_idx, state) in incoming_states.iter().enumerate() {
-        nodes.push(LatticeNode {
-            score: state.score,
-            state: state.state.clone(),
-            word: None,
-            parent_idx: None,
-            origin_idx,
+    if current_beam.len() > beam_width {
+        current_beam.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        position_nodes[0].push(nodes.len() - 1);
+        current_beam.truncate(beam_width);
     }
-    prune_position_nodes(&mut position_nodes[0], per_state_width, global_width, &nodes);
 
-    for pos in 0..n {
-        let parents = position_nodes[pos].clone();
-        if parents.is_empty() {
-            continue;
-        }
+    let mut history: Vec<Vec<BeamNode>> = Vec::with_capacity(templates.len() + 1);
+    history.push(current_beam);
 
-        if slots[pos].is_punctuation {
-            let punct = slots[pos].candidates[0].clone();
-            let punct_idx = model.lookup(punct.as_ref());
-            let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> =
-                HashMap::new();
+    for template in templates {
+        let candidate_data: Vec<(Arc<str>, u32, f32)> = match get_candidates(template, tokenizer) {
+            Some(list) if !list.is_empty() => list
+                .iter()
+                .map(|w| (w.clone(), model.lookup(w.as_ref()), 0.0))
+                .collect(),
+            _ => vec![(Arc::from(UNKNOWN_TOKEN), 0, UNKNOWN_PENALTY)],
+        };
 
-            for parent_idx in parents {
-                let (parent_score, parent_state, parent_origin) = {
-                    let n = &nodes[parent_idx];
-                    (n.score, n.state.clone(), n.origin_idx)
-                };
-                let (lm_score, new_state) = model.score_index(&parent_state, punct_idx);
-                let state_key = new_state.data;
-                nodes.push(LatticeNode {
-                    score: parent_score + lm_score,
-                    state: new_state,
-                    word: Some(punct.clone()),
-                    parent_idx: Some(parent_idx),
-                    origin_idx: parent_origin,
-                });
-                let new_idx = nodes.len() - 1;
-                let entry = best_for_state.entry(state_key).or_default();
-                entry.push(new_idx);
-                truncate_top_indices_by_score(entry, per_state_width, |i| nodes[i].score);
-            }
-            for (_, indices) in best_for_state {
-                position_nodes[pos + 1].extend(indices);
-            }
-            prune_position_nodes(&mut position_nodes[pos + 1], per_state_width, global_width, &nodes);
-        } else {
-            for k in 1..=MAX_WORD_SYLLABLES {
-                let end = pos + k;
-                if end > n {
-                    break;
-                }
-                if k > 1 && slots[end - 1].is_punctuation {
-                    break;
-                }
+        let prev_beam = history.last().unwrap();
+        let mut next_candidates = Vec::with_capacity(prev_beam.len() * candidate_data.len());
 
-                let word_candidates: Vec<(Option<Arc<str>>, u32)> = if k == 1 {
-                    let cands = &slots[pos].candidates;
-                    if cands.is_empty() {
-                        vec![(None, 0)]
-                    } else {
-                        cands
-                            .iter()
-                            .map(|w| (Some(w.clone()), model.lookup(w.as_ref())))
-                            .collect()
-                    }
-                } else {
-                    enumerate_multi_syllable_words(&slots[pos..end], model, vocab)
-                        .into_iter()
-                        .map(|(w, idx)| (Some(w), idx))
-                        .collect()
-                };
-
-                if word_candidates.is_empty() {
+        for (parent_idx, node) in prev_beam.iter().enumerate() {
+            for (word, word_idx, penalty) in &candidate_data {
+                if word.as_ref() == UNKNOWN_TOKEN {
+                    next_candidates.push((
+                        node.score + penalty,
+                        parent_idx,
+                        node.origin_idx,
+                        word.clone(),
+                        node.state.clone(),
+                    ));
                     continue;
                 }
 
-                let mut best_for_state: HashMap<[u8; KENLM_STATE_KEY_SIZE], Vec<usize>> =
-                    HashMap::new();
-
-                for &parent_idx in &parents {
-                    let (parent_score, parent_state, parent_origin) = {
-                        let n = &nodes[parent_idx];
-                        (n.score, n.state.clone(), n.origin_idx)
-                    };
-
-                    for (word_opt, word_idx) in &word_candidates {
-                        let (total_score, new_state) = if word_opt.is_none() {
-                            (parent_score + UNKNOWN_PENALTY, parent_state.clone())
-                        } else {
-                            let (lm_score, ns) = model.score_index(&parent_state, *word_idx);
-                            (parent_score + lm_score, ns)
-                        };
-
-                        let word_str = word_opt
-                            .clone()
-                            .unwrap_or_else(|| Arc::from(UNKNOWN_TOKEN));
-                        let state_key = new_state.data;
-
-                        nodes.push(LatticeNode {
-                            score: total_score,
-                            state: new_state,
-                            word: Some(word_str),
-                            parent_idx: Some(parent_idx),
-                            origin_idx: parent_origin,
-                        });
-                        let new_idx = nodes.len() - 1;
-                        let entry = best_for_state.entry(state_key).or_default();
-                        entry.push(new_idx);
-                        truncate_top_indices_by_score(entry, per_state_width, |i| nodes[i].score);
-                    }
-                }
-
-                for (_, indices) in best_for_state {
-                    position_nodes[end].extend(indices);
-                }
-            }
-
-            let max_end = (pos + MAX_WORD_SYLLABLES).min(n);
-            for end in (pos + 1)..=max_end {
-                if !position_nodes[end].is_empty() {
-                    prune_position_nodes(&mut position_nodes[end], per_state_width, global_width, &nodes);
-                }
+                let (lm_score, new_state) = model.score_index(&node.state, *word_idx);
+                next_candidates.push((
+                    node.score + lm_score + penalty,
+                    parent_idx,
+                    node.origin_idx,
+                    word.clone(),
+                    new_state,
+                ));
             }
         }
+
+        next_candidates.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        let next_beam: Vec<BeamNode> = next_candidates
+            .into_iter()
+            .take(beam_width)
+            .map(|(score, parent_idx, origin_idx, word, state)| BeamNode {
+                score,
+                state,
+                word,
+                parent_idx: Some(parent_idx),
+                origin_idx,
+            })
+            .collect();
+
+        history.push(next_beam);
     }
 
-    let final_nodes = position_nodes[n].clone();
-    let mut results = Vec::with_capacity(final_nodes.len());
-
-    for node_idx in final_nodes {
-        let node = &nodes[node_idx];
-
+    let mut results = Vec::new();
+    for node in history.last().unwrap() {
         let mut words = Vec::new();
-        let mut cursor = Some(node_idx);
-        while let Some(idx) = cursor {
-            let n = &nodes[idx];
-            if let Some(w) = &n.word {
-                words.push(w.clone());
+        let mut current_step = history.len() - 1;
+        words.push(node.word.clone());
+
+        let mut parent_idx = node.parent_idx;
+        while let Some(idx) = parent_idx {
+            current_step -= 1;
+            let parent_node = &history[current_step][idx];
+            if !parent_node.word.is_empty() {
+                words.push(parent_node.word.clone());
             }
-            cursor = n.parent_idx;
+            parent_idx = parent_node.parent_idx;
         }
         words.reverse();
 
-        let new_history = push_history(
-            history_arena,
-            incoming_states[node.origin_idx].history_tail_idx,
-            words,
-        );
+        let mut new_history = incoming_states[node.origin_idx].history.clone();
+        new_history.push(words);
         results.push(IslandState {
             score: node.score,
             state: node.state.clone(),
-            history_tail_idx: new_history,
+            history: new_history,
         });
     }
 
-    results.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(Ordering::Greater)
-    });
     results
 }
 
@@ -1018,62 +770,57 @@ fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
     model: &kenlm::Model,
-    vocab: &VocabTrie,
     beam_width: usize,
 ) -> Result<Vec<Vec<String>>> {
-    let (slots, per_island_slot_counts) = flatten_islands_to_slots(islands, tokenizer)?;
     let strict_alternating = uses_strict_alternating_island_mode(islands, tokenizer);
-
-    let initial_states = vec![IslandState {
+    let mut current_states = vec![IslandState {
         score: 0.0,
         state: model.begin_sentence_state(),
-        history_tail_idx: None,
+        history: Vec::new(),
     }];
-    let mut history_arena: Vec<HistoryEntry> = Vec::new();
-    
-    // We can safely allow a healthy N-Best pool because the Viterbi survivors 
-    // are immune to this cap and scale strictly linearly, not exponentially.
-    let hypotheses_per_state = beam_width.max(1);
-    let global_hypotheses = beam_width.max(1); 
 
-    let final_states = lattice_viterbi_unified(
-        &slots,
-        model,
-        vocab,
-        &initial_states,
-        hypotheses_per_state,
-        global_hypotheses,
-        &mut history_arena,
-    );
+    for (i, segment) in islands.iter().enumerate() {
+        let is_v7 = if strict_alternating {
+            i % 2 == 1
+        } else {
+            is_v7_segment(segment, tokenizer)
+        };
 
-    let candidates: Vec<Vec<String>> = final_states
+        if is_v7 {
+            let templates = parse_v7_string(segment, tokenizer)?;
+            current_states =
+                beam_search_v7_island(&templates, tokenizer, model, beam_width, &current_states);
+        } else {
+            let purified_words = purify(segment);
+            for state in &mut current_states {
+                for word in &purified_words {
+                    let (lm_score, new_state) = model.score(&state.state, word);
+                    state.score += lm_score;
+                    state.state = new_state;
+                }
+                state.history.push(vec![Arc::from(segment.as_str())]);
+            }
+        }
+    }
+
+    current_states.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let candidates = current_states
         .into_iter()
         .take(beam_width)
         .map(|s| {
-            let words = materialize_history(&history_arena, s.history_tail_idx);
-            let all_tokens: Vec<String> = words
-                .iter()
-                .flat_map(|chunk| chunk.split_whitespace().map(|t| t.to_string()))
-                .collect();
-
-            let per_island_tokens =
-                split_tokens_by_island_counts(&all_tokens, &per_island_slot_counts);
-
-            islands
-                .iter()
-                .zip(per_island_tokens.iter())
-                .enumerate()
-                .map(|(i, (island, island_tokens))| {
-                    let is_v7 = if strict_alternating {
-                        i % 2 == 1
-                    } else {
-                        is_v7_segment(island, tokenizer)
-                    };
-                    if is_v7 {
-                        format_output_words(island_tokens)
-                    } else {
-                        island.clone()
-                    }
+            s.history
+                .into_iter()
+                .map(|words| {
+                    words
+                        .iter()
+                        .map(|w| w.as_ref())
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 })
                 .collect()
         })
@@ -1084,30 +831,7 @@ fn perform_inference(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        is_v7_segment, truncate_top_indices_by_score, uses_strict_alternating_island_mode,
-        Tokenizer,
-    };
-
-    #[test]
-    fn keeps_best_indices_in_descending_score_order() {
-        let scores = vec![0.4, 0.9, 0.6, 1.2, 0.1];
-        let mut indices = vec![0, 1, 2, 3, 4];
-        truncate_top_indices_by_score(&mut indices, 3, |idx| scores[idx]);
-        assert_eq!(indices, vec![3, 1, 2]);
-    }
-
-    #[test]
-    fn truncates_to_highest_scoring_entries_after_append() {
-        let scores = vec![10.0, 8.0, 9.5];
-        let mut indices = vec![0, 1];
-        truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
-        assert_eq!(indices, vec![0, 1]);
-
-        indices.push(2);
-        truncate_top_indices_by_score(&mut indices, 2, |idx| scores[idx]);
-        assert_eq!(indices, vec![0, 2]);
-    }
+    use super::{is_v7_segment, uses_strict_alternating_island_mode, Tokenizer};
 
     #[test]
     fn detects_parseable_v7_segment() {
@@ -1144,7 +868,6 @@ struct PloverConfig {
 struct AppState {
     tokenizer: Tokenizer,
     model: kenlm::Model,
-    vocab: VocabTrie,
     plover: Option<PloverConfig>,
     plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
@@ -1182,7 +905,7 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
-    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, &state.vocab, 100);
+    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
 
     match result {
         Ok(candidates) => Json(InferResponse { candidates }),
@@ -1305,11 +1028,6 @@ async fn main() -> Result<()> {
         kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
-    let vocab: VocabTrie = {
-        eprintln!("Loading vocabulary from {}...", args.vocab_path);
-        VocabTrie::from_vocab_file(&args.vocab_path)?
-    };
-
     if args.server {
         let plover_host = args
             .stripped_plover_host
@@ -1325,7 +1043,6 @@ async fn main() -> Result<()> {
         let app_state = Arc::new(AppState {
             tokenizer,
             model,
-            vocab,
             plover,
             plover_status_cache: tokio::sync::Mutex::new(None),
         });
@@ -1366,7 +1083,7 @@ async fn main() -> Result<()> {
         }
 
         let start_time = std::time::Instant::now();
-        let candidates = perform_inference(&islands, &tokenizer, &model, &vocab, 100)?;
+        let candidates = perform_inference(&islands, &tokenizer, &model, 100)?;
         let duration = start_time.elapsed();
 
         if is_islands_mode {

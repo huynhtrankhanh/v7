@@ -41,7 +41,7 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 
 ### Prerequisites
 
-- `lm.binary` and `vocab.txt` in the project root (see `README_KENLM.md` for how to train the model).
+- `lm.binary` in the project root (see `README_KENLM.md` for how to train the model).
 - Either Docker (recommended) or a local Rust build of the inference engine.
 
 ### Running the Server with Docker

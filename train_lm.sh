@@ -12,33 +12,29 @@ set -e
 #
 # Outputs (written to /app, also mounted as the repo root):
 #   lm.binary  – compiled KenLM binary model
-#   vocab.txt  – sorted vocabulary list (used by the inference engine)
 
 DATA_DIR="data"
 CORPUS="${DATA_DIR}/corpus-full.txt"
 TOK="${DATA_DIR}/corpus.tok"
-VOCAB="vocab.txt"
 ARPA="lm.arpa"
 BINARY="lm.binary"
 KENLM_BIN="./kenlm/build/bin"
 
-# 1. Preprocess with KenLM n-gram based syllable grouping
-if [ -f "${TOK}" ] && [ -f "${VOCAB}" ]; then
+# 1. Preprocess
+if [ -f "${TOK}" ]; then
     echo "Corpus already preprocessed. Skipping..."
 else
-    echo "Preprocessing corpus with KenLM n-gram based syllable grouping..."
-    ./preprocess_corpus "${CORPUS}" "${TOK}" "${VOCAB}"
+    echo "Preprocessing corpus..."
+    python preprocess_corpus.py "${CORPUS}" "${TOK}"
 fi
 
 # 2. Train KenLM (3-gram)
 echo "Training KenLM (3-gram)..."
-"${KENLM_BIN}/lmplz" -o 3 -S 50% --prune 0 0 1 < "${TOK}" \
-  | awk '/^\\data\\/{found=1} found && !/^Name:lmplz/' > "${ARPA}"
+"${KENLM_BIN}/lmplz" -o 3 --prune 0 0 1 < "${TOK}" > "${ARPA}"
 
 # 3. Binarize
 echo "Binarizing model..."
 "${KENLM_BIN}/build_binary" -a 256 -q 8 trie "${ARPA}" "${BINARY}"
 
 echo "Done."
-echo "  Model    : ${BINARY}"
-echo "  Vocabulary: ${VOCAB}"
+echo "  Model: ${BINARY}"

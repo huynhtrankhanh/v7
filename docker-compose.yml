@@ -9,8 +9,6 @@ services:
       # Mount the model file from the host to the container
       # This file is expected to exist at runtime.
       - ./lm.binary:/app/lm.binary:ro
-      # Mount the vocabulary list produced by training
-      - ./vocab.txt:/app/vocab.txt:ro
     # The default command can be overridden by the user
     # e.g., docker-compose run inference "some input string"
     ports:
@@ -34,7 +32,6 @@ services:
       # Mount the data directory (corpus input) and repo root (artifacts output)
       - ./data:/app/data
       - ./lm.binary:/app/lm.binary
-      - ./vocab.txt:/app/vocab.txt
     # Override with: docker compose run --rm train bash train_lm.sh
 
 volumes:

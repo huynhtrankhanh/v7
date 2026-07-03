@@ -5,7 +5,7 @@ This document describes how to train the KenLM language model used by the V7 inf
 ## Overview
 
 The training pipeline uses:
-- A **C++ preprocessor** (`preprocess_corpus.cpp`) to tokenize the raw corpus and build a vocabulary list.
+- A **Python preprocessor** (`preprocess_corpus.py`) to normalize raw corpus text into KenLM training text.
 - **KenLM** (`lmplz` + `build_binary`) to train and binarize a 3-gram language model.
 
 Both are run inside a dedicated **Docker training container**. No manual installation of KenLM or Python packages is required on the host.
@@ -24,49 +24,44 @@ docker compose run --rm train bash train_lm.sh
 ```
 
 This single command will:
-1. Compile the C++ preprocessor (if not already done in the image).
-2. Preprocess `data/corpus-full.txt` into `data/corpus.tok` and generate `vocab.txt`.
-3. Train a 3-gram KenLM model (`lm.arpa`).
-4. Binarize the model into `lm.binary` using the trie format with 8-bit quantization.
+1. Preprocess `data/corpus-full.txt` into `data/corpus.tok`.
+2. Train a 3-gram KenLM model (`lm.arpa`).
+3. Binarize the model into `lm.binary` using the trie format with 8-bit quantization.
 
 ### Output Artifacts
 
-Both artifacts are written to the project root (mounted from the host via `docker-compose.yml`):
+The runtime artifact is written to the project root (mounted from the host via `docker-compose.yml`):
 
 | File | Description |
 | :--- | :--- |
 | `lm.binary` | Compiled KenLM binary model — loaded by the inference engine at startup. |
-| `vocab.txt` | Sorted vocabulary list — used by the inference engine for multi-syllable word lookup. |
 
-Both files must be present in the project root before starting the inference server.
+`lm.binary` must be present in the project root before starting the inference server.
 
 ## What the Preprocessor Does
 
-`preprocess_corpus.cpp` is a streaming C++ program that:
+`preprocess_corpus.py` is the historical training preprocessor. It:
 - Lowercases the text.
 - Removes non-alphanumeric characters (keeping Vietnamese diacritics).
 - Normalizes whitespace.
-- Streams output line-by-line, keeping memory usage low even for very large corpora.
-
-It replaces an earlier Python-based preprocessing script and is compiled automatically inside the Docker training image.
+- Writes one whitespace-normalized sentence per line.
 
 ## Training Parameters
 
 The training script (`train_lm.sh`) uses these KenLM options:
 
 ```bash
-lmplz -o 3 -S 50% --prune 0 0 1 < data/corpus.tok > lm.arpa
+lmplz -o 3 --prune 0 0 1 < data/corpus.tok > lm.arpa
 build_binary -a 256 -q 8 trie lm.arpa lm.binary
 ```
 
 - **3-gram** order.
-- **50% of RAM** allocated to `lmplz`.
 - **Trigram pruning:** unigrams and bigrams are kept in full; trigrams with count 1 are pruned.
 - **Trie format** with 8-bit quantization for a compact binary file.
 
 ## Using the Trained Model
 
-Once `lm.binary` and `vocab.txt` are in the project root, start the inference server:
+Once `lm.binary` is in the project root, start the inference server:
 
 ```bash
 docker compose up inference
