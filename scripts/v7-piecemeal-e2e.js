@@ -227,7 +227,7 @@ async function main() {
       await page.waitForFunction(
         (index) => {
           const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
-          return markers.length === 9 && markers[index]?.classList.contains("active");
+          return markers.length === 9 && markers[markers.length - index - 1]?.classList.contains("active");
         },
         { timeout: 5000 },
         cursor

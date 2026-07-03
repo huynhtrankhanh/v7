@@ -37,8 +37,8 @@ const fixedWordArbitrary = fc.constantFrom(...fixedWords);
 
 function expectedNumberedSegments(targetCount: number, cursor: number) {
   return Array.from({ length: targetCount }, (_, index) => ({
-    number: index + 1,
-    cursor: index === cursor
+    number: targetCount - index,
+    cursor: index === targetCount - cursor - 1
   }));
 }
 
@@ -148,7 +148,7 @@ describe("webCore piecemeal syllable edit", () => {
       createIsland("vietnamese", "hello tôi không xyz thẹn")
     ]);
 
-    expect(targets.map((target) => target.text)).toEqual(["tôi", "không", "thẹn"]);
+    expect(targets.map((target) => target.text)).toEqual(["thẹn", "không", "tôi"]);
   });
 
   test("keeps only the nine rightmost syllables across fixed text and v7 islands", () => {
@@ -158,7 +158,7 @@ describe("webCore piecemeal syllable edit", () => {
       createIsland("vietnamese", "tôi")
     ]);
 
-    expect(targets.map((target) => target.text)).toEqual(["à", "ả", "ã", "á", "ạ", "ai", "tro2", "ma1", "tôi"]);
+    expect(targets.map((target) => target.text)).toEqual(["tôi", "ma1", "tro2", "ai", "ạ", "á", "ã", "ả", "à"]);
   });
 
   test("renders fixed and v7 syllables as one shared nine-slot highlight sequence", () => {
@@ -168,18 +168,18 @@ describe("webCore piecemeal syllable edit", () => {
       createIsland("vietnamese", "thẹn về")
     ];
 
-    expect(renderVisibleTextSegments(islands, [["tôi không ", "trời mà", " thẹn về"]], 4)).toEqual([
-      { text: "tôi", piecemealNumber: 1, piecemealCursor: false },
+    expect(renderVisibleTextSegments(islands, [["tôi không ", "trời mà", " thẹn về"]], 0)).toEqual([
+      { text: "tôi", piecemealNumber: 6, piecemealCursor: false },
       { text: " " },
-      { text: "không", piecemealNumber: 2, piecemealCursor: false },
+      { text: "không", piecemealNumber: 5, piecemealCursor: false },
       { text: " " },
-      { text: "trời", piecemealNumber: 3, piecemealCursor: false },
+      { text: "trời", piecemealNumber: 4, piecemealCursor: false },
       { text: " " },
-      { text: "mà", piecemealNumber: 4, piecemealCursor: false },
+      { text: "mà", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
-      { text: "thẹn", piecemealNumber: 5, piecemealCursor: true },
+      { text: "thẹn", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "về", piecemealNumber: 6, piecemealCursor: false }
+      { text: "về", piecemealNumber: 1, piecemealCursor: true }
     ]);
   });
 
@@ -190,7 +190,7 @@ describe("webCore piecemeal syllable edit", () => {
     ];
 
     expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual([
-      "tro2", "mu0", "thi2", "no1", "ra6", "me7", "đo7", "đa1", "ku3"
+      "ku3", "đa1", "đo7", "me7", "ra6", "no1", "thi2", "mu0", "tro2"
     ]);
   });
 
@@ -200,11 +200,11 @@ describe("webCore piecemeal syllable edit", () => {
     ], [], 1);
 
     expect(segments).toEqual([
-      { text: "tôi", piecemealNumber: 1, piecemealCursor: false },
+      { text: "tôi", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
       { text: "không", piecemealNumber: 2, piecemealCursor: true },
       { text: " " },
-      { text: "thẹn", piecemealNumber: 3, piecemealCursor: false }
+      { text: "thẹn", piecemealNumber: 1, piecemealCursor: false }
     ]);
   });
 
@@ -215,11 +215,11 @@ describe("webCore piecemeal syllable edit", () => {
     ], [["tôi ", "trời mà"]], 0);
 
     expect(segments).toEqual([
-      { text: "tôi", piecemealNumber: 1, piecemealCursor: true },
+      { text: "tôi", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
       { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "mà", piecemealNumber: 3, piecemealCursor: false }
+      { text: "mà", piecemealNumber: 1, piecemealCursor: true }
     ]);
   });
 
@@ -227,10 +227,10 @@ describe("webCore piecemeal syllable edit", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
     expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
 
-    expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 1)).toEqual([
-      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+    expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0)).toEqual([
+      { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "mà", piecemealNumber: 2, piecemealCursor: true }
+      { text: "mà", piecemealNumber: 1, piecemealCursor: true }
     ]);
   });
 
@@ -242,19 +242,19 @@ describe("webCore piecemeal syllable edit", () => {
     const candidates = [["trời mà", "không"]];
 
     expect(renderVisibleTextSegments(islands, candidates, 1)).toEqual([
-      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+      { text: "trời", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
       { text: "mà", piecemealNumber: 2, piecemealCursor: true },
       { text: " " },
-      { text: "không", piecemealNumber: 3, piecemealCursor: false }
+      { text: "không", piecemealNumber: 1, piecemealCursor: false }
     ]);
 
     expect(renderVisibleTextSegments(islands, candidates, 2)).toEqual([
-      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+      { text: "trời", piecemealNumber: 3, piecemealCursor: true },
       { text: " " },
       { text: "mà", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "không", piecemealNumber: 3, piecemealCursor: true }
+      { text: "không", piecemealNumber: 1, piecemealCursor: false }
     ]);
   });
 
@@ -271,8 +271,8 @@ describe("webCore piecemeal syllable edit", () => {
         .filter((segment) => segment.piecemealNumber !== undefined);
 
       expect(marked).toHaveLength(targetCount);
-      expect(marked.map((segment) => segment.piecemealNumber)).toEqual([1, 2, 3]);
-      expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([marked[cursor]]);
+      expect(marked.map((segment) => segment.piecemealNumber)).toEqual([3, 2, 1]);
+      expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([marked[targetCount - cursor - 1]]);
     }
   });
 
@@ -280,8 +280,8 @@ describe("webCore piecemeal syllable edit", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
 
     expect(markedSegments(islands, [["hello xyz"]], 1)).toEqual([
-      { text: "hello", number: 1, cursor: false },
-      { text: "xyz", number: 2, cursor: true }
+      { text: "hello", number: 2, cursor: true },
+      { text: "xyz", number: 1, cursor: false }
     ]);
   });
 
@@ -289,7 +289,7 @@ describe("webCore piecemeal syllable edit", () => {
     fc.assert(
       fc.property(fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 30 }), (codes) => {
         const islands = [createIsland("vietnamese", codes.join(""), true)];
-        const expected = codes.slice(-9);
+        const expected = codes.slice(-9).reverse();
 
         expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual(expected);
       }),
@@ -371,8 +371,8 @@ describe("webCore piecemeal syllable edit", () => {
     const next = replacePiecemealSyllable(islands, target, "tôi");
 
     expect(next).toEqual([
-      createIsland("vietnamese", "tôi"),
-      createIsland("vietnamese", "ma1", true)
+      createIsland("vietnamese", "tro2", true),
+      createIsland("vietnamese", "tôi")
     ]);
   });
 });

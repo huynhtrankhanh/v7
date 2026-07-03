@@ -200,7 +200,7 @@ export function findPiecemealSyllableTargets(islands: Island[]): PiecemealSyllab
       targets.push(...findFixedVietnameseSyllables(island.value, islandIndex));
     }
   }
-  return targets.slice(-9);
+  return targets.slice(-9).reverse();
 }
 
 export function replacePiecemealSyllable(

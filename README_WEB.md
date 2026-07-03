@@ -426,7 +426,7 @@ If the combined chord does not form a valid single-syllable stroke, it is ignore
 
 ### Piecemeal Syllable Edit
 
-The text buffer always marks the nine rightmost Vietnamese syllables, including inferred syllables from unresolved V7 islands while candidates are displayed. Enter piecemeal edit mode with `T-` for syllable 1, `P-` for syllable 2, `H-` for syllable 3, `TK-` for syllable 4, `PW-` for syllable 5, `HR-` for syllable 6, `K-` for syllable 7, `W-` for syllable 8, or `R-` for syllable 9.
+The text buffer always marks the nine rightmost Vietnamese syllables, including inferred syllables from unresolved V7 islands while candidates are displayed. Syllable numbers count from right to left: `T-` targets syllable 1, the rightmost eligible syllable; `P-` targets syllable 2, one syllable to the left; then `H-`, `TK-`, `PW-`, `HR-`, `K-`, `W-`, and `R-` target syllables 3 through 9.
 
 The selected syllable is shown without its number. Type a valid one-syllable Vietnamese stroke to replace it; the cursor advances to the next marked syllable and exits after syllable 9. Any invalid stroke or non-syllable stroke exits piecemeal edit mode and is then handled normally. Candidate-selection chords are never combined with piecemeal replacement; when a chord selects a candidate, piecemeal edit exits and the chord is handled by the normal candidate-selection path. A lone selection stroke such as `-T` exits piecemeal and selects candidate 1 when candidates exist; if no candidates exist, it exits piecemeal and does nothing else. A combined first-candidate stroke such as `KAOT` selects candidate 1 and appends `KAO` when candidates exist; if no candidates exist, it still exits piecemeal and appends `KAO` as a normal single syllable.
 
