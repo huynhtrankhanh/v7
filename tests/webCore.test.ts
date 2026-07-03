@@ -23,6 +23,7 @@ const inferredWords = [
   "ba", "cá", "dê", "em", "gió", "hoa", "khê", "lúa", "mẹ", "nó",
   "phố", "rồi", "sẽ", "tôi", "thơ", "trẻ", "về", "xưa", "già"
 ];
+const fixedWords = ["a", "à", "ả", "ã", "á", "ạ", "ai", "tôi", "không", "thẹn"];
 
 const v7CodeArbitrary = fc
   .record({
@@ -32,6 +33,7 @@ const v7CodeArbitrary = fc
   })
   .filter(({ consonant, vowel }) => !(consonant === "w" && vowel === "u"))
   .map(({ consonant, vowel, tone }) => `${consonant}${vowel}${tone}`);
+const fixedWordArbitrary = fc.constantFrom(...fixedWords);
 
 function expectedNumberedSegments(targetCount: number, cursor: number) {
   return Array.from({ length: targetCount }, (_, index) => ({
@@ -157,6 +159,28 @@ describe("webCore piecemeal syllable edit", () => {
     ]);
 
     expect(targets.map((target) => target.text)).toEqual(["à", "ả", "ã", "á", "ạ", "ai", "tro2", "ma1", "tôi"]);
+  });
+
+  test("renders fixed and v7 syllables as one shared nine-slot highlight sequence", () => {
+    const islands = [
+      createIsland("vietnamese", "tôi không"),
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "thẹn về")
+    ];
+
+    expect(renderVisibleTextSegments(islands, [["tôi không ", "trời mà", " thẹn về"]], 4)).toEqual([
+      { text: "tôi", piecemealNumber: 1, piecemealCursor: false },
+      { text: " " },
+      { text: "không", piecemealNumber: 2, piecemealCursor: false },
+      { text: " " },
+      { text: "trời", piecemealNumber: 3, piecemealCursor: false },
+      { text: " " },
+      { text: "mà", piecemealNumber: 4, piecemealCursor: false },
+      { text: " " },
+      { text: "thẹn", piecemealNumber: 5, piecemealCursor: true },
+      { text: " " },
+      { text: "về", piecemealNumber: 6, piecemealCursor: false }
+    ]);
   });
 
   test("parses every v7 code in long compact islands", () => {
@@ -298,6 +322,38 @@ describe("webCore piecemeal syllable edit", () => {
         }
       ),
       { numRuns: 500 }
+    );
+  });
+
+  test("property: mixed fixed and v7 targets share one rightmost-nine sequence", () => {
+    fc.assert(
+      fc.property(
+        fc.array(fixedWordArbitrary, { minLength: 1, maxLength: 12 }),
+        fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 18 }),
+        fc.integer({ min: 1, max: 8 }),
+        (fixed, codes, cut) => {
+          const chunks = splitIntoThreeChunks(codes, cut, cut);
+          const islands = [
+            createIsland("vietnamese", fixed.join(" ")),
+            ...chunks.map((chunk) => createIsland("vietnamese", chunk.join(""), true))
+          ];
+          const candidates = [[
+            ...chunks.map((chunk, chunkIndex) =>
+              chunk.map((_, index) => inferredWords[(chunkIndex + index) % inferredWords.length]).join(" ")
+            )
+          ]];
+          const targetCount = Math.min(fixed.length + codes.length, 9);
+
+          for (let cursor = 0; cursor < targetCount; cursor++) {
+            const marked = markedSegments(islands, candidates, cursor);
+            expect(marked).toHaveLength(targetCount);
+            expect(marked.map(({ number, cursor }) => ({ number, cursor }))).toEqual(
+              expectedNumberedSegments(targetCount, cursor)
+            );
+          }
+        }
+      ),
+      { numRuns: 300 }
     );
   });
 

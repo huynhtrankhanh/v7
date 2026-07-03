@@ -133,6 +133,19 @@ async function waitForMarkerCount(page, count) {
   );
 }
 
+async function assertMarkerTexts(page, expected, label) {
+  await page.waitForFunction(
+    (count) => document.querySelectorAll(".piecemeal-syllable").length === count,
+    { timeout: 10000 },
+    expected.length
+  );
+  const markers = await snapshotMarkers(page);
+  const texts = markers.map((marker) => marker.text);
+  if (JSON.stringify(texts) !== JSON.stringify(expected)) {
+    throw new Error(`${label} marker text mismatch. Expected ${JSON.stringify(expected)}, got ${JSON.stringify(texts)}`);
+  }
+}
+
 async function snapshotMarkers(page) {
   return await page.$$eval(".piecemeal-syllable", (nodes) =>
     nodes.map((node) => ({
@@ -169,14 +182,30 @@ async function main() {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: "networkidle0" });
 
-    const codes = ["tro2", "ma1", "ko0", "no1", "ra6", "xa3", "ti2", "la1", "phai4", "ngo5", "ddo7", "cha6"];
+    const fixedChords = [
+      { keys: [QWERTY.T, QWERTY.A], text: "ta" },
+      { keys: [QWERTY.P, QWERTY.H, QWERTY.A, QWERTY.L], text: "má" },
+      { keys: [QWERTY.K, QWERTY.A], text: "ca" }
+    ];
+
+    for (let i = 0; i < fixedChords.length; i++) {
+      await pressChord(page, fixedChords[i].keys);
+      await assertMarkerTexts(page, fixedChords.slice(0, i + 1).map((entry) => entry.text), `fixed-only ${i + 1}`);
+    }
+
+    const codes = ["tro2", "ma1", "ko0", "no1", "ra6", "xa3"];
     for (let i = 0; i < codes.length; i += 2) {
       await pressChord(page, [...leftKeys(codes[i]), QWERTY["*"], ...rightKeys(codes[i + 1])]);
-      await waitForMarkerCount(page, Math.min(i + 2, 9));
+      await waitForMarkerCount(page, Math.min(fixedChords.length + i + 2, 9));
     }
 
     await waitForMarkerCount(page, 9);
     const initialMarkers = await snapshotMarkers(page);
+    const fixedMarkerTexts = initialMarkers.slice(0, fixedChords.length).map((marker) => marker.text);
+    const expectedFixedTexts = fixedChords.map((entry) => entry.text);
+    if (JSON.stringify(fixedMarkerTexts) !== JSON.stringify(expectedFixedTexts)) {
+      throw new Error(`Fixed syllables were not preserved in mixed markers. Expected ${JSON.stringify(expectedFixedTexts)}, got ${JSON.stringify(fixedMarkerTexts)}`);
+    }
     if (initialMarkers.some((marker) => marker.text.trim() === "")) {
       throw new Error(`Blank marker after V7 entry: ${JSON.stringify(initialMarkers)}`);
     }
