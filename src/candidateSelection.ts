@@ -35,3 +35,11 @@ export function getCandidateSelectionMatch(stroke: string, candidateCount = Numb
 
     return null;
 }
+
+export function getFirstCandidateAppendStroke(stroke: string): string | null {
+    const match = getCandidateSelectionMatch(stroke);
+    if (!match || match.candidateIndex !== 0 || match.syllableStroke === null) {
+        return null;
+    }
+    return match.syllableStroke;
+}

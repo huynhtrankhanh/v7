@@ -1,6 +1,6 @@
 import { TextBuffer, convertIslandsForInference, createIsland, ensureString } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
-import { getCandidateSelectionMatch } from "./candidateSelection";
+import { getCandidateSelectionMatch, getFirstCandidateAppendStroke } from "./candidateSelection";
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
     KeyboardStrokeTracker,
@@ -901,6 +901,21 @@ async function handleChord(stroke) {
 
     let suppressPiecemealEntry = false;
     if (piecemealCursorIndex !== null) {
+        // Syllable+T exits piecemeal. With candidates it selects candidate 1 first;
+        // without candidates it still appends the syllable normally.
+        const firstCandidateAppendStroke = getFirstCandidateAppendStroke(stroke);
+        if (firstCandidateAppendStroke && state.candidates.length === 0) {
+            const parsedAppend = parse(firstCandidateAppendStroke);
+            if (parsedAppend) {
+                piecemealCursorIndex = null;
+                saveState();
+                appendText(assemble(parsedAppend));
+                runInference();
+                return;
+            }
+        }
+
+        // Other active candidate-selection chords keep their normal meaning inside piecemeal mode.
         const piecemealSelection = state.candidates.length > 0
             ? getCandidateSelectionMatch(stroke, state.candidates.length)
             : null;

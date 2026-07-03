@@ -1,4 +1,4 @@
-import { getCandidateSelectionMatch } from "../src/candidateSelection";
+import { getCandidateSelectionMatch, getFirstCandidateAppendStroke } from "../src/candidateSelection";
 
 describe("getCandidateSelectionMatch", () => {
   test("matches lone candidate selection strokes", () => {
@@ -20,6 +20,12 @@ describe("getCandidateSelectionMatch", () => {
     expect(getCandidateSelectionMatch("KAOS")).toEqual({ candidateIndex: 2, syllableStroke: "KAO" });
     expect(getCandidateSelectionMatch("KAOD")).toEqual({ candidateIndex: 3, syllableStroke: "KAO" });
     expect(getCandidateSelectionMatch("KAOZ")).toEqual({ candidateIndex: 4, syllableStroke: "KAO" });
+  });
+
+  test("treats single syllable plus T as first-candidate selection plus appended syllable", () => {
+    expect(getCandidateSelectionMatch("KAOT", 1)).toEqual({ candidateIndex: 0, syllableStroke: "KAO" });
+    expect(getFirstCandidateAppendStroke("KAOT")).toBe("KAO");
+    expect(getFirstCandidateAppendStroke("KAOTS")).toBeNull();
   });
 
   test("matches combined suffixes for punctuation strokes", () => {
