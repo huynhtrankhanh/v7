@@ -1,4 +1,8 @@
-import { getCandidateSelectionMatch, getFirstCandidateAppendStroke } from "../src/candidateSelection";
+import {
+  getCandidateSelectionMatch,
+  getFirstCandidateAppendStroke,
+  isLoneCandidateSelectionStroke
+} from "../src/candidateSelection";
 
 describe("getCandidateSelectionMatch", () => {
   test("matches lone candidate selection strokes", () => {
@@ -7,6 +11,8 @@ describe("getCandidateSelectionMatch", () => {
     expect(getCandidateSelectionMatch("-S")).toEqual({ candidateIndex: 2, syllableStroke: null });
     expect(getCandidateSelectionMatch("-D")).toEqual({ candidateIndex: 3, syllableStroke: null });
     expect(getCandidateSelectionMatch("-Z")).toEqual({ candidateIndex: 4, syllableStroke: null });
+    expect(isLoneCandidateSelectionStroke("-T")).toBe(true);
+    expect(isLoneCandidateSelectionStroke("KAOT")).toBe(false);
   });
 
   test("does not match selections that exceed available candidates", () => {

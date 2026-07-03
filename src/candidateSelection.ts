@@ -43,3 +43,8 @@ export function getFirstCandidateAppendStroke(stroke: string): string | null {
     }
     return match.syllableStroke;
 }
+
+export function isLoneCandidateSelectionStroke(stroke: string): boolean {
+    const match = getCandidateSelectionMatch(stroke);
+    return !!match && match.syllableStroke === null;
+}
