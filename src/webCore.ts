@@ -226,6 +226,15 @@ export function replacePiecemealSyllable(
   return next;
 }
 
+export function getNextPiecemealCursorIndex(
+  currentIndex: number,
+  nextTargetCount: number
+): number | null {
+  if (currentIndex <= 0) return null;
+  const nextIndex = currentIndex - 1;
+  return nextIndex < nextTargetCount && nextIndex < 9 ? nextIndex : null;
+}
+
 function findV7Syllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
   const targets: PiecemealSyllableTarget[] = [];
   let cursor = 0;

@@ -2,6 +2,7 @@ import fc from "fast-check";
 import {
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
+  getNextPiecemealCursorIndex,
   getPiecemealEntryIndex,
   getSelectedCandidateText,
   mapKeyUnique,
@@ -141,6 +142,13 @@ describe("webCore piecemeal syllable edit", () => {
     expect(getPiecemealEntryIndex("TK")).toBe(3);
     expect(getPiecemealEntryIndex("R")).toBe(8);
     expect(getPiecemealEntryIndex("A")).toBeNull();
+  });
+
+  test("advances forward in text order even though numbering counts from the right", () => {
+    expect(getNextPiecemealCursorIndex(8, 9)).toBe(7);
+    expect(getNextPiecemealCursorIndex(2, 9)).toBe(1);
+    expect(getNextPiecemealCursorIndex(1, 9)).toBe(0);
+    expect(getNextPiecemealCursorIndex(0, 9)).toBeNull();
   });
 
   test("finds fixed Vietnamese syllables using the generated valid syllable set", () => {

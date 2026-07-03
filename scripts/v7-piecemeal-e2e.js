@@ -210,27 +210,25 @@ async function main() {
       throw new Error(`Blank marker after V7 entry: ${JSON.stringify(initialMarkers)}`);
     }
 
-    const entryStrokes = [
-      [QWERTY.T],
-      [QWERTY.P],
-      [QWERTY.H],
-      [QWERTY.T, QWERTY.K],
-      [QWERTY.P, QWERTY.W],
-      [QWERTY.H, QWERTY.R],
-      [QWERTY.K],
-      [QWERTY.W],
-      [QWERTY.R]
-    ];
+    await pressChord(page, [QWERTY.R]);
+    await page.waitForFunction(
+      () => {
+        const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
+        return markers.length === 9 && markers[0]?.classList.contains("active");
+      },
+      { timeout: 5000 }
+    );
 
-    for (let cursor = 0; cursor < entryStrokes.length; cursor++) {
-      await pressChord(page, entryStrokes[cursor]);
+    const replacementChord = fixedChords[0].keys;
+    for (let domIndex = 1; domIndex < 9; domIndex++) {
+      await pressChord(page, replacementChord);
       await page.waitForFunction(
-        (index) => {
+        (expectedDomIndex) => {
           const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
-          return markers.length === 9 && markers[markers.length - index - 1]?.classList.contains("active");
+          return markers.length === 9 && markers[expectedDomIndex]?.classList.contains("active");
         },
         { timeout: 5000 },
-        cursor
+        domIndex
       );
       const markers = await snapshotMarkers(page);
       const activeCount = markers.filter((marker) => marker.active).length;
@@ -238,11 +236,18 @@ async function main() {
         throw new Error(`Expected one active marker, got ${activeCount}: ${JSON.stringify(markers)}`);
       }
       if (markers.some((marker) => marker.text.trim() === "")) {
-        throw new Error(`Blank marker at cursor ${cursor}: ${JSON.stringify(markers)}`);
+        throw new Error(`Blank marker after forward advance to DOM index ${domIndex}: ${JSON.stringify(markers)}`);
       }
-      await pressChord(page, [QWERTY.P]);
-      await waitForMarkerCount(page, 9);
     }
+
+    await pressChord(page, replacementChord);
+    await page.waitForFunction(
+      () => {
+        const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
+        return markers.length === 9 && markers.every((marker) => !marker.classList.contains("active"));
+      },
+      { timeout: 5000 }
+    );
   } finally {
     if (browser) await browser.close();
     server.kill("SIGINT");

@@ -9,6 +9,7 @@ import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./sy
 import {
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
+    getNextPiecemealCursorIndex,
     getPiecemealEntryIndex,
     mapKeyUnique,
     renderVisibleText,
@@ -945,10 +946,7 @@ async function handleChord(stroke) {
                     buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
                     state.candidates = [];
                     const nextTargets = findPiecemealSyllableTargets(state.islands);
-                    piecemealCursorIndex += 1;
-                    if (piecemealCursorIndex >= nextTargets.length || piecemealCursorIndex >= 9) {
-                        piecemealCursorIndex = null;
-                    }
+                    piecemealCursorIndex = getNextPiecemealCursorIndex(piecemealCursorIndex, nextTargets.length);
                     runInference();
                     return;
                 }
