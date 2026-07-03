@@ -68,7 +68,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy training scripts.
-COPY preprocess_corpus.py train_lm.sh ./
+COPY train_lm.sh ./
 
 FROM rust:latest
 WORKDIR /app
