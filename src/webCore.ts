@@ -31,7 +31,12 @@ const strokeOrder = [
 ];
 const middleKeys = ["A", "O", "*", "E", "U"];
 const rightStart = strokeOrder.indexOf("-F");
-const v7SyllablePattern = /[a-z0]+[aeoiu][0-9]/gi;
+const v7ConsonantPrefixes = [
+  "dd", "ch", "kh", "ng", "nh", "ph", "th", "tr",
+  "0", "b", "d", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "x", "z", "đ"
+].sort((a, b) => b.length - a.length);
+const v7Vowels = new Set(["a", "e", "i", "o", "u"]);
+const v7TonePattern = /^[0-7]$/;
 const vietnameseWordPattern = /[\p{L}\p{M}]+/gu;
 const piecemealEntryStrokes = new Map<string, number>([
   ["T", 0], ["T-", 0],
@@ -222,14 +227,35 @@ export function replacePiecemealSyllable(
 }
 
 function findV7Syllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
-  return [...value.matchAll(v7SyllablePattern)].map((match, syllableIndex) => ({
-    islandIndex,
-    syllableIndex,
-    text: match[0],
-    start: match.index ?? 0,
-    end: (match.index ?? 0) + match[0].length,
-    isV7: true
-  }));
+  const targets: PiecemealSyllableTarget[] = [];
+  let cursor = 0;
+  while (cursor < value.length) {
+    const start = cursor;
+    const consonant = v7ConsonantPrefixes.find((prefix) => value.startsWith(prefix, cursor));
+    if (!consonant) {
+      cursor += 1;
+      continue;
+    }
+
+    cursor += consonant.length;
+    const vowel = value[cursor];
+    const tone = value[cursor + 1];
+    if (!v7Vowels.has(vowel) || !v7TonePattern.test(tone ?? "")) {
+      cursor = start + 1;
+      continue;
+    }
+
+    cursor += 2;
+    targets.push({
+      islandIndex,
+      syllableIndex: targets.length,
+      text: value.slice(start, cursor),
+      start,
+      end: cursor,
+      isV7: true
+    });
+  }
+  return targets;
 }
 
 function findFixedVietnameseSyllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
@@ -242,6 +268,18 @@ function findFixedVietnameseSyllables(value: string, islandIndex: number): Piece
       start: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
       isV7: false
+    }));
+}
+
+function findInferredVietnameseSyllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
+  return [...value.matchAll(vietnameseWordPattern)]
+    .map((match, syllableIndex) => ({
+      islandIndex,
+      syllableIndex,
+      text: match[0],
+      start: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length,
+      isV7: true
     }));
 }
 
@@ -315,7 +353,7 @@ function targetId(target: PiecemealSyllableTarget): string {
   return `${target.islandIndex}:${target.isV7 ? "v7" : "fixed"}:${target.syllableIndex}`;
 }
 
-function renderCandidateText(islands: Island[], topCandidate: string[]): string {
+export function renderCandidateText(islands: Island[], topCandidate: string[]): string {
   if (usesFullAlternatingCandidateShape(islands, topCandidate)) {
     return topCandidate.join("");
   }
@@ -376,7 +414,7 @@ function findInferredV7DisplayTargets(
   islandIndex: number
 ): PiecemealSyllableTarget[] {
   const rawTargets = findV7Syllables(island.value, islandIndex);
-  const inferredTargets = findFixedVietnameseSyllables(inferredText, islandIndex);
+  const inferredTargets = findInferredVietnameseSyllables(inferredText, islandIndex);
 
   return inferredTargets.slice(0, rawTargets.length).map((target, index) => ({
     ...target,

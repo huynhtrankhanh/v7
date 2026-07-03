@@ -12,6 +12,7 @@ import {
     getPiecemealEntryIndex,
     mapKeyUnique,
     renderVisibleText,
+    renderCandidateText,
     renderVisibleTextSegments,
     replacePiecemealSyllable,
     selectCandidateIslands
@@ -1266,8 +1267,7 @@ function updateDisplay() {
         if (state.candidates.length > 0) {
             // Calculate common prefix for top 5 candidates
             const visibleCandidates = state.candidates.slice(0, 5);
-            // Each candidate is array of strings. Join them.
-            const candStrings = visibleCandidates.map(c => c.join(""));
+            const candStrings = visibleCandidates.map(c => renderCandidateText(state.islands, c));
             const prefix = getCommonPrefix(candStrings);
 
             // Check if candidates are short enough for horizontal display

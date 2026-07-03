@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import {
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
@@ -11,6 +12,49 @@ import {
   selectCandidateIslands
 } from "../src/webCore";
 import { convertIslandsForInference, createIsland } from "../src/textBuffer";
+
+const v7Consonants = [
+  "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
+  "p", "ph", "r", "s", "t", "th", "tr", "v", "w", "x", "z", "đ", "dd"
+];
+const v7Vowels = ["a", "e", "i", "o", "u"];
+const v7Tones = ["0", "1", "2", "3", "4", "5", "6", "7"];
+const inferredWords = [
+  "ba", "cá", "dê", "em", "gió", "hoa", "khê", "lúa", "mẹ", "nó",
+  "phố", "rồi", "sẽ", "tôi", "thơ", "trẻ", "về", "xưa", "già"
+];
+
+const v7CodeArbitrary = fc
+  .record({
+    consonant: fc.constantFrom(...v7Consonants),
+    vowel: fc.constantFrom(...v7Vowels),
+    tone: fc.constantFrom(...v7Tones)
+  })
+  .filter(({ consonant, vowel }) => !(consonant === "w" && vowel === "u"))
+  .map(({ consonant, vowel, tone }) => `${consonant}${vowel}${tone}`);
+
+function expectedNumberedSegments(targetCount: number, cursor: number) {
+  return Array.from({ length: targetCount }, (_, index) => ({
+    number: index + 1,
+    cursor: index === cursor
+  }));
+}
+
+function markedSegments(islands: ReturnType<typeof createIsland>[], candidates: string[][], cursor: number) {
+  return renderVisibleTextSegments(islands, candidates, cursor)
+    .filter((segment) => segment.piecemealNumber !== undefined)
+    .map((segment) => ({
+      text: segment.text,
+      number: segment.piecemealNumber,
+      cursor: !!segment.piecemealCursor
+    }));
+}
+
+function splitIntoThreeChunks<T>(values: T[], firstCut: number, secondCut: number): T[][] {
+  const a = Math.min(firstCut, values.length);
+  const b = Math.min(a + secondCut, values.length);
+  return [values.slice(0, a), values.slice(a, b), values.slice(b)].filter((chunk) => chunk.length > 0);
+}
 
 describe("webCore keyboard input", () => {
   test("maps qwerty keys to steno symbols", () => {
@@ -115,6 +159,17 @@ describe("webCore piecemeal syllable edit", () => {
     expect(targets.map((target) => target.text)).toEqual(["à", "ả", "ã", "á", "ạ", "ai", "tro2", "ma1", "tôi"]);
   });
 
+  test("parses every v7 code in long compact islands", () => {
+    const islands = [
+      createIsland("vietnamese", "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7", true),
+      createIsland("vietnamese", "đo7đa1ku3", true)
+    ];
+
+    expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual([
+      "tro2", "mu0", "thi2", "no1", "ra6", "me7", "đo7", "đa1", "ku3"
+    ]);
+  });
+
   test("renders piecemeal numbering and hides the number on the active cursor", () => {
     const segments = renderVisibleTextSegments([
       createIsland("vietnamese", "tôi không thẹn")
@@ -195,6 +250,55 @@ describe("webCore piecemeal syllable edit", () => {
       expect(marked.map((segment) => segment.piecemealNumber)).toEqual([1, 2, 3]);
       expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([marked[cursor]]);
     }
+  });
+
+  test("does not drop inferred v7 highlights for syllables outside the fixed-stroke dictionary", () => {
+    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+
+    expect(markedSegments(islands, [["hello xyz"]], 1)).toEqual([
+      { text: "hello", number: 1, cursor: false },
+      { text: "xyz", number: 2, cursor: true }
+    ]);
+  });
+
+  test("property: v7 target discovery preserves generated code boundaries", () => {
+    fc.assert(
+      fc.property(fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 30 }), (codes) => {
+        const islands = [createIsland("vietnamese", codes.join(""), true)];
+        const expected = codes.slice(-9);
+
+        expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual(expected);
+      }),
+      { numRuns: 500 }
+    );
+  });
+
+  test("property: v7 inferred highlighting has exactly one marker per editable target", () => {
+    fc.assert(
+      fc.property(
+        fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 24 }),
+        fc.integer({ min: 1, max: 8 }),
+        fc.integer({ min: 1, max: 8 }),
+        (codes, firstCut, secondCut) => {
+          const chunks = splitIntoThreeChunks(codes, firstCut, secondCut);
+          const islands = chunks.map((chunk) => createIsland("vietnamese", chunk.join(""), true));
+          const candidateParts = chunks.map((chunk, chunkIndex) =>
+            chunk.map((_, index) => inferredWords[(chunkIndex + index) % inferredWords.length]).join(" ")
+          );
+          const targetCount = Math.min(codes.length, 9);
+
+          for (let cursor = 0; cursor < targetCount; cursor++) {
+            const marked = markedSegments(islands, [candidateParts], cursor);
+            expect(marked).toHaveLength(targetCount);
+            expect(marked.map(({ number, cursor }) => ({ number, cursor }))).toEqual(
+              expectedNumberedSegments(targetCount, cursor)
+            );
+            expect(marked.every((segment) => segment.text.length > 0)).toBe(true);
+          }
+        }
+      ),
+      { numRuns: 500 }
+    );
   });
 
   test("replaces fixed text syllables in place", () => {
