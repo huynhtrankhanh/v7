@@ -1144,7 +1144,7 @@ type SelectCandidateOptions = {
 };
 
 function selectCandidate(index, options: SelectCandidateOptions = { saveHistory: true, refreshDisplay: true }) {
-    const nextIslands = selectCandidateIslands(state.candidates, index);
+    const nextIslands = selectCandidateIslands(state.candidates, index, state.islands);
     if (!nextIslands) return false;
     if (options.saveHistory) {
         saveState();

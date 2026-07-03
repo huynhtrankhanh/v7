@@ -10,7 +10,7 @@ import {
   serializeStrokeKeys,
   selectCandidateIslands
 } from "../src/webCore";
-import { createIsland } from "../src/textBuffer";
+import { convertIslandsForInference, createIsland } from "../src/textBuffer";
 
 describe("webCore keyboard input", () => {
   test("maps qwerty keys to steno symbols", () => {
@@ -51,6 +51,17 @@ describe("webCore candidate selection", () => {
     expect(selectCandidateIslands(candidates, 0)).toEqual([createIsland("vietnamese", "hôm nay")]);
     expect(selectCandidateIslands(candidates, 1)).toBeNull();
   });
+
+  test("builds selected text from replacement-only v7 candidates", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    expect(getSelectedCandidateText([["trời mà", "không"]], 0, islands)).toBe("trời mà không");
+    expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
+      createIsland("vietnamese", "trời mà không")
+    ]);
+  });
 });
 
 describe("webCore screen output", () => {
@@ -58,6 +69,14 @@ describe("webCore screen output", () => {
     const islands = [createIsland("vietnamese", "raw", true)];
     const candidates = [["đã suy luận"]];
     expect(renderVisibleText(islands, candidates)).toBe("đã suy luận");
+  });
+
+  test("renders replacement-only v7 candidates with island spacing", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe("trời mà không");
   });
 
   test("renders unresolved v7 islands as raw blocks when no candidates exist", () => {
@@ -123,6 +142,59 @@ describe("webCore piecemeal syllable edit", () => {
       { text: " " },
       { text: "mà", piecemealNumber: 3, piecemealCursor: false }
     ]);
+  });
+
+  test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
+    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+    expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
+
+    expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 1)).toEqual([
+      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+      { text: " " },
+      { text: "mà", piecemealNumber: 2, piecemealCursor: true }
+    ]);
+  });
+
+  test("maps replacement-only model candidates back to all-v7 syllable highlights", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    const candidates = [["trời mà", "không"]];
+
+    expect(renderVisibleTextSegments(islands, candidates, 1)).toEqual([
+      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+      { text: " " },
+      { text: "mà", piecemealNumber: 2, piecemealCursor: true },
+      { text: " " },
+      { text: "không", piecemealNumber: 3, piecemealCursor: false }
+    ]);
+
+    expect(renderVisibleTextSegments(islands, candidates, 2)).toEqual([
+      { text: "trời", piecemealNumber: 1, piecemealCursor: false },
+      { text: " " },
+      { text: "mà", piecemealNumber: 2, piecemealCursor: false },
+      { text: " " },
+      { text: "không", piecemealNumber: 3, piecemealCursor: true }
+    ]);
+  });
+
+  test("preserves one highlight per editable v7 syllable for every cursor position", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    const candidates = [["trời mà", "không"]];
+    const targetCount = findPiecemealSyllableTargets(islands).length;
+
+    for (let cursor = 0; cursor < targetCount; cursor++) {
+      const marked = renderVisibleTextSegments(islands, candidates, cursor)
+        .filter((segment) => segment.piecemealNumber !== undefined);
+
+      expect(marked).toHaveLength(targetCount);
+      expect(marked.map((segment) => segment.piecemealNumber)).toEqual([1, 2, 3]);
+      expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([marked[cursor]]);
+    }
   });
 
   test("replaces fixed text syllables in place", () => {

@@ -101,7 +101,7 @@ export class KeyboardStrokeTracker {
 
 export function renderVisibleText(islands: Island[], candidates: string[][]): string {
   if (candidates.length > 0) {
-    return candidates[0].join("");
+    return renderCandidateText(islands, candidates[0]);
   }
 
   let text = "";
@@ -160,14 +160,22 @@ export function renderVisibleTextSegments(
   return mergePlainSegments(segments);
 }
 
-export function getSelectedCandidateText(candidates: string[][], index: number): string | null {
+export function getSelectedCandidateText(
+  candidates: string[][],
+  index: number,
+  islands?: Island[]
+): string | null {
   const selected = candidates[index];
   if (!selected) return null;
-  return selected.join("");
+  return islands ? renderCandidateText(islands, selected) : selected.join("");
 }
 
-export function selectCandidateIslands(candidates: string[][], index: number): Island[] | null {
-  const chosenText = getSelectedCandidateText(candidates, index);
+export function selectCandidateIslands(
+  candidates: string[][],
+  index: number,
+  islands?: Island[]
+): Island[] | null {
+  const chosenText = getSelectedCandidateText(candidates, index, islands);
   if (chosenText === null) return null;
   return [createIsland("vietnamese", chosenText)];
 }
@@ -307,21 +315,59 @@ function targetId(target: PiecemealSyllableTarget): string {
   return `${target.islandIndex}:${target.isV7 ? "v7" : "fixed"}:${target.syllableIndex}`;
 }
 
+function renderCandidateText(islands: Island[], topCandidate: string[]): string {
+  if (usesFullAlternatingCandidateShape(islands, topCandidate)) {
+    return topCandidate.join("");
+  }
+
+  let text = "";
+  let v7PartIndex = 0;
+  for (let i = 0; i < islands.length; i++) {
+    const curr = islands[i];
+    const prev = i > 0 ? islands[i - 1] : null;
+    if (prev && shouldAddSpace(prev, curr)) {
+      text += " ";
+    }
+    text += curr.isV7 ? (topCandidate[v7PartIndex++] ?? `[${curr.value}]`) : curr.value;
+  }
+  return text;
+}
+
 function mapInferredPartsToV7Islands(islands: Island[], topCandidate: string[] | null): Map<number, string> {
   const mapped = new Map<number, string>();
   if (!topCandidate) return mapped;
 
+  const v7Slots = getV7CandidateSlots(islands);
+  const usesFullAlternatingShape = usesFullAlternatingCandidateShape(islands, topCandidate);
+
+  for (let v7Index = 0; v7Index < v7Slots.length; v7Index++) {
+    const slot = v7Slots[v7Index];
+    const inferred = usesFullAlternatingShape
+      ? topCandidate[slot.fullCandidateIndex]
+      : topCandidate[v7Index];
+    if (inferred) {
+      mapped.set(slot.islandIndex, inferred);
+    }
+  }
+  return mapped;
+}
+
+function getV7CandidateSlots(islands: Island[]): { islandIndex: number; fullCandidateIndex: number }[] {
+  const v7Slots: { islandIndex: number; fullCandidateIndex: number }[] = [];
   let candidatePartIndex = 0;
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
     const island = islands[islandIndex];
     if (!island.isV7) continue;
-    const inferred = topCandidate[candidatePartIndex + 1];
-    if (inferred) {
-      mapped.set(islandIndex, inferred);
-    }
+    v7Slots.push({ islandIndex, fullCandidateIndex: candidatePartIndex + 1 });
     candidatePartIndex += 2;
   }
-  return mapped;
+  return v7Slots;
+}
+
+function usesFullAlternatingCandidateShape(islands: Island[], topCandidate: string[]): boolean {
+  const v7Slots = getV7CandidateSlots(islands);
+  const lastFullCandidateIndex = v7Slots[v7Slots.length - 1]?.fullCandidateIndex ?? -1;
+  return topCandidate.length > lastFullCandidateIndex;
 }
 
 function findInferredV7DisplayTargets(
