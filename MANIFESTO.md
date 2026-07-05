@@ -8,3 +8,5 @@
 * When reverting to a history frame with Piecemeal fields present, Piecemeal mode must be entered using the fields present.
 
 **Task 2:** *Dictionary management.*
+
+**After implementing the features, these features must be documented in README_WEB.md.**
