@@ -8,5 +8,8 @@
 * When reverting to a history frame with Piecemeal fields present, Piecemeal mode must be entered using the fields present.
 
 **Task 2:** *Dictionary management.*
+* Stripped Plover provides many features to manage dictionaries, yet
+  * The frontend doesn't adequately expose them
+  * The UI is cluttered
 
 **After implementing the features, these features must be documented in README_WEB.md.**
