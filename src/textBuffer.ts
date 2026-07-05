@@ -18,9 +18,15 @@ export interface BufferSnapshot {
   pendingCapitalization: boolean;
 }
 
-type HistoryEntry = BufferSnapshot & {
+export interface HistoryFrameFields {
+  piecemealCursorIndex?: number;
+}
+
+export type HistorySaveOptions = HistoryFrameFields & {
   group?: string;
 };
+
+type HistoryEntry = BufferSnapshot & HistorySaveOptions;
 
 export function createIsland(
   type: IslandType,
@@ -164,20 +170,30 @@ export class TextBuffer {
     };
   }
 
-  save(group?: string): void {
+  save(groupOrOptions?: string | HistorySaveOptions): void {
+    const options = typeof groupOrOptions === "string"
+      ? { group: groupOrOptions }
+      : groupOrOptions ?? {};
+    const { group, piecemealCursorIndex } = options;
     if (group && this.history.length > 0 && this.history[this.history.length - 1].group === group) {
       return;
     }
     const snap = this.snapshot();
-    this.history.push({ ...snap, group });
+    this.history.push({
+      ...snap,
+      group,
+      ...(piecemealCursorIndex === undefined ? {} : { piecemealCursorIndex })
+    });
   }
 
-  undo(): boolean {
+  undo(): HistoryFrameFields | null {
     const snap = this.history.pop();
-    if (!snap) return false;
+    if (!snap) return null;
     this.islands = snap.islands.clone();
     this._pendingCapitalization = snap.pendingCapitalization;
-    return true;
+    return snap.piecemealCursorIndex === undefined
+      ? {}
+      : { piecemealCursorIndex: snap.piecemealCursorIndex };
   }
 
   appendVietnamese(text: string, meta: Partial<Island> = {}): void {

@@ -262,12 +262,14 @@ function isDictionaryTextInputFocused(target = document.activeElement) {
     return !!(target && dictionaryInputIds.has(target.id));
 }
 
-const undoManager = createUndoManager(buffer, () => {
+const undoManager = createUndoManager(buffer, (fields) => {
         state.candidates = [];
-        piecemealCursorIndex = null;
+        piecemealCursorIndex = fields.piecemealCursorIndex ?? null;
         syncPloverPreeditIndex();
         updateDisplay();
         runInference();
+}, {
+    getPiecemealCursorIndex: () => piecemealCursorIndex
 });
 
 function saveState(group) {
@@ -919,8 +921,8 @@ async function handleChord(stroke) {
         if (firstCandidateAppendStroke && state.candidates.length === 0) {
             const parsedAppend = parse(firstCandidateAppendStroke);
             if (parsedAppend) {
-                piecemealCursorIndex = null;
                 saveState();
+                piecemealCursorIndex = null;
                 appendText(assemble(parsedAppend));
                 runInference();
                 return;
@@ -932,9 +934,7 @@ async function handleChord(stroke) {
             ? getCandidateSelectionMatch(stroke, state.candidates.length)
             : null;
         if (piecemealSelection) {
-            piecemealCursorIndex = null;
             suppressPiecemealEntry = true;
-            updateDisplay();
         } else {
             const parsedPiecemeal = parse(stroke);
             if (parsedPiecemeal) {

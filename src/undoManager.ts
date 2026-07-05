@@ -1,4 +1,4 @@
-import { TextBuffer } from "./textBuffer";
+import { HistoryFrameFields, HistorySaveOptions, TextBuffer } from "./textBuffer";
 
 const PLOVER_GROUP_PREFIX = "plover:";
 
@@ -9,19 +9,40 @@ interface SavePloverOptions {
   hadPreedit: boolean;
 }
 
-export function createUndoManager(buffer: TextBuffer, onUndoApplied: () => void) {
+interface UndoManagerOptions {
+  getPiecemealCursorIndex?: () => number | null;
+}
+
+function buildHistoryOptions(
+  group: SaveGroup,
+  getPiecemealCursorIndex?: () => number | null
+): HistorySaveOptions | string | undefined {
+  const piecemealCursorIndex = getPiecemealCursorIndex?.();
+  if (piecemealCursorIndex === null || piecemealCursorIndex === undefined) {
+    return group;
+  }
+  return group === undefined
+    ? { piecemealCursorIndex }
+    : { group, piecemealCursorIndex };
+}
+
+export function createUndoManager(
+  buffer: TextBuffer,
+  onUndoApplied: (fields: HistoryFrameFields) => void,
+  options: UndoManagerOptions = {}
+) {
   let ploverGroupCounter = 0;
   let hasActivePloverGroup = false;
 
   function save(group?: SaveGroup): void {
     hasActivePloverGroup = false;
-    buffer.save(group);
+    buffer.save(buildHistoryOptions(group, options.getPiecemealCursorIndex));
   }
 
   function savePlover({ recordHistory, hadPreedit }: SavePloverOptions): void {
     if (recordHistory) {
       hasActivePloverGroup = false;
-      buffer.save();
+      buffer.save(buildHistoryOptions(undefined, options.getPiecemealCursorIndex));
       return;
     }
 
@@ -30,16 +51,16 @@ export function createUndoManager(buffer: TextBuffer, onUndoApplied: () => void)
       hasActivePloverGroup = true;
     }
 
-    buffer.save(`${PLOVER_GROUP_PREFIX}${ploverGroupCounter}`);
+    buffer.save(buildHistoryOptions(`${PLOVER_GROUP_PREFIX}${ploverGroupCounter}`, options.getPiecemealCursorIndex));
   }
 
   function undo(): boolean {
-    const undone = buffer.undo();
-    if (undone) {
+    const fields = buffer.undo();
+    if (fields) {
       hasActivePloverGroup = false;
-      onUndoApplied();
+      onUndoApplied(fields);
     }
-    return undone;
+    return !!fields;
   }
 
   return {

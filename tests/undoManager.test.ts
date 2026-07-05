@@ -9,6 +9,45 @@ function fastSpec<T>(name: string, arbitrary: fc.Arbitrary<T>, run: (value: T) =
 }
 
 describe("undoManager plover behavior", () => {
+  it("restores the piecemeal cursor saved with a history frame", () => {
+    const buffer = new TextBuffer();
+    let piecemealCursorIndex: number | null = 2;
+    let restoredCursor: number | null = null;
+    const undoManager = createUndoManager(
+      buffer,
+      (fields) => {
+        restoredCursor = fields.piecemealCursorIndex ?? null;
+      },
+      { getPiecemealCursorIndex: () => piecemealCursorIndex }
+    );
+
+    undoManager.save();
+    buffer.appendIsland(createIsland("vietnamese", "replacement"));
+    piecemealCursorIndex = null;
+
+    expect(undoManager.undo()).toBe(true);
+    expect(restoredCursor).toBe(2);
+    expect(buffer.getIslands().map((island) => island.value)).toEqual([""]);
+  });
+
+  it("does not synthesize piecemeal state for ordinary history frames", () => {
+    const buffer = new TextBuffer();
+    let restoredCursor: number | null = 7;
+    const undoManager = createUndoManager(
+      buffer,
+      (fields) => {
+        restoredCursor = fields.piecemealCursorIndex ?? null;
+      },
+      { getPiecemealCursorIndex: () => null }
+    );
+
+    undoManager.save();
+    buffer.appendIsland(createIsland("vietnamese", "ordinary"));
+
+    expect(undoManager.undo()).toBe(true);
+    expect(restoredCursor).toBeNull();
+  });
+
   it("does not false-group separate plover islands", () => {
     const buffer = new TextBuffer();
     const undoManager = createUndoManager(buffer, () => {});
