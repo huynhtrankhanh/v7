@@ -13,4 +13,4 @@
   * The UI is cluttered
 * Your task is, according to docker-compose.yml, launch Stripped Plover, inspect Stripped Plover, and make necessary changes to the frontend.
 
-**After implementing the features, these features must be documented in README_WEB.md.**
+**After implementing the features, these features must be documented in README_WEB.md and must be adequately tested.**
