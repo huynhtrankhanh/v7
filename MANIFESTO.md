@@ -7,4 +7,6 @@
   * Piecemeal cursor position
 * When reverting to a history frame with Piecemeal fields present, Piecemeal mode must be entered using the fields present.
 
+  *What does it mean?*
+
 **Task 2:** *Dictionary management.*
