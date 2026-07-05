@@ -237,6 +237,7 @@ let inferenceAbortController = null;
 let strippedPlover = {
     available: false,
     enabled: false,
+    solo: false,
     preeditIndex: null,
     requestId: 0
 };
@@ -248,18 +249,30 @@ let ploverRpcId = 1;
 const ploverPending = new Map();
 const dictionaryInputIds = new Set([
     "plover-dict-name",
+    "plover-entry-search-stroke",
+    "plover-entry-search-output",
     "plover-entry-stroke",
-    "plover-entry-translation"
+    "plover-entry-translation",
+    "plover-lookup-stroke",
+    "plover-lookup-translation"
 ]);
 // Feature detection is performed once to keep behavior consistent for the module's lifetime.
 const hasAbortController = typeof AbortController !== "undefined";
 let ploverDictionarySignature = "";
+let ploverEntrySearchPage = 1;
+let ploverEntrySearchHasMore = false;
+const PLOVER_ENTRY_PAGE_SIZE = 25;
 const PLOVER_STATUS_RETRY_MS = 2000;
 let ploverStatusTimer: ReturnType<typeof setTimeout> | null = null;
 let ploverStatusCheckInFlight = false;
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
-    return !!(target && dictionaryInputIds.has(target.id));
+    if (!target) return false;
+    if (dictionaryInputIds.has(target.id)) return true;
+    if (typeof target.closest === "function" && target.closest("#plover-dictionary-dialog")) {
+        return true;
+    }
+    return false;
 }
 
 const undoManager = createUndoManager(buffer, (fields) => {
@@ -289,6 +302,13 @@ function setPloverMessage(message) {
 
 function setEntryMessage(message) {
     const messageEl = document.getElementById("plover-entry-message");
+    if (messageEl) {
+        messageEl.textContent = message || "";
+    }
+}
+
+function setLookupMessage(message) {
+    const messageEl = document.getElementById("plover-lookup-message");
     if (messageEl) {
         messageEl.textContent = message || "";
     }
@@ -328,11 +348,25 @@ function getDictionarySignature(dictionaries) {
 
 function updatePloverDictionaries(nextDictionaries, { force = false } = {}) {
     const signature = getDictionarySignature(nextDictionaries);
-    if (!force && signature === ploverDictionarySignature) return false;
+    if (!force && signature === ploverDictionarySignature) {
+        updatePloverSoloUI();
+        return false;
+    }
     ploverDictionarySignature = signature;
     ploverDictionaries = nextDictionaries;
     renderPloverDictionaries();
     return true;
+}
+
+function updatePloverSoloUI() {
+    const statusEl = document.getElementById("plover-solo-status");
+    const endSoloButton = document.getElementById("plover-end-solo");
+    if (statusEl) {
+        statusEl.textContent = strippedPlover.solo ? "Solo" : "Normal";
+    }
+    if (endSoloButton) {
+        endSoloButton.disabled = !strippedPlover.available || !strippedPlover.solo;
+    }
 }
 
 function updatePloverStatusUI() {
@@ -355,6 +389,7 @@ function updatePloverStatusUI() {
         toggleButton.textContent = "Enable";
         if (dictionaryButton) dictionaryButton.disabled = true;
     }
+    updatePloverSoloUI();
 }
 
 async function fetchPloverStatus() {
@@ -364,11 +399,13 @@ async function fetchPloverStatus() {
         strippedPlover.available = !!data.available;
         if (!strippedPlover.available) {
             strippedPlover.enabled = false;
+            strippedPlover.solo = false;
             strippedPlover.preeditIndex = null;
         }
     } catch (e) {
         strippedPlover.available = false;
         strippedPlover.enabled = false;
+        strippedPlover.solo = false;
         strippedPlover.preeditIndex = null;
     }
     updatePloverStatusUI();
@@ -433,6 +470,7 @@ function resetPloverSocket(message) {
     ploverPending.clear();
     strippedPlover.available = false;
     strippedPlover.enabled = false;
+    strippedPlover.solo = false;
     strippedPlover.preeditIndex = null;
     ploverDictionarySignature = "";
     ploverDictionaries = [];
@@ -460,6 +498,11 @@ function ensurePloverSocket() {
                 if (!data.id) {
                     const dictionaries = data?.dictionaries || data?.result?.dictionaries;
                     if (Array.isArray(dictionaries)) {
+                        if (typeof data.solo === "boolean") {
+                            strippedPlover.solo = data.solo;
+                        } else if (typeof data?.result?.solo === "boolean") {
+                            strippedPlover.solo = data.result.solo;
+                        }
                         updatePloverDictionaries(dictionaries);
                         setPloverMessage("");
                     }
@@ -626,6 +669,7 @@ async function refreshPloverDictionaries({ force = false } = {}) {
     if (!strippedPlover.available) return;
     try {
         const result = await ploverRpc("get_dictionary_state", {});
+        strippedPlover.solo = !!result.solo;
         const dictionaries = result.dictionaries || [];
         updatePloverDictionaries(dictionaries, { force });
         setPloverMessage("");
@@ -636,29 +680,58 @@ async function refreshPloverDictionaries({ force = false } = {}) {
 }
 
 function updatePloverDictionarySelects() {
-    const selectEl = document.getElementById("plover-entry-dict");
-    if (!selectEl) return;
-    selectEl.replaceChildren();
+    const editSelectEl = document.getElementById("plover-entry-dict");
+    const searchSelectEl = document.getElementById("plover-entry-search-dict");
     const availableDictionaries = ploverDictionaries;
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    if (availableDictionaries.length === 0) {
-        placeholder.textContent = "No dictionaries available";
-    } else {
-        placeholder.textContent = "Select a dictionary";
+
+    if (editSelectEl) {
+        const previousValue = editSelectEl.value || "";
+        editSelectEl.replaceChildren();
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        if (availableDictionaries.length === 0) {
+            placeholder.textContent = "No dictionaries available";
+        } else {
+            placeholder.textContent = "Select a dictionary";
+        }
+        placeholder.disabled = true;
+        editSelectEl.appendChild(placeholder);
+        let selectedValueFound = false;
+        for (const dict of availableDictionaries) {
+            const option = document.createElement("option");
+            option.value = dict.identifier;
+            option.textContent = dict.readonly
+                ? `${dict.identifier} (read-only)`
+                : dict.identifier;
+            if (dict.identifier === previousValue) {
+                option.selected = true;
+                selectedValueFound = true;
+            }
+            editSelectEl.appendChild(option);
+        }
+        placeholder.selected = !selectedValueFound;
+        editSelectEl.disabled = availableDictionaries.length === 0;
     }
-    placeholder.disabled = true;
-    placeholder.selected = true;
-    selectEl.appendChild(placeholder);
-    for (const dict of availableDictionaries) {
-        const option = document.createElement("option");
-        option.value = dict.identifier;
-        option.textContent = dict.readonly
-            ? `${dict.identifier} (read-only)`
-            : dict.identifier;
-        selectEl.appendChild(option);
+
+    if (searchSelectEl) {
+        const previousValue = searchSelectEl.value || "";
+        searchSelectEl.replaceChildren();
+        const allOption = document.createElement("option");
+        allOption.value = "";
+        allOption.textContent = "All dictionaries";
+        allOption.selected = previousValue === "";
+        searchSelectEl.appendChild(allOption);
+        for (const dict of availableDictionaries) {
+            const option = document.createElement("option");
+            option.value = dict.identifier;
+            option.textContent = dict.identifier;
+            if (dict.identifier === previousValue) {
+                option.selected = true;
+            }
+            searchSelectEl.appendChild(option);
+        }
+        searchSelectEl.disabled = !strippedPlover.available;
     }
-    selectEl.disabled = availableDictionaries.length === 0;
     updateEntryControls();
 }
 
@@ -788,9 +861,87 @@ async function deleteDictionary(dict, button) {
     }
 }
 
+async function setDictionaryEnabled(dict, enabled, button) {
+    const identifier = dict.identifier;
+    if (!identifier) return;
+    setButtonLoading(button, true, enabled ? "Enabling..." : "Disabling...");
+    try {
+        const result = await ploverRpc("set_dictionary_enabled", { identifier, enabled });
+        const dictionaries = result.dictionaries || null;
+        if (Array.isArray(dictionaries)) {
+            updatePloverDictionaries(dictionaries, { force: true });
+        } else {
+            await refreshPloverDictionaries({ force: true });
+        }
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to update dictionary state.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+async function prioritizeDictionaryOrder(identifiers, button) {
+    if (identifiers.length === 0) return;
+    setButtonLoading(button, true, "Moving...");
+    try {
+        const result = await ploverRpc("prioritize_dictionaries", { identifiers });
+        updatePloverDictionaries(result.dictionaries || [], { force: true });
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to reorder dictionaries.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+function getMovedDictionaryOrder(index, direction) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= ploverDictionaries.length) return null;
+    const identifiers = ploverDictionaries.map((dict) => dict.identifier);
+    const [identifier] = identifiers.splice(index, 1);
+    identifiers.splice(nextIndex, 0, identifier);
+    return identifiers;
+}
+
+async function soloDictionary(dict, button) {
+    const identifier = dict.identifier;
+    if (!identifier) return;
+    setButtonLoading(button, true, "Solo...");
+    try {
+        const result = await ploverRpc("solo_dictionaries", { toggles: [`+${identifier}`] });
+        strippedPlover.solo = !!result.solo;
+        updatePloverDictionaries(result.dictionaries || [], { force: true });
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to solo dictionary.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+async function endSoloDictionaries(button) {
+    setButtonLoading(button, true, "Ending...");
+    try {
+        const result = await ploverRpc("end_solo_dictionaries", {});
+        strippedPlover.solo = !!result.solo;
+        updatePloverDictionaries(result.dictionaries || [], { force: true });
+        setPloverMessage("");
+    } catch (e) {
+        console.log(e);
+        setPloverMessage(e.message || "Failed to end solo mode.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
 function renderPloverDictionaries() {
     const listEl = document.getElementById("plover-dictionary-list");
     if (!listEl) return;
+    updatePloverSoloUI();
     listEl.replaceChildren();
     if (!strippedPlover.available) {
         const div = document.createElement("div");
@@ -806,46 +957,273 @@ function renderPloverDictionaries() {
         updatePloverDictionarySelects();
         return;
     }
-    for (const dict of ploverDictionaries) {
+    ploverDictionaries.forEach((dict, index) => {
         const row = document.createElement("div");
         row.className = "plover-dictionary-item";
         const info = document.createElement("div");
         info.className = "plover-dictionary-info";
         const name = dict.identifier;
+        const title = document.createElement("div");
+        title.className = "plover-dictionary-title";
         const nameEl = document.createElement("div");
         nameEl.className = "plover-dictionary-name";
         nameEl.textContent = name;
-        info.appendChild(nameEl);
+        title.appendChild(nameEl);
+        if (dict.readonly) {
+            const readonlyBadge = document.createElement("span");
+            readonlyBadge.className = "plover-badge";
+            readonlyBadge.textContent = "read-only";
+            title.appendChild(readonlyBadge);
+        }
+        if (!dict.enabled) {
+            const disabledBadge = document.createElement("span");
+            disabledBadge.className = "plover-badge";
+            disabledBadge.textContent = "disabled";
+            title.appendChild(disabledBadge);
+        }
+        info.appendChild(title);
 
         const meta = document.createElement("div");
         meta.className = "plover-dictionary-meta";
-        meta.textContent = `entries: ${dict.entries ?? 0} · ${dict.readonly ? "read-only" : "writable"} · ${dict.enabled ? "enabled" : "disabled"}`;
+        meta.textContent = `${dict.entries ?? 0} entries · priority ${index + 1}`;
         info.appendChild(meta);
         row.appendChild(info);
         const actions = document.createElement("div");
         actions.className = "plover-dictionary-actions";
+        const upButton = document.createElement("button");
+        upButton.type = "button";
+        upButton.textContent = "Up";
+        upButton.disabled = index === 0;
+        upButton.addEventListener("click", () => {
+            const order = getMovedDictionaryOrder(index, -1);
+            if (order) void prioritizeDictionaryOrder(order, upButton);
+        });
+        const downButton = document.createElement("button");
+        downButton.type = "button";
+        downButton.textContent = "Down";
+        downButton.disabled = index === ploverDictionaries.length - 1;
+        downButton.addEventListener("click", () => {
+            const order = getMovedDictionaryOrder(index, 1);
+            if (order) void prioritizeDictionaryOrder(order, downButton);
+        });
+        const enabledButton = document.createElement("button");
+        enabledButton.type = "button";
+        enabledButton.textContent = dict.enabled ? "Disable" : "Enable";
+        enabledButton.addEventListener("click", () => {
+            void setDictionaryEnabled(dict, !dict.enabled, enabledButton);
+        });
+        const soloButton = document.createElement("button");
+        soloButton.type = "button";
+        soloButton.textContent = "Solo";
+        soloButton.addEventListener("click", () => {
+            void soloDictionary(dict, soloButton);
+        });
         const exportButton = document.createElement("button");
+        exportButton.type = "button";
         exportButton.textContent = "Export";
         exportButton.addEventListener("click", () => {
             void exportDictionary(dict, exportButton);
         });
         const renameButton = document.createElement("button");
+        renameButton.type = "button";
         renameButton.textContent = "Rename";
+        renameButton.disabled = !!dict.readonly;
         renameButton.addEventListener("click", () => {
             void renameDictionary(dict, renameButton);
         });
         const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
         deleteButton.textContent = "Delete";
+        deleteButton.disabled = !!dict.readonly;
         deleteButton.addEventListener("click", () => {
             void deleteDictionary(dict, deleteButton);
         });
+        actions.appendChild(upButton);
+        actions.appendChild(downButton);
+        actions.appendChild(enabledButton);
+        actions.appendChild(soloButton);
         actions.appendChild(exportButton);
         actions.appendChild(renameButton);
         actions.appendChild(deleteButton);
         row.appendChild(actions);
         listEl.appendChild(row);
-    }
+    });
     updatePloverDictionarySelects();
+}
+
+function fillEntryEditor(entry) {
+    const dictSelect = document.getElementById("plover-entry-dict");
+    const strokeInput = document.getElementById("plover-entry-stroke");
+    const translationInput = document.getElementById("plover-entry-translation");
+    if (dictSelect && entry.dictionary) {
+        dictSelect.value = entry.dictionary;
+    }
+    if (strokeInput) {
+        strokeInput.value = entry.stroke || "";
+    }
+    if (translationInput) {
+        translationInput.value = entry.translation || "";
+    }
+    updateEntryControls();
+}
+
+function renderEntryRows(container, entries) {
+    container.replaceChildren();
+    if (!entries || entries.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "plover-muted";
+        empty.textContent = "No entries found.";
+        container.appendChild(empty);
+        return;
+    }
+    for (const entry of entries) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "plover-entry-result";
+        const stroke = document.createElement("span");
+        stroke.textContent = entry.stroke || "";
+        const translation = document.createElement("span");
+        translation.textContent = entry.translation || "";
+        const dictionary = document.createElement("span");
+        dictionary.className = "muted";
+        dictionary.textContent = entry.dictionary || "";
+        row.appendChild(stroke);
+        row.appendChild(translation);
+        row.appendChild(dictionary);
+        row.addEventListener("click", () => fillEntryEditor(entry));
+        container.appendChild(row);
+    }
+}
+
+function updateEntryPagination(result) {
+    const prevButton = document.getElementById("plover-entry-prev");
+    const nextButton = document.getElementById("plover-entry-next");
+    const pageEl = document.getElementById("plover-entry-page");
+    ploverEntrySearchHasMore = !!result?.has_more;
+    if (prevButton) {
+        prevButton.disabled = ploverEntrySearchPage <= 1;
+    }
+    if (nextButton) {
+        nextButton.disabled = !ploverEntrySearchHasMore;
+    }
+    if (pageEl) {
+        const total = result?.total ?? 0;
+        pageEl.textContent = `Page ${ploverEntrySearchPage} · ${total} entries`;
+    }
+}
+
+function getEntrySearchParams(page) {
+    const dictSelect = document.getElementById("plover-entry-search-dict");
+    const strokeInput = document.getElementById("plover-entry-search-stroke");
+    const outputInput = document.getElementById("plover-entry-search-output");
+    const matchSelect = document.getElementById("plover-entry-search-match");
+    const sortSelect = document.getElementById("plover-entry-sort");
+    const dictionary = (dictSelect?.value || "").trim();
+    const stroke = (strokeInput?.value || "").trim();
+    const output = (outputInput?.value || "").trim();
+    const params = {
+        page,
+        page_size: PLOVER_ENTRY_PAGE_SIZE,
+        sort: sortSelect?.value || "alphabetic"
+    };
+    if (dictionary) params.dictionary = dictionary;
+    if (stroke) params.stroke = stroke;
+    if (output) params.output = output;
+    if (stroke || output) {
+        params.match = matchSelect?.value || "substring";
+    }
+    return { params, hasSearchQuery: !!(stroke || output) };
+}
+
+async function runEntrySearch({ page = 1, button = null } = {}) {
+    if (!strippedPlover.available) {
+        setEntryMessage("Stripped Plover is unavailable.");
+        return;
+    }
+    const resultsEl = document.getElementById("plover-entry-results");
+    if (!resultsEl) return;
+    if (button) {
+        setButtonLoading(button, true, "Searching...");
+    }
+    try {
+        const { params, hasSearchQuery } = getEntrySearchParams(page);
+        const method = hasSearchQuery ? "search_entries" : "enumerate_entries";
+        const result = await ploverRpc(method, params);
+        ploverEntrySearchPage = result.page || page;
+        renderEntryRows(resultsEl, result.entries || []);
+        updateEntryPagination(result);
+        setEntryMessage("");
+    } catch (e) {
+        console.log(e);
+        setEntryMessage(e.message || "Entry search failed.");
+    } finally {
+        if (button) {
+            setButtonLoading(button, false, "");
+        }
+    }
+}
+
+function renderLookupRows(entries) {
+    const resultsEl = document.getElementById("plover-lookup-results");
+    if (!resultsEl) return;
+    renderEntryRows(resultsEl, entries);
+}
+
+async function runStrokeLookup(button) {
+    if (!strippedPlover.available) {
+        setLookupMessage("Stripped Plover is unavailable.");
+        return;
+    }
+    const strokeInput = document.getElementById("plover-lookup-stroke");
+    const stroke = (strokeInput?.value || "").trim();
+    if (!stroke) {
+        setLookupMessage("Provide a stroke to look up.");
+        return;
+    }
+    setButtonLoading(button, true, "Looking...");
+    try {
+        const result = await ploverRpc("lookup", { stroke });
+        renderLookupRows(result.translation ? [{
+            stroke: result.stroke || stroke,
+            translation: result.translation,
+            dictionary: "active dictionaries"
+        }] : []);
+        setLookupMessage(result.translation ? "" : "No translation found.");
+    } catch (e) {
+        console.log(e);
+        setLookupMessage(e.message || "Stroke lookup failed.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
+}
+
+async function runReverseLookup(button) {
+    if (!strippedPlover.available) {
+        setLookupMessage("Stripped Plover is unavailable.");
+        return;
+    }
+    const translationInput = document.getElementById("plover-lookup-translation");
+    const translation = (translationInput?.value || "").trim();
+    if (!translation) {
+        setLookupMessage("Provide a translation to look up.");
+        return;
+    }
+    setButtonLoading(button, true, "Looking...");
+    try {
+        const result = await ploverRpc("reverse_lookup", { translation });
+        const entries = (result.strokes || []).map((stroke) => ({
+            stroke,
+            translation: result.translation || translation,
+            dictionary: "active dictionaries"
+        }));
+        renderLookupRows(entries);
+        setLookupMessage(entries.length > 0 ? "" : "No strokes found.");
+    } catch (e) {
+        console.log(e);
+        setLookupMessage(e.message || "Reverse lookup failed.");
+    } finally {
+        setButtonLoading(button, false, "");
+    }
 }
 
 // --- Logic ---
@@ -1448,11 +1826,33 @@ function setupPloverControls() {
     const dictionaryDialog = document.getElementById("plover-dictionary-dialog");
     const dictionaryCloseButton = document.getElementById("plover-dictionary-close");
     const refreshButton = document.getElementById("plover-refresh");
+    const endSoloButton = document.getElementById("plover-end-solo");
     const uploadButton = document.getElementById("plover-dict-upload");
+    const entrySearchButton = document.getElementById("plover-entry-search");
+    const entryPrevButton = document.getElementById("plover-entry-prev");
+    const entryNextButton = document.getElementById("plover-entry-next");
+    const lookupStrokeButton = document.getElementById("plover-lookup-stroke-run");
+    const lookupTranslationButton = document.getElementById("plover-lookup-translation-run");
     const addButton = document.getElementById("plover-entry-add");
     const updateButton = document.getElementById("plover-entry-update");
     const removeButton = document.getElementById("plover-entry-remove");
     const dictSelect = document.getElementById("plover-entry-dict");
+
+    for (const tab of document.querySelectorAll(".plover-tab")) {
+        tab.addEventListener("click", () => {
+            const panelId = tab.dataset.panel;
+            if (!panelId) return;
+            for (const candidate of document.querySelectorAll(".plover-tab")) {
+                candidate.classList.toggle("active", candidate === tab);
+            }
+            for (const panel of document.querySelectorAll(".plover-panel")) {
+                panel.classList.toggle("active", panel.id === panelId);
+            }
+            if (panelId === "plover-panel-entries") {
+                void runEntrySearch({ page: ploverEntrySearchPage });
+            }
+        });
+    }
 
     if (toggleButton) {
         toggleButton.addEventListener("click", () => {
@@ -1466,6 +1866,7 @@ function setupPloverControls() {
             } else {
                 dictionaryDialog.setAttribute("open", "");
             }
+            void refreshPloverDictionaries({ force: true }).then(() => runEntrySearch({ page: 1 }));
         });
     }
     if (dictionaryCloseButton && dictionaryDialog) {
@@ -1500,6 +1901,11 @@ function setupPloverControls() {
             } finally {
                 setButtonLoading(refreshButton, false, "");
             }
+        });
+    }
+    if (endSoloButton) {
+        endSoloButton.addEventListener("click", () => {
+            void endSoloDictionaries(endSoloButton);
         });
     }
     if (uploadButton) {
@@ -1538,6 +1944,7 @@ function setupPloverControls() {
                     });
                 }
                 await refreshPloverDictionaries({ force: true });
+                await runEntrySearch({ page: 1 });
                 setPloverMessage("");
             } catch (e) {
                 console.log(e);
@@ -1545,6 +1952,35 @@ function setupPloverControls() {
             } finally {
                 setButtonLoading(uploadButton, false, "");
             }
+        });
+    }
+    if (entrySearchButton) {
+        entrySearchButton.addEventListener("click", () => {
+            void runEntrySearch({ page: 1, button: entrySearchButton });
+        });
+    }
+    if (entryPrevButton) {
+        entryPrevButton.addEventListener("click", () => {
+            if (ploverEntrySearchPage > 1) {
+                void runEntrySearch({ page: ploverEntrySearchPage - 1, button: entryPrevButton });
+            }
+        });
+    }
+    if (entryNextButton) {
+        entryNextButton.addEventListener("click", () => {
+            if (ploverEntrySearchHasMore) {
+                void runEntrySearch({ page: ploverEntrySearchPage + 1, button: entryNextButton });
+            }
+        });
+    }
+    if (lookupStrokeButton) {
+        lookupStrokeButton.addEventListener("click", () => {
+            void runStrokeLookup(lookupStrokeButton);
+        });
+    }
+    if (lookupTranslationButton) {
+        lookupTranslationButton.addEventListener("click", () => {
+            void runReverseLookup(lookupTranslationButton);
         });
     }
 
@@ -1591,6 +2027,7 @@ function setupPloverControls() {
             }
             setEntryMessage("");
             await refreshPloverDictionaries();
+            await runEntrySearch({ page: ploverEntrySearchPage });
         } catch (e) {
             console.log(e);
             setEntryMessage(e.message || "Entry update failed.");

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Full-stack smoke test: Stripped Plover (real container) + inference backend + Puppeteer UI check.
+// Full-stack smoke test: externally running Stripped Plover + inference backend + Puppeteer UI check.
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const os = require("os");
 const puppeteer = require("puppeteer");
 const net = require("net");
 
 const ROOT = path.resolve(__dirname, "..");
 const PLOVER_PORT = 4020;
 const SERVER_PORT = 3000;
-const PLOVER_RECOVERY_TIMEOUT_MS = 7000;
-const INITIAL_STATE_TIMEOUT_MS = 1000;
+const PLOVER_READY_TIMEOUT_MS = 60000;
 
 function waitForOutput(proc, substring, logsRef) {
   return new Promise((resolve, reject) => {
@@ -50,6 +50,24 @@ function waitForPort(port, host = "127.0.0.1", timeoutMs = 60000) {
   });
 }
 
+function minimalModelPath() {
+  const modelPath = path.join(os.tmpdir(), `v7-fullstack-${process.pid}.arpa`);
+  fs.writeFileSync(
+    modelPath,
+    "\\data\\\n" +
+      "ngram 1=3\n" +
+      "ngram 2=1\n\n" +
+      "\\1-grams:\n" +
+      "-0.3010\t<s>\t-0.3010\n" +
+      "-0.3010\t</s>\t-0.3010\n" +
+      "-0.3010\t<unk>\t-0.3010\n\n" +
+      "\\2-grams:\n" +
+      "-0.3010\t<s>\t</s>\n\n" +
+      "\\end\\\n"
+  );
+  return modelPath;
+}
+
 async function ploverRpcOnPage(page, method, params) {
   return page.evaluate(
     async ({ method, params }) => {
@@ -81,24 +99,42 @@ async function ploverRpcOnPage(page, method, params) {
   );
 }
 
+async function openPloverTab(page, id) {
+  await page.click(`#plover-tab-${id}`);
+  await page.waitForSelector(`#plover-panel-${id}.active`);
+}
+
+async function clickDictionaryRowButton(page, name, label) {
+  await page.evaluate(
+    ({ name, label }) => {
+      const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
+      const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
+      if (!row) throw new Error(`Dictionary row not found: ${name}`);
+      const button = Array.from(row.querySelectorAll("button")).find((candidate) => candidate.textContent?.trim() === label);
+      if (!button) throw new Error(`${label} button not found for ${name}`);
+      button.click();
+    },
+    { name, label }
+  );
+}
+
 async function main() {
   let serverProc;
+  let browser;
   const screenshotPath = path.join("/tmp", "fullstack-e2e.png");
   try {
-    await new Promise((resolve) => {
-      const dcDown = spawn("docker", ["compose", "down", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
-      dcDown.on("exit", () => resolve());
-    });
+    await waitForPort(PLOVER_PORT, "127.0.0.1", PLOVER_READY_TIMEOUT_MS);
     const serverLogs = { buffer: "" };
+    const modelPath = minimalModelPath();
     serverProc = spawn(
       "cargo",
       [
         "run",
-        "--features",
-        "mocked-model",
         "--manifest-path",
         path.join(ROOT, "inference-rs", "Cargo.toml"),
         "--",
+        "--model-path",
+        modelPath,
         "--server",
         "--static-dir",
         path.join(ROOT, "static"),
@@ -114,27 +150,17 @@ async function main() {
 
     await waitForOutput(serverProc, "Listening on", serverLogs);
 
-    const browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
     const page = await browser.newPage();
     await page.goto(`http://localhost:${SERVER_PORT}`, { waitUntil: "networkidle0" });
     await page.waitForSelector("#plover-status");
     await page.waitForFunction(
-      () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("unavailable"),
-      { timeout: 5000 }
-    );
-    await page.waitForFunction(() => document.querySelector("#plover-dictionary-open")?.disabled === true, { timeout: INITIAL_STATE_TIMEOUT_MS });
-
-    const dcUp = spawn("docker", ["compose", "up", "-d", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
-    await new Promise((resolve, reject) => dcUp.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker compose up exited ${code}`)))));
-    await waitForPort(PLOVER_PORT, "127.0.0.1");
-
-    await page.waitForFunction(
       () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("available"),
-      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
+      { timeout: 10000 }
     );
     await page.waitForFunction(
       () => document.querySelector("#plover-dictionary-open")?.disabled === false,
-      { timeout: PLOVER_RECOVERY_TIMEOUT_MS }
+      { timeout: 10000 }
     );
 
     // Exercise WS endpoint directly.
@@ -156,6 +182,7 @@ async function main() {
     await page.click("#plover-dictionary-open");
     await page.waitForSelector("#plover-dictionary-dialog[open]");
     // Ensure dictionary input accepts text while capture is paused.
+    await openPloverTab(page, "entries");
     await page.click("#plover-entry-stroke");
     await page.type("#plover-entry-stroke", "PUPE2E");
     const strokeVal = await page.$eval("#plover-entry-stroke", (el) => el.value);
@@ -167,6 +194,7 @@ async function main() {
     const renamedName = uniqueName.replace(".json", "-renamed.json");
     const stroke = "TEFT";
 
+    await openPloverTab(page, "dictionaries");
     const uploadPath = path.join("/tmp", uniqueName);
     fs.writeFileSync(uploadPath, "{}\n");
     const fileInput = await page.$("#plover-dict-file");
@@ -202,6 +230,30 @@ async function main() {
       throw new Error(`Dictionary label incorrectly rendered: ${importedLabel}`);
     }
 
+    await clickDictionaryRowButton(page, uniqueName, "Disable");
+    await page.waitForFunction(
+      (name) => {
+        const row = Array.from(document.querySelectorAll(".plover-dictionary-item")).find((entry) =>
+          entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name
+        );
+        return row?.textContent?.includes("disabled") && Array.from(row.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Enable");
+      },
+      { timeout: 5000 },
+      uniqueName
+    );
+    await clickDictionaryRowButton(page, uniqueName, "Enable");
+    await page.waitForFunction(
+      (name) => {
+        const row = Array.from(document.querySelectorAll(".plover-dictionary-item")).find((entry) =>
+          entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name
+        );
+        return row && !row.textContent?.includes("disabled") && Array.from(row.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Disable");
+      },
+      { timeout: 5000 },
+      uniqueName
+    );
+
+    await openPloverTab(page, "entries");
     await page.select("#plover-entry-dict", dictionaryId);
     await page.click("#plover-entry-stroke", { clickCount: 3 });
     await page.type("#plover-entry-stroke", stroke);
@@ -214,6 +266,25 @@ async function main() {
       throw new Error(`Entry add failed: ${JSON.stringify(exported)}`);
     }
 
+    await page.select("#plover-entry-search-dict", dictionaryId);
+    await page.click("#plover-entry-search-output", { clickCount: 3 });
+    await page.type("#plover-entry-search-output", "one");
+    await page.click("#plover-entry-search");
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll(".plover-entry-result")).some((row) => row.textContent?.includes("TEFT") && row.textContent?.includes("one")),
+      { timeout: 5000 }
+    );
+
+    await openPloverTab(page, "lookup");
+    await page.click("#plover-lookup-translation", { clickCount: 3 });
+    await page.type("#plover-lookup-translation", "one");
+    await page.click("#plover-lookup-translation-run");
+    await page.waitForFunction(
+      () => Array.from(document.querySelectorAll("#plover-lookup-results .plover-entry-result")).some((row) => row.textContent?.includes("TEFT")),
+      { timeout: 5000 }
+    );
+
+    await openPloverTab(page, "entries");
     await page.click("#plover-entry-translation", { clickCount: 3 });
     await page.type("#plover-entry-translation", "two");
     await page.select("#plover-entry-dict", dictionaryId);
@@ -230,17 +301,11 @@ async function main() {
       throw new Error(`Entry remove failed: ${JSON.stringify(exported)}`);
     }
 
+    await openPloverTab(page, "dictionaries");
     await page.evaluate((name) => {
       window.prompt = () => name;
     }, renamedName);
-    await page.evaluate((name) => {
-      const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
-      const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
-      if (!row) throw new Error(`Dictionary row not found: ${name}`);
-      const renameButton = Array.from(row.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Rename");
-      if (!renameButton) throw new Error("Rename button not found");
-      renameButton.click();
-    }, uniqueName);
+    await clickDictionaryRowButton(page, uniqueName, "Rename");
     await page.waitForFunction(
       (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
       { timeout: 5000 },
@@ -250,14 +315,7 @@ async function main() {
     await page.evaluate(() => {
       window.confirm = () => true;
     });
-    await page.evaluate((name) => {
-      const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
-      const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
-      if (!row) throw new Error(`Dictionary row not found: ${name}`);
-      const deleteButton = Array.from(row.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Delete");
-      if (!deleteButton) throw new Error("Delete button not found");
-      deleteButton.click();
-    }, renamedName);
+    await clickDictionaryRowButton(page, renamedName, "Delete");
     await page.waitForFunction(
       (name) => !Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
       { timeout: 5000 },
@@ -265,13 +323,13 @@ async function main() {
     );
 
     await page.screenshot({ path: screenshotPath, fullPage: true });
-
-    await browser.close();
   } finally {
+    if (browser) {
+      await browser.close();
+    }
     if (serverProc) {
       serverProc.kill("SIGINT");
     }
-    spawn("docker", ["compose", "down", "stripped-plover"], { cwd: ROOT, stdio: "inherit" });
   }
   console.log(`Full-stack e2e completed. Screenshot: ${screenshotPath}`);
 }

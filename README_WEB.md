@@ -12,6 +12,7 @@ The web demo provides a real-time stenographic input interface for the V7 infere
 - **Ambiguity Management:** Presents up to 5 candidates for V7 islands.
 - **Seamless Mode Switching:** Automatically switches between fully specified syllables (fixed text) and partially specified V7 islands based on the input chord.
 - **History & Undo:** Supports undoing the last action (syllable entry, V7 island entry, or candidate selection) using the `*` key.
+- **Piecemeal Undo State:** Undo restores Piecemeal Syllable Edit mode when the reverted history frame was created during a Piecemeal edit, including the Piecemeal cursor position.
 - **Smart Spacing:** Automatically manages spacing between different types of content (Vietnamese text, punctuation, capitals) to prevent double spacing.
 - **Emily Symbols:** Supports Emily symbol strokes with configurable attachment spacing.
 - **Mobile Friendly:** Optimized for display on mobile devices with external keyboards.
@@ -51,6 +52,12 @@ docker compose up inference
 ```
 
 Access the demo at `http://localhost:3000`.
+
+To run with Stripped Plover dictionary support, start both services:
+
+```bash
+docker compose up inference stripped-plover
+```
 
 ### Running the Server Locally
 
@@ -124,7 +131,14 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 ### Stripped Plover Integration
 The web demo can optionally integrate with Stripped Plover for strokes that do not match the built-in rules. Press the `#` key (Q on the QWERTY layout) to toggle Stripped Plover mode. When enabled, all strokes are routed to Stripped Plover. When disabled, unrecognized strokes are sent to Stripped Plover as a one-shot translation.
 
-Use the Dictionary Management panel in the UI to upload JSON/Python dictionaries, remove dictionaries, and add/update/remove individual entries.
+Use the Dictionary Management panel in the UI to manage Stripped Plover dictionaries:
+
+- **Dictionaries:** refresh state, move dictionary priority up/down, enable or disable a dictionary, solo one dictionary, end solo mode, export, rename, or delete writable dictionaries.
+- **Import:** upload JSON or Python dictionaries and optionally merge JSON uploads into an existing dictionary.
+- **Entries:** search or enumerate entries by dictionary, stroke, translation, match mode, and sort order. Select a result to load it into the editor, then add, update, or remove entries.
+- **Lookup:** look up a stroke's translation or reverse-look up strokes for a translation.
+
+The full-stack e2e test expects Stripped Plover to already be reachable on port `4020`, usually via `docker compose up -d stripped-plover`, then runs the inference server against that service.
 
 ## Single-Syllable Mode Orthographic Rules (Deterministic)
 
