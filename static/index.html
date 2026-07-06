@@ -132,8 +132,9 @@
         #plover-dictionary-dialog button {
             padding: 6px 12px;
             border-radius: 6px;
-            border: 1px solid #b9c2d0;
-            background: #f6f8fb;
+            border: 1px solid #8fa0b5;
+            background: #ffffff;
+            color: #111827;
             cursor: pointer;
             font-size: 0.85rem;
         }
@@ -148,12 +149,18 @@
         }
         #plover-dictionary-dialog input,
         #plover-dictionary-dialog select {
-            border: 1px solid #cbd5e1;
+            background: #ffffff;
+            border: 1px solid #9caec4;
             border-radius: 6px;
             box-sizing: border-box;
+            color: #111827;
             font: inherit;
             min-height: 32px;
             padding: 5px 8px;
+        }
+        #plover-dictionary-dialog summary {
+            cursor: pointer;
+            font-weight: 700;
         }
         .plover-row {
             display: flex;
@@ -184,6 +191,7 @@
             background: rgba(15, 23, 42, 0.5);
         }
         .plover-dialog-content {
+            color: #111827;
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -210,7 +218,7 @@
         .plover-tab {
             background: transparent;
         }
-        .plover-tab.active {
+        #plover-dictionary-dialog .plover-tab.active {
             background: #1f2937;
             border-color: #1f2937;
             color: #fff;
@@ -233,13 +241,13 @@
         }
         .plover-dictionary-item {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 10px;
+            grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+            gap: 12px;
             align-items: center;
             background: #ffffff;
-            border: 1px solid #dce3ed;
+            border: 1px solid #b8c5d6;
             border-radius: 8px;
-            padding: 10px 12px;
+            padding: 12px;
         }
         .plover-dictionary-info {
             display: flex;
@@ -254,18 +262,31 @@
             min-width: 0;
         }
         .plover-dictionary-name {
+            color: #0f172a;
             font-weight: 600;
             overflow-wrap: anywhere;
         }
         .plover-badge {
-            border: 1px solid #cbd5e1;
+            background: #eef2f7;
+            border: 1px solid #94a3b8;
             border-radius: 999px;
-            color: #475569;
+            color: #1f2937;
             font-size: 0.72rem;
+            font-weight: 600;
             padding: 1px 6px;
         }
+        .plover-badge.enabled {
+            background: #d1fae5;
+            border-color: #34d399;
+            color: #065f46;
+        }
+        .plover-badge.disabled {
+            background: #fee2e2;
+            border-color: #f87171;
+            color: #7f1d1d;
+        }
         .plover-dictionary-meta {
-            color: #4b5563;
+            color: #334155;
             font-size: 0.8rem;
         }
         .plover-dictionary-actions {
@@ -274,13 +295,16 @@
             gap: 8px;
             justify-content: flex-end;
         }
+        .plover-dictionary-actions select {
+            min-width: 150px;
+        }
         .plover-section {
             display: flex;
             flex-direction: column;
             gap: 8px;
             padding: 10px;
             background: #ffffff;
-            border: 1px solid #dce3ed;
+            border: 1px solid #b8c5d6;
             border-radius: 8px;
         }
         .plover-section-title {
@@ -311,7 +335,7 @@
             overflow: auto;
         }
         .plover-entry-result {
-            border: 1px solid #dce3ed;
+            border: 1px solid #b8c5d6;
             border-radius: 8px;
             background: #fff;
             cursor: pointer;
@@ -329,12 +353,12 @@
         }
         .plover-entry-result .muted,
         .plover-muted {
-            color: #64748b;
+            color: #475569;
         }
         #plover-message,
         #plover-entry-message,
         #plover-lookup-message {
-            color: #a00;
+            color: #991b1b;
             font-size: 0.85rem;
         }
         @media (max-width: 720px) {
@@ -382,8 +406,8 @@
                     </div>
                     <div id="plover-dictionary-list"></div>
                 </div>
-                <div class="plover-section">
-                    <span class="plover-section-title">Import</span>
+                <details class="plover-section">
+                    <summary>Import</summary>
                     <div class="plover-grid">
                         <input type="text" id="plover-dict-name" placeholder="Dictionary name">
                         <select id="plover-dict-type">
@@ -399,7 +423,7 @@
                     <div class="plover-row">
                         <button id="plover-dict-upload" type="button">Upload</button>
                     </div>
-                </div>
+                </details>
             </div>
             <div id="plover-panel-entries" class="plover-panel">
                 <div class="plover-section">

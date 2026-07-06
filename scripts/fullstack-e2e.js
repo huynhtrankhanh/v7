@@ -104,15 +104,18 @@ async function openPloverTab(page, id) {
   await page.waitForSelector(`#plover-panel-${id}.active`);
 }
 
-async function clickDictionaryRowButton(page, name, label) {
+async function runDictionaryRowAction(page, name, label) {
   await page.evaluate(
     ({ name, label }) => {
       const rows = Array.from(document.querySelectorAll(".plover-dictionary-item"));
       const row = rows.find((entry) => entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name);
       if (!row) throw new Error(`Dictionary row not found: ${name}`);
-      const button = Array.from(row.querySelectorAll("button")).find((candidate) => candidate.textContent?.trim() === label);
-      if (!button) throw new Error(`${label} button not found for ${name}`);
-      button.click();
+      const actionSelect = row.querySelector("select");
+      if (!actionSelect) throw new Error(`Action menu not found for ${name}`);
+      const option = Array.from(actionSelect.options).find((candidate) => candidate.textContent?.trim() === label);
+      if (!option) throw new Error(`${label} action not found for ${name}`);
+      actionSelect.value = option.value;
+      actionSelect.dispatchEvent(new Event("change", { bubbles: true }));
     },
     { name, label }
   );
@@ -192,9 +195,10 @@ async function main() {
 
     const uniqueName = `puppeteer-${Date.now()}.json`;
     const renamedName = uniqueName.replace(".json", "-renamed.json");
-    const stroke = "TEFT";
+    const stroke = "PUPT/KOD";
 
     await openPloverTab(page, "dictionaries");
+    await page.click("#plover-panel-dictionaries summary");
     const uploadPath = path.join("/tmp", uniqueName);
     fs.writeFileSync(uploadPath, "{}\n");
     const fileInput = await page.$("#plover-dict-file");
@@ -230,24 +234,24 @@ async function main() {
       throw new Error(`Dictionary label incorrectly rendered: ${importedLabel}`);
     }
 
-    await clickDictionaryRowButton(page, uniqueName, "Disable");
+    await runDictionaryRowAction(page, uniqueName, "Disable");
     await page.waitForFunction(
       (name) => {
         const row = Array.from(document.querySelectorAll(".plover-dictionary-item")).find((entry) =>
           entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name
         );
-        return row?.textContent?.includes("disabled") && Array.from(row.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Enable");
+        return row?.textContent?.includes("disabled") && Array.from(row.querySelectorAll("option")).some((option) => option.textContent?.trim() === "Enable");
       },
       { timeout: 5000 },
       uniqueName
     );
-    await clickDictionaryRowButton(page, uniqueName, "Enable");
+    await runDictionaryRowAction(page, uniqueName, "Enable");
     await page.waitForFunction(
       (name) => {
         const row = Array.from(document.querySelectorAll(".plover-dictionary-item")).find((entry) =>
           entry.querySelector(".plover-dictionary-name")?.textContent?.trim() === name
         );
-        return row && !row.textContent?.includes("disabled") && Array.from(row.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Disable");
+        return row && !row.textContent?.includes("disabled") && Array.from(row.querySelectorAll("option")).some((option) => option.textContent?.trim() === "Disable");
       },
       { timeout: 5000 },
       uniqueName
@@ -271,17 +275,19 @@ async function main() {
     await page.type("#plover-entry-search-output", "one");
     await page.click("#plover-entry-search");
     await page.waitForFunction(
-      () => Array.from(document.querySelectorAll(".plover-entry-result")).some((row) => row.textContent?.includes("TEFT") && row.textContent?.includes("one")),
-      { timeout: 5000 }
+      (stroke) => Array.from(document.querySelectorAll(".plover-entry-result")).some((row) => row.textContent?.includes(stroke) && row.textContent?.includes("one")),
+      { timeout: 5000 },
+      stroke
     );
 
     await openPloverTab(page, "lookup");
-    await page.click("#plover-lookup-translation", { clickCount: 3 });
-    await page.type("#plover-lookup-translation", "one");
-    await page.click("#plover-lookup-translation-run");
+    await page.click("#plover-lookup-stroke", { clickCount: 3 });
+    await page.type("#plover-lookup-stroke", stroke);
+    await page.click("#plover-lookup-stroke-run");
     await page.waitForFunction(
-      () => Array.from(document.querySelectorAll("#plover-lookup-results .plover-entry-result")).some((row) => row.textContent?.includes("TEFT")),
-      { timeout: 5000 }
+      (stroke) => Array.from(document.querySelectorAll("#plover-lookup-results .plover-entry-result")).some((row) => row.textContent?.includes(stroke) && row.textContent?.includes("one")),
+      { timeout: 5000 },
+      stroke
     );
 
     await openPloverTab(page, "entries");
@@ -305,7 +311,7 @@ async function main() {
     await page.evaluate((name) => {
       window.prompt = () => name;
     }, renamedName);
-    await clickDictionaryRowButton(page, uniqueName, "Rename");
+    await runDictionaryRowAction(page, uniqueName, "Rename");
     await page.waitForFunction(
       (name) => Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
       { timeout: 5000 },
@@ -315,7 +321,7 @@ async function main() {
     await page.evaluate(() => {
       window.confirm = () => true;
     });
-    await clickDictionaryRowButton(page, renamedName, "Delete");
+    await runDictionaryRowAction(page, renamedName, "Delete");
     await page.waitForFunction(
       (name) => !Array.from(document.querySelectorAll(".plover-dictionary-name")).some((el) => el.textContent?.trim() === name),
       { timeout: 5000 },

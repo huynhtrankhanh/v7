@@ -316,6 +316,15 @@ function setLookupMessage(message) {
 
 function setButtonLoading(button, isLoading, loadingText = "") {
     if (!button) return;
+    if (button.tagName === "SELECT") {
+        button.disabled = isLoading;
+        button.setAttribute("aria-busy", isLoading ? "true" : "false");
+        if (!isLoading) {
+            button.removeAttribute("aria-busy");
+            button.value = "";
+        }
+        return;
+    }
     if (isLoading) {
         if (!button.dataset.label) {
             button.dataset.label = button.textContent || "";
@@ -938,6 +947,36 @@ async function endSoloDictionaries(button) {
     }
 }
 
+function createDictionaryActionOption(value, label, disabled = false) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.disabled = disabled;
+    return option;
+}
+
+async function runDictionaryAction(dict, index, action, control) {
+    if (action === "enable") {
+        await setDictionaryEnabled(dict, true, control);
+    } else if (action === "disable") {
+        await setDictionaryEnabled(dict, false, control);
+    } else if (action === "up") {
+        const order = getMovedDictionaryOrder(index, -1);
+        if (order) await prioritizeDictionaryOrder(order, control);
+    } else if (action === "down") {
+        const order = getMovedDictionaryOrder(index, 1);
+        if (order) await prioritizeDictionaryOrder(order, control);
+    } else if (action === "solo") {
+        await soloDictionary(dict, control);
+    } else if (action === "export") {
+        await exportDictionary(dict, control);
+    } else if (action === "rename") {
+        await renameDictionary(dict, control);
+    } else if (action === "delete") {
+        await deleteDictionary(dict, control);
+    }
+}
+
 function renderPloverDictionaries() {
     const listEl = document.getElementById("plover-dictionary-list");
     if (!listEl) return;
@@ -969,17 +1008,15 @@ function renderPloverDictionaries() {
         nameEl.className = "plover-dictionary-name";
         nameEl.textContent = name;
         title.appendChild(nameEl);
+        const enabledBadge = document.createElement("span");
+        enabledBadge.className = dict.enabled ? "plover-badge enabled" : "plover-badge disabled";
+        enabledBadge.textContent = dict.enabled ? "enabled" : "disabled";
+        title.appendChild(enabledBadge);
         if (dict.readonly) {
             const readonlyBadge = document.createElement("span");
             readonlyBadge.className = "plover-badge";
             readonlyBadge.textContent = "read-only";
             title.appendChild(readonlyBadge);
-        }
-        if (!dict.enabled) {
-            const disabledBadge = document.createElement("span");
-            disabledBadge.className = "plover-badge";
-            disabledBadge.textContent = "disabled";
-            title.appendChild(disabledBadge);
         }
         info.appendChild(title);
 
@@ -990,61 +1027,22 @@ function renderPloverDictionaries() {
         row.appendChild(info);
         const actions = document.createElement("div");
         actions.className = "plover-dictionary-actions";
-        const upButton = document.createElement("button");
-        upButton.type = "button";
-        upButton.textContent = "Up";
-        upButton.disabled = index === 0;
-        upButton.addEventListener("click", () => {
-            const order = getMovedDictionaryOrder(index, -1);
-            if (order) void prioritizeDictionaryOrder(order, upButton);
+        const actionSelect = document.createElement("select");
+        actionSelect.setAttribute("aria-label", `Actions for ${dict.identifier}`);
+        actionSelect.appendChild(createDictionaryActionOption("", "Actions"));
+        actionSelect.appendChild(createDictionaryActionOption(dict.enabled ? "disable" : "enable", dict.enabled ? "Disable" : "Enable"));
+        actionSelect.appendChild(createDictionaryActionOption("solo", "Solo"));
+        actionSelect.appendChild(createDictionaryActionOption("up", "Move up", index === 0));
+        actionSelect.appendChild(createDictionaryActionOption("down", "Move down", index === ploverDictionaries.length - 1));
+        actionSelect.appendChild(createDictionaryActionOption("export", "Export"));
+        actionSelect.appendChild(createDictionaryActionOption("rename", "Rename", !!dict.readonly));
+        actionSelect.appendChild(createDictionaryActionOption("delete", "Delete", !!dict.readonly));
+        actionSelect.addEventListener("change", () => {
+            const action = actionSelect.value;
+            if (!action) return;
+            void runDictionaryAction(dict, index, action, actionSelect);
         });
-        const downButton = document.createElement("button");
-        downButton.type = "button";
-        downButton.textContent = "Down";
-        downButton.disabled = index === ploverDictionaries.length - 1;
-        downButton.addEventListener("click", () => {
-            const order = getMovedDictionaryOrder(index, 1);
-            if (order) void prioritizeDictionaryOrder(order, downButton);
-        });
-        const enabledButton = document.createElement("button");
-        enabledButton.type = "button";
-        enabledButton.textContent = dict.enabled ? "Disable" : "Enable";
-        enabledButton.addEventListener("click", () => {
-            void setDictionaryEnabled(dict, !dict.enabled, enabledButton);
-        });
-        const soloButton = document.createElement("button");
-        soloButton.type = "button";
-        soloButton.textContent = "Solo";
-        soloButton.addEventListener("click", () => {
-            void soloDictionary(dict, soloButton);
-        });
-        const exportButton = document.createElement("button");
-        exportButton.type = "button";
-        exportButton.textContent = "Export";
-        exportButton.addEventListener("click", () => {
-            void exportDictionary(dict, exportButton);
-        });
-        const renameButton = document.createElement("button");
-        renameButton.type = "button";
-        renameButton.textContent = "Rename";
-        renameButton.disabled = !!dict.readonly;
-        renameButton.addEventListener("click", () => {
-            void renameDictionary(dict, renameButton);
-        });
-        const deleteButton = document.createElement("button");
-        deleteButton.type = "button";
-        deleteButton.textContent = "Delete";
-        deleteButton.disabled = !!dict.readonly;
-        deleteButton.addEventListener("click", () => {
-            void deleteDictionary(dict, deleteButton);
-        });
-        actions.appendChild(upButton);
-        actions.appendChild(downButton);
-        actions.appendChild(enabledButton);
-        actions.appendChild(soloButton);
-        actions.appendChild(exportButton);
-        actions.appendChild(renameButton);
-        actions.appendChild(deleteButton);
+        actions.appendChild(actionSelect);
         row.appendChild(actions);
         listEl.appendChild(row);
     });
