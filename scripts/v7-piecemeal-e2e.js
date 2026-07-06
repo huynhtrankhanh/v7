@@ -219,6 +219,24 @@ async function main() {
       { timeout: 5000 }
     );
 
+    await pressChord(page, [QWERTY.K]);
+    await page.waitForFunction(
+      () => {
+        const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
+        return markers.length === 9 && markers[2]?.classList.contains("active");
+      },
+      { timeout: 5000 }
+    );
+
+    await pressChord(page, [QWERTY.R]);
+    await page.waitForFunction(
+      () => {
+        const markers = Array.from(document.querySelectorAll(".piecemeal-syllable"));
+        return markers.length === 9 && markers[0]?.classList.contains("active");
+      },
+      { timeout: 5000 }
+    );
+
     const replacementChord = fixedChords[0].keys;
     for (let domIndex = 1; domIndex < 9; domIndex++) {
       await pressChord(page, replacementChord);

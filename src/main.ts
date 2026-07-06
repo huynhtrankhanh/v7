@@ -1287,6 +1287,16 @@ async function handleChord(stroke) {
 
     let suppressPiecemealEntry = false;
     if (piecemealCursorIndex !== null) {
+        const entryIndex = getPiecemealEntryIndex(stroke);
+        if (entryIndex !== null) {
+            const targets = findPiecemealSyllableTargets(state.islands);
+            if (targets[entryIndex]) {
+                piecemealCursorIndex = entryIndex;
+                updateDisplay();
+                return;
+            }
+        }
+
         if (state.candidates.length === 0 && isLoneCandidateSelectionStroke(stroke)) {
             piecemealCursorIndex = null;
             updateDisplay();
