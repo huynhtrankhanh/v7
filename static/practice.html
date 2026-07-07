@@ -3,102 +3,397 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V7 Practice Game</title>
+  <title>V7 Practice Game — Monkeytype Theme</title>
   <style>
-    body { font-family: sans-serif; margin: 0; background: #f3f4f6; color: #111827; }
-    .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
-    .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 12px; }
-    h1 { margin: 0 0 8px; font-size: 1.35rem; }
-    .muted { color: #4b5563; font-size: 0.92rem; }
-    select, button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid #d1d5db; }
-    button { background: #2563eb; color: #fff; border: none; }
-    button:disabled { opacity: 0.55; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; }
-    .stat { background: #eef2ff; border-radius: 8px; padding: 8px; text-align: center; }
-    .stat .label { font-size: 0.8rem; color: #4338ca; }
-    .stat .value { font-size: 1.15rem; font-weight: 700; }
-    .target { font-size: 2rem; text-align: center; font-weight: 700; margin: 8px 0; }
-    .hand-indicator { font-size: 1.5rem; font-weight: 700; color: #111827; text-align: center; }
-    .status { min-height: 1.4rem; font-weight: 600; text-align: center; }
-    .status.ok { color: #166534; }
-    .status.bad { color: #991b1b; }
-    ol { margin: 8px 0 0; padding-left: 20px; }
-    code { background: #eef2ff; padding: 1px 4px; border-radius: 4px; }
-    /* Emily help dialog */
-    .dialog-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 24px 12px; }
+    :root {
+      --bg: #323437;
+      --panel: #2c2e31;
+      --panel-soft: #3a3c40;
+      --fg: #d1d0c5;
+      --muted: #646669;
+      --accent: #e2b714;
+      --bad: #ca4754;
+      --ok: #7e9f46;
+      --border: rgba(209, 208, 197, 0.08);
+      --shadow: rgba(0, 0, 0, 0.18);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--fg);
+    }
+
+    .wrap {
+      width: min(100%, 980px);
+      margin: 0 auto;
+      padding: clamp(14px, 4vw, 32px);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: clamp(20px, 5vw, 46px);
+    }
+
+    .brand {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--accent);
+      font-size: clamp(1.15rem, 4vw, 1.75rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .brand span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .daily-chip {
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 8px 12px;
+      white-space: nowrap;
+      box-shadow: 0 12px 28px var(--shadow);
+    }
+
+    .daily-chip strong { color: var(--accent); }
+
+    .controls {
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) auto auto;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    select,
+    button {
+      font: inherit;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 11px 13px;
+      outline: none;
+    }
+
+    select {
+      width: 100%;
+      background: var(--panel);
+      color: var(--fg);
+    }
+
+    button {
+      background: var(--accent);
+      color: #2c2e31;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+
+    #emily-help-btn {
+      display: none;
+      background: var(--panel-soft);
+      color: var(--accent);
+      border: 1px solid var(--border);
+    }
+
+    #emily-help-btn:hover,
+    #emily-help-btn:focus-visible {
+      border-color: var(--accent);
+    }
+
+    .dialog-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      align-items: flex-start;
+      justify-content: center;
+      overflow-y: auto;
+      padding: 24px 12px;
+      background: rgba(0, 0, 0, 0.58);
+    }
+
     .dialog-backdrop.open { display: flex; }
-    .dialog { background: #fff; border-radius: 14px; padding: 20px; max-width: 680px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.18); position: relative; }
-    .dialog h2 { margin: 0 0 4px; font-size: 1.2rem; }
-    .dialog h3 { font-size: 1rem; margin: 14px 0 4px; }
-    .dialog table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-top: 6px; }
-    .dialog th, .dialog td { border: 1px solid #e5e7eb; padding: 5px 8px; text-align: left; }
-    .dialog th { background: #f3f4f6; }
-    .dialog-close { position: absolute; top: 12px; right: 14px; background: none; border: none; color: #6b7280; font-size: 1.3rem; cursor: pointer; padding: 2px 6px; line-height: 1; }
-    .dialog-close:hover { color: #111827; }
-    #emily-help-btn { background: #6366f1; display: none; }
-    @media (max-width: 600px) {
-      .target { font-size: 1.7rem; }
-      .wrap { padding: 12px; }
+
+    .dialog {
+      width: min(100%, 760px);
+      position: relative;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--fg);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+      padding: clamp(18px, 4vw, 26px);
+    }
+
+    .dialog h2 {
+      margin: 0 0 6px;
+      color: var(--accent);
+      font-size: 1.15rem;
+      letter-spacing: -0.03em;
+    }
+
+    .dialog h3 {
+      margin: 18px 0 6px;
+      color: var(--fg);
+      font-size: 0.95rem;
+    }
+
+    .dialog p,
+    .dialog .muted { color: var(--muted); }
+
+    .dialog code {
+      color: var(--accent);
+      background: var(--panel-soft);
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+
+    .dialog table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+      font-size: 0.86rem;
+    }
+
+    .dialog th,
+    .dialog td {
+      border: 1px solid var(--border);
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .dialog th {
+      color: var(--accent);
+      background: var(--panel-soft);
+      font-weight: 800;
+    }
+
+    .dialog-close {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid transparent;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .dialog-close:hover,
+    .dialog-close:focus-visible {
+      color: var(--accent);
+      border-color: var(--border);
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: clamp(30px, 6vw, 66px);
+    }
+
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 11px 10px;
+      box-shadow: 0 12px 28px var(--shadow);
+    }
+
+    .stat .label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 4px;
+    }
+
+    .stat .value {
+      color: var(--fg);
+      font-size: clamp(1.05rem, 4vw, 1.5rem);
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .practice-card {
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 18px;
+    }
+
+    .mode-indicator {
+      min-height: 1.5rem;
+      color: var(--accent);
+      font-weight: 800;
+      text-transform: lowercase;
+      letter-spacing: 0.02em;
+    }
+
+    .word-wall {
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      gap: 0.35em 0.55em;
+      min-height: 5.8em;
+      max-height: 7.3em;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: clamp(1.85rem, 7vw, 3.55rem);
+      font-weight: 700;
+      line-height: 1.22;
+      letter-spacing: -0.065em;
+    }
+
+    .word-token {
+      position: relative;
+      display: inline-flex;
+      white-space: nowrap;
+      border-bottom: 0.08em solid transparent;
+      padding-bottom: 0.02em;
+      transition: color 120ms ease, border-color 120ms ease;
+    }
+
+    .word-token.unit-token {
+      border-bottom-color: rgba(226, 183, 20, 0.45);
+    }
+
+    .word-token.current {
+      color: var(--fg);
+      border-bottom-color: var(--accent);
+    }
+
+    .word-token.current-unit::after {
+      content: attr(data-unit);
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: 0.15rem;
+      color: var(--accent);
+      font-size: 0.28em;
+      font-weight: 800;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .status {
+      min-height: 1.35rem;
+      color: var(--muted);
+      font-weight: 700;
+      text-transform: lowercase;
+    }
+
+    .status.ok { color: var(--ok); }
+    .status.bad { color: var(--bad); }
+
+    .footer-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: clamp(24px, 5vw, 48px);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 640px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 24px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .practice-card {
+        min-height: 250px;
+      }
+
+      .word-wall {
+        font-size: clamp(1.65rem, 10vw, 2.7rem);
+        max-height: 8.2em;
+      }
+
+      .footer-row {
+        flex-direction: column;
+      }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="card">
-      <h1>V7 Practice Game</h1>
-      <div class="muted">External keyboard required. No on-screen keyboard is provided.</div>
-    </div>
+    <header class="topbar">
+      <div class="brand">v7 practice <span>monkeytype theme</span></div>
+      <div class="daily-chip">today: <strong id="today-games">0</strong> completed games</div>
+    </header>
 
-    <div class="card">
-      <div class="row">
-        <label for="mode-select">Mode</label>
-        <select id="mode-select"></select>
-        <button id="start-btn">Start 60s Game</button>
-        <button id="emily-help-btn" type="button">Help</button>
-      </div>
-      <div class="stats" style="margin-top:10px;">
-        <div class="stat"><div class="label">Time</div><div class="value" id="time-left">60</div></div>
-        <div class="stat"><div class="label">Score</div><div class="value" id="score">0</div></div>
-        <div class="stat"><div class="label">Best</div><div class="value" id="best">0</div></div>
-      </div>
-    </div>
+    <section class="controls" aria-label="game controls">
+      <select id="mode-select" aria-label="mode"></select>
+      <button id="start-btn">start 60s</button>
+      <button id="emily-help-btn" type="button">emily help</button>
+    </section>
 
-    <div class="card">
-      <div class="muted" id="prompt-label">Press Start</div>
-      <div class="target" id="target">-</div>
+    <section class="stats" aria-label="game stats">
+      <div class="stat"><div class="label">time</div><div class="value" id="time-left">60</div></div>
+      <div class="stat"><div class="label">score</div><div class="value" id="score">0</div></div>
+      <div class="stat"><div class="label">best</div><div class="value" id="best">0</div></div>
+      <div class="stat"><div class="label">today</div><div class="value" id="today-games-stat">0</div></div>
+    </section>
+
+    <main class="practice-card">
+      <div class="mode-indicator" id="prompt-label">press start</div>
+      <div class="word-wall" id="target" aria-live="polite">-</div>
       <div class="status" id="status"></div>
-      <div class="muted" style="text-align:center;">Hit the correct chord for the shown syllable. Wrong chords do not advance.</div>
-    </div>
+    </main>
 
-    <div class="card">
-      <strong>Leaderboard</strong>
-      <ol id="leaderboard"></ol>
-      <div class="muted" style="margin-top:6px;">Scores are saved in localStorage per mode.</div>
-    </div>
-
-    <div class="card muted">
-      Tip: For partial modes, <code>*</code> (spacebar) must be held for the chord to count.
-      For Emily mode, press <code>d</code>+<code>r</code> (W+H) as the starter.
-      Add right-hand pattern keys — <code>u j i k o l</code> map to F R P B L G.
-      Use <code>n</code> (E) for variant 1, <code>m</code> (U) for variant 2, both for variant 3.
+    <div class="footer-row">
+      <span>daily diligence is stored locally</span>
+      <span id="leaderboard" aria-label="leaderboard"></span>
     </div>
   </div>
 
-  <!-- Emily Help Dialog -->
   <div class="dialog-backdrop" id="emily-help-backdrop" role="dialog" aria-modal="true" aria-labelledby="emily-help-title">
     <div class="dialog">
-      <button class="dialog-close" id="emily-help-close" aria-label="Close help">✕</button>
-      <h2 id="emily-help-title">Emily Symbols — Chord Rules</h2>
-      <p class="muted" style="margin:4px 0 0;">The Emily symbols dictionary lets you type punctuation and special characters using steno chords.</p>
+      <button class="dialog-close" id="emily-help-close" aria-label="Close Emily help">✕</button>
+      <h2 id="emily-help-title">Emily symbols</h2>
+      <p class="muted" style="margin:0;">Chord rules and symbol table for Emily mode.</p>
 
-      <h3>1 · Starter (always required)</h3>
-      <p class="muted" style="margin:0;">Every Emily chord must begin with <code>d</code>&thinsp;+&thinsp;<code>r</code> — the left-hand keys <strong>W&thinsp;+&thinsp;H</strong>.</p>
+      <h3>starter</h3>
+      <p style="margin:0;">Every Emily chord starts with <code>d</code> + <code>r</code> / <strong>W</strong> + <strong>H</strong>.</p>
 
-      <h3>2 · Pattern keys (right hand)</h3>
-      <p class="muted" style="margin:0 0 4px;">Add any combination of the right-hand keys to select a symbol group:</p>
+      <h3>pattern keys</h3>
       <table>
-        <thead><tr><th>Steno letter</th><th>Physical key</th></tr></thead>
+        <thead><tr><th>steno</th><th>physical</th></tr></thead>
         <tbody>
           <tr><td>F</td><td><code>u</code></td></tr>
           <tr><td>R</td><td><code>j</code></td></tr>
@@ -109,31 +404,32 @@
         </tbody>
       </table>
 
-      <h3>3 · Variant keys (middle — optional)</h3>
-      <p class="muted" style="margin:0 0 4px;">Use middle keys to pick one of four variants within the symbol group:</p>
+      <h3>variant keys</h3>
       <table>
-        <thead><tr><th>Variant</th><th>Keys to add</th><th>Physical</th></tr></thead>
+        <thead><tr><th>variant</th><th>add</th><th>physical</th></tr></thead>
         <tbody>
-          <tr><td>0 (default)</td><td><em>none</em></td><td><em>none</em></td></tr>
+          <tr><td>0</td><td><em>none</em></td><td><em>none</em></td></tr>
           <tr><td>1</td><td>E</td><td><code>n</code></td></tr>
           <tr><td>2</td><td>U</td><td><code>m</code></td></tr>
-          <tr><td>3</td><td>E + U</td><td><code>n</code>&thinsp;+&thinsp;<code>m</code></td></tr>
+          <tr><td>3</td><td>E + U</td><td><code>n</code> + <code>m</code></td></tr>
         </tbody>
       </table>
 
-      <h3>4 · Symbol table</h3>
-      <p class="muted" style="margin:0 0 4px;">Pattern → physical keys, then the four variants (0 / 1 / 2 / 3).</p>
+      <h3>symbol table</h3>
       <table id="emily-symbol-table">
-        <thead><tr><th>Pattern</th><th>Physical keys</th><th>Var 0</th><th>Var 1 (<code>n</code>)</th><th>Var 2 (<code>m</code>)</th><th>Var 3 (<code>n</code>+<code>m</code>)</th></tr></thead>
+        <thead><tr><th>pattern</th><th>physical keys</th><th>var 0</th><th>var 1</th><th>var 2</th><th>var 3</th></tr></thead>
         <tbody id="emily-symbol-tbody"></tbody>
       </table>
     </div>
   </div>
+
   <script id="embedded-generated-regexes" type="application/x-g4-format">G4</script>
   <script>
 (function () {
   const STORAGE_PREFIX = "v7.practice.leaderboard.";
+  const DILIGENCE_STORAGE_KEY = "v7.practice.diligence.completedGames.v1";
   const ROUND_SECONDS = 60;
+  const PROMPT_WINDOW_SIZE = 22;
   const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
 
   const EMILY_SYMBOLS_TABLE = {
@@ -199,7 +495,7 @@
     { id: "partial-right", label: "Partial syllable, right hand", type: "partial", hand: "right" },
     { id: "partial-random", label: "Partial syllable, random hand", type: "partial", hand: "random" },
     { id: "full", label: "Full syllable", type: "full", hand: "both" },
-    { id: "realistic", label: "Realistic", type: "realistic", hand: "both" },
+    { id: "realistic", label: "Mixed", type: "realistic", hand: "both" },
     { id: "emily", label: "Emily symbols", type: "emily", hand: "both" }
   ];
 
@@ -699,10 +995,16 @@
     const timeLeft = document.getElementById("time-left");
     const scoreEl = document.getElementById("score");
     const bestEl = document.getElementById("best");
+    const todayGamesEl = document.getElementById("today-games");
+    const todayGamesStatEl = document.getElementById("today-games-stat");
     const promptLabel = document.getElementById("prompt-label");
     const targetEl = document.getElementById("target");
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
+    const emilyHelpBtn = document.getElementById("emily-help-btn");
+    const emilyHelpBackdrop = document.getElementById("emily-help-backdrop");
+    const emilyHelpClose = document.getElementById("emily-help-close");
+    const emilySymbolTbody = document.getElementById("emily-symbol-tbody");
 
     const state = {
       entries: [],
@@ -712,6 +1014,7 @@
       time: ROUND_SECONDS,
       timer: null,
       prompt: null,
+      promptQueue: [],
       lastSyllable: null
     };
 
@@ -725,16 +1028,52 @@
     function refreshLeaderboard() {
       const list = readLeaderboard(state.modeId);
       bestEl.textContent = String(list[0] || 0);
-      leaderboardEl.innerHTML = "";
-      if (list.length === 0) {
-        const li = document.createElement("li");
-        li.textContent = "No scores yet";
-        leaderboardEl.appendChild(li);
-        return;
+      if (!leaderboardEl) return;
+      leaderboardEl.textContent = list.length ? `top: ${list.slice(0, 5).join(" · ")}` : "top: —";
+    }
+
+    function localDateKey() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function readDiligence() {
+      try {
+        const raw = localStorage.getItem(DILIGENCE_STORAGE_KEY);
+        const data = raw ? JSON.parse(raw) : {};
+        return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+      } catch (_) {
+        return {};
       }
-      const li = document.createElement("li");
-      li.textContent = list.map((s, i) => `#${i + 1}: ${s}`).join(" · ");
-      leaderboardEl.appendChild(li);
+    }
+
+    function writeDiligence(data) {
+      try {
+        localStorage.setItem(DILIGENCE_STORAGE_KEY, JSON.stringify(data));
+      } catch (_) {}
+    }
+
+    function readTodayCompletedGames() {
+      const value = readDiligence()[localDateKey()];
+      return Number.isInteger(value) && value >= 0 ? value : 0;
+    }
+
+    function recordCompletedGame() {
+      const data = readDiligence();
+      const key = localDateKey();
+      const next = (Number.isInteger(data[key]) && data[key] >= 0 ? data[key] : 0) + 1;
+      data[key] = next;
+      writeDiligence(data);
+      return next;
+    }
+
+    function refreshDiligence() {
+      const today = readTodayCompletedGames();
+      if (todayGamesEl) todayGamesEl.textContent = String(today);
+      if (todayGamesStatEl) todayGamesStatEl.textContent = String(today);
     }
 
     function setStatus(text, cls) {
@@ -742,59 +1081,122 @@
       statusEl.className = "status" + (cls ? " " + cls : "");
     }
 
-    function pickPrompt() {
+    function promptText(prompt) {
+      if (!prompt) return "";
+      if (prompt.type === "emily") return prompt.entry.symbol;
+      if (prompt.type === "realistic-double") return `${prompt.leftEntry.syllable} ${prompt.rightEntry.syllable}`;
+      if (prompt.type === "realistic-single") return prompt.entry.syllable;
+      return prompt.entry ? prompt.entry.syllable : "";
+    }
+
+    function promptUnitLabel(prompt) {
+      if (!prompt) return "";
+      if (prompt.type === "realistic-double") return "2 syllables";
+      if (prompt.type === "realistic-single") return "1 syllable";
+      return "";
+    }
+
+    function renderPromptLine() {
+      targetEl.innerHTML = "";
+      const prompts = state.prompt ? [state.prompt, ...state.promptQueue] : [];
+      if (!prompts.length) {
+        targetEl.textContent = state.entries.length || state.modeId === "emily" ? "-" : "loading...";
+        return;
+      }
+      prompts.forEach((prompt, index) => {
+        const token = document.createElement("span");
+        token.className = "word-token" + (index === 0 ? " current" : "");
+        token.textContent = promptText(prompt);
+        if (state.modeId === "realistic") {
+          token.dataset.unit = promptUnitLabel(prompt);
+          token.classList.add("unit-token");
+          if (index === 0) token.classList.add("current-unit");
+        }
+        targetEl.appendChild(token);
+      });
+    }
+
+    function updatePromptLabel() {
+      const mode = currentMode();
+      if (!state.prompt) {
+        promptLabel.textContent = state.running ? "loading" : "press start";
+        return;
+      }
+      if (mode.id === "emily") {
+        promptLabel.textContent = "emily symbols";
+        return;
+      }
+      if (mode.id === "realistic") {
+        promptLabel.textContent = `mixed · ${promptUnitLabel(state.prompt)} unit`;
+        return;
+      }
+      if (mode.id === "full") {
+        promptLabel.textContent = "full syllable";
+        return;
+      }
+      promptLabel.textContent = `${state.prompt.hand} hand`;
+    }
+
+    function pickEntryAvoidingLast() {
+      if (!state.entries.length) return null;
+      const entry = state.entries[Math.floor(Math.random() * state.entries.length)];
+      if (state.entries.length > 1 && state.lastSyllable === entry.syllable) {
+        return state.entries.find((candidate) => candidate.syllable !== state.lastSyllable) || entry;
+      }
+      return entry;
+    }
+
+    function createPrompt() {
       const mode = currentMode();
       if (mode.id === "emily") {
         let entry = EMILY_ENTRIES[Math.floor(Math.random() * EMILY_ENTRIES.length)];
         if (EMILY_ENTRIES.length > 1 && state.lastSyllable === entry.symbol) {
           entry = EMILY_ENTRIES.find((e) => e.symbol !== state.lastSyllable) || entry;
         }
-        state.prompt = { type: "emily", entry };
         state.lastSyllable = entry.symbol;
-        targetEl.textContent = entry.symbol;
-        promptLabel.textContent = "EMILY";
-        promptLabel.classList.remove("muted");
-        promptLabel.classList.add("hand-indicator");
-        return;
+        return { type: "emily", entry };
       }
-      if (!state.entries.length) {
-        state.prompt = null;
-        targetEl.textContent = "(loading...)";
-        return;
-      }
-      const entry = state.entries[Math.floor(Math.random() * state.entries.length)];
-      const pickedEntry = state.entries.length > 1 && state.lastSyllable === entry.syllable
-        ? state.entries.find((candidate) => candidate.syllable !== state.lastSyllable) || entry
-        : entry;
+      const pickedEntry = pickEntryAvoidingLast();
+      if (!pickedEntry) return null;
       if (mode.id === "realistic") {
         const useDouble = state.entries.length > 1 && Math.random() < REALISTIC_DOUBLE_SYLLABLE_PROBABILITY;
         if (useDouble) {
-          const rightEntry = state.entries[Math.floor(Math.random() * state.entries.length)];
+          const rightEntry = pickEntryAvoidingLast() || pickedEntry;
           const pickedRightEntry = state.entries.length > 1 && rightEntry.syllable === pickedEntry.syllable
             ? state.entries.find((candidate) => candidate.syllable !== pickedEntry.syllable) || rightEntry
             : rightEntry;
-          state.prompt = { type: "realistic-double", leftEntry: pickedEntry, rightEntry: pickedRightEntry };
-          targetEl.textContent = `${pickedEntry.syllable} ${pickedRightEntry.syllable}`;
           state.lastSyllable = pickedRightEntry.syllable;
-        } else {
-          state.prompt = { type: "realistic-single", entry: pickedEntry };
-          targetEl.textContent = pickedEntry.syllable;
-          state.lastSyllable = pickedEntry.syllable;
+          return { type: "realistic-double", leftEntry: pickedEntry, rightEntry: pickedRightEntry };
         }
-        promptLabel.textContent = "REALISTIC";
-        promptLabel.classList.remove("muted");
-        promptLabel.classList.add("hand-indicator");
-        return;
+        state.lastSyllable = pickedEntry.syllable;
+        return { type: "realistic-single", entry: pickedEntry };
       }
       let hand = mode.hand;
       if (mode.hand === "random") hand = Math.random() < 0.5 ? "left" : "right";
-      state.prompt = { entry: pickedEntry, hand };
       state.lastSyllable = pickedEntry.syllable;
-      targetEl.textContent = pickedEntry.syllable;
-      const handHint = mode.id === "full" ? "FULL" : hand.toUpperCase();
-      promptLabel.textContent = handHint;
-      promptLabel.classList.remove("muted");
-      promptLabel.classList.add("hand-indicator");
+      return { entry: pickedEntry, hand };
+    }
+
+    function refillPromptQueue() {
+      while (state.promptQueue.length < PROMPT_WINDOW_SIZE) {
+        const next = createPrompt();
+        if (!next) break;
+        state.promptQueue.push(next);
+      }
+    }
+
+    function pickPrompt() {
+      if (currentMode().id !== "emily" && !state.entries.length) {
+        state.prompt = null;
+        renderPromptLine();
+        updatePromptLabel();
+        return;
+      }
+      refillPromptQueue();
+      state.prompt = state.promptQueue.shift() || createPrompt();
+      refillPromptQueue();
+      renderPromptLine();
+      updatePromptLabel();
     }
 
     function endRound() {
@@ -802,11 +1204,11 @@
       if (state.timer) clearInterval(state.timer);
       state.timer = null;
       writeLeaderboard(state.modeId, state.score);
+      recordCompletedGame();
       refreshLeaderboard();
-      setStatus(`Time's up! Final score: ${state.score}`, "ok");
-      promptLabel.textContent = "Press Start";
-      promptLabel.classList.remove("hand-indicator");
-      promptLabel.classList.add("muted");
+      refreshDiligence();
+      setStatus(`complete · final score ${state.score}`, "ok");
+      promptLabel.textContent = "press start";
       startBtn.disabled = false;
     }
 
@@ -818,6 +1220,8 @@
       scoreEl.textContent = "0";
       timeLeft.textContent = String(ROUND_SECONDS);
       setStatus("", "");
+      state.prompt = null;
+      state.promptQueue = [];
       startBtn.disabled = true;
       startBtn.blur();
       pickPrompt();
@@ -836,10 +1240,10 @@
         if (setsEqual(strokeSet, expected)) {
           state.score += 1;
           scoreEl.textContent = String(state.score);
-          setStatus("Correct", "ok");
+          setStatus("correct", "ok");
           pickPrompt();
         } else {
-          setStatus("Wrong chord. Try again.", "bad");
+          setStatus("wrong chord", "bad");
         }
         return;
       }
@@ -849,10 +1253,10 @@
         if (syllable === targetSyllable) {
           state.score += 1;
           scoreEl.textContent = String(state.score);
-          setStatus("Correct", "ok");
+          setStatus("correct", "ok");
           pickPrompt();
         } else {
-          setStatus("Wrong chord. Try again.", "bad");
+          setStatus("wrong chord", "bad");
         }
         return;
       }
@@ -862,10 +1266,10 @@
       if (expectedOptions.some((expected) => setsEqual(strokeSet, expected))) {
         state.score += 1;
         scoreEl.textContent = String(state.score);
-        setStatus("Correct", "ok");
+        setStatus("correct", "ok");
         pickPrompt();
       } else {
-        setStatus("Wrong chord. Try again.", "bad");
+        setStatus("wrong chord", "bad");
       }
     }
 
@@ -876,25 +1280,20 @@
       option.textContent = m.label;
       modeSelect.appendChild(option);
     });
+    if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
 
     modeSelect.addEventListener("change", () => {
       state.modeId = modeSelect.value;
       refreshLeaderboard();
-      emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
+      if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
+      state.prompt = null;
+      state.promptQueue = [];
       if (!state.running) {
-        targetEl.textContent = "-";
-        promptLabel.textContent = "Press Start";
-        promptLabel.classList.remove("hand-indicator");
-        promptLabel.classList.add("muted");
+        renderPromptLine();
+        promptLabel.textContent = "press start";
         setStatus("", "");
       }
     });
-
-    // --- Emily Help dialog ---
-    const emilyHelpBtn = document.getElementById("emily-help-btn");
-    const emilyHelpBackdrop = document.getElementById("emily-help-backdrop");
-    const emilyHelpClose = document.getElementById("emily-help-close");
-    const emilySymbolTbody = document.getElementById("emily-symbol-tbody");
 
     const PATTERN_LETTER_TO_PHYSICAL = { F: "u", R: "j", P: "i", B: "k", L: "o", G: "l" };
 
@@ -903,12 +1302,25 @@
     }
 
     function buildEmilyHelpTable() {
+      if (!emilySymbolTbody) return;
       emilySymbolTbody.innerHTML = "";
       for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
         const tr = document.createElement("tr");
-        const physKeys = patternToPhysical(pattern);
-        tr.innerHTML = `<td><code>${pattern || "(none)"}</code></td><td>${physKeys}</td>` +
-          symbols.map((s) => `<td>${s}</td>`).join("");
+        const patternTd = document.createElement("td");
+        const patternCode = document.createElement("code");
+        patternCode.textContent = pattern || "(none)";
+        patternTd.appendChild(patternCode);
+
+        const physicalTd = document.createElement("td");
+        physicalTd.textContent = patternToPhysical(pattern);
+
+        tr.appendChild(patternTd);
+        tr.appendChild(physicalTd);
+        symbols.forEach((symbol) => {
+          const td = document.createElement("td");
+          td.textContent = symbol;
+          tr.appendChild(td);
+        });
         emilySymbolTbody.appendChild(tr);
       }
     }
@@ -924,17 +1336,19 @@
       emilyHelpBtn.focus();
     }
 
-    emilyHelpBtn.addEventListener("click", openEmilyHelp);
-    emilyHelpClose.addEventListener("click", closeEmilyHelp);
-    emilyHelpBackdrop.addEventListener("click", (e) => {
-      if (e.target === emilyHelpBackdrop) closeEmilyHelp();
-    });
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && emilyHelpBackdrop.classList.contains("open")) {
-        e.preventDefault();
-        closeEmilyHelp();
-      }
-    }, true);
+    if (emilyHelpBtn && emilyHelpBackdrop && emilyHelpClose) {
+      emilyHelpBtn.addEventListener("click", openEmilyHelp);
+      emilyHelpClose.addEventListener("click", closeEmilyHelp);
+      emilyHelpBackdrop.addEventListener("click", (e) => {
+        if (e.target === emilyHelpBackdrop) closeEmilyHelp();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && emilyHelpBackdrop.classList.contains("open")) {
+          e.preventDefault();
+          closeEmilyHelp();
+        }
+      }, true);
+    }
 
     startBtn.addEventListener("click", startRound);
 
@@ -967,16 +1381,17 @@
     });
 
     refreshLeaderboard();
+    refreshDiligence();
 
     loadRegexMap()
       .then((regexMap) => {
         state.entries = buildSyllableEntriesFromRegexMap(regexMap);
         if (!state.entries.length) {
-          targetEl.textContent = "(no syllables loaded)";
+          targetEl.textContent = "no syllables loaded";
         }
       })
       .catch(() => {
-        targetEl.textContent = "(failed to load syllables)";
+        targetEl.textContent = "failed to load syllables";
       });
   }
 

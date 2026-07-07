@@ -161,14 +161,13 @@ describe("practice game page behavior", () => {
     expect(promptLabel?.textContent).not.toBe("Press Start");
   });
 
-  test("renders leaderboard scores linearly in a single list item", async () => {
+  test("renders leaderboard scores as a compact summary line", async () => {
     localStorage.setItem("v7.practice.leaderboard.partial-left", JSON.stringify([12, 9, 7]));
     window.eval(scriptMatch[1]);
     await Promise.resolve();
     await Promise.resolve();
 
-    const leaderboardItems = document.querySelectorAll("#leaderboard li");
-    expect(leaderboardItems).toHaveLength(1);
-    expect(leaderboardItems[0].textContent).toBe("#1: 12 · #2: 9 · #3: 7");
+    const leaderboard = document.getElementById("leaderboard");
+    expect(leaderboard?.textContent).toBe("top: 12 · 9 · 7");
   });
 });

@@ -6,6 +6,23 @@ You will see a **Vietnamese syllable** on the screen (example: `cá`, `quy`, `ng
 
 ---
 
+# 2026-07-07 deployed HTML update
+
+`static/practice.html` now matches the HTML from `https://sweet-sawine-8b8276.netlify.app`.
+
+This is a departure from the previous local HTML in a few visible ways:
+
+- The page now uses a dark Monkeytype-style theme with monospace text, compact controls, and a wider responsive layout instead of the old light card-based layout.
+- The prompt area now shows a queue of upcoming targets in a wrapping word wall. The active target is highlighted, and Mixed mode labels one-syllable vs two-syllable units inline.
+- Daily diligence is now tracked in localStorage with a completed-games count for the current local date. The count appears in the top chip and stats row.
+- The leaderboard is now displayed as a compact `top:` summary line instead of an ordered list card.
+- Mode labels and status text are lower-case and shorter, matching the new visual style.
+- Emily help remains available only in Emily mode, but the dialog now follows the dark theme and uses the same compact table data.
+
+The core gameplay contract is unchanged: rounds are still 60 seconds, scores and bests are stored locally per mode, input still comes from physical-keyboard chords, and wrong chords still do not advance the prompt.
+
+---
+
 # 1) What you need
 
 1. **A computer + a physical keyboard**  
@@ -25,12 +42,13 @@ You will see a **Vietnamese syllable** on the screen (example: `cá`, `quy`, `ng
 - **Time**: seconds remaining.
 - **Score**: correct answers in the current round.
 - **Best**: best score saved for that mode (on this browser/device).
-- **Leaderboard**: top 10 scores saved locally (localStorage).
+- **Today**: completed games recorded for the current local date.
+- **Leaderboard**: top scores saved locally for the selected mode, shown as a compact `top:` line.
 
-The middle card shows:
-- A label like **“Partial syllable, left hand — Left hand”**
-- The **target syllable** in big text (this is what you must match)
-- A status message: **Correct** / **Wrong chord. Try again.**
+The main practice area shows:
+- A mode label like **“left hand”**, **“full syllable”**, **“mixed · 2 syllables unit”**, or **“emily symbols”**
+- The current target plus upcoming targets in a word wall
+- A status message: **correct** / **wrong chord**
 
 ---
 
@@ -92,7 +110,7 @@ These pairs produce the same symbol:
 
 # 5) Game modes (what they mean)
 
-There are 4 modes:
+There are 6 modes:
 
 1. **Partial syllable, left hand**  
    You only type the **left-hand half** of the chord (+ vowel key + tone key) and **must include Space (`*`)**.
@@ -105,6 +123,12 @@ There are 4 modes:
 
 4. **Full syllable**  
    You type the **full steno-style stroke** that produces the exact syllable. (This is the hardest; start with Partial modes first.)
+
+5. **Mixed**  
+   Prompts can be one full syllable or two syllables in one unit. The page marks the active unit size.
+
+6. **Emily symbols**  
+   Prompts are symbols from the Emily table. Use the Emily help button in this mode to view the starter, pattern keys, variants, and symbol table.
 
 **Important:** In partial modes, the chord must match **exactly**. Extra keys = wrong.
 
