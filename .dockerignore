@@ -4,11 +4,14 @@
 # Unignore the specific directories we need
 !ai/
 !inference-rs/
+!practice-android/
+!practice-android/**
 !src/
 !static/
 
 # Unignore build configuration files
 !Dockerfile
+!Dockerfile.practice-android
 !docker-compose.yml
 !.dockerignore
 !package.json

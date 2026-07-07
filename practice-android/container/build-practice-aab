@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+password="${1:-${V7_SIGNING_PASSWORD:-}}"
+version="${2:-${V7_VERSION:-}}"
+version_code="${3:-${V7_VERSION_CODE:-}}"
+
+if [[ -z "${password}" || -z "${version}" ]]; then
+  cat >&2 <<'USAGE'
+usage: build-practice-aab <password> <version> [versionCode]
+
+You can also supply V7_SIGNING_PASSWORD, V7_VERSION, and optional V7_VERSION_CODE.
+The same password deterministically recreates the same P-256 signing key.
+USAGE
+  exit 2
+fi
+
+project_dir="/workspace/practice-android"
+signing_dir="/tmp/v7-practice-signing"
+keystore="${signing_dir}/v7-practice.p12"
+signing_env="${signing_dir}/signing.env"
+artifacts_dir="/workspace/artifacts"
+
+mkdir -p "$(dirname "${keystore}")" "${artifacts_dir}"
+derive-v7-practice-keystore.py "${password}" "${keystore}" > "${signing_env}"
+chmod 600 "${signing_env}"
+set -a
+# shellcheck disable=SC1090
+source "${signing_env}"
+set +a
+export SIGNING_STORE_FILE="${keystore}"
+
+gradle_args=(
+  "-Pv7PracticeVersion=${version}"
+)
+if [[ -n "${version_code}" ]]; then
+  gradle_args+=("-Pv7PracticeVersionCode=${version_code}")
+fi
+
+cd "${project_dir}"
+gradle --no-daemon clean bundleRelease "${gradle_args[@]}"
+
+bundle_path="${project_dir}/app/build/outputs/bundle/release/app-release.aab"
+artifact_name="v7-practice-${version}.aab"
+cp "${bundle_path}" "${artifacts_dir}/${artifact_name}"
+
+sha256sum "${artifacts_dir}/${artifact_name}" | tee "${artifacts_dir}/${artifact_name}.sha256"
+printf 'AAB: %s\n' "${artifacts_dir}/${artifact_name}"

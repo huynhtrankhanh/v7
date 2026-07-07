@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   inference:
     build: .
@@ -33,6 +32,13 @@ services:
       - ./data:/app/data
       - ./lm.binary:/app/lm.binary
     # Override with: docker compose run --rm train bash train_lm.sh
+  practice-android:
+    build:
+      context: .
+      dockerfile: Dockerfile.practice-android
+    volumes:
+      - ./android-artifacts:/workspace/artifacts
+    command: ["sleep", "infinity"]
 
 volumes:
   stripped-plover-data:

@@ -196,3 +196,6 @@ static/script.js
 lm.binary
 vocab.txt
 kenlm/
+
+# Android bundle outputs
+android-artifacts/

@@ -9,6 +9,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `static/`: Static web assets (HTML, SVG diagrams, and the compiled `script.js`).
 *   `tests/`: Jest unit tests for the web frontend logic.
 *   `scripts/`: Helper scripts (e2e tests, Stripped Plover agent, etc.).
+*   `practice-android/`: Android WebView wrapper that packages `static/practice.html` as a signed release app bundle.
 *   `getInference.ts`: TypeScript port of the V7 tokenizer/candidate-enumeration logic (used for client-side inference).
 *   `preprocess_corpus.py`: Python corpus preprocessor used by the Docker training build.
 *   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).
@@ -17,13 +18,14 @@ This project implements a high-performance Vietnamese text prediction engine usi
 
 ## Docker Support
 
-Docker is the recommended way to build and run the project. The `docker-compose.yml` defines three services:
+Docker is the recommended way to build and run the project. The `docker-compose.yml` defines four services:
 
 | Service | Purpose |
 | :--- | :--- |
 | `inference` | Runs the Rust inference engine in server mode (web demo). |
 | `train` | Preprocesses the corpus and trains the KenLM language model. |
 | `stripped-plover` | Optional Stripped Plover TCP proxy for dictionary-based fallback strokes. |
+| `practice-android` | Builds `static/practice.html` into a signed fullscreen Android App Bundle. |
 
 ### Build all services
 
@@ -61,6 +63,24 @@ docker compose up stripped-plover
 ```
 
 The inference service automatically connects to Stripped Plover via the `STRIPPED_PLOVER_HOST` and `STRIPPED_PLOVER_PORT` environment variables when the service is running. It is optional; the inference engine works normally without it.
+
+### Build the Practice Android App Bundle
+
+The `practice-android` service packages `static/practice.html` as a release-mode Android App Bundle under package name `com.huynhtrankhanh.v7practice`. It uses a fullscreen native WebView wrapper and derives a deterministic signing key from the password supplied at build time.
+
+```bash
+docker compose build practice-android
+docker compose up -d practice-android
+docker compose exec practice-android build-practice-aab "your signing password" "1.0.0"
+```
+
+The command writes the signed bundle and SHA-256 checksum to `android-artifacts/`. Pass a third argument to supply an explicit Android `versionCode`:
+
+```bash
+docker compose exec practice-android build-practice-aab "your signing password" "1.0.0" 100
+```
+
+See `practice-android/README.md` for the signing model, version handling, and direct `docker exec` examples.
 
 ## Training the Language Model
 
