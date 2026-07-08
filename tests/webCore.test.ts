@@ -6,6 +6,7 @@ import {
   getNextPiecemealCursorIndex,
   getPiecemealEntryIndex,
   getSelectedCandidateText,
+  groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
   normalizeQwertyDisplayKey,
   qwertyKeyboardLayout,
@@ -200,6 +201,24 @@ describe("webCore candidate diff sections", () => {
       .map((segment) => ({ text: segment.text, section: segment.candidateSection }));
 
     expect(boxed).toEqual([{ text: "mắm", section: "left" }]);
+  });
+
+  test("groups a multi-syllable candidate section into one render region", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "ta mà ca trời mắm",
+      "ta mà ca dời hắm"
+    ]);
+    const segments = renderVisibleTextSegments([
+      createIsland("vietnamese", "ta mà ca trời mắm")
+    ], [], null, plan.sections);
+    const boxedGroups = groupVisibleTextSegmentsByCandidateSection(segments)
+      .filter((group) => group.candidateSection);
+
+    expect(plan.sections.map(({ text }) => text)).toEqual(["trời mắm"]);
+    expect(boxedGroups).toHaveLength(1);
+    expect(boxedGroups[0].candidateSection).toBe("left");
+    expect(boxedGroups[0].segments.map((segment) => segment.text).join("")).toBe("trời mắm");
+    expect(boxedGroups[0].segments.filter((segment) => segment.piecemealNumber !== undefined)).toHaveLength(2);
   });
 });
 

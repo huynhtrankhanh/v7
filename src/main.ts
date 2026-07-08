@@ -12,6 +12,7 @@ import {
     findPiecemealSyllableTargets,
     getNextPiecemealCursorIndex,
     getPiecemealEntryIndex,
+    groupVisibleTextSegmentsByCandidateSection,
     mapKeyUnique,
     normalizeQwertyDisplayKey,
     qwertyKeyboardLayout,
@@ -1611,6 +1612,28 @@ function updateKeyboardLayout() {
     }
 }
 
+function renderVisibleSegmentFragment(segment) {
+    const fragment = document.createDocumentFragment();
+    if (segment.piecemealNumber === undefined) {
+        fragment.appendChild(document.createTextNode(segment.text));
+        return fragment;
+    }
+
+    const span = document.createElement("span");
+    span.className = segment.piecemealCursor ? "piecemeal-syllable active" : "piecemeal-syllable";
+    span.textContent = segment.text;
+    fragment.appendChild(span);
+
+    if (!segment.piecemealCursor) {
+        const sup = document.createElement("sup");
+        sup.className = "piecemeal-number";
+        sup.textContent = String(segment.piecemealNumber);
+        fragment.appendChild(sup);
+    }
+
+    return fragment;
+}
+
 function setKeyboardLayoutVisible(visible) {
     isKeyboardLayoutVisible = visible;
     updateKeyboardLayout();
@@ -1678,33 +1701,24 @@ function updateDisplay() {
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            for (const segment of renderVisibleTextSegments(
+            const visibleSegments = renderVisibleTextSegments(
                 state.islands,
                 state.candidates,
                 piecemealCursorIndex,
                 candidateDiffPlan?.sections ?? []
-            )) {
-                if (segment.piecemealNumber === undefined && !segment.candidateSection) {
-                    display.insertBefore(document.createTextNode(segment.text), cursor);
-                    continue;
-                }
-                const span = document.createElement("span");
-                const classes = [];
-                if (segment.piecemealNumber !== undefined) {
-                    classes.push("piecemeal-syllable");
-                    if (segment.piecemealCursor) classes.push("active");
-                }
-                if (segment.candidateSection) {
-                    classes.push("candidate-section", `candidate-section-${segment.candidateSection}`);
-                }
-                span.className = classes.join(" ");
-                span.textContent = segment.text;
-                display.insertBefore(span, cursor);
-                if (segment.piecemealNumber !== undefined && !segment.piecemealCursor) {
-                    const sup = document.createElement("sup");
-                    sup.className = "piecemeal-number";
-                    sup.textContent = String(segment.piecemealNumber);
-                    display.insertBefore(sup, cursor);
+            );
+            for (const group of groupVisibleTextSegmentsByCandidateSection(visibleSegments)) {
+                if (group.candidateSection) {
+                    const sectionSpan = document.createElement("span");
+                    sectionSpan.className = `candidate-section candidate-section-${group.candidateSection}`;
+                    for (const segment of group.segments) {
+                        sectionSpan.appendChild(renderVisibleSegmentFragment(segment));
+                    }
+                    display.insertBefore(sectionSpan, cursor);
+                } else {
+                    for (const segment of group.segments) {
+                        display.insertBefore(renderVisibleSegmentFragment(segment), cursor);
+                    }
                 }
             }
             display.style.color = "#000";

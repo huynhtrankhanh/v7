@@ -19,6 +19,11 @@ export interface VisibleTextSegment {
 
 export type CandidateDiffSectionRole = "left" | "right";
 
+export interface VisibleTextGroup {
+  candidateSection?: CandidateDiffSectionRole;
+  segments: VisibleTextSegment[];
+}
+
 export interface CandidateDiffSection {
   role: CandidateDiffSectionRole;
   start: number;
@@ -240,6 +245,26 @@ export function renderVisibleTextSegments(
     }
   }
   return applyCandidateSectionsToSegments(mergePlainSegments(segments), candidateSections);
+}
+
+export function groupVisibleTextSegmentsByCandidateSection(
+  segments: VisibleTextSegment[]
+): VisibleTextGroup[] {
+  const groups: VisibleTextGroup[] = [];
+
+  for (const segment of segments) {
+    const last = groups[groups.length - 1];
+    if (last && last.candidateSection === segment.candidateSection) {
+      last.segments.push(segment);
+    } else {
+      groups.push({
+        candidateSection: segment.candidateSection,
+        segments: [segment]
+      });
+    }
+  }
+
+  return groups;
 }
 
 export function getSelectedCandidateText(

@@ -426,7 +426,7 @@ A V7 island represents two syllables partially specified. This mode leverages th
 
 *   **Action:** Hold down the `*` key (Spacebar) while pressing the keys for the two syllables.
 *   **Result:** A list of 5 candidates appears at the bottom. The main text buffer shows the inferred text from the top candidate. Raw V7 blocks are shown only when inference is unavailable.
-*   **Candidate diffing:** When candidates differ, the UI optimizes over the whole rendered buffer and highlights the smallest useful set of ordered change sections. It may show no boxes when visible candidates are identical, one red box for a single change region, or red then black boxes for two separate change regions.
+*   **Candidate diffing:** When candidates differ, the UI optimizes over the whole rendered buffer and highlights the smallest useful set of ordered change sections. It may show no boxes when visible candidates are identical, one red region box for a single change region, or red then black region boxes for two separate change regions. A region box can contain multiple syllables; it is not drawn once per syllable.
 
 ### Candidate Selection
 
