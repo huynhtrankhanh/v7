@@ -1,6 +1,6 @@
 # V7 Practice Android Bundle
 
-This build space packages `static/practice.html` into a release-mode Android App Bundle (`.aab`). The Android app is intentionally small: it is a native fullscreen `WebView` shell that loads the checked-in practice page from Android assets.
+This build space packages `static/practice.html` into a release-mode Android App Bundle (`.aab`). The Android app is intentionally small: it is a native fullscreen `WebView` shell that loads the checked-in practice page from Android assets. The build also generates the Play Console assets you need alongside the bundle.
 
 ## App Identity
 
@@ -11,6 +11,8 @@ This build space packages `static/practice.html` into a release-mode Android App
 | Entry point | `MainActivity` |
 | Content source | `static/practice.html` |
 | Android output | Release App Bundle (`.aab`) |
+| Launcher icon | Included in the bundle via `mipmap-*` resources |
+| Play Console screenshots | Written to `android-artifacts/play-store/` |
 
 ## Files
 
@@ -55,6 +57,11 @@ For version `1.0.0`, the expected outputs are:
 ```text
 android-artifacts/v7-practice-1.0.0.aab
 android-artifacts/v7-practice-1.0.0.aab.sha256
+android-artifacts/play-store/app-icon-512.png
+android-artifacts/play-store/phone-portrait-1080x1920.png
+android-artifacts/play-store/phone-landscape-1920x1080.png
+android-artifacts/play-store/tablet-portrait-1440x2560.png
+android-artifacts/play-store/tablet-landscape-2560x1440.png
 ```
 
 ## Inputs
@@ -106,6 +113,8 @@ file:///android_asset/practice.html
 ```
 
 Rebuilding the bundle after editing `static/practice.html` is enough to package the latest practice page.
+
+The build entrypoint also generates the launcher icon resources consumed by the bundle and the Play Store screenshots used for submission.
 
 ## Verification
 

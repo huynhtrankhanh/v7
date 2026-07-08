@@ -20,6 +20,7 @@ signing_dir="/tmp/v7-practice-signing"
 keystore="${signing_dir}/v7-practice.p12"
 signing_env="${signing_dir}/signing.env"
 artifacts_dir="/workspace/artifacts"
+root_dir="/workspace"
 
 mkdir -p "$(dirname "${keystore}")" "${artifacts_dir}"
 derive-v7-practice-keystore.py "${password}" "${keystore}" > "${signing_env}"
@@ -29,6 +30,10 @@ set -a
 source "${signing_env}"
 set +a
 export SIGNING_STORE_FILE="${keystore}"
+
+python3 "${root_dir}/practice-android/container/generate-play-assets.py" \
+  --artifacts-dir "${artifacts_dir}" \
+  --icons-only
 
 gradle_args=(
   "-Pv7PracticeVersion=${version}"
@@ -45,4 +50,9 @@ artifact_name="v7-practice-${version}.aab"
 cp "${bundle_path}" "${artifacts_dir}/${artifact_name}"
 
 sha256sum "${artifacts_dir}/${artifact_name}" | tee "${artifacts_dir}/${artifact_name}.sha256"
+
+python3 "${root_dir}/practice-android/container/generate-play-assets.py" \
+  --artifacts-dir "${artifacts_dir}" \
+  --screenshots-only
+
 printf 'AAB: %s\n' "${artifacts_dir}/${artifact_name}"

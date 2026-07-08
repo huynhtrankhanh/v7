@@ -36,6 +36,8 @@ RUN yes | sdkmanager --licenses >/dev/null \
         "build-tools;35.0.0"
 
 RUN pip3 install --break-system-packages --no-cache-dir cryptography==43.0.3
+RUN pip3 install --break-system-packages --no-cache-dir pillow==11.1.0 playwright==1.50.0 \
+    && python3 -m playwright install chromium
 
 WORKDIR /workspace
 COPY . /workspace
