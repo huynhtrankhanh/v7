@@ -14,6 +14,36 @@ export interface VisibleTextSegment {
   text: string;
   piecemealNumber?: number;
   piecemealCursor?: boolean;
+  candidateSection?: CandidateDiffSectionRole;
+}
+
+export type CandidateDiffSectionRole = "left" | "right";
+
+export interface CandidateDiffSection {
+  role: CandidateDiffSectionRole;
+  start: number;
+  end: number;
+  tokenStart: number;
+  tokenEnd: number;
+  text: string;
+}
+
+export interface CandidateDiffPlanCandidateSection {
+  role: CandidateDiffSectionRole;
+  text: string;
+  changes: boolean;
+}
+
+export interface CandidateDiffPlanCandidate {
+  text: string;
+  sections: CandidateDiffPlanCandidateSection[];
+  changedRoles: CandidateDiffSectionRole[];
+}
+
+export interface CandidateDiffPlan {
+  preview: string;
+  sections: CandidateDiffSection[];
+  candidates: CandidateDiffPlanCandidate[];
 }
 
 const qwertyToUnique: Record<string, string> = {
@@ -174,7 +204,8 @@ export function renderVisibleText(islands: Island[], candidates: string[][]): st
 export function renderVisibleTextSegments(
   islands: Island[],
   candidates: string[][],
-  piecemealCursorIndex: number | null = null
+  piecemealCursorIndex: number | null = null,
+  candidateSections: CandidateDiffSection[] = []
 ): VisibleTextSegment[] {
   const targets = findPiecemealSyllableTargets(islands);
   const targetIds = new Map<string, { number: number; cursor: boolean }>();
@@ -208,7 +239,7 @@ export function renderVisibleTextSegments(
       segments.push(...renderIslandWithPiecemealTargets(curr.value, curr, i, targetIds, 0));
     }
   }
-  return mergePlainSegments(segments);
+  return applyCandidateSectionsToSegments(mergePlainSegments(segments), candidateSections);
 }
 
 export function getSelectedCandidateText(
@@ -394,7 +425,8 @@ function mergePlainSegments(segments: VisibleTextSegment[]): VisibleTextSegment[
     if (
       last &&
       last.piecemealNumber === undefined &&
-      segment.piecemealNumber === undefined
+      segment.piecemealNumber === undefined &&
+      last.candidateSection === segment.candidateSection
     ) {
       last.text += segment.text;
     } else {
@@ -424,6 +456,443 @@ export function renderCandidateText(islands: Island[], topCandidate: string[]): 
     text += curr.isV7 ? (topCandidate[v7PartIndex++] ?? `[${curr.value}]`) : curr.value;
   }
   return text;
+}
+
+export function buildCandidateDiffPlan(
+  islands: Island[],
+  candidates: string[][],
+  limit = 5
+): CandidateDiffPlan {
+  return buildCandidateTextDiffPlan(
+    candidates.slice(0, limit).map((candidate) => renderCandidateText(islands, candidate))
+  );
+}
+
+export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateDiffPlan {
+  const preview = candidateTexts[0] ?? "";
+  const baseTokens = tokenizeDiffText(preview);
+  const alignments = candidateTexts.map((text) => diffCandidateText(preview, text, baseTokens));
+  const sections = chooseCandidateDiffSections(
+    preview,
+    baseTokens,
+    alignments.flatMap((alignment) => alignment.changedIntervals)
+  );
+
+  return {
+    preview,
+    sections,
+    candidates: candidateTexts.map((text, index) => {
+      const alignment = alignments[index];
+      const sectionsForCandidate = sections.map((section) => {
+        const range = getCandidateTokenRangeForSection(alignment.chunks, section);
+        const sectionText = sliceTokenRange(text, alignment.candidateTokens, range.start, range.end);
+        const changes = candidateChangesSection(alignment.changedIntervals, section, baseTokens.length);
+        return {
+          role: section.role,
+          text: changes ? sectionText : section.text,
+          changes
+        };
+      });
+
+      return {
+        text,
+        sections: sectionsForCandidate,
+        changedRoles: sectionsForCandidate
+          .filter((section) => section.changes)
+          .map((section) => section.role)
+      };
+    })
+  };
+}
+
+interface DiffToken {
+  text: string;
+  start: number;
+  end: number;
+}
+
+interface DiffChunk {
+  baseStart: number;
+  baseEnd: number;
+  candidateStart: number;
+  candidateEnd: number;
+  equal: boolean;
+}
+
+interface CandidateTextAlignment {
+  candidateTokens: DiffToken[];
+  chunks: DiffChunk[];
+  changedIntervals: DiffInterval[];
+}
+
+interface DiffInterval {
+  start: number;
+  end: number;
+}
+
+interface TokenRange {
+  start: number;
+  end: number;
+}
+
+const diffTokenPattern = /\S+/g;
+const maxLcsMatrixCells = 40000;
+const candidateSectionPenalty = 1;
+
+function tokenizeDiffText(text: string): DiffToken[] {
+  return [...text.matchAll(diffTokenPattern)].map((match) => ({
+    text: match[0],
+    start: match.index ?? 0,
+    end: (match.index ?? 0) + match[0].length
+  }));
+}
+
+function diffCandidateText(
+  preview: string,
+  candidate: string,
+  baseTokens: DiffToken[]
+): CandidateTextAlignment {
+  const candidateTokens = tokenizeDiffText(candidate);
+  if (preview === candidate) {
+    return {
+      candidateTokens,
+      chunks: [{ baseStart: 0, baseEnd: baseTokens.length, candidateStart: 0, candidateEnd: candidateTokens.length, equal: true }],
+      changedIntervals: []
+    };
+  }
+
+  const baseValues = baseTokens.map((token) => token.text);
+  const candidateValues = candidateTokens.map((token) => token.text);
+  let prefix = 0;
+  while (
+    prefix < baseValues.length &&
+    prefix < candidateValues.length &&
+    baseValues[prefix] === candidateValues[prefix]
+  ) {
+    prefix += 1;
+  }
+
+  let baseEnd = baseValues.length;
+  let candidateEnd = candidateValues.length;
+  while (
+    baseEnd > prefix &&
+    candidateEnd > prefix &&
+    baseValues[baseEnd - 1] === candidateValues[candidateEnd - 1]
+  ) {
+    baseEnd -= 1;
+    candidateEnd -= 1;
+  }
+
+  const baseMiddle = baseValues.slice(prefix, baseEnd);
+  const candidateMiddle = candidateValues.slice(prefix, candidateEnd);
+  const matches = getLcsMatches(baseMiddle, candidateMiddle, prefix, prefix);
+  const chunks: DiffChunk[] = [];
+  pushDiffChunk(chunks, { baseStart: 0, baseEnd: prefix, candidateStart: 0, candidateEnd: prefix, equal: true });
+
+  let baseCursor = prefix;
+  let candidateCursor = prefix;
+  for (const match of matches) {
+    pushDiffChunk(chunks, {
+      baseStart: baseCursor,
+      baseEnd: match.baseIndex,
+      candidateStart: candidateCursor,
+      candidateEnd: match.candidateIndex,
+      equal: false
+    });
+    pushDiffChunk(chunks, {
+      baseStart: match.baseIndex,
+      baseEnd: match.baseIndex + 1,
+      candidateStart: match.candidateIndex,
+      candidateEnd: match.candidateIndex + 1,
+      equal: true
+    });
+    baseCursor = match.baseIndex + 1;
+    candidateCursor = match.candidateIndex + 1;
+  }
+
+  pushDiffChunk(chunks, {
+    baseStart: baseCursor,
+    baseEnd,
+    candidateStart: candidateCursor,
+    candidateEnd,
+    equal: false
+  });
+  pushDiffChunk(chunks, {
+    baseStart: baseEnd,
+    baseEnd: baseValues.length,
+    candidateStart: candidateEnd,
+    candidateEnd: candidateValues.length,
+    equal: true
+  });
+
+  return {
+    candidateTokens,
+    chunks,
+    changedIntervals: chunks
+      .filter((chunk) => !chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd))
+      .map((chunk) => ({ start: chunk.baseStart, end: chunk.baseEnd }))
+  };
+}
+
+function pushDiffChunk(chunks: DiffChunk[], chunk: DiffChunk): void {
+  if (
+    chunk.baseStart === chunk.baseEnd &&
+    chunk.candidateStart === chunk.candidateEnd
+  ) {
+    return;
+  }
+
+  const last = chunks[chunks.length - 1];
+  if (
+    last &&
+    last.equal === chunk.equal &&
+    last.baseEnd === chunk.baseStart &&
+    last.candidateEnd === chunk.candidateStart
+  ) {
+    last.baseEnd = chunk.baseEnd;
+    last.candidateEnd = chunk.candidateEnd;
+    return;
+  }
+
+  chunks.push({ ...chunk });
+}
+
+function getLcsMatches(
+  baseTokens: string[],
+  candidateTokens: string[],
+  baseOffset: number,
+  candidateOffset: number
+): { baseIndex: number; candidateIndex: number }[] {
+  if (baseTokens.length === 0 || candidateTokens.length === 0) return [];
+  if (baseTokens.length * candidateTokens.length > maxLcsMatrixCells) return [];
+
+  const dp = Array.from({ length: baseTokens.length + 1 }, () =>
+    new Array<number>(candidateTokens.length + 1).fill(0)
+  );
+
+  for (let i = baseTokens.length - 1; i >= 0; i--) {
+    for (let j = candidateTokens.length - 1; j >= 0; j--) {
+      dp[i][j] = baseTokens[i] === candidateTokens[j]
+        ? dp[i + 1][j + 1] + 1
+        : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+
+  const matches: { baseIndex: number; candidateIndex: number }[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < baseTokens.length && j < candidateTokens.length) {
+    if (baseTokens[i] === candidateTokens[j]) {
+      matches.push({ baseIndex: baseOffset + i, candidateIndex: candidateOffset + j });
+      i += 1;
+      j += 1;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+
+  return matches;
+}
+
+function chooseCandidateDiffSections(
+  preview: string,
+  baseTokens: DiffToken[],
+  intervals: DiffInterval[]
+): CandidateDiffSection[] {
+  if (baseTokens.length === 0 || intervals.length === 0) return [];
+
+  const atoms = buildChangedTokenAtoms(
+    intervals
+      .map((interval) => normalizeDiffInterval(interval, baseTokens.length))
+      .filter((interval) => interval.end > interval.start)
+  );
+  if (atoms.length === 0) return [];
+
+  let bestGroups = [makeSectionRange(atoms, 0, atoms.length - 1)];
+  let bestScore = scoreSectionRanges(bestGroups, baseTokens);
+
+  for (let split = 1; split < atoms.length; split++) {
+    const groups = [
+      makeSectionRange(atoms, 0, split - 1),
+      makeSectionRange(atoms, split, atoms.length - 1)
+    ];
+    const score = scoreSectionRanges(groups, baseTokens);
+    if (score <= bestScore) {
+      bestScore = score;
+      bestGroups = groups;
+    }
+  }
+
+  return bestGroups.map((range, index) => ({
+    role: index === 0 ? "left" : "right",
+    start: baseTokens[range.start]?.start ?? preview.length,
+    end: baseTokens[range.end - 1]?.end ?? preview.length,
+    tokenStart: range.start,
+    tokenEnd: range.end,
+    text: sliceTokenRange(preview, baseTokens, range.start, range.end)
+  }));
+}
+
+function normalizeDiffInterval(interval: DiffInterval, baseTokenCount: number): DiffInterval {
+  if (interval.start < interval.end) return interval;
+  if (interval.start < baseTokenCount) return { start: interval.start, end: interval.start + 1 };
+  if (interval.start > 0) return { start: interval.start - 1, end: interval.start };
+  return { start: 0, end: 0 };
+}
+
+function mergeDiffIntervals(intervals: DiffInterval[]): DiffInterval[] {
+  const sorted = intervals
+    .map((interval) => ({ ...interval }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: DiffInterval[] = [];
+
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.start > last.end) {
+      merged.push(interval);
+    } else {
+      last.end = Math.max(last.end, interval.end);
+    }
+  }
+
+  return merged;
+}
+
+function buildChangedTokenAtoms(intervals: DiffInterval[]): DiffInterval[] {
+  if (intervals.length === 0) return [];
+
+  const boundaries = Array.from(new Set(
+    intervals.flatMap((interval) => [interval.start, interval.end])
+  )).sort((a, b) => a - b);
+  const atoms: DiffInterval[] = [];
+
+  for (let i = 0; i < boundaries.length - 1; i++) {
+    const start = boundaries[i];
+    const end = boundaries[i + 1];
+    if (start === end) continue;
+    const covered = intervals.some((interval) => interval.start < end && interval.end > start);
+    if (covered) {
+      atoms.push({ start, end });
+    }
+  }
+
+  return atoms;
+}
+
+function makeSectionRange(intervals: DiffInterval[], startIndex: number, endIndex: number): TokenRange {
+  return {
+    start: intervals[startIndex].start,
+    end: intervals[endIndex].end
+  };
+}
+
+function scoreSectionRanges(ranges: TokenRange[], tokens: DiffToken[]): number {
+  return ranges.reduce((sum, range) => {
+    const start = tokens[range.start]?.start ?? 0;
+    const end = tokens[range.end - 1]?.end ?? start;
+    return sum + Math.max(0, end - start);
+  }, ranges.length * candidateSectionPenalty);
+}
+
+function getCandidateTokenRangeForSection(chunks: DiffChunk[], section: CandidateDiffSection): TokenRange {
+  const start = mapBaseBoundaryToCandidate(chunks, section.tokenStart, "start");
+  const end = mapBaseBoundaryToCandidate(chunks, section.tokenEnd, "end");
+  return {
+    start: Math.min(start, end),
+    end: Math.max(start, end)
+  };
+}
+
+function mapBaseBoundaryToCandidate(
+  chunks: DiffChunk[],
+  boundary: number,
+  side: "start" | "end"
+): number {
+  const insertion = chunks.find((chunk) =>
+    !chunk.equal &&
+    chunk.baseStart === boundary &&
+    chunk.baseEnd === boundary &&
+    chunk.candidateStart !== chunk.candidateEnd
+  );
+  if (insertion) {
+    return side === "start" ? insertion.candidateStart : insertion.candidateEnd;
+  }
+
+  for (const chunk of chunks) {
+    if (boundary === chunk.baseStart) return chunk.candidateStart;
+    if (boundary === chunk.baseEnd) return chunk.candidateEnd;
+    if (boundary > chunk.baseStart && boundary < chunk.baseEnd) {
+      if (chunk.equal) {
+        return chunk.candidateStart + (boundary - chunk.baseStart);
+      }
+      const baseLength = chunk.baseEnd - chunk.baseStart;
+      const candidateLength = chunk.candidateEnd - chunk.candidateStart;
+      if (baseLength > 0 && candidateLength > 0) {
+        const offset = boundary - chunk.baseStart;
+        return chunk.candidateStart + Math.round((offset / baseLength) * candidateLength);
+      }
+      return side === "start" ? chunk.candidateStart : chunk.candidateEnd;
+    }
+  }
+
+  return chunks[chunks.length - 1]?.candidateEnd ?? 0;
+}
+
+function candidateChangesSection(
+  intervals: DiffInterval[],
+  section: CandidateDiffSection,
+  baseTokenCount: number
+): boolean {
+  return intervals.some((interval) => {
+    const normalized = normalizeDiffInterval(interval, baseTokenCount);
+    return normalized.start < section.tokenEnd && normalized.end > section.tokenStart;
+  });
+}
+
+function sliceTokenRange(text: string, tokens: DiffToken[], start: number, end: number): string {
+  if (start >= end) return "";
+  const startChar = tokens[start]?.start ?? tokens[end - 1]?.end ?? text.length;
+  const endChar = tokens[end - 1]?.end ?? startChar;
+  return text.slice(startChar, endChar);
+}
+
+function applyCandidateSectionsToSegments(
+  segments: VisibleTextSegment[],
+  sections: CandidateDiffSection[]
+): VisibleTextSegment[] {
+  if (sections.length === 0) return segments;
+
+  const sortedSections = sections
+    .filter((section) => section.end > section.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  if (sortedSections.length === 0) return segments;
+
+  const next: VisibleTextSegment[] = [];
+  let offset = 0;
+  for (const segment of segments) {
+    let segmentOffset = 0;
+    while (segmentOffset < segment.text.length) {
+      const absolute = offset + segmentOffset;
+      const section = sortedSections.find((candidate) =>
+        absolute >= candidate.start && absolute < candidate.end
+      );
+      const nextBoundary = section
+        ? section.end
+        : sortedSections.find((candidate) => candidate.start > absolute)?.start ?? Number.POSITIVE_INFINITY;
+      const take = Math.min(segment.text.length - segmentOffset, nextBoundary - absolute);
+      next.push({
+        ...segment,
+        text: segment.text.slice(segmentOffset, segmentOffset + take),
+        ...(section ? { candidateSection: section.role } : {})
+      });
+      segmentOffset += take;
+    }
+    offset += segment.text.length;
+  }
+
+  return mergePlainSegments(next);
 }
 
 function mapInferredPartsToV7Islands(islands: Island[], topCandidate: string[] | null): Map<number, string> {

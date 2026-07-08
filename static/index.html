@@ -65,6 +65,10 @@
             flex-wrap: wrap;
             align-content: flex-start;
         }
+        #candidate-area.compact {
+            gap: 6px;
+            padding: 10px 12px;
+        }
         .candidate {
             padding: 12px 16px;
             background-color: white;
@@ -83,6 +87,14 @@
         #candidate-area.horizontal .candidate {
             flex: 1 1 14rem;
         }
+        #candidate-area.horizontal.compact .candidate {
+            align-items: center;
+            flex: 0 1 auto;
+            justify-content: flex-start;
+            min-width: min(4.75rem, 100%);
+            padding: 8px 10px;
+            width: max-content;
+        }
         .candidate:active {
             background-color: #e0e0ff;
         }
@@ -92,9 +104,39 @@
             font-size: 1.1rem;
             overflow-wrap: anywhere;
         }
-        .common-prefix {
-            color: #999;
-            opacity: 0.6;
+        #candidate-area.compact .candidate-text {
+            flex-grow: 0;
+            font-size: 1rem;
+        }
+        .candidate-diff-summary {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+        }
+        #candidate-area.compact .candidate-diff-summary {
+            gap: 0.35rem;
+        }
+        .candidate-section {
+            border: 2px solid currentColor;
+            border-radius: 4px;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
+            line-height: 1.35;
+            padding: 0 3px;
+        }
+        #candidate-area.compact .candidate-section {
+            padding: 0 2px;
+        }
+        .candidate-section-left {
+            border-color: #dc2626;
+        }
+        .candidate-section-right {
+            border-color: #111111;
+        }
+        .candidate-unchanged {
+            color: #6b7280;
+            font-style: italic;
         }
         #keyboard-layout {
             background: #111827;

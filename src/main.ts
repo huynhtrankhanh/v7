@@ -7,6 +7,7 @@ import {
 } from "./candidateSelection";
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
+    buildCandidateDiffPlan,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
     getNextPiecemealCursorIndex,
@@ -15,7 +16,6 @@ import {
     normalizeQwertyDisplayKey,
     qwertyKeyboardLayout,
     renderVisibleText,
-    renderCandidateText,
     renderVisibleTextSegments,
     replacePiecemealSyllable,
     selectCandidateIslands
@@ -1542,30 +1542,6 @@ function selectCandidate(index, options: SelectCandidateOptions = { saveHistory:
     return true;
 }
 
-function getCommonPrefix(strings) {
-    if (strings.length === 0) return "";
-    let prefix = strings[0];
-    for (let i = 1; i < strings.length; i++) {
-        while (strings[i].indexOf(prefix) !== 0) {
-            prefix = prefix.substring(0, prefix.length - 1);
-            if (prefix === "") return "";
-        }
-    }
-    
-    // Truncate to last space to ensure full syllables
-    if (prefix.length > 0 && prefix.length < strings[0].length) {
-        const lastSpace = prefix.lastIndexOf(" ");
-        if (lastSpace !== -1) {
-            prefix = prefix.substring(0, lastSpace + 1);
-        } else {
-            // No space found, so no common word prefix
-            prefix = "";
-        }
-    }
-    
-    return prefix;
-}
-
 function updateInputPadding(display, textArea, candidateArea) {
     if (!display.dataset.basePaddingBottom) {
         display.dataset.basePaddingBottom = String(parseFloat(getComputedStyle(display).paddingBottom) || 0);
@@ -1667,6 +1643,9 @@ function updateDisplay() {
     const candArea = document.getElementById("candidate-area");
 
     const text = renderVisibleText(state.islands, state.candidates);
+    const candidateDiffPlan = state.candidates.length > 0
+        ? buildCandidateDiffPlan(state.islands, state.candidates)
+        : null;
     
     if (isRawMode) {
         // Raw Mode: Show textarea
@@ -1699,16 +1678,29 @@ function updateDisplay() {
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            for (const segment of renderVisibleTextSegments(state.islands, state.candidates, piecemealCursorIndex)) {
-                if (segment.piecemealNumber === undefined) {
+            for (const segment of renderVisibleTextSegments(
+                state.islands,
+                state.candidates,
+                piecemealCursorIndex,
+                candidateDiffPlan?.sections ?? []
+            )) {
+                if (segment.piecemealNumber === undefined && !segment.candidateSection) {
                     display.insertBefore(document.createTextNode(segment.text), cursor);
                     continue;
                 }
                 const span = document.createElement("span");
-                span.className = segment.piecemealCursor ? "piecemeal-syllable active" : "piecemeal-syllable";
+                const classes = [];
+                if (segment.piecemealNumber !== undefined) {
+                    classes.push("piecemeal-syllable");
+                    if (segment.piecemealCursor) classes.push("active");
+                }
+                if (segment.candidateSection) {
+                    classes.push("candidate-section", `candidate-section-${segment.candidateSection}`);
+                }
+                span.className = classes.join(" ");
                 span.textContent = segment.text;
                 display.insertBefore(span, cursor);
-                if (!segment.piecemealCursor) {
+                if (segment.piecemealNumber !== undefined && !segment.piecemealCursor) {
                     const sup = document.createElement("sup");
                     sup.className = "piecemeal-number";
                     sup.textContent = String(segment.piecemealNumber);
@@ -1719,26 +1711,23 @@ function updateDisplay() {
         }
         // Render Candidates
         candArea.replaceChildren();
-        if (state.candidates.length > 0) {
-            // Calculate common prefix for top 5 candidates
-            const visibleCandidates = state.candidates.slice(0, 5);
-            const candStrings = visibleCandidates.map(c => renderCandidateText(state.islands, c));
-            const prefix = getCommonPrefix(candStrings);
+        if (candidateDiffPlan && state.candidates.length > 0) {
+            const visibleCandidates = candidateDiffPlan.candidates.slice(0, 5);
+            const maxSummaryLength = Math.max(
+                ...visibleCandidates.map((candidate) => {
+                    const changedSections = candidate.sections.filter((section) => section.changes);
+                    if (candidateDiffPlan.sections.length === 0) return candidate.text.length;
+                    if (changedSections.length === 0) return "current".length;
+                    return changedSections.reduce((sum, section) => sum + Math.max(section.text.length, 7), 0);
+                })
+            );
 
-            // Check if candidates are short enough for horizontal display
-            let maxRemainingLength = 0;
-            for (const s of candStrings) {
-                maxRemainingLength = Math.max(maxRemainingLength, s.length - prefix.length);
-            }
-            
-            // Threshold: e.g. 15 chars
-            if (maxRemainingLength < 15) {
-                candArea.classList.add("horizontal");
-            } else {
-                candArea.classList.remove("horizontal");
-            }
+            const useCompactCandidates = candidateDiffPlan.sections.length > 0 && maxSummaryLength < 24;
+            candArea.classList.toggle("horizontal", useCompactCandidates);
+            candArea.classList.toggle("compact", useCompactCandidates);
 
             for (let i = 0; i < visibleCandidates.length; i++) {
+                const candidate = visibleCandidates[i];
                 const div = document.createElement("div");
                 div.className = "candidate";
                 
@@ -1749,18 +1738,23 @@ function updateDisplay() {
                 div.appendChild(document.createTextNode(" "));
 
                 const span = document.createElement("span");
-                span.className = "candidate-text";
+                span.className = "candidate-text candidate-diff-summary";
+                const changedSections = candidate.sections.filter((section) => section.changes);
 
-                if (prefix.length > 0) {
-                     const prefixSpan = document.createElement("span");
-                     prefixSpan.className = "common-prefix";
-                     prefixSpan.textContent = "[...]";
-                     span.appendChild(prefixSpan);
-
-                     const suffix = candStrings[i].substring(prefix.length);
-                     span.appendChild(document.createTextNode(suffix));
+                if (candidateDiffPlan.sections.length === 0) {
+                     span.textContent = candidate.text;
+                } else if (changedSections.length === 0) {
+                     const unchanged = document.createElement("span");
+                     unchanged.className = "candidate-unchanged";
+                     unchanged.textContent = "current";
+                     span.appendChild(unchanged);
                 } else {
-                     span.textContent = candStrings[i];
+                     for (const section of changedSections) {
+                         const sectionSpan = document.createElement("span");
+                         sectionSpan.className = `candidate-section candidate-section-${section.role}`;
+                         sectionSpan.textContent = section.text || "(empty)";
+                         span.appendChild(sectionSpan);
+                     }
                 }
 
                 div.appendChild(span);
@@ -1769,6 +1763,7 @@ function updateDisplay() {
             }
         } else {
             candArea.classList.remove("horizontal");
+            candArea.classList.remove("compact");
             const div = document.createElement("div");
             div.className = "candidate";
             div.style.cursor = "default";

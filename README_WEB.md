@@ -426,6 +426,7 @@ A V7 island represents two syllables partially specified. This mode leverages th
 
 *   **Action:** Hold down the `*` key (Spacebar) while pressing the keys for the two syllables.
 *   **Result:** A list of 5 candidates appears at the bottom. The main text buffer shows the inferred text from the top candidate. Raw V7 blocks are shown only when inference is unavailable.
+*   **Candidate diffing:** When candidates differ, the UI optimizes over the whole rendered buffer and highlights the smallest useful set of ordered change sections. It may show no boxes when visible candidates are identical, one red box for a single change region, or red then black boxes for two separate change regions.
 
 ### Candidate Selection
 
@@ -437,6 +438,7 @@ When candidates are displayed, you must select one to proceed. Use the following
 - `-Z`: Candidate 5
 
 Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
+The candidate list mirrors the buffer boxes instead of repeating the entire sentence. Each row shows `current` when it matches the top preview, or shows only the section values that would change: red for the left section, black for the right section. Short section summaries are laid out compactly so more candidates fit on screen.
 Candidate selection keys can also be combined with **single-syllable** strokes in the same chord: the candidate is selected first, then the syllable is appended, and this combined action is treated as a single undo step.
 If the combined chord does not form a valid single-syllable stroke, it is ignored.
 

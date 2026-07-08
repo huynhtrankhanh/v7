@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import {
+  buildCandidateTextDiffPlan,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
@@ -129,6 +130,76 @@ describe("webCore candidate selection", () => {
     expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
       createIsland("vietnamese", "trời mà không")
     ]);
+  });
+});
+
+describe("webCore candidate diff sections", () => {
+  test("uses zero sections when visible candidates do not differ", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "ta mà ca trời mắm",
+      "ta mà ca trời mắm"
+    ]);
+
+    expect(plan.sections).toEqual([]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([[], []]);
+  });
+
+  test("uses one whole-buffer section for a single differing range", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "ta mà ca trời mắm",
+      "ta mà ca trời mắng",
+      "ta mà ca trời mắn"
+    ]);
+
+    expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: "left", text: "mắm" }
+    ]);
+    expect(plan.candidates.map((candidate) => ({
+      roles: candidate.changedRoles,
+      sections: candidate.sections.map(({ role, text, changes }) => ({ role, text, changes }))
+    }))).toEqual([
+      { roles: [], sections: [{ role: "left", text: "mắm", changes: false }] },
+      { roles: ["left"], sections: [{ role: "left", text: "mắng", changes: true }] },
+      { roles: ["left"], sections: [{ role: "left", text: "mắn", changes: true }] }
+    ]);
+  });
+
+  test("uses two ordered whole-buffer sections when differences are separated", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "alpha beta keep delta omega",
+      "alpha x keep delta omega",
+      "alpha beta keep y omega",
+      "alpha x keep y omega"
+    ]);
+
+    expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: "left", text: "beta" },
+      { role: "right", text: "delta" }
+    ]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
+      [],
+      ["left"],
+      ["right"],
+      ["left", "right"]
+    ]);
+    expect(plan.candidates[3].sections.map(({ role, text, changes }) => ({ role, text, changes }))).toEqual([
+      { role: "left", text: "x", changes: true },
+      { role: "right", text: "y", changes: true }
+    ]);
+  });
+
+  test("marks the same section in rendered buffer segments", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "ta mà ca trời mắm",
+      "ta mà ca trời mắng"
+    ]);
+    const boxed = renderVisibleTextSegments([
+      createIsland("vietnamese", "ta mà ca trời mắm")
+    ], [], null, plan.sections)
+      .filter((segment) => segment.candidateSection)
+      .map((segment) => ({ text: segment.text, section: segment.candidateSection }));
+
+    expect(boxed).toEqual([{ text: "mắm", section: "left" }]);
   });
 });
 
