@@ -37,13 +37,13 @@ docker compose up -d practice-android
 Create a signed release bundle:
 
 ```sh
-docker compose exec practice-android build-practice-aab "your signing password" "1.0.0"
+docker compose exec practice-android build-practice-aab "1.0.0"
 ```
 
 The command can also be run with direct Docker exec:
 
 ```sh
-docker exec v7-practice-android-1 build-practice-aab "your signing password" "1.0.0"
+docker exec -it v7-practice-android-1 build-practice-aab "1.0.0"
 ```
 
 Artifacts are written through the bind mount to:
@@ -69,19 +69,20 @@ android-artifacts/play-store/tablet-landscape-2560x1440.png
 The build command accepts:
 
 ```text
-build-practice-aab <password> <versionName> [versionCode]
+build-practice-aab <versionName> [versionCode]
 ```
 
 | Argument | Required | Meaning |
 | :--- | :--- | :--- |
-| `password` | Yes | Secret used to derive the Android signing key and keystore password. |
 | `versionName` | Yes | Human-readable Android version name, for example `1.0.0`. |
 | `versionCode` | No | Integer Android version code. If omitted, digits are derived from `versionName`; if no digits exist, `1` is used. |
+
+The signing password is prompted from stdin with `*` masking when run interactively. For automation, provide `V7_SIGNING_PASSWORD` in the environment instead of passing the secret as a command-line argument.
 
 Example with explicit version code:
 
 ```sh
-docker compose exec practice-android build-practice-aab "your signing password" "1.0.0" 100
+docker compose exec practice-android build-practice-aab "1.0.0" 100
 ```
 
 The same values can be supplied via environment variables:

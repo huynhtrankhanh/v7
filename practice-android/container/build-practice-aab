@@ -1,17 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-password="${1:-${V7_SIGNING_PASSWORD:-}}"
-version="${2:-${V7_VERSION:-}}"
-version_code="${3:-${V7_VERSION_CODE:-}}"
+version="${1:-${V7_VERSION:-}}"
+version_code="${2:-${V7_VERSION_CODE:-}}"
 
-if [[ -z "${password}" || -z "${version}" ]]; then
+if [[ $# -gt 2 || -z "${version}" ]]; then
   cat >&2 <<'USAGE'
-usage: build-practice-aab <password> <version> [versionCode]
+usage: build-practice-aab <version> [versionCode]
 
+The signing password is read from stdin with masking when run interactively.
 You can also supply V7_SIGNING_PASSWORD, V7_VERSION, and optional V7_VERSION_CODE.
 The same password deterministically recreates the same P-256 signing key.
 USAGE
+  exit 2
+fi
+
+read_signing_password() {
+  if [[ -n "${V7_SIGNING_PASSWORD:-}" ]]; then
+    password="${V7_SIGNING_PASSWORD}"
+    return
+  fi
+
+  password=""
+  if [[ -t 0 ]]; then
+    local char
+    printf 'Signing password: ' >&2
+    while IFS= read -r -s -n 1 char; do
+      if [[ "${char}" == $'\n' || "${char}" == $'\r' ]]; then
+        break
+      fi
+      if [[ "${char}" == $'\177' || "${char}" == $'\b' ]]; then
+        if [[ -n "${password}" ]]; then
+          password="${password%?}"
+          printf '\b \b' >&2
+        fi
+        continue
+      fi
+      password+="${char}"
+      printf '*' >&2
+    done
+    printf '\n' >&2
+    return
+  fi
+
+  IFS= read -r password || password=""
+}
+
+read_signing_password
+if [[ -z "${password}" ]]; then
+  printf 'Signing password is required.\n' >&2
   exit 2
 fi
 
@@ -23,7 +60,7 @@ artifacts_dir="/workspace/artifacts"
 root_dir="/workspace"
 
 mkdir -p "$(dirname "${keystore}")" "${artifacts_dir}"
-derive-v7-practice-keystore.py "${password}" "${keystore}" > "${signing_env}"
+printf '%s' "${password}" | derive-v7-practice-keystore.py "${keystore}" > "${signing_env}"
 chmod 600 "${signing_env}"
 set -a
 # shellcheck disable=SC1090

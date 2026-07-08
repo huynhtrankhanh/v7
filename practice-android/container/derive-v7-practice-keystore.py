@@ -24,12 +24,16 @@ def printable_secret(label: str, password: str) -> str:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        print("usage: derive-v7-practice-keystore.py <password> <output.p12>", file=sys.stderr)
+    if len(sys.argv) != 2:
+        print("usage: derive-v7-practice-keystore.py <output.p12>", file=sys.stderr)
         return 2
 
-    password = sys.argv[1]
-    output = pathlib.Path(sys.argv[2])
+    password = sys.stdin.read()
+    if not password:
+        print("signing password is required on stdin", file=sys.stderr)
+        return 2
+
+    output = pathlib.Path(sys.argv[1])
     private_value = (int.from_bytes(secret("p256-private-key", password), "big") % (P256_ORDER - 1)) + 1
     private_key = ec.derive_private_key(private_value, ec.SECP256R1())
 

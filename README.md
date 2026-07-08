@@ -71,13 +71,13 @@ The `practice-android` service packages `static/practice.html` as a release-mode
 ```bash
 docker compose build practice-android
 docker compose up -d practice-android
-docker compose exec practice-android build-practice-aab "your signing password" "1.0.0"
+docker compose exec practice-android build-practice-aab "1.0.0"
 ```
 
 The command writes the signed bundle and SHA-256 checksum to `android-artifacts/`, and also generates Play Console assets in `android-artifacts/play-store/` plus the launcher icon resources required inside the bundle. Pass a third argument to supply an explicit Android `versionCode`:
 
 ```bash
-docker compose exec practice-android build-practice-aab "your signing password" "1.0.0" 100
+docker compose exec practice-android build-practice-aab "1.0.0" 100
 ```
 
 See `practice-android/README.md` for the signing model, version handling, and direct `docker exec` examples.
