@@ -24,6 +24,8 @@
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       margin: 0;
       min-height: 100vh;
+      min-height: 100dvh;
+      overflow-x: hidden;
       background: var(--bg);
       color: var(--fg);
     }
@@ -50,7 +52,8 @@
       color: var(--accent);
       font-size: clamp(1.15rem, 4vw, 1.75rem);
       font-weight: 700;
-      letter-spacing: -0.04em;
+      letter-spacing: 0;
+      min-width: 0;
     }
 
     .brand span {
@@ -66,7 +69,8 @@
       border: 1px solid var(--border);
       border-radius: 999px;
       padding: 8px 12px;
-      white-space: nowrap;
+      white-space: normal;
+      overflow-wrap: anywhere;
       box-shadow: 0 12px 28px var(--shadow);
     }
 
@@ -74,7 +78,7 @@
 
     .controls {
       display: grid;
-      grid-template-columns: minmax(160px, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, max-content));
       gap: 10px;
       align-items: center;
       margin-bottom: 18px;
@@ -87,6 +91,8 @@
       border: 1px solid var(--border);
       padding: 11px 13px;
       outline: none;
+      line-height: 1.2;
+      min-width: 0;
     }
 
     select {
@@ -101,6 +107,7 @@
       border: none;
       cursor: pointer;
       font-weight: 700;
+      white-space: normal;
     }
 
     button:disabled {
@@ -149,7 +156,7 @@
       margin: 0 0 6px;
       color: var(--accent);
       font-size: 1.15rem;
-      letter-spacing: -0.03em;
+      letter-spacing: 0;
     }
 
     .dialog h3 {
@@ -171,6 +178,8 @@
     .dialog table {
       width: 100%;
       border-collapse: collapse;
+      display: block;
+      overflow-x: auto;
       margin-top: 8px;
       font-size: 0.86rem;
     }
@@ -213,7 +222,7 @@
 
     .stats {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
       gap: 10px;
       margin-bottom: clamp(30px, 6vw, 66px);
     }
@@ -259,15 +268,15 @@
       display: flex;
       flex-wrap: wrap;
       align-content: flex-start;
-      gap: 0.35em 0.55em;
-      min-height: 5.8em;
-      max-height: 7.3em;
-      overflow: hidden;
+      gap: 0.75em 0.55em;
+      min-height: 0;
+      max-height: none;
+      overflow: visible;
       color: var(--muted);
-      font-size: clamp(1.85rem, 7vw, 3.55rem);
+      font-size: clamp(1.85rem, 5vw, 3.2rem);
       font-weight: 700;
       line-height: 1.22;
-      letter-spacing: -0.065em;
+      letter-spacing: 0;
     }
 
     .word-token {
@@ -306,6 +315,7 @@
       color: var(--muted);
       font-weight: 700;
       text-transform: lowercase;
+      overflow-wrap: anywhere;
     }
 
     .status.ok { color: var(--ok); }
@@ -340,8 +350,8 @@
       }
 
       .word-wall {
-        font-size: clamp(1.65rem, 10vw, 2.7rem);
-        max-height: 8.2em;
+        font-size: clamp(1.65rem, 8vw, 2.7rem);
+        max-height: none;
       }
 
       .footer-row {

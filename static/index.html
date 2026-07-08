@@ -11,14 +11,21 @@
             padding: 0;
             display: flex;
             flex-direction: column;
+            min-height: 100vh;
+            min-height: 100dvh;
             height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
             background-color: #f0f0f0;
         }
         #text-display {
-            flex-grow: 1;
+            flex: 1 1 auto;
+            min-height: 0;
+            min-width: 0;
             padding: 20px;
             overflow-y: auto;
             white-space: pre-wrap;
+            overflow-wrap: anywhere;
             font-size: 1.5rem; /* Larger font for readability */
             line-height: 1.6;
             background-color: white;
@@ -28,7 +35,9 @@
             background-color: #f8f8f8;
             padding: 15px;
             border-top: 2px solid #ddd;
-            max-height: 40vh; /* Max 40% of viewport */
+            max-height: min(40vh, 20rem); /* Keep the text area usable at high zoom. */
+            max-height: min(40dvh, 20rem);
+            min-height: 0;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
@@ -49,23 +58,34 @@
             border-radius: 8px;
             cursor: pointer;
             display: flex;
+            gap: 0.4rem;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
             transition: background-color 0.2s;
+        }
+        #candidate-area.horizontal .candidate {
+            flex: 1 1 14rem;
         }
         .candidate:active {
             background-color: #e0e0ff;
         }
         .candidate-text {
             flex-grow: 1;
+            min-width: 0;
             font-size: 1.1rem;
+            overflow-wrap: anywhere;
         }
         .common-prefix {
             color: #999;
             opacity: 0.6;
         }
         #text-input {
-            flex-grow: 1;
+            flex: 1 1 auto;
+            min-height: 0;
+            min-width: 0;
             padding: 20px;
             font-size: 1.5rem;
             line-height: 1.6;
@@ -124,8 +144,12 @@
             padding: 10px 16px;
             font-size: 0.9rem;
             display: flex;
+            flex: 0 0 auto;
             flex-direction: column;
             gap: 8px;
+            max-height: min(45vh, 24rem);
+            max-height: min(45dvh, 24rem);
+            overflow: auto;
             box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
         }
         #plover-controls button,
@@ -137,6 +161,8 @@
             color: #111827;
             cursor: pointer;
             font-size: 0.85rem;
+            line-height: 1.25;
+            white-space: normal;
         }
         #plover-controls button:hover,
         #plover-dictionary-dialog button:hover {
@@ -167,6 +193,10 @@
             flex-wrap: wrap;
             gap: 8px;
             align-items: center;
+            min-width: 0;
+        }
+        .plover-row > * {
+            min-width: 0;
         }
         #plover-status.available {
             color: #0a7a0a;
@@ -196,6 +226,9 @@
             flex-direction: column;
             gap: 12px;
             max-height: min(86vh, 760px);
+            max-height: min(86dvh, 760px);
+            min-height: 0;
+            overflow: auto;
             padding: 16px;
             background: #f8fafc;
         }
@@ -211,6 +244,7 @@
         }
         .plover-tabs {
             display: flex;
+            flex-wrap: wrap;
             gap: 6px;
             border-bottom: 1px solid #d8dee8;
             padding-bottom: 8px;
@@ -237,6 +271,8 @@
             flex-direction: column;
             gap: 8px;
             max-height: min(42vh, 360px);
+            max-height: min(42dvh, 360px);
+            min-height: 0;
             overflow: auto;
         }
         .plover-dictionary-item {
@@ -314,6 +350,9 @@
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
+        }
+        .plover-grid > * {
+            min-width: 0;
         }
         .plover-grid.three {
             grid-template-columns: repeat(3, minmax(0, 1fr));
