@@ -380,22 +380,17 @@ function updatePloverSoloUI() {
 
 function updatePloverStatusUI() {
     const statusEl = document.getElementById("plover-status");
-    const toggleButton = document.getElementById("plover-toggle");
     const dictionaryButton = document.getElementById("plover-dictionary-open");
-    if (!statusEl || !toggleButton) return;
+    if (!statusEl) return;
     if (strippedPlover.available) {
         statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
         statusEl.classList.remove("unavailable");
         statusEl.classList.add("available");
-        toggleButton.disabled = false;
-        toggleButton.textContent = strippedPlover.enabled ? "Disable" : "Enable";
         if (dictionaryButton) dictionaryButton.disabled = false;
     } else {
         statusEl.textContent = "Unavailable";
         statusEl.classList.remove("available");
         statusEl.classList.add("unavailable");
-        toggleButton.disabled = true;
-        toggleButton.textContent = "Enable";
         if (dictionaryButton) dictionaryButton.disabled = true;
     }
     updatePloverSoloUI();
@@ -1829,7 +1824,6 @@ document.addEventListener("keyup", (e) => {
 });
 
 function setupPloverControls() {
-    const toggleButton = document.getElementById("plover-toggle");
     const dictionaryOpenButton = document.getElementById("plover-dictionary-open");
     const dictionaryDialog = document.getElementById("plover-dictionary-dialog");
     const dictionaryCloseButton = document.getElementById("plover-dictionary-close");
@@ -1862,11 +1856,6 @@ function setupPloverControls() {
         });
     }
 
-    if (toggleButton) {
-        toggleButton.addEventListener("click", () => {
-            void togglePloverMode();
-        });
-    }
     if (dictionaryOpenButton && dictionaryDialog) {
         dictionaryOpenButton.addEventListener("click", () => {
             if (typeof dictionaryDialog.showModal === "function") {

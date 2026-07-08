@@ -175,8 +175,8 @@ async function main() {
       throw new Error(`WebSocket RPC missing dictionaries: ${JSON.stringify(wsResult)}`);
     }
 
-    // Toggle plover mode via UI.
-    await page.click("#plover-toggle");
+    // Toggle plover mode with the Q key, which maps to the # chord.
+    await page.keyboard.press("q");
     await page.waitForFunction(
       () => document.querySelector("#plover-status")?.textContent?.toLowerCase().includes("enabled"),
       { timeout: 3000 }
