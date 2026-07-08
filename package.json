@@ -8,6 +8,7 @@
     "test:unit": "jest",
     "test:e2e": "npm run build && node scripts/fullstack-e2e.js",
     "test:e2e:v7-piecemeal": "npm run build && node scripts/v7-piecemeal-e2e.js",
+    "test:keyboard-layout": "npm run build && node scripts/keyboard-layout-e2e.js",
     "test:zoom": "npm run build && node scripts/text-zoom-e2e.js",
     "test": "npm run test:unit"
   },

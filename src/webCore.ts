@@ -24,6 +24,52 @@ const qwertyToUnique: Record<string, string> = {
   " ": "*"
 };
 
+export interface QwertyKeyboardKey {
+  key: string;
+  label: string;
+  width?: number;
+}
+
+export const qwertyKeyboardLayout: QwertyKeyboardKey[][] = [
+  "1234567890".split("").map((key) => ({ key, label: key })),
+  "qwertyuiop".split("").map((key) => ({ key, label: key.toUpperCase() })),
+  [
+    ..."asdfghjkl".split("").map((key) => ({ key, label: key.toUpperCase() })),
+    { key: ";", label: ";" },
+    { key: "Enter", label: "Enter", width: 2.25 }
+  ],
+  [
+    { key: "Shift", label: "Shift", width: 2.25 },
+    ..."zxcvbnm".split("").map((key) => ({ key, label: key.toUpperCase() })),
+    { key: "Shift", label: "Shift", width: 2.25 }
+  ],
+  [{ key: " ", label: "Spacebar", width: 7 }]
+];
+
+const qwertyCodeMap: Record<string, string> = {
+  Space: " ",
+  Enter: "Enter",
+  NumpadEnter: "Enter",
+  ShiftLeft: "Shift",
+  ShiftRight: "Shift",
+  Semicolon: ";"
+};
+
+export function normalizeQwertyDisplayKey(key: string, code = ""): string | null {
+  if (code in qwertyCodeMap) return qwertyCodeMap[code];
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+
+  if (key === " " || key === "Spacebar" || key === "Space") return " ";
+  if (key === "Enter") return "Enter";
+  if (key === "Shift") return "Shift";
+
+  const normalized = key.toLowerCase();
+  if (/^[a-z0-9]$/.test(normalized)) return normalized;
+  if (key === ";") return key;
+  return null;
+}
+
 const strokeOrder = [
   "#", "S-", "T-", "K-", "P-", "W-", "H-", "R-",
   "A", "O", "*", "E", "U",

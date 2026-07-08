@@ -6,6 +6,8 @@ import {
   getPiecemealEntryIndex,
   getSelectedCandidateText,
   mapKeyUnique,
+  normalizeQwertyDisplayKey,
+  qwertyKeyboardLayout,
   renderVisibleTextSegments,
   renderVisibleText,
   replacePiecemealSyllable,
@@ -83,6 +85,25 @@ describe("webCore keyboard input", () => {
     expect(tracker.keyUp("a")).toBeNull();
     expect(tracker.keyUp("c")).toBeNull();
     expect(tracker.keyUp("p")).toBe("SAT");
+  });
+
+  test("defines the on-screen keyboard as QWERTY rows", () => {
+    const rows = qwertyKeyboardLayout.map((row) => row.map((key) => key.key));
+
+    expect(rows[0]).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
+    expect(rows[1]).toEqual(["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);
+    expect(rows[2]).toEqual(["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "Enter"]);
+    expect(rows[3]).toEqual(["Shift", "z", "x", "c", "v", "b", "n", "m", "Shift"]);
+    expect(rows[4]).toEqual([" "]);
+  });
+
+  test("normalizes physical keys for pressed-key display", () => {
+    expect(normalizeQwertyDisplayKey("A", "KeyA")).toBe("a");
+    expect(normalizeQwertyDisplayKey("!", "Digit1")).toBe("1");
+    expect(normalizeQwertyDisplayKey(" ", "Space")).toBe(" ");
+    expect(normalizeQwertyDisplayKey("Shift", "ShiftLeft")).toBe("Shift");
+    expect(normalizeQwertyDisplayKey("Enter", "Enter")).toBe("Enter");
+    expect(normalizeQwertyDisplayKey("ArrowLeft", "ArrowLeft")).toBeNull();
   });
 });
 

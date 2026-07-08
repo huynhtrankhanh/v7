@@ -12,6 +12,8 @@ import {
     getNextPiecemealCursorIndex,
     getPiecemealEntryIndex,
     mapKeyUnique,
+    normalizeQwertyDisplayKey,
+    qwertyKeyboardLayout,
     renderVisibleText,
     renderCandidateText,
     renderVisibleTextSegments,
@@ -234,6 +236,8 @@ const state = {
 let isRawMode = false;
 let piecemealCursorIndex: number | null = null;
 let inferenceAbortController = null;
+let isKeyboardLayoutVisible = false;
+const pressedQwertyKeys = new Set<string>();
 let strippedPlover = {
     available: false,
     enabled: false,
@@ -1585,6 +1589,78 @@ function scrollToBottom(element) {
     });
 }
 
+function formatKeyboardKeyLabel(key) {
+    if (key === " ") return "Spacebar";
+    if (key.length === 1) return key.toUpperCase();
+    return key;
+}
+
+function renderKeyboardLayout() {
+    const board = document.getElementById("qwerty-board");
+    if (!board) return;
+    board.replaceChildren();
+
+    for (const row of qwertyKeyboardLayout) {
+        const rowEl = document.createElement("div");
+        rowEl.className = "qwerty-row";
+        for (const key of row) {
+            const keyEl = document.createElement("div");
+            keyEl.className = "qwerty-key";
+            keyEl.dataset.key = key.key;
+            keyEl.style.setProperty("--key-width", String(key.width ?? 1));
+            keyEl.textContent = key.label;
+            keyEl.setAttribute("aria-label", `${key.label} key`);
+            rowEl.appendChild(keyEl);
+        }
+        board.appendChild(rowEl);
+    }
+}
+
+function updateKeyboardLayout() {
+    const layout = document.getElementById("keyboard-layout");
+    if (!layout) return;
+
+    layout.classList.toggle("visible", isKeyboardLayoutVisible);
+    layout.setAttribute("aria-hidden", isKeyboardLayoutVisible ? "false" : "true");
+
+    for (const keyEl of layout.querySelectorAll(".qwerty-key")) {
+        const key = keyEl.dataset.key || "";
+        keyEl.classList.toggle("is-pressed", pressedQwertyKeys.has(key));
+    }
+
+    const summary = document.getElementById("keyboard-pressed-summary");
+    if (summary) {
+        const labels = Array.from(pressedQwertyKeys, formatKeyboardKeyLabel);
+        summary.textContent = labels.length > 0 ? labels.join(" + ") : "No keys pressed";
+    }
+}
+
+function setKeyboardLayoutVisible(visible) {
+    isKeyboardLayoutVisible = visible;
+    updateKeyboardLayout();
+}
+
+function toggleKeyboardLayout() {
+    setKeyboardLayoutVisible(!isKeyboardLayoutVisible);
+}
+
+function trackQwertyKey(event, isPressed) {
+    const key = normalizeQwertyDisplayKey(event.key, event.code || "");
+    if (!key) return;
+    if (isPressed) {
+        pressedQwertyKeys.add(key);
+    } else {
+        pressedQwertyKeys.delete(key);
+    }
+    updateKeyboardLayout();
+}
+
+function clearPressedQwertyKeys() {
+    if (pressedQwertyKeys.size === 0) return;
+    pressedQwertyKeys.clear();
+    updateKeyboardLayout();
+}
+
 function updateDisplay() {
     const display = document.getElementById("text-display");
     const textArea = document.getElementById("text-input");
@@ -1717,6 +1793,16 @@ function updateDisplay() {
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
+    trackQwertyKey(e, true);
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        if (!e.repeat) {
+            toggleKeyboardLayout();
+        }
+        e.preventDefault();
+        return;
+    }
+
     // Global Shortcuts
     if (e.ctrlKey && e.key === 'c') {
         // Copy entire buffer if nothing selected
@@ -1809,6 +1895,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keyup", (e) => {
+    trackQwertyKey(e, false);
+
     if (isRawMode) return; // Don't process steno in raw mode
 
     if (isDictionaryTextInputFocused(e.target)) {
@@ -1820,6 +1908,13 @@ document.addEventListener("keyup", (e) => {
         handleChord(strokeStr).catch((err) => {
             console.error("Stroke handling failed", err);
         });
+    }
+});
+
+window.addEventListener("blur", clearPressedQwertyKeys);
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+        clearPressedQwertyKeys();
     }
 });
 
@@ -2059,4 +2154,6 @@ function setupPloverControls() {
     });
 }
 
+renderKeyboardLayout();
+updateKeyboardLayout();
 setupPloverControls();
