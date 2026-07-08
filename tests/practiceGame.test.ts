@@ -146,12 +146,38 @@ describe("practice game page behavior", () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
-  test("starts a round from keyboard without clicking start button", async () => {
+  async function initPracticePage(randomValue = 0) {
+    jest.spyOn(window.Math, "random").mockReturnValue(randomValue);
     window.eval(scriptMatch[1]);
     await Promise.resolve();
     await Promise.resolve();
+  }
+
+  function sendKey(target: EventTarget, type: "keydown" | "keyup", key: string) {
+    target.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true }));
+  }
+
+  function sendActiveKey(type: "keydown" | "keyup", key: string) {
+    sendKey(document.activeElement || document, type, key);
+  }
+
+  function sendChord(keys: string[]) {
+    keys.forEach((key) => sendActiveKey("keydown", key));
+    keys.slice().reverse().forEach((key) => sendActiveKey("keyup", key));
+  }
+
+  function selectEmilyMode() {
+    const modeSelect = document.getElementById("mode-select") as HTMLSelectElement;
+    modeSelect.value = "emily";
+    modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    return modeSelect;
+  }
+
+  test("starts a round from keyboard without clicking start button", async () => {
+    await initPracticePage();
 
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
@@ -161,11 +187,54 @@ describe("practice game page behavior", () => {
     expect(promptLabel?.textContent).not.toBe("Press Start");
   });
 
+  test("accepts gameplay chord after starting from a focused mode select", async () => {
+    await initPracticePage();
+    const modeSelect = selectEmilyMode();
+    modeSelect.focus();
+
+    sendKey(modeSelect, "keydown", "Enter");
+    sendChord(["d", "r", "u", "j"]);
+
+    const score = document.getElementById("score");
+    expect(document.getElementById("start-btn")?.hasAttribute("disabled")).toBe(true);
+    expect(document.activeElement?.id).toBe("practice-area");
+    expect(score?.textContent).toBe("1");
+  });
+
+  test("accepts gameplay chord while a game control button has focus during a round", async () => {
+    await initPracticePage();
+    selectEmilyMode();
+    const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
+    const helpBtn = document.getElementById("emily-help-btn") as HTMLButtonElement;
+
+    startBtn.click();
+    helpBtn.focus();
+    sendChord(["d", "r", "u", "j"]);
+
+    expect(document.getElementById("score")?.textContent).toBe("1");
+  });
+
+  test("blocks gameplay keys while help dialog is open and resumes capture after close", async () => {
+    await initPracticePage();
+    selectEmilyMode();
+    const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
+    const helpBtn = document.getElementById("emily-help-btn") as HTMLButtonElement;
+
+    startBtn.click();
+    helpBtn.click();
+    sendChord(["d", "r", "u", "j"]);
+    expect(document.getElementById("score")?.textContent).toBe("0");
+
+    sendKey(document.activeElement || document, "keydown", "Escape");
+    sendChord(["d", "r", "u", "j"]);
+
+    expect(document.activeElement?.id).toBe("practice-area");
+    expect(document.getElementById("score")?.textContent).toBe("1");
+  });
+
   test("renders leaderboard scores as a compact summary line", async () => {
     localStorage.setItem("v7.practice.leaderboard.partial-left", JSON.stringify([12, 9, 7]));
-    window.eval(scriptMatch[1]);
-    await Promise.resolve();
-    await Promise.resolve();
+    await initPracticePage();
 
     const leaderboard = document.getElementById("leaderboard");
     expect(leaderboard?.textContent).toBe("top: 12 · 9 · 7");

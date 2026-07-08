@@ -256,6 +256,10 @@
       gap: 18px;
     }
 
+    .practice-card:focus {
+      outline: none;
+    }
+
     .mode-indicator {
       min-height: 1.5rem;
       color: var(--accent);
@@ -380,7 +384,7 @@
       <div class="stat"><div class="label">today</div><div class="value" id="today-games-stat">0</div></div>
     </section>
 
-    <main class="practice-card">
+    <main class="practice-card" id="practice-area" tabindex="-1">
       <div class="mode-indicator" id="prompt-label">press start</div>
       <div class="word-wall" id="target" aria-live="polite">-</div>
       <div class="status" id="status"></div>
@@ -1009,6 +1013,7 @@
     const todayGamesStatEl = document.getElementById("today-games-stat");
     const promptLabel = document.getElementById("prompt-label");
     const targetEl = document.getElementById("target");
+    const practiceArea = document.getElementById("practice-area");
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
     const emilyHelpBtn = document.getElementById("emily-help-btn");
@@ -1030,6 +1035,35 @@
 
     let heldKeys = new Set();
     let strokeKeys = new Set();
+
+    function resetStrokeState() {
+      heldKeys = new Set();
+      strokeKeys = new Set();
+    }
+
+    function focusPracticeArea() {
+      if (!practiceArea || typeof practiceArea.focus !== "function") return;
+      try {
+        practiceArea.focus({ preventScroll: true });
+      } catch (_) {
+        practiceArea.focus();
+      }
+    }
+
+    function isEditableTarget(target) {
+      if (!target || target.nodeType !== 1) return false;
+      const tagName = target.tagName;
+      return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable === true;
+    }
+
+    function isFocusedControlTarget(target) {
+      if (!target || target.nodeType !== 1) return false;
+      return ["SELECT", "BUTTON"].includes(target.tagName);
+    }
+
+    function isEmilyHelpOpen() {
+      return !!emilyHelpBackdrop && emilyHelpBackdrop.classList.contains("open");
+    }
 
     function currentMode() {
       return MODES.find((m) => m.id === state.modeId) || MODES[0];
@@ -1211,6 +1245,7 @@
 
     function endRound() {
       state.running = false;
+      resetStrokeState();
       if (state.timer) clearInterval(state.timer);
       state.timer = null;
       writeLeaderboard(state.modeId, state.score);
@@ -1220,10 +1255,12 @@
       setStatus(`complete · final score ${state.score}`, "ok");
       promptLabel.textContent = "press start";
       startBtn.disabled = false;
+      modeSelect.disabled = false;
     }
 
     function startRound() {
       if (currentMode().id !== "emily" && !state.entries.length) return;
+      resetStrokeState();
       state.running = true;
       state.score = 0;
       state.time = ROUND_SECONDS;
@@ -1233,7 +1270,9 @@
       state.prompt = null;
       state.promptQueue = [];
       startBtn.disabled = true;
+      modeSelect.disabled = true;
       startBtn.blur();
+      focusPracticeArea();
       pickPrompt();
 
       state.timer = setInterval(() => {
@@ -1293,6 +1332,7 @@
     if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
 
     modeSelect.addEventListener("change", () => {
+      resetStrokeState();
       state.modeId = modeSelect.value;
       refreshLeaderboard();
       if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
@@ -1336,14 +1376,17 @@
     }
 
     function openEmilyHelp() {
+      resetStrokeState();
       buildEmilyHelpTable();
       emilyHelpBackdrop.classList.add("open");
       emilyHelpClose.focus();
     }
 
     function closeEmilyHelp() {
+      resetStrokeState();
       emilyHelpBackdrop.classList.remove("open");
-      emilyHelpBtn.focus();
+      if (state.running) focusPracticeArea();
+      else emilyHelpBtn.focus();
     }
 
     if (emilyHelpBtn && emilyHelpBackdrop && emilyHelpClose) {
@@ -1363,31 +1406,40 @@
     startBtn.addEventListener("click", startRound);
 
     document.addEventListener("keydown", (e) => {
+      if (isEmilyHelpOpen()) return;
       if (!state.running && !e.repeat && e.key === "Enter") {
-        if (!e.target || !["INPUT", "TEXTAREA"].includes(e.target.tagName)) {
+        if (!isEditableTarget(e.target)) {
           e.preventDefault();
           startRound();
           return;
         }
       }
-      if (e.target && ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
       if (e.repeat) return;
+      if (isEditableTarget(e.target)) return;
       const mapped = mapKeyUnique(e.key);
       if (!mapped) return;
+      if (!state.running && isFocusedControlTarget(e.target)) return;
       heldKeys.add(mapped);
       strokeKeys.add(mapped);
       e.preventDefault();
     });
 
     document.addEventListener("keyup", (e) => {
+      if (isEmilyHelpOpen()) return;
       const mapped = mapKeyUnique(e.key);
       if (!mapped) return;
+      if (!state.running && !heldKeys.has(mapped) && !strokeKeys.has(mapped)) return;
       heldKeys.delete(mapped);
       if (heldKeys.size === 0 && strokeKeys.size > 0) {
         handleStroke(new Set(strokeKeys));
         strokeKeys = new Set();
       }
       e.preventDefault();
+    });
+
+    window.addEventListener("blur", resetStrokeState);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) resetStrokeState();
     });
 
     refreshLeaderboard();
