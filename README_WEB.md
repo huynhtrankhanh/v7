@@ -15,6 +15,7 @@ The web demo provides a real-time stenographic input interface for the V7 infere
 - **Piecemeal Undo State:** Undo restores Piecemeal Syllable Edit mode when the reverted history frame was created during a Piecemeal edit, including the Piecemeal cursor position.
 - **Smart Spacing:** Automatically manages spacing between different types of content (Vietnamese text, punctuation, capitals) to prevent double spacing.
 - **Emily Symbols:** Supports Emily symbol strokes with configurable attachment spacing.
+- **Pressed-Key Display:** `Ctrl+K` toggles a QWERTY keyboard display that highlights currently held physical keys for debugging and demonstrations.
 - **Mobile Friendly:** Optimized for display on mobile devices with external keyboards.
 
 ## Island Types & Spacing Rules
@@ -127,6 +128,7 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 
 ### Shortcuts
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
+- `Ctrl+K`: Toggles the pressed-key keyboard display. The display is informational only; it does not accept clicks or change input behavior. In landscape orientation it appears to the right of the text and candidates, and in portrait orientation it appears below the candidate list.
 
 ### Stripped Plover Integration
 The web demo can optionally integrate with Stripped Plover for strokes that do not match the built-in rules. Press the `#` key (Q on the QWERTY layout) to toggle Stripped Plover mode. When enabled, all strokes are routed to Stripped Plover. When disabled, unrecognized strokes are sent to Stripped Plover as a one-shot translation.
