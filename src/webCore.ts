@@ -488,9 +488,11 @@ export function buildCandidateDiffPlan(
   candidates: string[][],
   limit = 5
 ): CandidateDiffPlan {
-  return buildCandidateTextDiffPlan(
-    candidates.slice(0, limit).map((candidate) => renderCandidateText(islands, candidate))
-  );
+  const visibleCandidates = candidates.slice(0, limit);
+  return buildStructuredCandidateDiffPlan(islands, visibleCandidates)
+    ?? buildCandidateTextDiffPlan(
+      visibleCandidates.map((candidate) => renderCandidateText(islands, candidate))
+    );
 }
 
 export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateDiffPlan {
@@ -560,16 +562,167 @@ interface TokenRange {
   end: number;
 }
 
+interface RenderedCandidatePart {
+  tokens: DiffToken[];
+}
+
+interface RenderedCandidateWithParts {
+  text: string;
+  parts: RenderedCandidatePart[];
+}
+
 const diffTokenPattern = /\S+/g;
-const maxLcsMatrixCells = 40000;
 const candidateSectionPenalty = 1;
 
-function tokenizeDiffText(text: string): DiffToken[] {
+function tokenizeDiffText(text: string, offset = 0): DiffToken[] {
   return [...text.matchAll(diffTokenPattern)].map((match) => ({
     text: match[0],
-    start: match.index ?? 0,
-    end: (match.index ?? 0) + match[0].length
+    start: offset + (match.index ?? 0),
+    end: offset + (match.index ?? 0) + match[0].length
   }));
+}
+
+function buildStructuredCandidateDiffPlan(
+  islands: Island[],
+  candidates: string[][]
+): CandidateDiffPlan | null {
+  if (candidates.length === 0) return buildCandidateTextDiffPlan([]);
+
+  // Inference candidates preserve V7 island order, so compare only those replacement parts.
+  const renderedCandidates = candidates.map((candidate) =>
+    renderCandidateWithV7Parts(islands, candidate)
+  );
+  const preview = renderedCandidates[0].text;
+  const baseParts = renderedCandidates[0].parts;
+  if (baseParts.length === 0) return null;
+  if (!renderedCandidates.every((candidate) => candidate.parts.length === baseParts.length)) {
+    return null;
+  }
+
+  const baseTokens = baseParts.flatMap((part) => part.tokens);
+  const alignments = renderedCandidates.map((candidate) =>
+    diffCandidateParts(baseParts, candidate.parts)
+  );
+  const sections = chooseCandidateDiffSections(
+    preview,
+    baseTokens,
+    alignments.flatMap((alignment) => alignment.changedIntervals)
+  );
+
+  return {
+    preview,
+    sections,
+    candidates: renderedCandidates.map((candidate, index) => {
+      const alignment = alignments[index];
+      const sectionsForCandidate = sections.map((section) => {
+        const range = getCandidateTokenRangeForSection(alignment.chunks, section);
+        const sectionText = sliceTokenRange(candidate.text, alignment.candidateTokens, range.start, range.end);
+        const changes = candidateChangesSection(alignment.changedIntervals, section, baseTokens.length);
+        return {
+          role: section.role,
+          text: changes ? sectionText : section.text,
+          changes
+        };
+      });
+
+      return {
+        text: candidate.text,
+        sections: sectionsForCandidate,
+        changedRoles: sectionsForCandidate
+          .filter((section) => section.changes)
+          .map((section) => section.role)
+      };
+    })
+  };
+}
+
+function renderCandidateWithV7Parts(islands: Island[], candidate: string[]): RenderedCandidateWithParts {
+  if (usesFullAlternatingCandidateShape(islands, candidate)) {
+    return renderFullShapeCandidateWithV7Parts(islands, candidate);
+  }
+
+  const parts: RenderedCandidatePart[] = [];
+  let text = "";
+  let v7PartIndex = 0;
+  for (let i = 0; i < islands.length; i++) {
+    const curr = islands[i];
+    const prev = i > 0 ? islands[i - 1] : null;
+    if (prev && shouldAddSpace(prev, curr)) {
+      text += " ";
+    }
+
+    if (curr.isV7) {
+      const partText = candidate[v7PartIndex++] ?? `[${curr.value}]`;
+      const start = text.length;
+      text += partText;
+      parts.push({
+        tokens: tokenizeDiffText(partText, start)
+      });
+    } else {
+      text += curr.value;
+    }
+  }
+
+  return { text, parts };
+}
+
+function renderFullShapeCandidateWithV7Parts(
+  islands: Island[],
+  candidate: string[]
+): RenderedCandidateWithParts {
+  const parts: RenderedCandidatePart[] = [];
+  const slotByCandidateIndex = new Map(
+    getV7CandidateSlots(islands).map((slot) => [slot.fullCandidateIndex, slot])
+  );
+  let text = "";
+
+  for (let i = 0; i < candidate.length; i++) {
+    const partText = candidate[i] ?? "";
+    const start = text.length;
+    text += partText;
+    const slot = slotByCandidateIndex.get(i);
+    if (slot) {
+      parts.push({
+        tokens: tokenizeDiffText(partText, start)
+      });
+    }
+  }
+
+  return { text, parts };
+}
+
+function diffCandidateParts(
+  baseParts: RenderedCandidatePart[],
+  candidateParts: RenderedCandidatePart[]
+): CandidateTextAlignment {
+  const candidateTokens = candidateParts.flatMap((part) => part.tokens);
+  const chunks: DiffChunk[] = [];
+  const changedIntervals: DiffInterval[] = [];
+  let baseOffset = 0;
+  let candidateOffset = 0;
+
+  for (let i = 0; i < baseParts.length; i++) {
+    const basePart = baseParts[i];
+    const candidatePart = candidateParts[i];
+    const partChunks = diffTokenValues(
+      basePart.tokens.map((token) => token.text),
+      candidatePart.tokens.map((token) => token.text),
+      baseOffset,
+      candidateOffset
+    );
+
+    for (const chunk of partChunks) {
+      pushDiffChunk(chunks, chunk);
+      if (!chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd)) {
+        changedIntervals.push({ start: chunk.baseStart, end: chunk.baseEnd });
+      }
+    }
+
+    baseOffset += basePart.tokens.length;
+    candidateOffset += candidatePart.tokens.length;
+  }
+
+  return { candidateTokens, chunks, changedIntervals };
 }
 
 function diffCandidateText(
@@ -588,6 +741,71 @@ function diffCandidateText(
 
   const baseValues = baseTokens.map((token) => token.text);
   const candidateValues = candidateTokens.map((token) => token.text);
+  const chunks = diffTokenValues(baseValues, candidateValues, 0, 0);
+
+  return {
+    candidateTokens,
+    chunks,
+    changedIntervals: chunks
+      .filter((chunk) => !chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd))
+      .map((chunk) => ({ start: chunk.baseStart, end: chunk.baseEnd }))
+  };
+}
+
+function diffTokenValues(
+  baseValues: string[],
+  candidateValues: string[],
+  baseOffset: number,
+  candidateOffset: number
+): DiffChunk[] {
+  const { prefix, baseEnd, candidateEnd } = findCommonTokenEdges(baseValues, candidateValues);
+  const chunks: DiffChunk[] = [];
+  pushDiffChunk(chunks, {
+    baseStart: baseOffset,
+    baseEnd: baseOffset + prefix,
+    candidateStart: candidateOffset,
+    candidateEnd: candidateOffset + prefix,
+    equal: true
+  });
+
+  const baseMiddleLength = baseEnd - prefix;
+  const candidateMiddleLength = candidateEnd - prefix;
+  const pairedMiddleLength = Math.min(baseMiddleLength, candidateMiddleLength);
+  for (let i = 0; i < pairedMiddleLength; i++) {
+    const baseIndex = prefix + i;
+    const candidateIndex = prefix + i;
+    const equal = baseValues[baseIndex] === candidateValues[candidateIndex];
+    pushDiffChunk(chunks, {
+      baseStart: baseOffset + baseIndex,
+      baseEnd: baseOffset + baseIndex + 1,
+      candidateStart: candidateOffset + candidateIndex,
+      candidateEnd: candidateOffset + candidateIndex + 1,
+      equal
+    });
+  }
+  pushDiffChunk(chunks, {
+    baseStart: baseOffset + prefix + pairedMiddleLength,
+    baseEnd: baseOffset + baseEnd,
+    candidateStart: candidateOffset + prefix + pairedMiddleLength,
+    candidateEnd: candidateOffset + candidateEnd,
+    equal: false
+  });
+
+  pushDiffChunk(chunks, {
+    baseStart: baseOffset + baseEnd,
+    baseEnd: baseOffset + baseValues.length,
+    candidateStart: candidateOffset + candidateEnd,
+    candidateEnd: candidateOffset + candidateValues.length,
+    equal: true
+  });
+
+  return chunks;
+}
+
+function findCommonTokenEdges(
+  baseValues: string[],
+  candidateValues: string[]
+): { prefix: number; baseEnd: number; candidateEnd: number } {
   let prefix = 0;
   while (
     prefix < baseValues.length &&
@@ -608,55 +826,7 @@ function diffCandidateText(
     candidateEnd -= 1;
   }
 
-  const baseMiddle = baseValues.slice(prefix, baseEnd);
-  const candidateMiddle = candidateValues.slice(prefix, candidateEnd);
-  const matches = getLcsMatches(baseMiddle, candidateMiddle, prefix, prefix);
-  const chunks: DiffChunk[] = [];
-  pushDiffChunk(chunks, { baseStart: 0, baseEnd: prefix, candidateStart: 0, candidateEnd: prefix, equal: true });
-
-  let baseCursor = prefix;
-  let candidateCursor = prefix;
-  for (const match of matches) {
-    pushDiffChunk(chunks, {
-      baseStart: baseCursor,
-      baseEnd: match.baseIndex,
-      candidateStart: candidateCursor,
-      candidateEnd: match.candidateIndex,
-      equal: false
-    });
-    pushDiffChunk(chunks, {
-      baseStart: match.baseIndex,
-      baseEnd: match.baseIndex + 1,
-      candidateStart: match.candidateIndex,
-      candidateEnd: match.candidateIndex + 1,
-      equal: true
-    });
-    baseCursor = match.baseIndex + 1;
-    candidateCursor = match.candidateIndex + 1;
-  }
-
-  pushDiffChunk(chunks, {
-    baseStart: baseCursor,
-    baseEnd,
-    candidateStart: candidateCursor,
-    candidateEnd,
-    equal: false
-  });
-  pushDiffChunk(chunks, {
-    baseStart: baseEnd,
-    baseEnd: baseValues.length,
-    candidateStart: candidateEnd,
-    candidateEnd: candidateValues.length,
-    equal: true
-  });
-
-  return {
-    candidateTokens,
-    chunks,
-    changedIntervals: chunks
-      .filter((chunk) => !chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd))
-      .map((chunk) => ({ start: chunk.baseStart, end: chunk.baseEnd }))
-  };
+  return { prefix, baseEnd, candidateEnd };
 }
 
 function pushDiffChunk(chunks: DiffChunk[], chunk: DiffChunk): void {
@@ -680,45 +850,6 @@ function pushDiffChunk(chunks: DiffChunk[], chunk: DiffChunk): void {
   }
 
   chunks.push({ ...chunk });
-}
-
-function getLcsMatches(
-  baseTokens: string[],
-  candidateTokens: string[],
-  baseOffset: number,
-  candidateOffset: number
-): { baseIndex: number; candidateIndex: number }[] {
-  if (baseTokens.length === 0 || candidateTokens.length === 0) return [];
-  if (baseTokens.length * candidateTokens.length > maxLcsMatrixCells) return [];
-
-  const dp = Array.from({ length: baseTokens.length + 1 }, () =>
-    new Array<number>(candidateTokens.length + 1).fill(0)
-  );
-
-  for (let i = baseTokens.length - 1; i >= 0; i--) {
-    for (let j = candidateTokens.length - 1; j >= 0; j--) {
-      dp[i][j] = baseTokens[i] === candidateTokens[j]
-        ? dp[i + 1][j + 1] + 1
-        : Math.max(dp[i + 1][j], dp[i][j + 1]);
-    }
-  }
-
-  const matches: { baseIndex: number; candidateIndex: number }[] = [];
-  let i = 0;
-  let j = 0;
-  while (i < baseTokens.length && j < candidateTokens.length) {
-    if (baseTokens[i] === candidateTokens[j]) {
-      matches.push({ baseIndex: baseOffset + i, candidateIndex: candidateOffset + j });
-      i += 1;
-      j += 1;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
-      i += 1;
-    } else {
-      j += 1;
-    }
-  }
-
-  return matches;
 }
 
 function chooseCandidateDiffSections(
@@ -765,24 +896,6 @@ function normalizeDiffInterval(interval: DiffInterval, baseTokenCount: number): 
   if (interval.start < baseTokenCount) return { start: interval.start, end: interval.start + 1 };
   if (interval.start > 0) return { start: interval.start - 1, end: interval.start };
   return { start: 0, end: 0 };
-}
-
-function mergeDiffIntervals(intervals: DiffInterval[]): DiffInterval[] {
-  const sorted = intervals
-    .map((interval) => ({ ...interval }))
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-  const merged: DiffInterval[] = [];
-
-  for (const interval of sorted) {
-    const last = merged[merged.length - 1];
-    if (!last || interval.start > last.end) {
-      merged.push(interval);
-    } else {
-      last.end = Math.max(last.end, interval.end);
-    }
-  }
-
-  return merged;
 }
 
 function buildChangedTokenAtoms(intervals: DiffInterval[]): DiffInterval[] {

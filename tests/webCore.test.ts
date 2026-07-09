@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import {
+  buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
@@ -219,6 +220,63 @@ describe("webCore candidate diff sections", () => {
     expect(boxedGroups[0].candidateSection).toBe("left");
     expect(boxedGroups[0].segments.map((segment) => segment.text).join("")).toBe("trời mắm");
     expect(boxedGroups[0].segments.filter((segment) => segment.piecemealNumber !== undefined)).toHaveLength(2);
+  });
+
+  test("uses v7 candidate parts for replacement-only candidate sections", () => {
+    const fixedContext = Array.from({ length: 200 }, () => "giữ").join(" ");
+    const islands = [
+      createIsland("vietnamese", fixedContext),
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", fixedContext),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    const plan = buildCandidateDiffPlan(islands, [
+      ["trời mà", "không"],
+      ["dời mà", "không"],
+      ["trời mà", "công"],
+      ["dời mà", "công"]
+    ]);
+
+    expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: "left", text: "trời" },
+      { role: "right", text: "không" }
+    ]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
+      [],
+      ["left"],
+      ["right"],
+      ["left", "right"]
+    ]);
+    expect(plan.candidates[3].sections.map(({ role, text, changes }) => ({ role, text, changes }))).toEqual([
+      { role: "left", text: "dời", changes: true },
+      { role: "right", text: "công", changes: true }
+    ]);
+  });
+
+  test("uses v7 candidate parts for full-shape candidate sections", () => {
+    const islands = [
+      createIsland("vietnamese", "tôi"),
+      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("vietnamese", "ăn"),
+      createIsland("vietnamese", "ko0", true),
+      createIsland("punctuation", ".")
+    ];
+    const plan = buildCandidateDiffPlan(islands, [
+      ["tôi ", "trời mà", " ăn ", "không", "."],
+      ["tôi ", "trời mà", " ăn ", "công", "."],
+      ["tôi ", "dời mà", " ăn ", "không", "."]
+    ]);
+
+    expect(plan.preview).toBe("tôi trời mà ăn không.");
+    expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: "left", text: "trời" },
+      { role: "right", text: "không" }
+    ]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
+      [],
+      ["right"],
+      ["left"]
+    ]);
   });
 });
 
