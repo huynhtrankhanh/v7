@@ -201,6 +201,18 @@ describe("practice game page behavior", () => {
     expect(score?.textContent).toBe("1");
   });
 
+  test("starts with the select's current mode even before change handler runs", async () => {
+    await initPracticePage();
+    const modeSelect = document.getElementById("mode-select") as HTMLSelectElement;
+    modeSelect.value = "emily";
+
+    (document.getElementById("start-btn") as HTMLButtonElement).click();
+    sendChord(["d", "r", "u", "j"]);
+
+    expect(document.getElementById("prompt-label")?.textContent).toBe("emily symbols");
+    expect(document.getElementById("score")?.textContent).toBe("1");
+  });
+
   test("accepts gameplay chord while a game control button has focus during a round", async () => {
     await initPracticePage();
     selectEmilyMode();

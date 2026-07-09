@@ -30,6 +30,7 @@ describe("getCandidateSelectionMatch", () => {
 
   test("treats single syllable plus T as first-candidate selection plus appended syllable", () => {
     expect(getCandidateSelectionMatch("KAOT", 1)).toEqual({ candidateIndex: 0, syllableStroke: "KAO" });
+    expect(getCandidateSelectionMatch("KAOT", 0)).toBeNull();
     expect(getFirstCandidateAppendStroke("KAOT")).toBe("KAO");
     expect(getFirstCandidateAppendStroke("KAOTS")).toBeNull();
   });

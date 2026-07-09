@@ -440,6 +440,7 @@ When candidates are displayed, you must select one to proceed. Use the following
 Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
 The candidate list mirrors the buffer boxes instead of repeating the entire sentence. Each row shows `current` when it matches the top preview, or shows only the section values that would change: red for the left section, black for the right section. Short section summaries are laid out compactly so more candidates fit on screen.
 Candidate selection keys can also be combined with **single-syllable** strokes in the same chord: the candidate is selected first, then the syllable is appended, and this combined action is treated as a single undo step.
+When no candidates are active, a valid single-syllable stroke plus the first-candidate suffix `-T` falls back to the syllable alone. For example, `KAOT` outputs the syllable from `KAO` instead of being ignored.
 If the combined chord does not form a valid single-syllable stroke, it is ignored.
 
 ### Piecemeal Syllable Edit

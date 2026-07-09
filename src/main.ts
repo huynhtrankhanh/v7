@@ -1460,6 +1460,20 @@ async function handleChord(stroke) {
         return;
     }
 
+    const firstCandidateAppendStroke = state.candidates.length === 0
+        ? getFirstCandidateAppendStroke(stroke)
+        : null;
+    if (firstCandidateAppendStroke) {
+        const parsedAppend = parse(firstCandidateAppendStroke);
+        if (parsedAppend) {
+            saveState();
+            piecemealCursorIndex = null;
+            appendText(assemble(parsedAppend));
+            runInference();
+            return;
+        }
+    }
+
     if (selection && selection.syllableStroke === null) {
         selectCandidate(selection.candidateIndex);
         return;

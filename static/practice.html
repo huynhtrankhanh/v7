@@ -1065,8 +1065,18 @@
       return !!emilyHelpBackdrop && emilyHelpBackdrop.classList.contains("open");
     }
 
+    function modeById(modeId) {
+      return MODES.find((m) => m.id === modeId) || null;
+    }
+
+    function syncModeFromSelect() {
+      const selectedMode = modeById(modeSelect.value);
+      if (selectedMode) state.modeId = selectedMode.id;
+      return selectedMode || modeById(state.modeId) || MODES[0];
+    }
+
     function currentMode() {
-      return MODES.find((m) => m.id === state.modeId) || MODES[0];
+      return modeById(state.modeId) || MODES[0];
     }
 
     function refreshLeaderboard() {
@@ -1259,6 +1269,7 @@
     }
 
     function startRound() {
+      syncModeFromSelect();
       if (currentMode().id !== "emily" && !state.entries.length) return;
       resetStrokeState();
       state.running = true;
@@ -1333,7 +1344,7 @@
 
     modeSelect.addEventListener("change", () => {
       resetStrokeState();
-      state.modeId = modeSelect.value;
+      syncModeFromSelect();
       refreshLeaderboard();
       if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
       state.prompt = null;
@@ -1442,6 +1453,8 @@
       if (document.hidden) resetStrokeState();
     });
 
+    syncModeFromSelect();
+    if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
     refreshLeaderboard();
     refreshDiligence();
 
