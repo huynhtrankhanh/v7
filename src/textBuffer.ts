@@ -2,7 +2,7 @@ import { Rope } from "./rope";
 import { requireUiCoreProvider } from "./uiCoreProvider";
 import type { InferenceRequest } from "./webCore";
 
-export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
+export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing" | "emily";
 
 export interface Island {
   type: IslandType;

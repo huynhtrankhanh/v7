@@ -66,6 +66,17 @@ export interface ParsedSyllable {
   tone: string;
 }
 
+export interface EmilySymbolResult {
+  type: "emily";
+  value: string;
+  leftSpace: boolean;
+  rightSpace: boolean;
+  explicitSpacing: boolean;
+  capNext: boolean;
+  retroSpace: "insert" | "delete" | null;
+  repeat: number;
+}
+
 export interface DisplayPlan {
   text: string;
   candidateDiffPlan: CandidateDiffPlan | null;
@@ -106,6 +117,10 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
 
 export function decodeV7Stroke(stroke: string): string | null {
   return requireUiCoreProvider().decodeV7Stroke(stroke);
+}
+
+export function decodeEmilySymbol(stroke: string): EmilySymbolResult | null {
+  return requireUiCoreProvider().decodeEmilySymbol(stroke);
 }
 
 export class KeyboardStrokeTracker {

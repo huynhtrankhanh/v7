@@ -17,6 +17,7 @@ pub enum IslandType {
     Punctuation,
     Capital,
     Spacing,
+    Emily,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +113,20 @@ pub struct ParsedSyllable {
     pub vowel: String,
     pub final_consonant: String,
     pub tone: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmilySymbolResult {
+    #[serde(rename = "type")]
+    pub island_type: IslandType,
+    pub value: String,
+    pub left_space: bool,
+    pub right_space: bool,
+    pub explicit_spacing: bool,
+    pub cap_next: bool,
+    pub retro_space: Option<String>,
+    pub repeat: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -976,6 +991,127 @@ pub fn decode_v7_stroke(stroke: &str) -> Option<String> {
     ))
 }
 
+fn emily_symbols(pattern: &str) -> Option<[&'static str; 4]> {
+    match pattern {
+        "FG" => Some(["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"]),
+        "RPBG" => Some(["{#Up}", "{#Left}", "{#Right}", "{#Down}"]),
+        "FRPBG" => Some(["{#Page_Up}", "{#Home}", "{#End}", "{#Page_Down}"]),
+        "FRBG" => Some([
+            "{#AudioPlay}",
+            "{#AudioPrev}",
+            "{#AudioNext}",
+            "{#AudioStop}",
+        ]),
+        "FRB" => Some([
+            "{#AudioMute}",
+            "{#AudioLowerVolume}",
+            "{#AudioRaiseVolume}",
+            "{#Eject}",
+        ]),
+        "" => Some(["", "{*!}", "{*?}", "{#Space}"]),
+        "FL" => Some(["{*-|}", "{*<}", "{<}", "{*>}"]),
+        "FR" => Some(["!", "¬", "↦", "¡"]),
+        "FP" => Some(["\"", "“", "”", "„"]),
+        "FRLG" => Some(["#", "©", "®", "™"]),
+        "RPBL" => Some(["$", "¥", "€", "£"]),
+        "FRPB" => Some(["%", "‰", "‱", "φ"]),
+        "FBG" => Some(["&", "∩", "∧", "∈"]),
+        "F" => Some(["'", "‘", "’", "‚"]),
+        "FPL" => Some(["(", "[", "<", "{"]),
+        "RBG" => Some([")", "]", ">", "}"]),
+        "L" => Some(["*", "∏", "§", "×"]),
+        "G" => Some(["+", "∑", "¶", "±"]),
+        "B" => Some([",", "∪", "∨", "∉"]),
+        "PL" => Some(["-", "−", "–", "—"]),
+        "R" => Some([".", "•", "·", "…"]),
+        "RP" => Some(["/", "⇒", "⇔", "÷"]),
+        "LG" => Some([":", "∋", "∵", "∴"]),
+        "RB" => Some([";", "∀", "∃", "∄"]),
+        "PBLG" => Some(["=", "≡", "≈", "≠"]),
+        "FPB" => Some(["?", "¿", "∝", "‽"]),
+        "FRPBLG" => Some(["@", "⊕", "⊗", "∅"]),
+        "FB" => Some(["\\", "Δ", "√", "∞"]),
+        "RPG" => Some(["^", "«", "»", "°"]),
+        "BG" => Some(["_", "≤", "≥", "µ"]),
+        "P" => Some(["`", "⊂", "⊃", "π"]),
+        "PB" => Some(["|", "⊤", "⊥", "¦"]),
+        "FPBG" => Some(["~", "⊆", "⊇", "˜"]),
+        "FPBL" => Some(["↑", "←", "→", "↓"]),
+        _ => None,
+    }
+}
+
+fn take_while_keys<'a>(input: &'a str, keys: &str) -> (&'a str, &'a str) {
+    let end = input
+        .char_indices()
+        .find_map(|(index, ch)| (!keys.contains(ch)).then_some(index))
+        .unwrap_or(input.len());
+    input.split_at(end)
+}
+
+pub fn decode_emily_symbol(stroke: &str) -> Option<EmilySymbolResult> {
+    let rest = stroke.strip_prefix('#').unwrap_or(stroke);
+    let mut rest = rest.strip_prefix("WH")?;
+
+    let (attachments, next) = take_while_keys(rest, "AO");
+    rest = next;
+
+    let cap_next = if let Some(next) = rest.strip_prefix('*') {
+        rest = next;
+        true
+    } else if let Some(next) = rest.strip_prefix('-') {
+        rest = next;
+        false
+    } else {
+        false
+    };
+
+    let (variant_keys, next) = take_while_keys(rest, "EU");
+    rest = next;
+    let (pattern, next) = take_while_keys(rest, "FRPBLG");
+    rest = next;
+    let (repeat_keys, next) = take_while_keys(rest, "TS");
+    if !next.is_empty() {
+        return None;
+    }
+
+    let mut variant = 0;
+    if variant_keys.contains('E') {
+        variant += 1;
+    }
+    if variant_keys.contains('U') {
+        variant += 2;
+    }
+
+    let symbol = emily_symbols(pattern)?[variant];
+    let mut repeat = 1;
+    if repeat_keys.contains('S') {
+        repeat += 1;
+    }
+    if repeat_keys.contains('T') {
+        repeat += 2;
+    }
+
+    let space_before = attachments.contains('A');
+    let space_after = attachments.contains('O');
+    let should_apply_spacing = !matches!(symbol, "{*!}" | "{*?}");
+
+    Some(EmilySymbolResult {
+        island_type: IslandType::Emily,
+        value: symbol.repeat(repeat),
+        left_space: should_apply_spacing && space_before,
+        right_space: should_apply_spacing && space_after,
+        explicit_spacing: should_apply_spacing,
+        cap_next,
+        retro_space: match symbol {
+            "{*?}" => Some("insert".to_string()),
+            "{*!}" => Some("delete".to_string()),
+            _ => None,
+        },
+        repeat,
+    })
+}
+
 fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
     QwertyKeyboardKey {
         key: key.to_string(),
@@ -1740,6 +1876,13 @@ pub fn valid_vietnamese_syllables_json() -> Result<String, JsValue> {
 pub fn decode_v7_stroke_json(stroke: &str) -> Result<String, JsValue> {
     serde_json::to_string(&decode_v7_stroke(stroke))
         .map_err(|error| JsValue::from_str(&format!("Failed to serialize V7 stroke: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = decodeEmilySymbolJson)]
+pub fn decode_emily_symbol_json(stroke: &str) -> Result<String, JsValue> {
+    serde_json::to_string(&decode_emily_symbol(stroke))
+        .map_err(|error| JsValue::from_str(&format!("Failed to serialize Emily symbol: {error}")))
 }
 
 #[cfg(feature = "wasm")]
@@ -3160,6 +3303,38 @@ mod tests {
         assert_eq!(decode_v7_stroke("#SPA*"), Some("ba00e0".to_string()));
         assert_eq!(decode_v7_stroke("TAL"), None);
         assert_eq!(decode_v7_stroke("A*B*C"), None);
+    }
+
+    #[test]
+    fn decodes_emily_symbols() {
+        assert_eq!(
+            decode_emily_symbol("WHAOFRS"),
+            Some(EmilySymbolResult {
+                island_type: IslandType::Emily,
+                value: "!!".to_string(),
+                left_space: true,
+                right_space: true,
+                explicit_spacing: true,
+                cap_next: false,
+                retro_space: None,
+                repeat: 2,
+            })
+        );
+        assert_eq!(
+            decode_emily_symbol("WHU"),
+            Some(EmilySymbolResult {
+                island_type: IslandType::Emily,
+                value: "{*?}".to_string(),
+                left_space: false,
+                right_space: false,
+                explicit_spacing: false,
+                cap_next: false,
+                retro_space: Some("insert".to_string()),
+                repeat: 1,
+            })
+        );
+        assert_eq!(decode_emily_symbol("TAL"), None);
+        assert_eq!(decode_emily_symbol("WHXYZ"), None);
     }
 
     #[test]

@@ -3,6 +3,7 @@ import type { Island } from "./textBuffer";
 import type {
   CandidateDiffPlan,
   DisplayPlan,
+  EmilySymbolResult,
   InferenceRequest,
   ParsedSyllable,
   PiecemealSyllableTarget,
@@ -26,6 +27,7 @@ export interface UiCoreWasmExports {
   buildCandidateDiffPlanJson(islandsJson: string, candidatesJson: string, limit: number): string;
   buildCandidateTextDiffPlanJson(candidateTextsJson: string): string;
   convertIslandsForInferenceJson(islandsJson: string): string;
+  decodeEmilySymbolJson(stroke: string): string;
   decodeV7StrokeJson(stroke: string): string;
   findPiecemealSyllableTargetsJson(islandsJson: string, validSyllablesJson: string): string;
   getCandidateSelectionMatchJson(stroke: string, candidateCount: number): string;
@@ -77,6 +79,8 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       parseJson<string[]>(wasm.validVietnameseSyllablesJson()),
     decodeV7Stroke: (stroke) =>
       parseJson<string | null>(wasm.decodeV7StrokeJson(stroke)),
+    decodeEmilySymbol: (stroke) =>
+      parseJson<EmilySymbolResult | null>(wasm.decodeEmilySymbolJson(stroke)),
     createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),

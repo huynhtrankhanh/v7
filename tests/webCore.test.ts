@@ -3,6 +3,7 @@ import {
   buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
   buildDisplayPlan,
+  decodeEmilySymbol,
   decodeV7Stroke,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
@@ -85,6 +86,25 @@ describe("webCore keyboard input", () => {
     expect(decodeV7Stroke("#SPA*")).toBe("ba00e0");
     expect(decodeV7Stroke("TAL")).toBeNull();
     expect(decodeV7Stroke("A*B*C")).toBeNull();
+  });
+
+  test("decodes Emily symbols through Rust UI core", () => {
+    expect(decodeEmilySymbol("WHAOFRS")).toEqual({
+      type: "emily",
+      value: "!!",
+      leftSpace: true,
+      rightSpace: true,
+      explicitSpacing: true,
+      capNext: false,
+      retroSpace: null,
+      repeat: 2
+    });
+    expect(decodeEmilySymbol("WHU")).toMatchObject({
+      value: "{*?}",
+      explicitSpacing: false,
+      retroSpace: "insert"
+    });
+    expect(decodeEmilySymbol("TAL")).toBeNull();
   });
 
   test("maps qwerty keys to steno symbols", () => {
@@ -328,6 +348,20 @@ describe("webCore candidate diff sections", () => {
 });
 
 describe("webCore screen output", () => {
+  test("renders Emily islands through Rust display planning", () => {
+    const islands = [
+      createIsland("vietnamese", "xin"),
+      createIsland("emily", "!", false, { explicitSpacing: true, leftSpace: false, rightSpace: true }),
+      createIsland("vietnamese", "chào")
+    ];
+
+    expect(buildDisplayPlan(islands, [], null).text).toBe("xin! chào");
+    expect(getInferenceRequest([...islands, createIsland("vietnamese", "tro2ma1", true)])).toEqual({
+      needed: true,
+      islands: ["xin! chào ", "tro2ma1", ""]
+    });
+  });
+
   test("uses top candidate as preview when candidates exist", () => {
     const islands = [createIsland("vietnamese", "raw", true)];
     const candidates = [["đã suy luận"]];

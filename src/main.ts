@@ -8,6 +8,7 @@ import {
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
     buildDisplayPlan,
+    decodeEmilySymbol,
     decodeV7Stroke,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
@@ -22,93 +23,12 @@ import {
 } from "./webCore";
 import { initializeRustUiCore } from "./rustUiCore";
 
-// Emily symbols (subset mapping adapted from emily-symbols)
-const EMILY_ATTACHMENT_METHOD = "space";
-const EMILY_NO_SPACING_SYMBOLS = ["{*!}", "{*?}"];
-const EMILY_SYMBOLS = {
-    // System / navigation
-    "FG": ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
-    "RPBG": ["{#Up}", "{#Left}", "{#Right}", "{#Down}"],
-    "FRPBG": ["{#Page_Up}", "{#Home}", "{#End}", "{#Page_Down}"],
-    "FRBG": ["{#AudioPlay}", "{#AudioPrev}", "{#AudioNext}", "{#AudioStop}"],
-    "FRB": ["{#AudioMute}", "{#AudioLowerVolume}", "{#AudioRaiseVolume}", "{#Eject}"],
-    "": ["", "{*!}", "{*?}", "{#Space}"],
-    "FL": ["{*-|}", "{*<}", "{<}", "{*>}"],
-    // Symbols
-    "FR": ["!", "¬", "↦", "¡"],
-    "FP": ["\"", "“", "”", "„"],
-    "FRLG": ["#", "©", "®", "™"],
-    "RPBL": ["$", "¥", "€", "£"],
-    "FRPB": ["%", "‰", "‱", "φ"],
-    "FBG": ["&", "∩", "∧", "∈"],
-    "F": ["'", "‘", "’", "‚"],
-    "FPL": ["(", "[", "<", "{"],
-    "RBG": [")", "]", ">", "}"],
-    "L": ["*", "∏", "§", "×"],
-    "G": ["+", "∑", "¶", "±"],
-    "B": [",", "∪", "∨", "∉"],
-    "PL": ["-", "−", "–", "—"],
-    "R": [".", "•", "·", "…"],
-    "RP": ["/", "⇒", "⇔", "÷"],
-    "LG": [":", "∋", "∵", "∴"],
-    "RB": [";", "∀", "∃", "∄"],
-    "PBLG": ["=", "≡", "≈", "≠"],
-    "FPB": ["?", "¿", "∝", "‽"],
-    "FRPBLG": ["@", "⊕", "⊗", "∅"],
-    "FB": ["\\", "Δ", "√", "∞"],
-    "RPG": ["^", "«", "»", "°"],
-    "BG": ["_", "≤", "≥", "µ"],
-    "P": ["`", "⊂", "⊃", "π"],
-    "PB": ["|", "⊤", "⊥", "¦"],
-    "FPBG": ["~", "⊆", "⊇", "˜"],
-    "FPBL": ["↑", "←", "→", "↓"]
-};
 const PUNCTUATION_MAP: Record<string, string> = {
     "TP-PL": ".",
     "KW-BG": ",",
     "KW-PL": "?",
     "TP-BG": "!"
 };
-
-function handleEmilySymbol(stroke) {
-    // stroke pattern: starter WH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
-    const match = stroke.match(/^([#]?WH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/);
-    if (!match) return null;
-    const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] = match;
-
-    if (!(pattern in EMILY_SYMBOLS)) return null;
-
-    let variant = 0;
-    if (variantKeys.includes("E")) variant += 1;
-    if (variantKeys.includes("U")) variant += 2;
-    const baseList = EMILY_SYMBOLS[pattern];
-    const symbol = Array.isArray(baseList) ? baseList[variant] : baseList;
-
-    let repeat = 1;
-    if (repeatKeys.includes("S")) repeat += 1;
-    if (repeatKeys.includes("T")) repeat += 2;
-
-    const usesSpaceAttachment = EMILY_ATTACHMENT_METHOD === "space";
-    const spaceBefore = usesSpaceAttachment ? attachments.includes("A") : !attachments.includes("A");
-    const spaceAfter = usesSpaceAttachment ? attachments.includes("O") : !attachments.includes("O");
-
-    let output = symbol.repeat(repeat);
-
-    const capNext = capKey === "*";
-    const shouldApplySpacing = !EMILY_NO_SPACING_SYMBOLS.includes(symbol);
-
-    // leftSpace/rightSpace tags for spacing engine
-    return {
-        type: 'emily',
-        value: output,
-        leftSpace: shouldApplySpacing ? spaceBefore : false,
-        rightSpace: shouldApplySpacing ? spaceAfter : false,
-        explicitSpacing: shouldApplySpacing,
-        capNext,
-        retroSpace: symbol === "{*?}" ? "insert" : symbol === "{*!}" ? "delete" : null,
-        repeat
-    };
-}
 
 function applyRetroactiveSpace(action, repeat) {
     if (!action) return false;
@@ -1286,7 +1206,7 @@ async function handleChord(stroke) {
     }
 
     // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
-    const emilyResult = handleEmilySymbol(stroke);
+    const emilyResult = decodeEmilySymbol(stroke);
     if (emilyResult) {
         const repeatCount = emilyResult.repeat || 1;
         if (emilyResult.retroSpace) {

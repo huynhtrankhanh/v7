@@ -3,6 +3,7 @@ import type {
   CandidateDiffSection,
   CandidateDiffPlan,
   DisplayPlan,
+  EmilySymbolResult,
   InferenceRequest,
   ParsedSyllable,
   PiecemealSyllableTarget,
@@ -23,6 +24,7 @@ export interface UiCoreProvider {
   assembleSyllable(parsed: ParsedSyllable): string;
   validVietnameseSyllables(): string[];
   decodeV7Stroke(stroke: string): string | null;
+  decodeEmilySymbol(stroke: string): EmilySymbolResult | null;
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;
