@@ -116,6 +116,15 @@ pub struct VisibleTextGroup {
     pub segments: Vec<VisibleTextSegment>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QwertyKeyboardKey {
+    pub key: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TargetMarker {
     number: usize,
@@ -319,6 +328,90 @@ pub fn serialize_stroke_keys(stroke_keys: &[String]) -> String {
     }
 
     stroke
+}
+
+fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
+    QwertyKeyboardKey {
+        key: key.to_string(),
+        label: label.to_string(),
+        width,
+    }
+}
+
+pub fn qwerty_keyboard_layout() -> Vec<Vec<QwertyKeyboardKey>> {
+    vec![
+        "1234567890"
+            .chars()
+            .map(|ch| qwerty_key(&ch.to_string(), &ch.to_string(), None))
+            .collect(),
+        "qwertyuiop"
+            .chars()
+            .map(|ch| qwerty_key(&ch.to_string(), &ch.to_uppercase().to_string(), None))
+            .collect(),
+        vec![
+            qwerty_key("a", "A", None),
+            qwerty_key("s", "S", None),
+            qwerty_key("d", "D", None),
+            qwerty_key("f", "F", None),
+            qwerty_key("g", "G", None),
+            qwerty_key("h", "H", None),
+            qwerty_key("j", "J", None),
+            qwerty_key("k", "K", None),
+            qwerty_key("l", "L", None),
+            qwerty_key(";", ";", None),
+            qwerty_key("Enter", "Enter", Some(2.25)),
+        ],
+        vec![
+            qwerty_key("Shift", "Shift", Some(2.25)),
+            qwerty_key("z", "Z", None),
+            qwerty_key("x", "X", None),
+            qwerty_key("c", "C", None),
+            qwerty_key("v", "V", None),
+            qwerty_key("b", "B", None),
+            qwerty_key("n", "N", None),
+            qwerty_key("m", "M", None),
+            qwerty_key("Shift", "Shift", Some(2.25)),
+        ],
+        vec![qwerty_key(" ", "Spacebar", Some(7.0))],
+    ]
+}
+
+pub fn normalize_qwerty_display_key(key: &str, code: &str) -> Option<String> {
+    let mapped_code = match code {
+        "Space" => Some(" "),
+        "Enter" | "NumpadEnter" => Some("Enter"),
+        "ShiftLeft" | "ShiftRight" => Some("Shift"),
+        "Semicolon" => Some(";"),
+        _ => None,
+    };
+    if let Some(mapped) = mapped_code {
+        return Some(mapped.to_string());
+    }
+
+    if code.len() == 4 && code.starts_with("Key") && code.as_bytes()[3].is_ascii_uppercase() {
+        return Some(code[3..].to_lowercase());
+    }
+    if code.len() == 6 && code.starts_with("Digit") && code.as_bytes()[5].is_ascii_digit() {
+        return Some(code[5..].to_string());
+    }
+
+    match key {
+        " " | "Spacebar" | "Space" => return Some(" ".to_string()),
+        "Enter" => return Some("Enter".to_string()),
+        "Shift" => return Some("Shift".to_string()),
+        ";" => return Some(";".to_string()),
+        _ => {}
+    }
+
+    let normalized = key.to_lowercase();
+    if normalized.len() == 1 {
+        let byte = normalized.as_bytes()[0];
+        if byte.is_ascii_lowercase() || byte.is_ascii_digit() {
+            return Some(normalized);
+        }
+    }
+
+    None
 }
 
 pub fn get_candidate_selection_match(
@@ -911,6 +1004,24 @@ pub fn serialize_stroke_keys_json(stroke_keys_json: &str) -> Result<String, JsVa
     let stroke_keys: Vec<String> = serde_json::from_str(stroke_keys_json)
         .map_err(|error| JsValue::from_str(&format!("Invalid stroke keys JSON: {error}")))?;
     Ok(serialize_stroke_keys(&stroke_keys))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = qwertyKeyboardLayoutJson)]
+pub fn qwerty_keyboard_layout_json() -> Result<String, JsValue> {
+    serde_json::to_string(&qwerty_keyboard_layout()).map_err(|error| {
+        JsValue::from_str(&format!("Failed to serialize keyboard layout: {error}"))
+    })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = normalizeQwertyDisplayKeyJson)]
+pub fn normalize_qwerty_display_key_json(key: &str, code: &str) -> Result<String, JsValue> {
+    serde_json::to_string(&normalize_qwerty_display_key(key, code)).map_err(|error| {
+        JsValue::from_str(&format!(
+            "Failed to serialize normalized keyboard key: {error}"
+        ))
+    })
 }
 
 #[cfg(feature = "wasm")]
@@ -2216,6 +2327,60 @@ mod tests {
             "SAT"
         );
         assert_eq!(serialize_stroke_keys(&["-T".to_string()]), "-T");
+    }
+
+    #[test]
+    fn exposes_qwerty_keyboard_display_model() {
+        let layout = qwerty_keyboard_layout();
+        let rows = layout
+            .iter()
+            .map(|row| row.iter().map(|key| key.key.clone()).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            rows[0],
+            vec!["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]
+        );
+        assert_eq!(
+            rows[1],
+            vec!["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]
+        );
+        assert_eq!(
+            rows[2],
+            vec!["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "Enter"]
+        );
+        assert_eq!(
+            rows[3],
+            vec!["Shift", "z", "x", "c", "v", "b", "n", "m", "Shift"]
+        );
+        assert_eq!(rows[4], vec![" "]);
+        assert_eq!(layout[2][10].width, Some(2.25));
+        assert_eq!(layout[4][0].label, "Spacebar");
+    }
+
+    #[test]
+    fn normalizes_qwerty_display_keys() {
+        assert_eq!(
+            normalize_qwerty_display_key("A", "KeyA"),
+            Some("a".to_string())
+        );
+        assert_eq!(
+            normalize_qwerty_display_key("!", "Digit1"),
+            Some("1".to_string())
+        );
+        assert_eq!(
+            normalize_qwerty_display_key(" ", "Space"),
+            Some(" ".to_string())
+        );
+        assert_eq!(
+            normalize_qwerty_display_key("Shift", "ShiftLeft"),
+            Some("Shift".to_string())
+        );
+        assert_eq!(
+            normalize_qwerty_display_key("Enter", "Enter"),
+            Some("Enter".to_string())
+        );
+        assert_eq!(normalize_qwerty_display_key("ArrowLeft", "ArrowLeft"), None);
     }
 
     #[test]

@@ -3,6 +3,7 @@ import type { Island } from "./textBuffer";
 import type {
   CandidateDiffPlan,
   PiecemealSyllableTarget,
+  QwertyKeyboardKey,
   VisibleTextGroup,
   VisibleTextSegment
 } from "./webCore";
@@ -19,6 +20,8 @@ export interface UiCoreWasmExports {
   getSelectedCandidateTextJson(candidatesJson: string, index: number, islandsJson?: string | null): string;
   groupVisibleTextSegmentsByCandidateSectionJson(segmentsJson: string): string;
   mapKeyUnique(key: string): string | undefined;
+  normalizeQwertyDisplayKeyJson(key: string, code: string): string;
+  qwertyKeyboardLayoutJson(): string;
   renderVisibleTextJson(islandsJson: string, candidatesJson: string): string;
   renderVisibleTextSegmentsJson(
     islandsJson: string,
@@ -48,6 +51,10 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
   return {
     mapKeyUnique: (key) => wasm.mapKeyUnique(key) ?? null,
     serializeStrokeKeys: (strokeKeys) => wasm.serializeStrokeKeysJson(JSON.stringify(strokeKeys)),
+    qwertyKeyboardLayout: () =>
+      parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),
+    normalizeQwertyDisplayKey: (key, code) =>
+      parseJson<string | null>(wasm.normalizeQwertyDisplayKeyJson(key, code)),
     getCandidateSelectionMatch: (stroke, candidateCount) =>
       parseJson<CandidateSelectionMatch | null>(
         wasm.getCandidateSelectionMatchJson(stroke, normalizeCandidateCount(candidateCount))

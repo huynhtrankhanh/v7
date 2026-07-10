@@ -10,12 +10,12 @@ import {
     buildCandidateDiffPlan,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
+    getQwertyKeyboardLayout,
     getNextPiecemealCursorIndex,
     getPiecemealEntryIndex,
     groupVisibleTextSegmentsByCandidateSection,
     mapKeyUnique,
     normalizeQwertyDisplayKey,
-    qwertyKeyboardLayout,
     renderVisibleText,
     renderVisibleTextSegments,
     replacePiecemealSyllable,
@@ -1592,7 +1592,7 @@ function renderKeyboardLayout() {
     if (!board) return;
     board.replaceChildren();
 
-    for (const row of qwertyKeyboardLayout) {
+    for (const row of getQwertyKeyboardLayout()) {
         const rowEl = document.createElement("div");
         rowEl.className = "qwerty-row";
         for (const key of row) {
@@ -2178,10 +2178,10 @@ function setupPloverControls() {
     });
 }
 
-renderKeyboardLayout();
-updateKeyboardLayout();
 setupPloverControls();
 void initializeRustUiCore(() => {
+    renderKeyboardLayout();
+    updateKeyboardLayout();
     updateDisplay();
 }).catch((error) => {
     console.error("Rust UI core initialization failed", error);

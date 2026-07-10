@@ -6,11 +6,11 @@ import {
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
   getPiecemealEntryIndex,
+  getQwertyKeyboardLayout,
   getSelectedCandidateText,
   groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
   normalizeQwertyDisplayKey,
-  qwertyKeyboardLayout,
   renderVisibleTextSegments,
   renderVisibleText,
   replacePiecemealSyllable,
@@ -91,7 +91,7 @@ describe("webCore keyboard input", () => {
   });
 
   test("defines the on-screen keyboard as QWERTY rows", () => {
-    const rows = qwertyKeyboardLayout.map((row) => row.map((key) => key.key));
+    const rows = getQwertyKeyboardLayout().map((row) => row.map((key) => key.key));
 
     expect(rows[0]).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
     expect(rows[1]).toEqual(["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);

@@ -3,6 +3,7 @@ import type {
   CandidateDiffSection,
   CandidateDiffPlan,
   PiecemealSyllableTarget,
+  QwertyKeyboardKey,
   VisibleTextGroup,
   VisibleTextSegment
 } from "./webCore";
@@ -10,6 +11,8 @@ import type {
 export interface UiCoreProvider {
   mapKeyUnique(key: string): string | null;
   serializeStrokeKeys(strokeKeys: string[]): string;
+  qwertyKeyboardLayout(): QwertyKeyboardKey[][];
+  normalizeQwertyDisplayKey(key: string, code: string): string | null;
   getCandidateSelectionMatch(stroke: string, candidateCount: number): {
     candidateIndex: number;
     syllableStroke: string | null;

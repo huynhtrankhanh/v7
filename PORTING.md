@@ -11,6 +11,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 ## Completed Rust Ports
 
 - Key mapping and stroke serialization.
+- Keyboard display layout and browser key normalization.
 - Candidate selection stroke matching.
 - Visible text rendering.
 - Visible text segment planning, including piecemeal markers, candidate diff sections, and inferred V7 display targets.
@@ -25,13 +26,12 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 - DOM rendering and view updates in `src/main.ts`.
 - Browser input, focus, clipboard, and lifecycle handling.
 - Network and inference request orchestration.
-- Keyboard display metadata and browser key normalization.
 - Generated WASM bindings under `src/generated/`; these are required for local tests/builds but must stay untracked.
 
 ## Remaining DOM-Neutral Candidates
 
 - App state transitions around stroke command handling, piecemeal mode, candidate selection, undo, and inference request policy.
-- Keyboard layout metadata if Android and web should share exactly the same display/input model.
+- Stroke-tracker state transitions if Android and web should share exactly the same chord lifecycle.
 - Practice/game logic where it is not browser-specific.
 - Serialization contracts for Android-to-core calls once the IME shell shape is known.
 
