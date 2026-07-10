@@ -8,6 +8,7 @@ import type {
   ParsedSyllable,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
+  RetroactiveSpaceResult,
   VisibleTextGroup,
   VisibleTextSegment
 } from "./webCore";
@@ -18,6 +19,7 @@ export interface UiCoreWasmExports {
     keyDown(key: string, includeInStroke: boolean): string | undefined;
     keyUp(key: string): string | undefined;
   };
+  applyRetroactiveSpaceJson(islandsJson: string, actionJson: string, repeat: number): string;
   buildDisplayPlanJson(
     islandsJson: string,
     candidatesJson: string,
@@ -81,6 +83,10 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       parseJson<string | null>(wasm.decodeV7StrokeJson(stroke)),
     decodeEmilySymbol: (stroke) =>
       parseJson<EmilySymbolResult | null>(wasm.decodeEmilySymbolJson(stroke)),
+    applyRetroactiveSpace: (islands, action, repeat) =>
+      parseJson<RetroactiveSpaceResult>(
+        wasm.applyRetroactiveSpaceJson(JSON.stringify(islands), JSON.stringify(action), repeat)
+      ),
     createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),

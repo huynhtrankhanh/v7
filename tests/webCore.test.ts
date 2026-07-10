@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import {
+  applyRetroactiveSpace,
   buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
   buildDisplayPlan,
@@ -105,6 +106,29 @@ describe("webCore keyboard input", () => {
       retroSpace: "insert"
     });
     expect(decodeEmilySymbol("TAL")).toBeNull();
+  });
+
+  test("applies retroactive spacing through Rust UI core", () => {
+    const islands = [
+      createIsland("vietnamese", "xin"),
+      createIsland("vietnamese", "chào")
+    ];
+    expect(applyRetroactiveSpace(islands, "insert", 1)).toEqual({
+      changed: true,
+      islands: [
+        createIsland("vietnamese", "xin"),
+        createIsland("vietnamese", "chào", false, { explicitSpacing: true, leftSpace: true })
+      ]
+    });
+    expect(applyRetroactiveSpace([createIsland("vietnamese", "xin"), createIsland("spacing", " ")], "delete", 2))
+      .toEqual({
+        changed: true,
+        islands: [createIsland("vietnamese", "xin")]
+      });
+    expect(applyRetroactiveSpace([createIsland("vietnamese", "xin")], "insert", 1)).toEqual({
+      changed: false,
+      islands: [createIsland("vietnamese", "xin")]
+    });
   });
 
   test("maps qwerty keys to steno symbols", () => {

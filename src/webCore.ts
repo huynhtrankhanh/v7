@@ -77,6 +77,11 @@ export interface EmilySymbolResult {
   repeat: number;
 }
 
+export interface RetroactiveSpaceResult {
+  islands: Island[];
+  changed: boolean;
+}
+
 export interface DisplayPlan {
   text: string;
   candidateDiffPlan: CandidateDiffPlan | null;
@@ -121,6 +126,14 @@ export function decodeV7Stroke(stroke: string): string | null {
 
 export function decodeEmilySymbol(stroke: string): EmilySymbolResult | null {
   return requireUiCoreProvider().decodeEmilySymbol(stroke);
+}
+
+export function applyRetroactiveSpace(
+  islands: Island[],
+  action: "insert" | "delete" | null,
+  repeat: number
+): RetroactiveSpaceResult {
+  return requireUiCoreProvider().applyRetroactiveSpace(islands, action, repeat);
 }
 
 export class KeyboardStrokeTracker {

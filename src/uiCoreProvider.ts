@@ -8,6 +8,7 @@ import type {
   ParsedSyllable,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
+  RetroactiveSpaceResult,
   VisibleTextGroup,
   VisibleTextSegment
 } from "./webCore";
@@ -25,6 +26,7 @@ export interface UiCoreProvider {
   validVietnameseSyllables(): string[];
   decodeV7Stroke(stroke: string): string | null;
   decodeEmilySymbol(stroke: string): EmilySymbolResult | null;
+  applyRetroactiveSpace(islands: Island[], action: "insert" | "delete" | null, repeat: number): RetroactiveSpaceResult;
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;

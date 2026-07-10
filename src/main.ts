@@ -7,6 +7,7 @@ import {
 } from "./candidateSelection";
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
+    applyRetroactiveSpace,
     buildDisplayPlan,
     decodeEmilySymbol,
     decodeV7Stroke,
@@ -29,38 +30,6 @@ const PUNCTUATION_MAP: Record<string, string> = {
     "KW-PL": "?",
     "TP-BG": "!"
 };
-
-function applyRetroactiveSpace(action, repeat) {
-    if (!action) return false;
-    let changed = false;
-    for (let i = 0; i < repeat; i++) {
-        const islandCount = buffer.getIslandCount();
-        if (islandCount === 0) break;
-        const lastIndex = islandCount - 1;
-        const last = buffer.getIslandAt(lastIndex);
-        if (!last) break;
-        if (last.type === "spacing" && last.value === " ") {
-            if (action === "delete") {
-                if (buffer.removeIslandAt(lastIndex)) {
-                    changed = true;
-                    continue;
-                }
-                break;
-            }
-            break;
-        }
-        if (lastIndex === 0) break;
-        if (buffer.replaceIslandAt(lastIndex, {
-            ...last,
-            explicitSpacing: true,
-            leftSpace: action === "insert"
-        })) {
-            changed = true;
-        }
-        break;
-    }
-    return changed;
-}
 
 // --- App State ---
 
@@ -1210,11 +1179,12 @@ async function handleChord(stroke) {
     if (emilyResult) {
         const repeatCount = emilyResult.repeat || 1;
         if (emilyResult.retroSpace) {
-        if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
-            saveState();
-            const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
-            state.pendingCapitalization = emilyResult.capNext || false;
-                if (changed || emilyResult.capNext) {
+            if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
+                saveState();
+                const retroSpaceResult = applyRetroactiveSpace(state.islands, emilyResult.retroSpace, repeatCount);
+                buffer.setIslands(retroSpaceResult.islands);
+                state.pendingCapitalization = emilyResult.capNext || false;
+                if (retroSpaceResult.changed || emilyResult.capNext) {
                     runInference();
                     updateDisplay();
                 }

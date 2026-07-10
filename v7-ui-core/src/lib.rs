@@ -131,6 +131,13 @@ pub struct EmilySymbolResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RetroactiveSpaceResult {
+    pub islands: Vec<Island>,
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DisplayPlan {
     pub text: String,
     pub candidate_diff_plan: Option<CandidateDiffPlan>,
@@ -1112,6 +1119,51 @@ pub fn decode_emily_symbol(stroke: &str) -> Option<EmilySymbolResult> {
     })
 }
 
+pub fn apply_retroactive_space(
+    islands: &[Island],
+    action: Option<&str>,
+    repeat: usize,
+) -> RetroactiveSpaceResult {
+    let mut next = islands.to_vec();
+    let mut changed = false;
+    let Some(action) = action else {
+        return RetroactiveSpaceResult {
+            islands: next,
+            changed,
+        };
+    };
+
+    for _ in 0..repeat {
+        let Some(last_index) = next.len().checked_sub(1) else {
+            break;
+        };
+        let last = next[last_index].clone();
+        if last.island_type == IslandType::Spacing && last.value == " " {
+            if action == "delete" {
+                next.remove(last_index);
+                changed = true;
+                continue;
+            }
+            break;
+        }
+        if last_index == 0 {
+            break;
+        }
+        next[last_index] = Island {
+            explicit_spacing: true,
+            left_space: action == "insert",
+            ..last
+        };
+        changed = true;
+        break;
+    }
+
+    RetroactiveSpaceResult {
+        islands: next,
+        changed,
+    }
+}
+
 fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
     QwertyKeyboardKey {
         key: key.to_string(),
@@ -1883,6 +1935,29 @@ pub fn decode_v7_stroke_json(stroke: &str) -> Result<String, JsValue> {
 pub fn decode_emily_symbol_json(stroke: &str) -> Result<String, JsValue> {
     serde_json::to_string(&decode_emily_symbol(stroke))
         .map_err(|error| JsValue::from_str(&format!("Failed to serialize Emily symbol: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = applyRetroactiveSpaceJson)]
+pub fn apply_retroactive_space_json(
+    islands_json: &str,
+    action_json: &str,
+    repeat: usize,
+) -> Result<String, JsValue> {
+    let islands: Vec<Island> = serde_json::from_str(islands_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid islands JSON: {error}")))?;
+    let action: Option<String> = serde_json::from_str(action_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid retro space action JSON: {error}")))?;
+    serde_json::to_string(&apply_retroactive_space(
+        &islands,
+        action.as_deref(),
+        repeat,
+    ))
+    .map_err(|error| {
+        JsValue::from_str(&format!(
+            "Failed to serialize retroactive spacing result: {error}"
+        ))
+    })
 }
 
 #[cfg(feature = "wasm")]
@@ -3335,6 +3410,51 @@ mod tests {
         );
         assert_eq!(decode_emily_symbol("TAL"), None);
         assert_eq!(decode_emily_symbol("WHXYZ"), None);
+    }
+
+    #[test]
+    fn applies_retroactive_spacing() {
+        let islands = vec![
+            Island {
+                island_type: IslandType::Vietnamese,
+                value: "xin".to_string(),
+                is_v7: false,
+                left_space: false,
+                right_space: false,
+                explicit_spacing: false,
+            },
+            Island {
+                island_type: IslandType::Vietnamese,
+                value: "chào".to_string(),
+                is_v7: false,
+                left_space: false,
+                right_space: false,
+                explicit_spacing: false,
+            },
+        ];
+        let inserted = apply_retroactive_space(&islands, Some("insert"), 1);
+        assert!(inserted.changed);
+        assert!(inserted.islands[1].explicit_spacing);
+        assert!(inserted.islands[1].left_space);
+
+        let spacing = vec![
+            islands[0].clone(),
+            Island {
+                island_type: IslandType::Spacing,
+                value: " ".to_string(),
+                is_v7: false,
+                left_space: false,
+                right_space: false,
+                explicit_spacing: false,
+            },
+        ];
+        let deleted = apply_retroactive_space(&spacing, Some("delete"), 2);
+        assert!(deleted.changed);
+        assert_eq!(deleted.islands, vec![islands[0].clone()]);
+
+        let noop = apply_retroactive_space(&islands[..1], Some("insert"), 1);
+        assert!(!noop.changed);
+        assert_eq!(noop.islands, islands[..1].to_vec());
     }
 
     #[test]
