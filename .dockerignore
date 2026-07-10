@@ -4,6 +4,7 @@
 # Unignore the specific directories we need
 !ai/
 !inference-rs/
+!v7-ui-core/
 !practice-android/
 !practice-android/**
 !src/
@@ -11,6 +12,7 @@
 
 # Unignore build configuration files
 !Dockerfile
+!Dockerfile.ui-core
 !Dockerfile.practice-android
 !docker-compose.yml
 !.dockerignore
@@ -20,6 +22,7 @@
 !tsconfig.jest.json
 !vite.config.ts
 !scripts/stripped-plover-agent.cjs
+!scripts/build-ui-core-wasm.sh
 !requirements.txt
 !train_lm.sh
 !preprocess_corpus.cpp
@@ -27,5 +30,6 @@
 # Explicitly ignore unwanted files within the allowed directories
 ai/__pycache__/
 inference-rs/target/
+v7-ui-core/target/
 inference-rs/**/*.rs.bk
 *.swp

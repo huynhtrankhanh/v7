@@ -1,0 +1,15 @@
+{
+  "name": "v7-ui-core",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "v7_ui_core_bg.wasm",
+    "v7_ui_core.js",
+    "v7_ui_core.d.ts"
+  ],
+  "main": "v7_ui_core.js",
+  "types": "v7_ui_core.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
