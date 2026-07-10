@@ -57,6 +57,15 @@ export interface InferenceRequest {
   islands: string[];
 }
 
+export interface ParsedSyllable {
+  capitalize: boolean;
+  onGlide: boolean;
+  initialConsonant: string;
+  vowel: string;
+  finalConsonant: string;
+  tone: string;
+}
+
 export interface DisplayPlan {
   text: string;
   candidateDiffPlan: CandidateDiffPlan | null;

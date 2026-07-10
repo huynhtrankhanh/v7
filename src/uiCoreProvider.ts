@@ -4,6 +4,7 @@ import type {
   CandidateDiffPlan,
   DisplayPlan,
   InferenceRequest,
+  ParsedSyllable,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   VisibleTextGroup,
@@ -18,6 +19,9 @@ export interface KeyboardStrokeTrackerCore {
 export interface UiCoreProvider {
   mapKeyUnique(key: string): string | null;
   serializeStrokeKeys(strokeKeys: string[]): string;
+  parseSyllableStroke(stroke: string): ParsedSyllable | null;
+  assembleSyllable(parsed: ParsedSyllable): string;
+  validVietnameseSyllables(): string[];
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;

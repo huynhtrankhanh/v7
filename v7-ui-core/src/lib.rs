@@ -105,6 +105,17 @@ pub struct InferenceRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ParsedSyllable {
+    pub capitalize: bool,
+    pub on_glide: bool,
+    pub initial_consonant: String,
+    pub vowel: String,
+    pub final_consonant: String,
+    pub tone: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DisplayPlan {
     pub text: String,
     pub candidate_diff_plan: Option<CandidateDiffPlan>,
@@ -428,6 +439,445 @@ pub fn keyboard_stroke_tracker_key_up(
         state: next,
         stroke: Some(stroke),
     }
+}
+
+fn steno_initial(stroke: &str) -> Option<&'static str> {
+    match stroke {
+        "PW" => Some("b"),
+        "K" => Some("c"),
+        "KH" => Some("ch"),
+        "KWR" => Some("d"),
+        "TK" => Some("đ"),
+        "TP" => Some("ph"),
+        "TKPW" => Some("g"),
+        "H" => Some("h"),
+        "KWH" => Some("gi"),
+        "KHR" => Some("kh"),
+        "HR" => Some("l"),
+        "PH" => Some("m"),
+        "TPH" => Some("n"),
+        "TPR" => Some("nh"),
+        "TPW" => Some("ng/ngh"),
+        "P" => Some("p"),
+        "R" => Some("r"),
+        "KP" => Some("s"),
+        "T" => Some("t"),
+        "TH" => Some("th"),
+        "TR" => Some("tr"),
+        "W" => Some("v"),
+        "WR" => Some("x"),
+        _ => None,
+    }
+}
+
+fn steno_vowel(stroke: &str) -> Option<&'static str> {
+    match stroke {
+        "OEU" => Some("iê/ia"),
+        "AEU" => Some("ua/uô"),
+        "AOE" => Some("ưa/ươ"),
+        "AOU" => Some("ư"),
+        "OU" => Some("ơ"),
+        "OE" => Some("ô"),
+        "O" => Some("o"),
+        "AU" => Some("ê"),
+        "E" => Some("e"),
+        "EU" => Some("i"),
+        "A" => Some("a"),
+        "AE" => Some("ă"),
+        "AO" => Some("â"),
+        "U" => Some("u"),
+        "AOEU" => Some("y"),
+        _ => None,
+    }
+}
+
+fn steno_final(stroke: &str) -> Option<&'static str> {
+    match stroke {
+        "FP" => Some("j"),
+        "F" => Some("w"),
+        "P" => Some("m"),
+        "R" => Some("n"),
+        "FR" => Some("ng"),
+        "RP" => Some("nh"),
+        _ => None,
+    }
+}
+
+fn steno_tone(stroke: &str) -> Option<&'static str> {
+    match stroke {
+        "L" => Some("sắc"),
+        "G" => Some("huyền"),
+        "B" => Some("hỏi"),
+        "LG" => Some("ngã"),
+        "BG" => Some("nặng"),
+        "BL" => Some("ách"),
+        "BLG" => Some("ạch"),
+        _ => None,
+    }
+}
+
+pub fn parse_syllable_stroke(stroke: &str) -> Option<ParsedSyllable> {
+    let mut current = stroke;
+    let mut capitalize = false;
+    if let Some(rest) = current.strip_prefix('#') {
+        capitalize = true;
+        current = rest;
+    }
+
+    let on_glide = current.starts_with('S');
+    if on_glide {
+        current = &current[1..];
+    }
+
+    let mut initial_consonant = "";
+    for length in (1..=4).rev() {
+        if length > current.len() {
+            continue;
+        }
+        let candidate = &current[..length];
+        if let Some(initial) = steno_initial(candidate) {
+            initial_consonant = initial;
+            current = &current[length..];
+            break;
+        }
+    }
+
+    let mut vowel = "";
+    let mut survived = false;
+    for length in (1..=4).rev() {
+        if length > current.len() {
+            continue;
+        }
+        let candidate = &current[..length];
+        if let Some(found_vowel) = steno_vowel(candidate) {
+            vowel = found_vowel;
+            current = &current[length..];
+            survived = true;
+            break;
+        }
+    }
+    if !survived {
+        return None;
+    }
+
+    let mut final_consonant = "";
+    let mut final_steno = "";
+    for length in (1..=2).rev() {
+        if length > current.len() {
+            continue;
+        }
+        let candidate = &current[..length];
+        if let Some(found_final) = steno_final(candidate) {
+            final_consonant = found_final;
+            final_steno = candidate;
+            current = &current[length..];
+            break;
+        }
+    }
+
+    let mut tone = "";
+    let mut tone_steno = "";
+    survived = current.is_empty();
+    if !current.is_empty() {
+        if let Some(found_tone) = steno_tone(current) {
+            tone = found_tone;
+            tone_steno = current;
+            survived = true;
+        }
+    }
+    if !survived {
+        return None;
+    }
+
+    if tone_steno == "BL" || tone_steno == "BLG" {
+        final_consonant = match final_steno {
+            "P" => "p",
+            "R" => "t",
+            "FR" => "c",
+            "RP" => "ch",
+            _ => return None,
+        };
+        tone = if tone_steno == "BL" {
+            "sắc"
+        } else {
+            "nặng"
+        };
+    }
+
+    Some(ParsedSyllable {
+        capitalize,
+        on_glide,
+        initial_consonant: initial_consonant.to_string(),
+        vowel: vowel.to_string(),
+        final_consonant: final_consonant.to_string(),
+        tone: tone.to_string(),
+    })
+}
+
+fn tone_accent(vowel: &str, tone: &str) -> &'static str {
+    match (vowel, tone) {
+        ("a", "") => "a",
+        ("a", "sắc") => "á",
+        ("a", "huyền") => "à",
+        ("a", "hỏi") => "ả",
+        ("a", "ngã") => "ã",
+        ("a", "nặng") => "ạ",
+        ("ă", "") => "ă",
+        ("ă", "sắc") => "ắ",
+        ("ă", "huyền") => "ằ",
+        ("ă", "hỏi") => "ẳ",
+        ("ă", "ngã") => "ẵ",
+        ("ă", "nặng") => "ặ",
+        ("â", "") => "â",
+        ("â", "sắc") => "ấ",
+        ("â", "huyền") => "ầ",
+        ("â", "hỏi") => "ẩ",
+        ("â", "ngã") => "ẫ",
+        ("â", "nặng") => "ậ",
+        ("e", "") => "e",
+        ("e", "sắc") => "é",
+        ("e", "huyền") => "è",
+        ("e", "hỏi") => "ẻ",
+        ("e", "ngã") => "ẽ",
+        ("e", "nặng") => "ẹ",
+        ("ê", "") => "ê",
+        ("ê", "sắc") => "ế",
+        ("ê", "huyền") => "ề",
+        ("ê", "hỏi") => "ể",
+        ("ê", "ngã") => "ễ",
+        ("ê", "nặng") => "ệ",
+        ("i", "") => "i",
+        ("i", "sắc") => "í",
+        ("i", "huyền") => "ì",
+        ("i", "hỏi") => "ỉ",
+        ("i", "ngã") => "ĩ",
+        ("i", "nặng") => "ị",
+        ("o", "") => "o",
+        ("o", "sắc") => "ó",
+        ("o", "huyền") => "ò",
+        ("o", "hỏi") => "ỏ",
+        ("o", "ngã") => "õ",
+        ("o", "nặng") => "ọ",
+        ("ô", "") => "ô",
+        ("ô", "sắc") => "ố",
+        ("ô", "huyền") => "ồ",
+        ("ô", "hỏi") => "ổ",
+        ("ô", "ngã") => "ỗ",
+        ("ô", "nặng") => "ộ",
+        ("ơ", "") => "ơ",
+        ("ơ", "sắc") => "ớ",
+        ("ơ", "huyền") => "ờ",
+        ("ơ", "hỏi") => "ở",
+        ("ơ", "ngã") => "ỡ",
+        ("ơ", "nặng") => "ợ",
+        ("u", "") => "u",
+        ("u", "sắc") => "ú",
+        ("u", "huyền") => "ù",
+        ("u", "hỏi") => "ủ",
+        ("u", "ngã") => "ũ",
+        ("u", "nặng") => "ụ",
+        ("ư", "") => "ư",
+        ("ư", "sắc") => "ứ",
+        ("ư", "huyền") => "ừ",
+        ("ư", "hỏi") => "ử",
+        ("ư", "ngã") => "ữ",
+        ("ư", "nặng") => "ự",
+        ("y", "") => "y",
+        ("y", "sắc") => "ý",
+        ("y", "huyền") => "ỳ",
+        ("y", "hỏi") => "ỷ",
+        ("y", "ngã") => "ỹ",
+        ("y", "nặng") => "ỵ",
+        _ => "",
+    }
+}
+
+pub fn assemble_syllable(parsed: &ParsedSyllable) -> String {
+    let front = matches!(
+        parsed.vowel.as_str(),
+        "a" | "ă" | "â" | "o" | "ô" | "ơ" | "u" | "ư" | "ua/uô" | "ưa/ươ"
+    );
+    let initial = match parsed.initial_consonant.as_str() {
+        "ng/ngh" => {
+            if parsed.on_glide || front {
+                "ng"
+            } else {
+                "ngh"
+            }
+        }
+        "g" => {
+            if parsed.on_glide || front {
+                "g"
+            } else {
+                "gh"
+            }
+        }
+        "gi" => {
+            if !parsed.on_glide && matches!(parsed.vowel.as_str(), "i" | "iê/ia") {
+                "g"
+            } else {
+                "gi"
+            }
+        }
+        "c" => {
+            if parsed.on_glide {
+                "q"
+            } else if front {
+                "c"
+            } else {
+                "k"
+            }
+        }
+        initial => initial,
+    };
+
+    let middle = match parsed.vowel.as_str() {
+        "iê/ia" => {
+            if parsed.initial_consonant.is_empty() {
+                if parsed.on_glide {
+                    if parsed.final_consonant.is_empty() {
+                        format!("uy{}", tone_accent("a", &parsed.tone))
+                    } else {
+                        format!("uy{}", tone_accent("ê", &parsed.tone))
+                    }
+                } else if parsed.final_consonant.is_empty() {
+                    format!("{}a", tone_accent("i", &parsed.tone))
+                } else {
+                    format!("y{}", tone_accent("ê", &parsed.tone))
+                }
+            } else if parsed.on_glide {
+                if parsed.final_consonant.is_empty() {
+                    format!("uy{}", tone_accent("a", &parsed.tone))
+                } else {
+                    format!("uy{}", tone_accent("ê", &parsed.tone))
+                }
+            } else if parsed.final_consonant.is_empty() {
+                format!("{}a", tone_accent("i", &parsed.tone))
+            } else {
+                format!("i{}", tone_accent("ê", &parsed.tone))
+            }
+        }
+        "ua/uô" => {
+            if parsed.final_consonant.is_empty() {
+                format!("{}a", tone_accent("u", &parsed.tone))
+            } else {
+                format!("u{}", tone_accent("ô", &parsed.tone))
+            }
+        }
+        "ưa/ươ" => {
+            if parsed.final_consonant.is_empty() {
+                format!("{}a", tone_accent("ư", &parsed.tone))
+            } else {
+                format!("ư{}", tone_accent("ơ", &parsed.tone))
+            }
+        }
+        "i" => {
+            if parsed.on_glide {
+                if parsed.final_consonant.is_empty() && parsed.initial_consonant != "c" {
+                    format!("{}y", tone_accent("u", &parsed.tone))
+                } else {
+                    format!("u{}", tone_accent("y", &parsed.tone))
+                }
+            } else {
+                tone_accent("i", &parsed.tone).to_string()
+            }
+        }
+        "ă" if matches!(parsed.final_consonant.as_str(), "w" | "j") => {
+            let prefix = if parsed.on_glide {
+                if parsed.initial_consonant == "c" {
+                    "u"
+                } else {
+                    "o"
+                }
+            } else {
+                ""
+            };
+            format!("{prefix}{}", tone_accent("a", &parsed.tone))
+        }
+        "â" | "ê" if parsed.on_glide => {
+            format!("u{}", tone_accent(&parsed.vowel, &parsed.tone))
+        }
+        _ if parsed.initial_consonant == "c" && parsed.on_glide => {
+            format!("u{}", tone_accent(&parsed.vowel, &parsed.tone))
+        }
+        _ if parsed.on_glide => {
+            if parsed.final_consonant.is_empty() {
+                format!("{}{}", tone_accent("o", &parsed.tone), parsed.vowel)
+            } else {
+                format!("o{}", tone_accent(&parsed.vowel, &parsed.tone))
+            }
+        }
+        _ => tone_accent(&parsed.vowel, &parsed.tone).to_string(),
+    };
+
+    let final_part = match parsed.final_consonant.as_str() {
+        "w" => {
+            if matches!(
+                parsed.vowel.as_str(),
+                "iê/ia" | "ư" | "ưa/ươ" | "ê" | "u" | "ă" | "â" | "i"
+            ) {
+                "u"
+            } else {
+                "o"
+            }
+        }
+        "j" => {
+            if matches!(parsed.vowel.as_str(), "ă" | "â") {
+                "y"
+            } else {
+                "i"
+            }
+        }
+        final_consonant => final_consonant,
+    };
+
+    let text = format!("{initial}{middle}{final_part}");
+    if parsed.capitalize && !text.is_empty() {
+        let mut chars = text.chars();
+        let first = chars.next().unwrap().to_uppercase().collect::<String>();
+        format!("{first}{}", chars.collect::<String>())
+    } else {
+        text
+    }
+}
+
+pub fn syllable_from_stroke(stroke: &str) -> Option<String> {
+    parse_syllable_stroke(stroke).map(|parsed| assemble_syllable(&parsed))
+}
+
+pub fn valid_vietnamese_syllables() -> Vec<String> {
+    const INITIAL_KEYS: [&str; 24] = [
+        "", "PW", "K", "KH", "KWR", "TK", "TP", "TKPW", "H", "KWH", "KHR", "HR", "PH", "TPH",
+        "TPR", "TPW", "P", "R", "KP", "T", "TH", "TR", "W", "WR",
+    ];
+    const VOWEL_KEYS: [&str; 15] = [
+        "OEU", "AEU", "AOE", "AOU", "OU", "OE", "O", "AU", "E", "EU", "A", "AE", "AO", "U", "AOEU",
+    ];
+    const FINAL_KEYS: [&str; 7] = ["", "FP", "F", "P", "R", "FR", "RP"];
+    const TONE_KEYS: [&str; 8] = ["", "L", "G", "B", "LG", "BG", "BL", "BLG"];
+
+    let mut syllables = HashSet::new();
+    for on_glide in [false, true] {
+        for initial in INITIAL_KEYS {
+            for vowel in VOWEL_KEYS {
+                for final_key in FINAL_KEYS {
+                    for tone in TONE_KEYS {
+                        let stroke = format!(
+                            "{}{initial}{vowel}{final_key}{tone}",
+                            if on_glide { "S" } else { "" }
+                        );
+                        if let Some(syllable) = syllable_from_stroke(&stroke) {
+                            syllables.insert(syllable);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut syllables = syllables.into_iter().collect::<Vec<_>>();
+    syllables.sort();
+    syllables
 }
 
 fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
@@ -1160,6 +1610,33 @@ pub fn serialize_stroke_keys_json(stroke_keys_json: &str) -> Result<String, JsVa
     let stroke_keys: Vec<String> = serde_json::from_str(stroke_keys_json)
         .map_err(|error| JsValue::from_str(&format!("Invalid stroke keys JSON: {error}")))?;
     Ok(serialize_stroke_keys(&stroke_keys))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = parseSyllableStrokeJson)]
+pub fn parse_syllable_stroke_json(stroke: &str) -> Result<String, JsValue> {
+    serde_json::to_string(&parse_syllable_stroke(stroke)).map_err(|error| {
+        JsValue::from_str(&format!("Failed to serialize parsed syllable: {error}"))
+    })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = assembleSyllableJson)]
+pub fn assemble_syllable_json(parsed_json: &str) -> Result<String, JsValue> {
+    let parsed: ParsedSyllable = serde_json::from_str(parsed_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid parsed syllable JSON: {error}")))?;
+    serde_json::to_string(&assemble_syllable(&parsed))
+        .map_err(|error| JsValue::from_str(&format!("Failed to serialize syllable: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = validVietnameseSyllablesJson)]
+pub fn valid_vietnamese_syllables_json() -> Result<String, JsValue> {
+    serde_json::to_string(&valid_vietnamese_syllables()).map_err(|error| {
+        JsValue::from_str(&format!(
+            "Failed to serialize valid Vietnamese syllables: {error}"
+        ))
+    })
 }
 
 #[cfg(feature = "wasm")]
@@ -2553,6 +3030,25 @@ mod tests {
             "SAT"
         );
         assert_eq!(serialize_stroke_keys(&["-T".to_string()]), "-T");
+    }
+
+    #[test]
+    fn parses_and_assembles_vietnamese_syllable_strokes() {
+        let parsed = parse_syllable_stroke("TAL").unwrap();
+        assert_eq!(parsed.initial_consonant, "t");
+        assert_eq!(parsed.vowel, "a");
+        assert_eq!(parsed.tone, "sắc");
+        assert_eq!(assemble_syllable(&parsed), "tá");
+        assert_eq!(syllable_from_stroke("#TAL"), Some("Tá".to_string()));
+        assert_eq!(parse_syllable_stroke("ZZZ"), None);
+    }
+
+    #[test]
+    fn generates_valid_vietnamese_syllables_in_rust() {
+        let syllables = valid_vietnamese_syllables();
+        assert!(syllables.binary_search(&"tá".to_string()).is_ok());
+        assert!(syllables.binary_search(&"không".to_string()).is_ok());
+        assert!(syllables.binary_search(&"zzzz".to_string()).is_err());
     }
 
     #[test]

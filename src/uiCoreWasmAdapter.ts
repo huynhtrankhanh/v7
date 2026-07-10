@@ -4,6 +4,7 @@ import type {
   CandidateDiffPlan,
   DisplayPlan,
   InferenceRequest,
+  ParsedSyllable,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   VisibleTextGroup,
@@ -34,6 +35,7 @@ export interface UiCoreWasmExports {
   groupVisibleTextSegmentsByCandidateSectionJson(segmentsJson: string): string;
   mapKeyUnique(key: string): string | undefined;
   normalizeQwertyDisplayKeyJson(key: string, code: string): string;
+  parseSyllableStrokeJson(stroke: string): string;
   qwertyKeyboardLayoutJson(): string;
   renderVisibleTextJson(islandsJson: string, candidatesJson: string): string;
   renderVisibleTextSegmentsJson(
@@ -46,6 +48,8 @@ export interface UiCoreWasmExports {
   replacePiecemealSyllableJson(islandsJson: string, targetJson: string, replacement: string): string;
   selectCandidateIslandsJson(candidatesJson: string, index: number, islandsJson?: string | null): string;
   serializeStrokeKeysJson(strokeKeysJson: string): string;
+  assembleSyllableJson(parsedJson: string): string;
+  validVietnameseSyllablesJson(): string;
 }
 
 function parseJson<T>(json: string): T {
@@ -64,6 +68,12 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
   return {
     mapKeyUnique: (key) => wasm.mapKeyUnique(key) ?? null,
     serializeStrokeKeys: (strokeKeys) => wasm.serializeStrokeKeysJson(JSON.stringify(strokeKeys)),
+    parseSyllableStroke: (stroke) =>
+      parseJson<ParsedSyllable | null>(wasm.parseSyllableStrokeJson(stroke)),
+    assembleSyllable: (parsed) =>
+      parseJson<string>(wasm.assembleSyllableJson(JSON.stringify(parsed))),
+    validVietnameseSyllables: () =>
+      parseJson<string[]>(wasm.validVietnameseSyllablesJson()),
     createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),

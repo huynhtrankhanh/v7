@@ -1,5 +1,6 @@
 import initRustUiCore, {
   KeyboardStrokeTrackerCore,
+  assembleSyllableJson,
   buildDisplayPlanJson,
   buildCandidateDiffPlanJson,
   buildCandidateTextDiffPlanJson,
@@ -13,12 +14,14 @@ import initRustUiCore, {
   groupVisibleTextSegmentsByCandidateSectionJson,
   mapKeyUnique as rustMapKeyUnique,
   normalizeQwertyDisplayKeyJson,
+  parseSyllableStrokeJson,
   qwertyKeyboardLayoutJson,
   renderVisibleTextSegmentsJson,
   renderVisibleTextJson,
   replacePiecemealSyllableJson,
   selectCandidateIslandsJson,
-  serializeStrokeKeysJson
+  serializeStrokeKeysJson,
+  validVietnameseSyllablesJson
 } from "./generated/v7_ui_core/v7_ui_core";
 import { setUiCoreProvider } from "./uiCoreProvider";
 import { createUiCoreProviderFromWasm } from "./uiCoreWasmAdapter";
@@ -30,6 +33,7 @@ export function initializeRustUiCore(onReady?: () => void): Promise<void> {
     initPromise = initRustUiCore().then(() => {
       setUiCoreProvider(createUiCoreProviderFromWasm({
         KeyboardStrokeTrackerCore,
+        assembleSyllableJson,
         buildDisplayPlanJson,
         buildCandidateDiffPlanJson,
         buildCandidateTextDiffPlanJson,
@@ -43,12 +47,14 @@ export function initializeRustUiCore(onReady?: () => void): Promise<void> {
         groupVisibleTextSegmentsByCandidateSectionJson,
         mapKeyUnique: rustMapKeyUnique,
         normalizeQwertyDisplayKeyJson,
+        parseSyllableStrokeJson,
         qwertyKeyboardLayoutJson,
         renderVisibleTextSegmentsJson,
         renderVisibleTextJson,
         replacePiecemealSyllableJson,
         selectCandidateIslandsJson,
-        serializeStrokeKeysJson
+        serializeStrokeKeysJson,
+        validVietnameseSyllablesJson
       }));
     });
   }

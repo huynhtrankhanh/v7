@@ -19,6 +19,8 @@ import {
   selectCandidateIslands
 } from "../src/webCore";
 import { convertIslandsForInference, createIsland, getInferenceRequest } from "../src/textBuffer";
+import { assembleSyllable, parseSyllableStroke } from "../src/syllableStroke";
+import { getValidVietnameseSyllables } from "../src/vietnameseSyllables";
 
 const v7Consonants = [
   "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
@@ -66,6 +68,17 @@ function splitIntoThreeChunks<T>(values: T[], firstCut: number, secondCut: numbe
 }
 
 describe("webCore keyboard input", () => {
+  test("decodes Vietnamese syllable strokes through Rust UI core", () => {
+    const parsed = parseSyllableStroke("TAL");
+    expect(parsed).toMatchObject({
+      initialConsonant: "t",
+      vowel: "a",
+      tone: "sắc"
+    });
+    expect(parsed && assembleSyllable(parsed)).toBe("tá");
+    expect(getValidVietnameseSyllables().has("không")).toBe(true);
+  });
+
   test("maps qwerty keys to steno symbols", () => {
     expect(mapKeyUnique("a")).toBe("S-");
     expect(mapKeyUnique(" ")).toBe("*");
