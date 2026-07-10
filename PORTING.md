@@ -18,6 +18,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 - Visible text segment planning, including piecemeal markers, candidate diff sections, and inferred V7 display targets.
 - Visible text grouping by candidate section.
 - Inference island conversion.
+- Coarse inference request planning, including whether inference is needed and the exact request islands.
 - Candidate text selection and selected-candidate island replacement.
 - Piecemeal entry lookup, target discovery, replacement, and cursor advancement.
 - Candidate diff planning using the structured 0-, 1-, or 2-region minimizer instead of whole-text LCS.

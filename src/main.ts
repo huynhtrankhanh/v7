@@ -1,4 +1,4 @@
-import { TextBuffer, convertIslandsForInference, createIsland, ensureString } from "./textBuffer";
+import { TextBuffer, createIsland, ensureString, getInferenceRequest } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import {
     getCandidateSelectionMatch,
@@ -1489,9 +1489,8 @@ async function handleChord(stroke) {
 }
 
 async function runInference() {
-    // Optimization: If no V7 islands, skip inference
-    const hasV7 = state.islands.some(i => i.isV7);
-    if (!hasV7) {
+    const inferenceRequest = getInferenceRequest(state.islands);
+    if (!inferenceRequest.needed) {
         abortInferenceRequest(true);
         state.candidates = [];
         updateDisplay();
@@ -1503,13 +1502,10 @@ async function runInference() {
     inferenceAbortController = controller;
 
     try {
-        // Convert client islands to server format [Fixed, V7, Fixed...]
-        const serverIslands = convertIslandsForInference(state.islands);
-
         const fetchOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ islands: serverIslands }),
+            body: JSON.stringify({ islands: inferenceRequest.islands }),
             ...(controller ? { signal: controller.signal } : {})
         };
 

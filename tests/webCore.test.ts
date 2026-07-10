@@ -17,7 +17,7 @@ import {
   serializeStrokeKeys,
   selectCandidateIslands
 } from "../src/webCore";
-import { convertIslandsForInference, createIsland } from "../src/textBuffer";
+import { convertIslandsForInference, createIsland, getInferenceRequest } from "../src/textBuffer";
 
 const v7Consonants = [
   "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
@@ -428,12 +428,23 @@ describe("webCore piecemeal syllable edit", () => {
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
     expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
+    expect(getInferenceRequest(islands)).toEqual({
+      needed: true,
+      islands: ["", "tro2ma1", ""]
+    });
 
     expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0)).toEqual([
       { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
       { text: "mà", piecemealNumber: 1, piecemealCursor: true }
     ]);
+  });
+
+  test("skips inference when no v7 islands are present", () => {
+    expect(getInferenceRequest([createIsland("vietnamese", "xin chào")])).toEqual({
+      needed: false,
+      islands: []
+    });
   });
 
   test("maps replacement-only model candidates back to all-v7 syllable highlights", () => {

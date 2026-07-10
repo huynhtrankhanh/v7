@@ -98,6 +98,13 @@ pub struct CandidateSelectionMatch {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InferenceRequest {
+    pub needed: bool,
+    pub islands: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VisibleTextSegment {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -690,6 +697,20 @@ pub fn convert_islands_for_inference(islands: &[Island]) -> Vec<String> {
     server_islands
 }
 
+pub fn get_inference_request(islands: &[Island]) -> InferenceRequest {
+    if !islands.iter().any(|island| island.is_v7) {
+        return InferenceRequest {
+            needed: false,
+            islands: Vec::new(),
+        };
+    }
+
+    InferenceRequest {
+        needed: true,
+        islands: convert_islands_for_inference(islands),
+    }
+}
+
 pub fn get_selected_candidate_text(
     candidates: &[Vec<String>],
     index: usize,
@@ -1215,6 +1236,16 @@ pub fn convert_islands_for_inference_json(islands_json: &str) -> Result<String, 
         .map_err(|error| JsValue::from_str(&format!("Invalid islands JSON: {error}")))?;
     serde_json::to_string(&convert_islands_for_inference(&islands)).map_err(|error| {
         JsValue::from_str(&format!("Failed to serialize inference islands: {error}"))
+    })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = getInferenceRequestJson)]
+pub fn get_inference_request_json(islands_json: &str) -> Result<String, JsValue> {
+    let islands: Vec<Island> = serde_json::from_str(islands_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid islands JSON: {error}")))?;
+    serde_json::to_string(&get_inference_request(&islands)).map_err(|error| {
+        JsValue::from_str(&format!("Failed to serialize inference request: {error}"))
     })
 }
 
@@ -2558,6 +2589,25 @@ mod tests {
         assert_eq!(
             convert_islands_for_inference(&[v7("tro2ma1")]),
             vec!["".to_string(), "tro2ma1".to_string(), "".to_string()]
+        );
+    }
+
+    #[test]
+    fn builds_coarse_inference_request_decision() {
+        assert_eq!(
+            get_inference_request(&[vietnamese("xin chào")]),
+            InferenceRequest {
+                needed: false,
+                islands: vec![],
+            }
+        );
+
+        assert_eq!(
+            get_inference_request(&[vietnamese("tôi"), v7("tro2ma1"), punctuation(".")]),
+            InferenceRequest {
+                needed: true,
+                islands: vec!["tôi ".to_string(), "tro2ma1".to_string(), ".".to_string()],
+            }
         );
     }
 

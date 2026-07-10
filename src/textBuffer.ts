@@ -1,5 +1,6 @@
 import { Rope } from "./rope";
 import { requireUiCoreProvider } from "./uiCoreProvider";
+import type { InferenceRequest } from "./webCore";
 
 export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
 
@@ -68,6 +69,10 @@ export function shouldAddSpace(prev: Island | null, curr: Island | null): boolea
 
 export function convertIslandsForInference(islands: Island[]): string[] {
   return requireUiCoreProvider().convertIslandsForInference(islands);
+}
+
+export function getInferenceRequest(islands: Island[]): InferenceRequest {
+  return requireUiCoreProvider().getInferenceRequest(islands);
 }
 
 export function ensureString(text: string | undefined | null): string {

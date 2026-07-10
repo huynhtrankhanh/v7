@@ -2,6 +2,7 @@ import type { CandidateSelectionMatch } from "./candidateSelection";
 import type { Island } from "./textBuffer";
 import type {
   CandidateDiffPlan,
+  InferenceRequest,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   VisibleTextGroup,
@@ -20,6 +21,7 @@ export interface UiCoreWasmExports {
   findPiecemealSyllableTargetsJson(islandsJson: string, validSyllablesJson: string): string;
   getCandidateSelectionMatchJson(stroke: string, candidateCount: number): string;
   getNextPiecemealCursorIndexJson(currentIndex: number, nextTargetCount: number): string;
+  getInferenceRequestJson(islandsJson: string): string;
   getPiecemealEntryIndexJson(stroke: string): string;
   getSelectedCandidateTextJson(candidatesJson: string, index: number, islandsJson?: string | null): string;
   groupVisibleTextSegmentsByCandidateSectionJson(segmentsJson: string): string;
@@ -88,6 +90,8 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       ),
     convertIslandsForInference: (islands) =>
       parseJson<string[]>(wasm.convertIslandsForInferenceJson(JSON.stringify(islands))),
+    getInferenceRequest: (islands) =>
+      parseJson<InferenceRequest>(wasm.getInferenceRequestJson(JSON.stringify(islands))),
     getSelectedCandidateText: (candidates, index, islands) =>
       parseJson<string | null>(
         wasm.getSelectedCandidateTextJson(

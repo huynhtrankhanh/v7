@@ -52,6 +52,11 @@ export interface CandidateDiffPlan {
   candidates: CandidateDiffPlanCandidate[];
 }
 
+export interface InferenceRequest {
+  needed: boolean;
+  islands: string[];
+}
+
 let validVietnameseSyllablesCache: string[] | null = null;
 
 function getValidVietnameseSyllablesList(): string[] {

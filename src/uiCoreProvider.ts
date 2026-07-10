@@ -2,6 +2,7 @@ import type { Island } from "./textBuffer";
 import type {
   CandidateDiffSection,
   CandidateDiffPlan,
+  InferenceRequest,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   VisibleTextGroup,
@@ -33,6 +34,7 @@ export interface UiCoreProvider {
   ): VisibleTextSegment[];
   groupVisibleTextSegmentsByCandidateSection(segments: VisibleTextSegment[]): VisibleTextGroup[];
   convertIslandsForInference(islands: Island[]): string[];
+  getInferenceRequest(islands: Island[]): InferenceRequest;
   getSelectedCandidateText(candidates: string[][], index: number, islands?: Island[]): string | null;
   selectCandidateIslands(candidates: string[][], index: number, islands?: Island[]): Island[] | null;
   getPiecemealEntryIndex(stroke: string): number | null;
