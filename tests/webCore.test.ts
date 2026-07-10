@@ -2,6 +2,7 @@ import fc from "fast-check";
 import {
   buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
+  buildDisplayPlan,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
@@ -423,6 +424,20 @@ describe("webCore piecemeal syllable edit", () => {
       { text: " " },
       { text: "mà", piecemealNumber: 1, piecemealCursor: true }
     ]);
+  });
+
+  test("builds a coarse display plan for the DOM shell", () => {
+    const islands = [
+      createIsland("vietnamese", "tôi"),
+      createIsland("vietnamese", "ko0", true)
+    ];
+    const plan = buildDisplayPlan(islands, [["tôi ", "không"]], 0);
+
+    expect(plan.text).toBe("tôi không");
+    expect(plan.empty).toBe(false);
+    expect(plan.candidateDiffPlan).not.toBeNull();
+    expect(plan.visibleGroups.flatMap((group) => group.segments).map((segment) => segment.text).join(""))
+      .toBe("tôi không");
   });
 
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {

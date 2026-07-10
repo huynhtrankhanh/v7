@@ -7,17 +7,15 @@ import {
 } from "./candidateSelection";
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
-    buildCandidateDiffPlan,
+    buildDisplayPlan,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
     getQwertyKeyboardLayout,
     getNextPiecemealCursorIndex,
     getPiecemealEntryIndex,
-    groupVisibleTextSegmentsByCandidateSection,
     mapKeyUnique,
     normalizeQwertyDisplayKey,
     renderVisibleText,
-    renderVisibleTextSegments,
     replacePiecemealSyllable,
     selectCandidateIslands
 } from "./webCore";
@@ -1676,10 +1674,9 @@ function updateDisplay() {
     const textArea = document.getElementById("text-input");
     const candArea = document.getElementById("candidate-area");
 
-    const text = renderVisibleText(state.islands, state.candidates);
-    const candidateDiffPlan = state.candidates.length > 0
-        ? buildCandidateDiffPlan(state.islands, state.candidates)
-        : null;
+    const displayPlan = buildDisplayPlan(state.islands, state.candidates, piecemealCursorIndex);
+    const text = displayPlan.text;
+    const candidateDiffPlan = displayPlan.candidateDiffPlan;
     
     if (isRawMode) {
         // Raw Mode: Show textarea
@@ -1703,22 +1700,13 @@ function updateDisplay() {
         cursor.id = "cursor";
         display.appendChild(cursor);
 
-        // Check if empty (single empty Viet island)
-        const isEmpty = state.islands.length === 1 && state.islands[0].value === "" && !state.islands[0].isV7;
-
-        if (text === "" && isEmpty) {
+        if (displayPlan.empty) {
             const placeholder = document.createElement("span");
             placeholder.textContent = "Start typing with your steno keyboard...";
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            const visibleSegments = renderVisibleTextSegments(
-                state.islands,
-                state.candidates,
-                piecemealCursorIndex,
-                candidateDiffPlan?.sections ?? []
-            );
-            for (const group of groupVisibleTextSegmentsByCandidateSection(visibleSegments)) {
+            for (const group of displayPlan.visibleGroups) {
                 if (group.candidateSection) {
                     const sectionSpan = document.createElement("span");
                     sectionSpan.className = `candidate-section candidate-section-${group.candidateSection}`;

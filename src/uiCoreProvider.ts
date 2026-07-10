@@ -2,6 +2,7 @@ import type { Island } from "./textBuffer";
 import type {
   CandidateDiffSection,
   CandidateDiffPlan,
+  DisplayPlan,
   InferenceRequest,
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
@@ -24,6 +25,12 @@ export interface UiCoreProvider {
     candidateIndex: number;
     syllableStroke: string | null;
   } | null;
+  buildDisplayPlan(
+    islands: Island[],
+    candidates: string[][],
+    piecemealCursorIndex: number | null,
+    validSyllables: string[]
+  ): DisplayPlan;
   renderVisibleText(islands: Island[], candidates: string[][]): string;
   renderVisibleTextSegments(
     islands: Island[],

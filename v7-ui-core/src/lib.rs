@@ -105,6 +105,15 @@ pub struct InferenceRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DisplayPlan {
+    pub text: String,
+    pub candidate_diff_plan: Option<CandidateDiffPlan>,
+    pub visible_groups: Vec<VisibleTextGroup>,
+    pub empty: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VisibleTextSegment {
     pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -668,6 +677,48 @@ pub fn group_visible_text_segments_by_candidate_section(
     groups
 }
 
+pub fn build_display_plan(
+    islands: &[Island],
+    candidates: &[Vec<String>],
+    piecemeal_cursor_index: Option<usize>,
+    valid_vietnamese_syllables: &HashSet<String>,
+) -> DisplayPlan {
+    let text = render_visible_text(islands, candidates);
+    let candidate_diff_plan = if candidates.is_empty() {
+        None
+    } else {
+        Some(build_candidate_diff_plan(islands, candidates, 5))
+    };
+    let candidate_sections = candidate_diff_plan
+        .as_ref()
+        .map(|plan| plan.sections.as_slice())
+        .unwrap_or(&[]);
+    let visible_segments = render_visible_text_segments(
+        islands,
+        candidates,
+        piecemeal_cursor_index,
+        candidate_sections,
+        valid_vietnamese_syllables,
+    );
+    let empty = text.is_empty()
+        && matches!(
+            islands,
+            [Island {
+                island_type: IslandType::Vietnamese,
+                value,
+                is_v7: false,
+                ..
+            }] if value.is_empty()
+        );
+
+    DisplayPlan {
+        text,
+        candidate_diff_plan,
+        visible_groups: group_visible_text_segments_by_candidate_section(&visible_segments),
+        empty,
+    }
+}
+
 pub fn convert_islands_for_inference(islands: &[Island]) -> Vec<String> {
     let mut server_islands = Vec::new();
     let mut current_fixed = String::new();
@@ -1216,6 +1267,35 @@ pub fn render_visible_text_segments_json(
         &valid_syllables,
     ))
     .map_err(|error| JsValue::from_str(&format!("Failed to serialize visible segments: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = buildDisplayPlanJson)]
+pub fn build_display_plan_json(
+    islands_json: &str,
+    candidates_json: &str,
+    piecemeal_cursor_index_json: &str,
+    valid_syllables_json: &str,
+) -> Result<String, JsValue> {
+    let islands: Vec<Island> = serde_json::from_str(islands_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid islands JSON: {error}")))?;
+    let candidates: Vec<Vec<String>> = serde_json::from_str(candidates_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid candidates JSON: {error}")))?;
+    let piecemeal_cursor_index: Option<usize> =
+        serde_json::from_str(piecemeal_cursor_index_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid cursor JSON: {error}")))?;
+    let valid_syllables: HashSet<String> =
+        serde_json::from_str::<Vec<String>>(valid_syllables_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid syllables JSON: {error}")))?
+            .into_iter()
+            .collect();
+    serde_json::to_string(&build_display_plan(
+        &islands,
+        &candidates,
+        piecemeal_cursor_index,
+        &valid_syllables,
+    ))
+    .map_err(|error| JsValue::from_str(&format!("Failed to serialize display plan: {error}")))
 }
 
 #[cfg(feature = "wasm")]
@@ -2608,6 +2688,32 @@ mod tests {
                 needed: true,
                 islands: vec!["tôi ".to_string(), "tro2ma1".to_string(), ".".to_string()],
             }
+        );
+    }
+
+    #[test]
+    fn builds_coarse_display_plan() {
+        let valid_syllables = ["tôi".to_string(), "không".to_string()]
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let empty_plan = build_display_plan(&[vietnamese("")], &[], None, &valid_syllables);
+        assert_eq!(empty_plan.text, "");
+        assert!(empty_plan.empty);
+        assert!(empty_plan.candidate_diff_plan.is_none());
+
+        let islands = vec![vietnamese("tôi"), v7("ko0")];
+        let candidates = vec![vec!["tôi ".to_string(), "không".to_string()]];
+        let plan = build_display_plan(&islands, &candidates, Some(0), &valid_syllables);
+        assert_eq!(plan.text, "tôi không");
+        assert!(!plan.empty);
+        assert!(plan.candidate_diff_plan.is_some());
+        assert_eq!(
+            plan.visible_groups
+                .iter()
+                .flat_map(|group| group.segments.iter())
+                .map(|segment| segment.text.clone())
+                .collect::<String>(),
+            "tôi không"
         );
     }
 

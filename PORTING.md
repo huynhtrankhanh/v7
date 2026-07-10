@@ -17,6 +17,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 - Visible text rendering.
 - Visible text segment planning, including piecemeal markers, candidate diff sections, and inferred V7 display targets.
 - Visible text grouping by candidate section.
+- Coarse display planning for the DOM shell.
 - Inference island conversion.
 - Coarse inference request planning, including whether inference is needed and the exact request islands.
 - Candidate text selection and selected-candidate island replacement.

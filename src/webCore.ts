@@ -57,6 +57,13 @@ export interface InferenceRequest {
   islands: string[];
 }
 
+export interface DisplayPlan {
+  text: string;
+  candidateDiffPlan: CandidateDiffPlan | null;
+  visibleGroups: VisibleTextGroup[];
+  empty: boolean;
+}
+
 let validVietnameseSyllablesCache: string[] | null = null;
 
 function getValidVietnameseSyllablesList(): string[] {
@@ -102,6 +109,19 @@ export class KeyboardStrokeTracker {
 
 export function renderVisibleText(islands: Island[], candidates: string[][]): string {
   return requireUiCoreProvider().renderVisibleText(islands, candidates);
+}
+
+export function buildDisplayPlan(
+  islands: Island[],
+  candidates: string[][],
+  piecemealCursorIndex: number | null = null
+): DisplayPlan {
+  return requireUiCoreProvider().buildDisplayPlan(
+    islands,
+    candidates,
+    piecemealCursorIndex,
+    getValidVietnameseSyllablesList()
+  );
 }
 
 export function renderVisibleTextSegments(
