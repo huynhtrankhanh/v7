@@ -1,4 +1,5 @@
 import { Rope } from "./rope";
+import { getUiCoreProvider } from "./uiCoreProvider";
 
 export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
 
@@ -66,6 +67,9 @@ export function shouldAddSpace(prev: Island | null, curr: Island | null): boolea
 }
 
 export function convertIslandsForInference(islands: Island[]): string[] {
+  const providerResult = getUiCoreProvider()?.convertIslandsForInference?.(islands);
+  if (providerResult !== undefined) return providerResult;
+
   const serverIslands: string[] = [];
   let currentFixed = Rope.fromString("");
 

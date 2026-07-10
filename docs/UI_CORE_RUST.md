@@ -3,12 +3,17 @@
 This repository is migrating browser-independent UI logic into a Rust crate at
 `v7-ui-core/`.
 
-The first coarse API is candidate diff planning:
+The Rust core owns browser-independent UI transforms behind coarse APIs:
 
-- input: text-buffer islands, inference candidates, visible candidate limit
-- output: the same candidate diff plan shape used by the TypeScript web UI
-- purpose: keep heavy/token-oriented UI logic in a compact shared core that can
-  later be used by web, Android IME code, and native tooling
+- key mapping and stroke serialization
+- fixed candidate-selection stroke matching
+- visible text rendering and inference island conversion
+- selected-candidate text/island replacement
+- piecemeal syllable target discovery/replacement
+- 0-, 1-, or 2-region candidate diff planning
+
+These APIs keep heavy/token-oriented UI logic in a compact shared core that can
+later be used by web, Android IME code, and native tooling.
 
 The DOM, keyboard view, event listeners, networking, and Android
 `InputConnection` equivalents remain platform-shell concerns.
@@ -31,6 +36,14 @@ cargo fmt -- --check
 ## Dockerized WASM Build
 
 The Rust/WASM toolchain is intentionally isolated in Docker because it is heavy.
+
+The normal web production build requires this step:
+
+```bash
+npm run build
+```
+
+`npm run build` runs `scripts/build-ui-core-wasm.sh` first, then runs Vite.
 
 Build generated web bindings with:
 
@@ -56,10 +69,27 @@ Regenerate them whenever `v7-ui-core/src/lib.rs` or its public WASM API changes.
 Any web integration that imports `src/generated/v7_ui_core/` must run this step
 first.
 
+The generated directory is ignored by Git:
+
+```text
+src/generated/v7_ui_core/
+```
+
 ## API Boundary
 
 The WASM API currently uses JSON strings:
 
+- `mapKeyUnique(key)`
+- `serializeStrokeKeysJson(strokeKeysJson)`
+- `getCandidateSelectionMatchJson(stroke, candidateCount)`
+- `renderVisibleTextJson(islandsJson, candidatesJson)`
+- `convertIslandsForInferenceJson(islandsJson)`
+- `getSelectedCandidateTextJson(candidatesJson, index, islandsJson?)`
+- `selectCandidateIslandsJson(candidatesJson, index, islandsJson?)`
+- `getPiecemealEntryIndexJson(stroke)`
+- `getNextPiecemealCursorIndexJson(currentIndex, nextTargetCount)`
+- `findPiecemealSyllableTargetsJson(islandsJson, validSyllablesJson)`
+- `replacePiecemealSyllableJson(islandsJson, targetJson, replacement)`
 - `buildCandidateDiffPlanJson(islandsJson, candidatesJson, limit)`
 - `buildCandidateTextDiffPlanJson(candidateTextsJson)`
 
@@ -67,17 +97,38 @@ This is deliberately coarse. JavaScript should not call tiny per-token helpers
 across the WASM boundary. The Rust core owns the candidate-diff computation and
 returns one complete plan.
 
+`src/rustUiCore.ts` adapts the generated wasm-pack functions into
+`src/uiCoreProvider.ts`. Existing TypeScript implementations remain in place as
+semantic fallback logic for unit tests, development diagnosis, and any browser
+where WASM initialization fails.
+
 ## Semantic Parity
 
 Existing TypeScript unit tests remain the semantic source for web behavior.
-Rust tests mirror the same candidate-diff scenarios:
+Rust tests mirror the same web-core scenarios:
 
-- no visible differences
-- one changed region
-- two separated changed regions
+- key mapping and stroke serialization
+- candidate-selection suffixes
+- visible rendering and inference island conversion
+- selected-candidate replacement
+- piecemeal target discovery/replacement
+- no visible candidate differences
+- one changed diff region
+- two separated changed diff regions
 - adjacent changes collapsing to one region
 - replacement-only V7 candidate shape
 - full alternating candidate shape
 
 When expanding the Rust core, preserve the public TypeScript result shapes until
 the caller has been deliberately migrated.
+
+Validation commands:
+
+```bash
+npm run test:unit -- --runInBand
+npm run test:rust-ui-core
+npm run test:keyboard-layout
+```
+
+`npm run test:keyboard-layout` is a Puppeteer test and runs the full Dockerized
+web build before opening the production bundle.

@@ -1,3 +1,5 @@
+import { getUiCoreProvider } from "./uiCoreProvider";
+
 const candidateSelectionMap: Record<string, number> = {
     "-T": 0,
     "-TS": 1,
@@ -15,6 +17,9 @@ export type CandidateSelectionMatch = {
 };
 
 export function getCandidateSelectionMatch(stroke: string, candidateCount = Number.POSITIVE_INFINITY): CandidateSelectionMatch | null {
+    const providerResult = getUiCoreProvider()?.getCandidateSelectionMatch?.(stroke, candidateCount);
+    if (providerResult !== undefined) return providerResult;
+
     const loneCandidateIndex = candidateSelectionMap[stroke];
     if (loneCandidateIndex !== undefined && loneCandidateIndex < candidateCount) {
         return { candidateIndex: loneCandidateIndex, syllableStroke: null };

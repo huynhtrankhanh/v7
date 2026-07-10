@@ -21,6 +21,7 @@ import {
     replacePiecemealSyllable,
     selectCandidateIslands
 } from "./webCore";
+import { initializeRustUiCore } from "./rustUiCore";
 
 // Maps for V7 Decoding
 const consonantIntMap = {};
@@ -2180,3 +2181,8 @@ function setupPloverControls() {
 renderKeyboardLayout();
 updateKeyboardLayout();
 setupPloverControls();
+void initializeRustUiCore(() => {
+    updateDisplay();
+}).catch((error) => {
+    console.error("Rust UI core initialization failed", error);
+});

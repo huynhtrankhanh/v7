@@ -1,5 +1,6 @@
 import { Island, createIsland, shouldAddSpace } from "./textBuffer";
-import { isValidVietnameseSyllable } from "./vietnameseSyllables";
+import { getUiCoreProvider } from "./uiCoreProvider";
+import { getValidVietnameseSyllables, isValidVietnameseSyllable } from "./vietnameseSyllables";
 
 export interface PiecemealSyllableTarget {
   islandIndex: number;
@@ -49,6 +50,15 @@ export interface CandidateDiffPlan {
   preview: string;
   sections: CandidateDiffSection[];
   candidates: CandidateDiffPlanCandidate[];
+}
+
+let validVietnameseSyllablesCache: string[] | null = null;
+
+function getValidVietnameseSyllablesList(): string[] {
+  if (!validVietnameseSyllablesCache) {
+    validVietnameseSyllablesCache = Array.from(getValidVietnameseSyllables());
+  }
+  return validVietnameseSyllablesCache;
 }
 
 const qwertyToUnique: Record<string, string> = {
@@ -132,6 +142,9 @@ const piecemealEntryStrokes = new Map<string, number>([
 ]);
 
 export function mapKeyUnique(key: string): string | null {
+  const providerResult = getUiCoreProvider()?.mapKeyUnique?.(key);
+  if (providerResult !== undefined) return providerResult;
+
   const k = key.toLowerCase();
   if (k === "t" || k === "g") return "-D";
   if (k === "y" || k === "h") return "-Z";
@@ -140,6 +153,9 @@ export function mapKeyUnique(key: string): string | null {
 }
 
 export function serializeStrokeKeys(strokeKeys: Set<string>): string {
+  const providerResult = getUiCoreProvider()?.serializeStrokeKeys?.(Array.from(strokeKeys));
+  if (providerResult !== undefined) return providerResult;
+
   const hasMiddle = middleKeys.some((k) => strokeKeys.has(k));
   let stroke = "";
   let insertedHyphen = false;
@@ -186,6 +202,9 @@ export class KeyboardStrokeTracker {
 }
 
 export function renderVisibleText(islands: Island[], candidates: string[][]): string {
+  const providerResult = getUiCoreProvider()?.renderVisibleText?.(islands, candidates);
+  if (providerResult !== undefined) return providerResult;
+
   if (candidates.length > 0) {
     return renderCandidateText(islands, candidates[0]);
   }
@@ -272,6 +291,9 @@ export function getSelectedCandidateText(
   index: number,
   islands?: Island[]
 ): string | null {
+  const providerResult = getUiCoreProvider()?.getSelectedCandidateText?.(candidates, index, islands);
+  if (providerResult !== undefined) return providerResult;
+
   const selected = candidates[index];
   if (!selected) return null;
   return islands ? renderCandidateText(islands, selected) : selected.join("");
@@ -282,16 +304,28 @@ export function selectCandidateIslands(
   index: number,
   islands?: Island[]
 ): Island[] | null {
+  const providerResult = getUiCoreProvider()?.selectCandidateIslands?.(candidates, index, islands);
+  if (providerResult !== undefined) return providerResult;
+
   const chosenText = getSelectedCandidateText(candidates, index, islands);
   if (chosenText === null) return null;
   return [createIsland("vietnamese", chosenText)];
 }
 
 export function getPiecemealEntryIndex(stroke: string): number | null {
+  const providerResult = getUiCoreProvider()?.getPiecemealEntryIndex?.(stroke);
+  if (providerResult !== undefined) return providerResult;
+
   return piecemealEntryStrokes.get(stroke) ?? null;
 }
 
 export function findPiecemealSyllableTargets(islands: Island[]): PiecemealSyllableTarget[] {
+  const providerResult = getUiCoreProvider()?.findPiecemealSyllableTargets?.(
+    islands,
+    getValidVietnameseSyllablesList()
+  );
+  if (providerResult !== undefined) return providerResult;
+
   const targets: PiecemealSyllableTarget[] = [];
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
     const island = islands[islandIndex];
@@ -310,6 +344,9 @@ export function replacePiecemealSyllable(
   target: PiecemealSyllableTarget,
   replacement: string
 ): Island[] {
+  const providerResult = getUiCoreProvider()?.replacePiecemealSyllable?.(islands, target, replacement);
+  if (providerResult !== undefined) return providerResult;
+
   const island = islands[target.islandIndex];
   if (!island) return islands;
 
@@ -332,6 +369,9 @@ export function getNextPiecemealCursorIndex(
   currentIndex: number,
   nextTargetCount: number
 ): number | null {
+  const providerResult = getUiCoreProvider()?.getNextPiecemealCursorIndex?.(currentIndex, nextTargetCount);
+  if (providerResult !== undefined) return providerResult;
+
   if (currentIndex <= 0) return null;
   const nextIndex = currentIndex - 1;
   return nextIndex < nextTargetCount && nextIndex < 9 ? nextIndex : null;
@@ -488,6 +528,9 @@ export function buildCandidateDiffPlan(
   candidates: string[][],
   limit = 5
 ): CandidateDiffPlan {
+  const providerResult = getUiCoreProvider()?.buildCandidateDiffPlan?.(islands, candidates, limit);
+  if (providerResult !== undefined) return providerResult;
+
   const visibleCandidates = candidates.slice(0, limit);
   return buildStructuredCandidateDiffPlan(islands, visibleCandidates)
     ?? buildCandidateTextDiffPlan(
@@ -496,6 +539,9 @@ export function buildCandidateDiffPlan(
 }
 
 export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateDiffPlan {
+  const providerResult = getUiCoreProvider()?.buildCandidateTextDiffPlan?.(candidateTexts);
+  if (providerResult !== undefined) return providerResult;
+
   const preview = candidateTexts[0] ?? "";
   const baseTokens = tokenizeDiffText(preview);
   const alignments = candidateTexts.map((text) => diffCandidateText(preview, text, baseTokens));

@@ -5,7 +5,9 @@ This project implements a high-performance Vietnamese text prediction engine usi
 ## Project Structure
 
 *   `inference-rs/`: Rust source code for the inference engine (the core application, serves the web demo).
+*   `v7-ui-core/`: Rust crate for browser-independent UI logic, compiled to WASM for the web frontend.
 *   `src/`: TypeScript source for the web frontend (compiled by Vite into `static/script.js`).
+*   `src/generated/`: Generated WASM bindings for `v7-ui-core` — **generated artifact**, not in the repository.
 *   `static/`: Static web assets (HTML, SVG diagrams, and the compiled `script.js`).
 *   `tests/`: Jest unit tests for the web frontend logic.
 *   `scripts/`: Helper scripts (e2e tests, Stripped Plover agent, etc.).
@@ -18,7 +20,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 
 ## Docker Support
 
-Docker is the recommended way to build and run the project. The `docker-compose.yml` defines four services:
+Docker is the recommended way to build and run the project. The `docker-compose.yml` defines these services:
 
 | Service | Purpose |
 | :--- | :--- |
@@ -26,12 +28,26 @@ Docker is the recommended way to build and run the project. The `docker-compose.
 | `train` | Preprocesses the corpus and trains the KenLM language model. |
 | `stripped-plover` | Optional Stripped Plover TCP proxy for dictionary-based fallback strokes. |
 | `practice-android` | Builds `static/practice.html` into a signed fullscreen Android App Bundle. |
+| `ui-core-wasm` | Builds generated WASM bindings for the Rust UI core used by the web frontend. |
 
 ### Build all services
 
 ```bash
 docker compose build
 ```
+
+### Build the Web Frontend
+
+The production web build requires generated Rust UI core WASM bindings. Use the
+normal npm build script; it runs the Dockerized WASM build first and then Vite:
+
+```bash
+npm ci
+npm run build
+```
+
+Generated bindings are written to `src/generated/v7_ui_core/` and are ignored by
+Git.
 
 ### Run the Web Demo (Server Mode)
 
@@ -106,11 +122,15 @@ This will:
 
 ## Building Locally (Without Docker)
 
-If you prefer a local build, you will need to install the system dependencies and build KenLM yourself. Docker is strongly recommended instead.
+The inference engine can still be built locally, but a proper web build expects
+Docker for the Rust UI core WASM toolchain. Docker is strongly recommended for
+the full project.
 
 ### Prerequisites
 
 *   **Rust:** Latest stable toolchain.
+*   **Node.js/npm:** For the web frontend.
+*   **Docker:** Required by `npm run build` to generate `v7-ui-core` WASM bindings.
 *   **System Libraries:** `cmake`, `build-essential`, `libboost-all-dev`, `zlib1g-dev`, `libbz2-dev`, `liblzma-dev`.
 *   **Python 3.11+** with `tqdm` (for the training script's progress display).
 
@@ -124,7 +144,7 @@ cd kenlm && mkdir -p build && cd build && cmake .. && make -j$(nproc) && cd ../.
 # 2. Build the Rust inference engine
 cd inference-rs && cargo build --release && cd ..
 
-# 3. Build the web frontend
+# 3. Build the web frontend. This invokes Docker for v7-ui-core WASM generation.
 npm ci && npm run build
 ```
 
