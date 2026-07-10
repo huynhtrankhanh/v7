@@ -12,6 +12,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 
 - Key mapping and stroke serialization.
 - Web UI Vietnamese syllable stroke parsing, assembly, and valid-syllable generation.
+- Two-syllable V7 stroke decoding.
 - Keyboard display layout and browser key normalization.
 - Keyboard stroke tracker lifecycle with state retained inside the Rust/WASM object.
 - Candidate selection stroke matching.

@@ -3,6 +3,7 @@ import {
   buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
   buildDisplayPlan,
+  decodeV7Stroke,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
@@ -77,6 +78,13 @@ describe("webCore keyboard input", () => {
     });
     expect(parsed && assembleSyllable(parsed)).toBe("tá");
     expect(getValidVietnameseSyllables().has("không")).toBe(true);
+  });
+
+  test("decodes two-syllable V7 strokes through Rust UI core", () => {
+    expect(decodeV7Stroke("#TWHO*FPUG")).toBe("tro2ma1");
+    expect(decodeV7Stroke("#SPA*")).toBe("ba00e0");
+    expect(decodeV7Stroke("TAL")).toBeNull();
+    expect(decodeV7Stroke("A*B*C")).toBeNull();
   });
 
   test("maps qwerty keys to steno symbols", () => {

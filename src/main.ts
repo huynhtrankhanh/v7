@@ -8,6 +8,7 @@ import {
 import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
 import {
     buildDisplayPlan,
+    decodeV7Stroke,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
     getQwertyKeyboardLayout,
@@ -20,38 +21,6 @@ import {
     selectCandidateIslands
 } from "./webCore";
 import { initializeRustUiCore } from "./rustUiCore";
-
-// Maps for V7 Decoding
-const consonantIntMap = {};
-consonantIntMap[0] = "0";
-consonantIntMap[2 * 4 + 3] = "b";
-consonantIntMap[1 * 4 + 1] = "k";
-consonantIntMap[7 * 4 + 1] = "d";
-consonantIntMap[1 * 4 + 3] = "dd";
-consonantIntMap[3 * 4 + 0] = "ph";
-consonantIntMap[3 * 4 + 3] = "g";
-consonantIntMap[4 * 4 + 0] = "h";
-consonantIntMap[7 * 4 + 2] = "z";
-consonantIntMap[5 * 4 + 3] = "kh";
-consonantIntMap[4 * 4 + 3] = "l";
-consonantIntMap[6 * 4 + 0] = "m";
-consonantIntMap[7 * 4 + 0] = "n";
-consonantIntMap[7 * 4 + 3] = "nh";
-consonantIntMap[3 * 4 + 1] = "ng";
-consonantIntMap[2 * 4 + 0] = "p";
-consonantIntMap[4 * 4 + 1] = "r";
-consonantIntMap[3 * 4 + 2] = "s";
-consonantIntMap[1 * 4 + 0] = "t";
-consonantIntMap[5 * 4 + 0] = "th";
-consonantIntMap[5 * 4 + 1] = "tr";
-consonantIntMap[2 * 4 + 1] = "v";
-consonantIntMap[6 * 4 + 1] = "x";
-consonantIntMap[3] = "w";
-consonantIntMap[5 * 4 + 2] = "ch";
-
-const vowelIntMap = {
-    1: "a", 2: "o", 3: "i", 0: "e" // 0 can be e or u
-};
 
 // Emily symbols (subset mapping adapted from emily-symbols)
 const EMILY_ATTACHMENT_METHOD = "space";
@@ -172,56 +141,6 @@ function applyRetroactiveSpace(action, repeat) {
     }
     return changed;
 }
-
-// --- V7 Decoding ---
-
-function remapTone(t) {
-    if (t === 3) return 4;
-    if (t === 4) return 3;
-    if (t === 5) return 6;
-    if (t === 6) return 5;
-    return t;
-}
-
-function getV7FromStroke(stroke) {
-    if (!stroke.includes("*")) return null;
-    const parts = stroke.split("*");
-
-    if (parts.length !== 2) return null;
-    const leftKeys = parts[0];
-    const rightSide = parts[1];
-
-    const hasSuffixD = rightSide.includes("D");
-    const hasSuffixZ = rightSide.includes("Z");
-    let rightKeys = rightSide.replace("D", "").replace("Z", "");
-
-    // Left Syllable
-    const lk = (k) => leftKeys.includes(k) ? 1 : 0;
-    const cA = lk("#") * 1 + lk("S") * 2 + lk("T") * 4 + lk("P") * 8 + lk("H") * 16;
-    const tA = lk("K") * 1 + lk("W") * 2 + lk("R") * 4;
-    const vA = lk("A") * 1 + lk("O") * 2;
-
-    const consA = consonantIntMap[cA];
-    if (consA === undefined) return null;
-    let vowelCharA = vowelIntMap[vA];
-    if (vA === 0) vowelCharA = hasSuffixD ? "u" : "e";
-
-    // Right Syllable
-    const rk = (k) => rightKeys.includes(k) ? 1 : 0;
-    const vB = rk("U") * 1 + rk("E") * 2;
-    // F->C4, P->C3, L->C2, T->C0, S->C1
-    const cB = rk("T") * 1 + rk("S") * 2 + rk("L") * 4 + rk("P") * 8 + rk("F") * 16;
-    // G->T0, B->T1, R->T2
-    const tB = rk("G") * 1 + rk("B") * 2 + rk("R") * 4;
-
-    const consB = consonantIntMap[cB];
-    if (consB === undefined) return null;
-    let vowelCharB = vowelIntMap[vB];
-    if (vB === 0) vowelCharB = hasSuffixZ ? "u" : "e";
-
-    return consA + vowelCharA + remapTone(tA) + consB + vowelCharB + remapTone(tB);
-}
-
 
 // --- App State ---
 
@@ -1356,7 +1275,7 @@ async function handleChord(stroke) {
     
     // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
     if (stroke.includes("*")) {
-        const v7Code = getV7FromStroke(stroke);
+        const v7Code = decodeV7Stroke(stroke);
         if (v7Code) {
             piecemealCursorIndex = null;
             saveState();

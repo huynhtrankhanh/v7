@@ -26,6 +26,7 @@ export interface UiCoreWasmExports {
   buildCandidateDiffPlanJson(islandsJson: string, candidatesJson: string, limit: number): string;
   buildCandidateTextDiffPlanJson(candidateTextsJson: string): string;
   convertIslandsForInferenceJson(islandsJson: string): string;
+  decodeV7StrokeJson(stroke: string): string;
   findPiecemealSyllableTargetsJson(islandsJson: string, validSyllablesJson: string): string;
   getCandidateSelectionMatchJson(stroke: string, candidateCount: number): string;
   getNextPiecemealCursorIndexJson(currentIndex: number, nextTargetCount: number): string;
@@ -74,6 +75,8 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       parseJson<string>(wasm.assembleSyllableJson(JSON.stringify(parsed))),
     validVietnameseSyllables: () =>
       parseJson<string[]>(wasm.validVietnameseSyllablesJson()),
+    decodeV7Stroke: (stroke) =>
+      parseJson<string | null>(wasm.decodeV7StrokeJson(stroke)),
     createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),

@@ -22,6 +22,7 @@ export interface UiCoreProvider {
   parseSyllableStroke(stroke: string): ParsedSyllable | null;
   assembleSyllable(parsed: ParsedSyllable): string;
   validVietnameseSyllables(): string[];
+  decodeV7Stroke(stroke: string): string | null;
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;

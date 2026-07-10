@@ -104,6 +104,10 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
   return requireUiCoreProvider().serializeStrokeKeys(Array.from(strokeKeys));
 }
 
+export function decodeV7Stroke(stroke: string): string | null {
+  return requireUiCoreProvider().decodeV7Stroke(stroke);
+}
+
 export class KeyboardStrokeTracker {
   private tracker = requireUiCoreProvider().createKeyboardStrokeTracker();
 

@@ -880,6 +880,102 @@ pub fn valid_vietnamese_syllables() -> Vec<String> {
     syllables
 }
 
+fn v7_consonant_from_int(value: usize) -> Option<&'static str> {
+    match value {
+        0 => Some("0"),
+        5 => Some("k"),
+        29 => Some("d"),
+        7 => Some("dd"),
+        11 => Some("b"),
+        12 => Some("ph"),
+        15 => Some("g"),
+        16 => Some("h"),
+        30 => Some("z"),
+        23 => Some("kh"),
+        19 => Some("l"),
+        24 => Some("m"),
+        28 => Some("n"),
+        31 => Some("nh"),
+        13 => Some("ng"),
+        8 => Some("p"),
+        17 => Some("r"),
+        14 => Some("s"),
+        4 => Some("t"),
+        20 => Some("th"),
+        21 => Some("tr"),
+        9 => Some("v"),
+        25 => Some("x"),
+        3 => Some("w"),
+        22 => Some("ch"),
+        _ => None,
+    }
+}
+
+fn v7_vowel_from_int(value: usize) -> Option<&'static str> {
+    match value {
+        1 => Some("a"),
+        2 => Some("o"),
+        3 => Some("i"),
+        0 => Some("e"),
+        _ => None,
+    }
+}
+
+fn remap_v7_tone(tone: usize) -> usize {
+    match tone {
+        3 => 4,
+        4 => 3,
+        5 => 6,
+        6 => 5,
+        _ => tone,
+    }
+}
+
+pub fn decode_v7_stroke(stroke: &str) -> Option<String> {
+    let (left_keys, right_side) = stroke.split_once('*')?;
+    if right_side.contains('*') {
+        return None;
+    }
+
+    let has_suffix_d = right_side.contains('D');
+    let has_suffix_z = right_side.contains('Z');
+    let right_keys = right_side.replace(['D', 'Z'], "");
+    let has_left = |key: char| usize::from(left_keys.contains(key));
+    let has_right = |key: char| usize::from(right_keys.contains(key));
+
+    let consonant_a = has_left('#')
+        + has_left('S') * 2
+        + has_left('T') * 4
+        + has_left('P') * 8
+        + has_left('H') * 16;
+    let tone_a = has_left('K') + has_left('W') * 2 + has_left('R') * 4;
+    let vowel_a = has_left('A') + has_left('O') * 2;
+    let cons_a = v7_consonant_from_int(consonant_a)?;
+    let mut vowel_char_a = v7_vowel_from_int(vowel_a)?;
+    if vowel_a == 0 {
+        vowel_char_a = if has_suffix_d { "u" } else { "e" };
+    }
+
+    let vowel_b = has_right('U') + has_right('E') * 2;
+    let consonant_b = has_right('T')
+        + has_right('S') * 2
+        + has_right('L') * 4
+        + has_right('P') * 8
+        + has_right('F') * 16;
+    let tone_b = has_right('G') + has_right('B') * 2 + has_right('R') * 4;
+    let cons_b = v7_consonant_from_int(consonant_b)?;
+    let mut vowel_char_b = v7_vowel_from_int(vowel_b)?;
+    if vowel_b == 0 {
+        vowel_char_b = if has_suffix_z { "u" } else { "e" };
+    }
+
+    Some(format!(
+        "{cons_a}{vowel_char_a}{}{cons_b}{vowel_char_b}{}",
+        remap_v7_tone(tone_a),
+        remap_v7_tone(tone_b)
+    ))
+}
+
 fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
     QwertyKeyboardKey {
         key: key.to_string(),
@@ -1637,6 +1733,13 @@ pub fn valid_vietnamese_syllables_json() -> Result<String, JsValue> {
             "Failed to serialize valid Vietnamese syllables: {error}"
         ))
     })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = decodeV7StrokeJson)]
+pub fn decode_v7_stroke_json(stroke: &str) -> Result<String, JsValue> {
+    serde_json::to_string(&decode_v7_stroke(stroke))
+        .map_err(|error| JsValue::from_str(&format!("Failed to serialize V7 stroke: {error}")))
 }
 
 #[cfg(feature = "wasm")]
@@ -3049,6 +3152,14 @@ mod tests {
         assert!(syllables.binary_search(&"tá".to_string()).is_ok());
         assert!(syllables.binary_search(&"không".to_string()).is_ok());
         assert!(syllables.binary_search(&"zzzz".to_string()).is_err());
+    }
+
+    #[test]
+    fn decodes_v7_two_syllable_strokes() {
+        assert_eq!(decode_v7_stroke("#TWHO*FPUG"), Some("tro2ma1".to_string()));
+        assert_eq!(decode_v7_stroke("#SPA*"), Some("ba00e0".to_string()));
+        assert_eq!(decode_v7_stroke("TAL"), None);
+        assert_eq!(decode_v7_stroke("A*B*C"), None);
     }
 
     #[test]
