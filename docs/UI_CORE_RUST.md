@@ -51,8 +51,10 @@ Equivalent Compose command:
 docker compose run --rm ui-core-wasm
 ```
 
-Generated files are committed so ordinary web builds do not require Docker.
+Generated files are local build artifacts and are intentionally not committed.
 Regenerate them whenever `v7-ui-core/src/lib.rs` or its public WASM API changes.
+Any web integration that imports `src/generated/v7_ui_core/` must run this step
+first.
 
 ## API Boundary
 

@@ -103,6 +103,9 @@ ipython_config.py
 .pdm-python
 .pdm-build/
 
+# Generated Rust/WASM bindings
+src/generated/
+
 # PEP 582; used by e.g. github.com/fannheyward/coc-pyright
 __pypackages__/
 
