@@ -84,29 +84,14 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
 }
 
 export class KeyboardStrokeTracker {
-  private heldKeys = new Set<string>();
-  private strokeKeys = new Set<string>();
+  private tracker = requireUiCoreProvider().createKeyboardStrokeTracker();
 
   keyDown(key: string, options: { includeInStroke?: boolean } = {}): string | null {
-    const mapped = mapKeyUnique(key);
-    if (!mapped) return null;
-    this.heldKeys.add(mapped);
-    if (options.includeInStroke ?? true) {
-      this.strokeKeys.add(mapped);
-    }
-    return mapped;
+    return this.tracker.keyDown(key, options.includeInStroke ?? true) ?? null;
   }
 
   keyUp(key: string): string | null {
-    const mapped = mapKeyUnique(key);
-    if (!mapped) return null;
-    this.heldKeys.delete(mapped);
-    if (this.heldKeys.size !== 0 || this.strokeKeys.size === 0) {
-      return null;
-    }
-    const stroke = serializeStrokeKeys(this.strokeKeys);
-    this.strokeKeys = new Set<string>();
-    return stroke;
+    return this.tracker.keyUp(key) ?? null;
   }
 }
 

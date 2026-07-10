@@ -90,6 +90,12 @@ describe("webCore keyboard input", () => {
     expect(tracker.keyUp("p")).toBe("SAT");
   });
 
+  test("tracks keys without adding excluded keys to the stroke", () => {
+    const tracker = new KeyboardStrokeTracker();
+    expect(tracker.keyDown("1", { includeInStroke: false })).toBe("1");
+    expect(tracker.keyUp("1")).toBeNull();
+  });
+
   test("defines the on-screen keyboard as QWERTY rows", () => {
     const rows = getQwertyKeyboardLayout().map((row) => row.map((key) => key.key));
 

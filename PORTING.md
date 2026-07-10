@@ -12,6 +12,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 
 - Key mapping and stroke serialization.
 - Keyboard display layout and browser key normalization.
+- Keyboard stroke tracker lifecycle with state retained inside the Rust/WASM object.
 - Candidate selection stroke matching.
 - Visible text rendering.
 - Visible text segment planning, including piecemeal markers, candidate diff sections, and inferred V7 display targets.
@@ -30,8 +31,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 
 ## Remaining DOM-Neutral Candidates
 
-- App state transitions around stroke command handling, piecemeal mode, candidate selection, undo, and inference request policy.
-- Stroke-tracker state transitions if Android and web should share exactly the same chord lifecycle.
+- Coarse app state transitions around stroke command handling, piecemeal mode, candidate selection, undo, and inference request policy.
 - Practice/game logic where it is not browser-specific.
 - Serialization contracts for Android-to-core calls once the IME shell shape is known.
 

@@ -8,9 +8,15 @@ import type {
   VisibleTextSegment
 } from "./webCore";
 
+export interface KeyboardStrokeTrackerCore {
+  keyDown(key: string, includeInStroke: boolean): string | undefined;
+  keyUp(key: string): string | undefined;
+}
+
 export interface UiCoreProvider {
   mapKeyUnique(key: string): string | null;
   serializeStrokeKeys(strokeKeys: string[]): string;
+  createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;
   getCandidateSelectionMatch(stroke: string, candidateCount: number): {

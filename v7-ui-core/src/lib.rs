@@ -125,6 +125,24 @@ pub struct QwertyKeyboardKey {
     pub width: Option<f32>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KeyboardStrokeTrackerState {
+    pub held_keys: Vec<String>,
+    pub stroke_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardStrokeKeyDownResult {
+    pub state: KeyboardStrokeTrackerState,
+    pub mapped: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyboardStrokeKeyUpResult {
+    pub state: KeyboardStrokeTrackerState,
+    pub stroke: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TargetMarker {
     number: usize,
@@ -328,6 +346,72 @@ pub fn serialize_stroke_keys(stroke_keys: &[String]) -> String {
     }
 
     stroke
+}
+
+fn push_unique(values: &mut Vec<String>, value: &str) {
+    if !values.iter().any(|candidate| candidate == value) {
+        values.push(value.to_string());
+    }
+}
+
+fn remove_value(values: &mut Vec<String>, value: &str) {
+    values.retain(|candidate| candidate != value);
+}
+
+pub fn create_keyboard_stroke_tracker_state() -> KeyboardStrokeTrackerState {
+    KeyboardStrokeTrackerState::default()
+}
+
+pub fn keyboard_stroke_tracker_key_down(
+    state: &KeyboardStrokeTrackerState,
+    key: &str,
+    include_in_stroke: bool,
+) -> KeyboardStrokeKeyDownResult {
+    let Some(mapped) = map_key_unique(key) else {
+        return KeyboardStrokeKeyDownResult {
+            state: state.clone(),
+            mapped: None,
+        };
+    };
+
+    let mut next = state.clone();
+    push_unique(&mut next.held_keys, mapped);
+    if include_in_stroke {
+        push_unique(&mut next.stroke_keys, mapped);
+    }
+
+    KeyboardStrokeKeyDownResult {
+        state: next,
+        mapped: Some(mapped.to_string()),
+    }
+}
+
+pub fn keyboard_stroke_tracker_key_up(
+    state: &KeyboardStrokeTrackerState,
+    key: &str,
+) -> KeyboardStrokeKeyUpResult {
+    let Some(mapped) = map_key_unique(key) else {
+        return KeyboardStrokeKeyUpResult {
+            state: state.clone(),
+            stroke: None,
+        };
+    };
+
+    let mut next = state.clone();
+    remove_value(&mut next.held_keys, mapped);
+    if !next.held_keys.is_empty() || next.stroke_keys.is_empty() {
+        return KeyboardStrokeKeyUpResult {
+            state: next,
+            stroke: None,
+        };
+    }
+
+    let stroke = serialize_stroke_keys(&next.stroke_keys);
+    next.stroke_keys.clear();
+    KeyboardStrokeKeyUpResult {
+        state: next,
+        stroke: Some(stroke),
+    }
 }
 
 fn qwerty_key(key: &str, label: &str, width: Option<f32>) -> QwertyKeyboardKey {
@@ -1004,6 +1088,37 @@ pub fn serialize_stroke_keys_json(stroke_keys_json: &str) -> Result<String, JsVa
     let stroke_keys: Vec<String> = serde_json::from_str(stroke_keys_json)
         .map_err(|error| JsValue::from_str(&format!("Invalid stroke keys JSON: {error}")))?;
     Ok(serialize_stroke_keys(&stroke_keys))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = KeyboardStrokeTrackerCore)]
+pub struct KeyboardStrokeTrackerCore {
+    state: KeyboardStrokeTrackerState,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+impl KeyboardStrokeTrackerCore {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> KeyboardStrokeTrackerCore {
+        KeyboardStrokeTrackerCore {
+            state: create_keyboard_stroke_tracker_state(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = keyDown)]
+    pub fn key_down(&mut self, key: &str, include_in_stroke: bool) -> Option<String> {
+        let result = keyboard_stroke_tracker_key_down(&self.state, key, include_in_stroke);
+        self.state = result.state;
+        result.mapped
+    }
+
+    #[wasm_bindgen(js_name = keyUp)]
+    pub fn key_up(&mut self, key: &str) -> Option<String> {
+        let result = keyboard_stroke_tracker_key_up(&self.state, key);
+        self.state = result.state;
+        result.stroke
+    }
 }
 
 #[cfg(feature = "wasm")]
@@ -2327,6 +2442,38 @@ mod tests {
             "SAT"
         );
         assert_eq!(serialize_stroke_keys(&["-T".to_string()]), "-T");
+    }
+
+    #[test]
+    fn tracks_keyboard_strokes_until_all_keys_are_released() {
+        let state = create_keyboard_stroke_tracker_state();
+        let down = keyboard_stroke_tracker_key_down(&state, "a", true);
+        assert_eq!(down.mapped, Some("S-".to_string()));
+        let down = keyboard_stroke_tracker_key_down(&down.state, "c", true);
+        let down = keyboard_stroke_tracker_key_down(&down.state, "p", true);
+
+        let up = keyboard_stroke_tracker_key_up(&down.state, "a");
+        assert_eq!(up.stroke, None);
+        let up = keyboard_stroke_tracker_key_up(&up.state, "c");
+        assert_eq!(up.stroke, None);
+        let up = keyboard_stroke_tracker_key_up(&up.state, "p");
+        assert_eq!(up.stroke, Some("SAT".to_string()));
+        assert!(up.state.held_keys.is_empty());
+        assert!(up.state.stroke_keys.is_empty());
+    }
+
+    #[test]
+    fn skips_keys_excluded_from_stroke_collection() {
+        let state = create_keyboard_stroke_tracker_state();
+        let down = keyboard_stroke_tracker_key_down(&state, "1", false);
+        assert_eq!(down.mapped, Some("1".to_string()));
+        assert_eq!(down.state.held_keys, vec!["1".to_string()]);
+        assert!(down.state.stroke_keys.is_empty());
+
+        let up = keyboard_stroke_tracker_key_up(&down.state, "1");
+        assert_eq!(up.stroke, None);
+        assert!(up.state.held_keys.is_empty());
+        assert!(up.state.stroke_keys.is_empty());
     }
 
     #[test]

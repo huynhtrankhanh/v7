@@ -1814,7 +1814,7 @@ function updateDisplay() {
 
 // --- Input Handling ---
 
-const keyboardStrokeTracker = new KeyboardStrokeTracker();
+let keyboardStrokeTracker: KeyboardStrokeTracker | null = null;
 
 document.addEventListener("keydown", (e) => {
     trackQwertyKey(e, true);
@@ -1903,7 +1903,7 @@ document.addEventListener("keydown", (e) => {
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
     const immediateDigit = !ploverActive && mapped.match(/^[0-9]$/);
-    keyboardStrokeTracker.keyDown(e.key, { includeInStroke: !immediateDigit });
+    keyboardStrokeTracker?.keyDown(e.key, { includeInStroke: !immediateDigit });
 
     // Numbers should generate immediate capital island, not be part of steno chord
     if (immediateDigit) {
@@ -1927,7 +1927,7 @@ document.addEventListener("keyup", (e) => {
         return;
     }
 
-    const strokeStr = keyboardStrokeTracker.keyUp(e.key);
+    const strokeStr = keyboardStrokeTracker?.keyUp(e.key);
     if (strokeStr) {
         handleChord(strokeStr).catch((err) => {
             console.error("Stroke handling failed", err);
@@ -2180,6 +2180,7 @@ function setupPloverControls() {
 
 setupPloverControls();
 void initializeRustUiCore(() => {
+    keyboardStrokeTracker = new KeyboardStrokeTracker();
     renderKeyboardLayout();
     updateKeyboardLayout();
     updateDisplay();

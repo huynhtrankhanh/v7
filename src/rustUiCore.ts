@@ -1,4 +1,5 @@
 import initRustUiCore, {
+  KeyboardStrokeTrackerCore,
   buildCandidateDiffPlanJson,
   buildCandidateTextDiffPlanJson,
   convertIslandsForInferenceJson,
@@ -26,6 +27,7 @@ export function initializeRustUiCore(onReady?: () => void): Promise<void> {
   if (!initPromise) {
     initPromise = initRustUiCore().then(() => {
       setUiCoreProvider(createUiCoreProviderFromWasm({
+        KeyboardStrokeTrackerCore,
         buildCandidateDiffPlanJson,
         buildCandidateTextDiffPlanJson,
         convertIslandsForInferenceJson,

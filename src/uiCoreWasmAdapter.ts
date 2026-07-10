@@ -10,6 +10,10 @@ import type {
 import type { UiCoreProvider } from "./uiCoreProvider";
 
 export interface UiCoreWasmExports {
+  KeyboardStrokeTrackerCore: new () => {
+    keyDown(key: string, includeInStroke: boolean): string | undefined;
+    keyUp(key: string): string | undefined;
+  };
   buildCandidateDiffPlanJson(islandsJson: string, candidatesJson: string, limit: number): string;
   buildCandidateTextDiffPlanJson(candidateTextsJson: string): string;
   convertIslandsForInferenceJson(islandsJson: string): string;
@@ -51,6 +55,7 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
   return {
     mapKeyUnique: (key) => wasm.mapKeyUnique(key) ?? null,
     serializeStrokeKeys: (strokeKeys) => wasm.serializeStrokeKeysJson(JSON.stringify(strokeKeys)),
+    createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),
     normalizeQwertyDisplayKey: (key, code) =>
