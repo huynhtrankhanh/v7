@@ -5,26 +5,26 @@ import type {
 } from "./webCore";
 
 export interface UiCoreProvider {
-  mapKeyUnique?(key: string): string | null;
-  serializeStrokeKeys?(strokeKeys: string[]): string;
-  getCandidateSelectionMatch?(stroke: string, candidateCount: number): {
+  mapKeyUnique(key: string): string | null;
+  serializeStrokeKeys(strokeKeys: string[]): string;
+  getCandidateSelectionMatch(stroke: string, candidateCount: number): {
     candidateIndex: number;
     syllableStroke: string | null;
   } | null;
-  renderVisibleText?(islands: Island[], candidates: string[][]): string;
-  convertIslandsForInference?(islands: Island[]): string[];
-  getSelectedCandidateText?(candidates: string[][], index: number, islands?: Island[]): string | null;
-  selectCandidateIslands?(candidates: string[][], index: number, islands?: Island[]): Island[] | null;
-  getPiecemealEntryIndex?(stroke: string): number | null;
-  findPiecemealSyllableTargets?(islands: Island[], validSyllables: string[]): PiecemealSyllableTarget[];
-  replacePiecemealSyllable?(
+  renderVisibleText(islands: Island[], candidates: string[][]): string;
+  convertIslandsForInference(islands: Island[]): string[];
+  getSelectedCandidateText(candidates: string[][], index: number, islands?: Island[]): string | null;
+  selectCandidateIslands(candidates: string[][], index: number, islands?: Island[]): Island[] | null;
+  getPiecemealEntryIndex(stroke: string): number | null;
+  findPiecemealSyllableTargets(islands: Island[], validSyllables: string[]): PiecemealSyllableTarget[];
+  replacePiecemealSyllable(
     islands: Island[],
     target: PiecemealSyllableTarget,
     replacement: string
   ): Island[];
-  getNextPiecemealCursorIndex?(currentIndex: number, nextTargetCount: number): number | null;
-  buildCandidateDiffPlan?(islands: Island[], candidates: string[][], limit: number): CandidateDiffPlan;
-  buildCandidateTextDiffPlan?(candidateTexts: string[]): CandidateDiffPlan;
+  getNextPiecemealCursorIndex(currentIndex: number, nextTargetCount: number): number | null;
+  buildCandidateDiffPlan(islands: Island[], candidates: string[][], limit: number): CandidateDiffPlan;
+  buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateDiffPlan;
 }
 
 let uiCoreProvider: UiCoreProvider | null = null;
@@ -34,5 +34,12 @@ export function setUiCoreProvider(provider: UiCoreProvider | null): void {
 }
 
 export function getUiCoreProvider(): UiCoreProvider | null {
+  return uiCoreProvider;
+}
+
+export function requireUiCoreProvider(): UiCoreProvider {
+  if (!uiCoreProvider) {
+    throw new Error("Rust UI core provider is not initialized.");
+  }
   return uiCoreProvider;
 }

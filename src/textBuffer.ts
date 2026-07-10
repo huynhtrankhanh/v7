@@ -1,5 +1,5 @@
 import { Rope } from "./rope";
-import { getUiCoreProvider } from "./uiCoreProvider";
+import { requireUiCoreProvider } from "./uiCoreProvider";
 
 export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
 
@@ -67,35 +67,7 @@ export function shouldAddSpace(prev: Island | null, curr: Island | null): boolea
 }
 
 export function convertIslandsForInference(islands: Island[]): string[] {
-  const providerResult = getUiCoreProvider()?.convertIslandsForInference?.(islands);
-  if (providerResult !== undefined) return providerResult;
-
-  const serverIslands: string[] = [];
-  let currentFixed = Rope.fromString("");
-
-  for (let i = 0; i < islands.length; i++) {
-    const curr = islands[i];
-
-    if (curr.isV7) {
-      const prev = i > 0 ? islands[i - 1] : null;
-      if (prev && shouldAddSpace(prev, curr)) {
-        currentFixed.append(" ");
-      }
-      const chunk = currentFixed.toString();
-      serverIslands.push(chunk);
-      currentFixed = Rope.fromString("");
-      serverIslands.push(curr.value);
-    } else {
-      const prev = i > 0 ? islands[i - 1] : null;
-      if (prev && shouldAddSpace(prev, curr)) {
-        currentFixed.append(" ");
-      }
-      currentFixed.append(curr.value);
-    }
-  }
-
-  serverIslands.push(currentFixed.toString());
-  return serverIslands;
+  return requireUiCoreProvider().convertIslandsForInference(islands);
 }
 
 export function ensureString(text: string | undefined | null): string {

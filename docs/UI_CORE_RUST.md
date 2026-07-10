@@ -55,8 +55,9 @@ The script:
 
 1. Builds `Dockerfile.ui-core`.
 2. Runs `wasm-pack build` inside the container.
-3. Writes generated bindings to `src/generated/v7_ui_core/`.
-4. Restores host ownership on the generated files.
+3. Writes browser bindings to `src/generated/v7_ui_core/`.
+4. Writes Node/Jest bindings to `src/generated/v7_ui_core_node/`.
+5. Restores host ownership on the generated files.
 
 Equivalent Compose command:
 
@@ -66,13 +67,14 @@ docker compose run --rm ui-core-wasm
 
 Generated files are local build artifacts and are intentionally not committed.
 Regenerate them whenever `v7-ui-core/src/lib.rs` or its public WASM API changes.
-Any web integration that imports `src/generated/v7_ui_core/` must run this step
-first.
+Any web integration that imports `src/generated/v7_ui_core/`, or any Jest run
+that imports `src/generated/v7_ui_core_node/`, must run this step first.
 
 The generated directory is ignored by Git:
 
 ```text
 src/generated/v7_ui_core/
+src/generated/v7_ui_core_node/
 ```
 
 ## API Boundary
@@ -98,14 +100,16 @@ across the WASM boundary. The Rust core owns the candidate-diff computation and
 returns one complete plan.
 
 `src/rustUiCore.ts` adapts the generated wasm-pack functions into
-`src/uiCoreProvider.ts`. Existing TypeScript implementations remain in place as
-semantic fallback logic for unit tests, development diagnosis, and any browser
-where WASM initialization fails.
+`src/uiCoreProvider.ts`. Provider-backed UI-core entry points require Rust; they
+throw if called before the provider is initialized. Jest installs the same
+provider from the generated Node WASM package in `tests/setupRustUiCore.ts`, so
+web-core unit tests exercise Rust instead of a parallel TypeScript fallback.
 
 ## Semantic Parity
 
-Existing TypeScript unit tests remain the semantic source for web behavior.
-Rust tests mirror the same web-core scenarios:
+Existing TypeScript unit tests remain the semantic source for web behavior, but
+their provider-backed calls now execute Rust through generated WASM. Native Rust
+tests mirror the same web-core scenarios:
 
 - key mapping and stroke serialization
 - candidate-selection suffixes

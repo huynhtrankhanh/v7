@@ -6,6 +6,10 @@ use wasm_bindgen::prelude::*;
 
 const CANDIDATE_SECTION_PENALTY: usize = 1;
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum IslandType {
@@ -23,11 +27,11 @@ pub struct Island {
     pub value: String,
     #[serde(default, rename = "isV7")]
     pub is_v7: bool,
-    #[serde(default, rename = "leftSpace")]
+    #[serde(default, rename = "leftSpace", skip_serializing_if = "is_false")]
     pub left_space: bool,
-    #[serde(default, rename = "rightSpace")]
+    #[serde(default, rename = "rightSpace", skip_serializing_if = "is_false")]
     pub right_space: bool,
-    #[serde(default, rename = "explicitSpacing")]
+    #[serde(default, rename = "explicitSpacing", skip_serializing_if = "is_false")]
     pub explicit_spacing: bool,
 }
 

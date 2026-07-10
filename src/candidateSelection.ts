@@ -1,15 +1,4 @@
-import { getUiCoreProvider } from "./uiCoreProvider";
-
-const candidateSelectionMap: Record<string, number> = {
-    "-T": 0,
-    "-TS": 1,
-    "-S": 2,
-    "-D": 3,
-    "-Z": 4
-};
-const HYPHEN_PREFIX_LENGTH = 1;
-
-const candidateSelectionSuffixes = Object.keys(candidateSelectionMap).sort((a, b) => b.length - a.length);
+import { requireUiCoreProvider } from "./uiCoreProvider";
 
 export type CandidateSelectionMatch = {
     candidateIndex: number;
@@ -17,28 +6,7 @@ export type CandidateSelectionMatch = {
 };
 
 export function getCandidateSelectionMatch(stroke: string, candidateCount = Number.POSITIVE_INFINITY): CandidateSelectionMatch | null {
-    const providerResult = getUiCoreProvider()?.getCandidateSelectionMatch?.(stroke, candidateCount);
-    if (providerResult !== undefined) return providerResult;
-
-    const loneCandidateIndex = candidateSelectionMap[stroke];
-    if (loneCandidateIndex !== undefined && loneCandidateIndex < candidateCount) {
-        return { candidateIndex: loneCandidateIndex, syllableStroke: null };
-    }
-
-    for (const suffix of candidateSelectionSuffixes) {
-        const rightHandSuffix = suffix.slice(HYPHEN_PREFIX_LENGTH);
-        if (!stroke.endsWith(rightHandSuffix)) continue;
-        const syllableStroke = stroke.slice(0, -rightHandSuffix.length);
-        if (!syllableStroke || syllableStroke.endsWith("-")) continue;
-        const candidateIndex = candidateSelectionMap[suffix];
-        if (candidateIndex >= candidateCount) continue;
-        return {
-            candidateIndex,
-            syllableStroke
-        };
-    }
-
-    return null;
+    return requireUiCoreProvider().getCandidateSelectionMatch(stroke, candidateCount);
 }
 
 export function getFirstCandidateAppendStroke(stroke: string): string | null {

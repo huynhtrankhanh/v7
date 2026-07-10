@@ -9,4 +9,4 @@ RUN rustup target add wasm32-unknown-unknown \
 
 WORKDIR /workspace/v7-ui-core
 
-CMD ["wasm-pack", "build", "--target", "web", "--out-dir", "../src/generated/v7_ui_core", "--features", "wasm"]
+CMD ["sh", "-lc", "export PATH=/usr/local/cargo/bin:$PATH && wasm-pack build --target web --out-dir ../src/generated/v7_ui_core --features wasm && wasm-pack build --target nodejs --out-dir ../src/generated/v7_ui_core_node --features wasm"]

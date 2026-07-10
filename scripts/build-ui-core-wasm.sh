@@ -18,10 +18,10 @@ fi
   --volume "${ROOT_DIR}:/workspace" \
   "${IMAGE_NAME}"
 
-if [[ -d "${ROOT_DIR}/src/generated/v7_ui_core" ]]; then
+if [[ -d "${ROOT_DIR}/src/generated" ]]; then
   if command -v sudo >/dev/null 2>&1; then
-    sudo chown -R "$(id -u):$(id -g)" "${ROOT_DIR}/src/generated/v7_ui_core"
+    sudo chown -R "$(id -u):$(id -g)" "${ROOT_DIR}/src/generated"
   else
-    chown -R "$(id -u):$(id -g)" "${ROOT_DIR}/src/generated/v7_ui_core"
+    chown -R "$(id -u):$(id -g)" "${ROOT_DIR}/src/generated"
   fi
 fi
