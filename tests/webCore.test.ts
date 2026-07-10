@@ -5,6 +5,7 @@ import {
   buildCandidateTextDiffPlan,
   buildDisplayPlan,
   decodeEmilySymbol,
+  decodePunctuationStroke,
   decodeV7Stroke,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
@@ -87,6 +88,14 @@ describe("webCore keyboard input", () => {
     expect(decodeV7Stroke("#SPA*")).toBe("ba00e0");
     expect(decodeV7Stroke("TAL")).toBeNull();
     expect(decodeV7Stroke("A*B*C")).toBeNull();
+  });
+
+  test("decodes punctuation strokes through Rust UI core", () => {
+    expect(decodePunctuationStroke("TP-PL")).toBe(".");
+    expect(decodePunctuationStroke("KW-BG")).toBe(",");
+    expect(decodePunctuationStroke("KW-PL")).toBe("?");
+    expect(decodePunctuationStroke("TP-BG")).toBe("!");
+    expect(decodePunctuationStroke("TAL")).toBeNull();
   });
 
   test("decodes Emily symbols through Rust UI core", () => {

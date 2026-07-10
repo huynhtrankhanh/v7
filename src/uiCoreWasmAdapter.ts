@@ -30,6 +30,7 @@ export interface UiCoreWasmExports {
   buildCandidateTextDiffPlanJson(candidateTextsJson: string): string;
   convertIslandsForInferenceJson(islandsJson: string): string;
   decodeEmilySymbolJson(stroke: string): string;
+  decodePunctuationStrokeJson(stroke: string): string;
   decodeV7StrokeJson(stroke: string): string;
   findPiecemealSyllableTargetsJson(islandsJson: string, validSyllablesJson: string): string;
   getCandidateSelectionMatchJson(stroke: string, candidateCount: number): string;
@@ -81,6 +82,8 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       parseJson<string[]>(wasm.validVietnameseSyllablesJson()),
     decodeV7Stroke: (stroke) =>
       parseJson<string | null>(wasm.decodeV7StrokeJson(stroke)),
+    decodePunctuationStroke: (stroke) =>
+      parseJson<string | null>(wasm.decodePunctuationStrokeJson(stroke)),
     decodeEmilySymbol: (stroke) =>
       parseJson<EmilySymbolResult | null>(wasm.decodeEmilySymbolJson(stroke)),
     applyRetroactiveSpace: (islands, action, repeat) =>

@@ -10,6 +10,7 @@ import {
     applyRetroactiveSpace,
     buildDisplayPlan,
     decodeEmilySymbol,
+    decodePunctuationStroke,
     decodeV7Stroke,
     KeyboardStrokeTracker,
     findPiecemealSyllableTargets,
@@ -23,13 +24,6 @@ import {
     selectCandidateIslands
 } from "./webCore";
 import { initializeRustUiCore } from "./rustUiCore";
-
-const PUNCTUATION_MAP: Record<string, string> = {
-    "TP-PL": ".",
-    "KW-BG": ",",
-    "KW-PL": "?",
-    "TP-BG": "!"
-};
 
 // --- App State ---
 
@@ -1210,7 +1204,7 @@ async function handleChord(stroke) {
         ? getCandidateSelectionMatch(stroke, state.candidates.length)
         : null;
     if (selection && selection.syllableStroke !== null) {
-        const combinedPunctuation = PUNCTUATION_MAP[selection.syllableStroke];
+        const combinedPunctuation = decodePunctuationStroke(selection.syllableStroke);
         if (combinedPunctuation) {
             saveState();
             if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
@@ -1244,7 +1238,8 @@ async function handleChord(stroke) {
     }
 
     // 3. Punctuation
-    if (PUNCTUATION_MAP[stroke]) {
+    const punctuation = decodePunctuationStroke(stroke);
+    if (punctuation) {
         // Auto-select candidate if present
         if (state.candidates.length > 0) {
             selectCandidate(0);
@@ -1252,8 +1247,7 @@ async function handleChord(stroke) {
 
         saveState();
         piecemealCursorIndex = null;
-        const punct = PUNCTUATION_MAP[stroke];
-        buffer.appendIsland(createIsland('punctuation', punct));
+        buffer.appendIsland(createIsland('punctuation', punctuation));
         updateDisplay();
         return;
     }

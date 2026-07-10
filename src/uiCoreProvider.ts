@@ -25,6 +25,7 @@ export interface UiCoreProvider {
   assembleSyllable(parsed: ParsedSyllable): string;
   validVietnameseSyllables(): string[];
   decodeV7Stroke(stroke: string): string | null;
+  decodePunctuationStroke(stroke: string): string | null;
   decodeEmilySymbol(stroke: string): EmilySymbolResult | null;
   applyRetroactiveSpace(islands: Island[], action: "insert" | "delete" | null, repeat: number): RetroactiveSpaceResult;
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;

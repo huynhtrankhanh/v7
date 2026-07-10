@@ -998,6 +998,16 @@ pub fn decode_v7_stroke(stroke: &str) -> Option<String> {
     ))
 }
 
+pub fn decode_punctuation_stroke(stroke: &str) -> Option<&'static str> {
+    match stroke {
+        "TP-PL" => Some("."),
+        "KW-BG" => Some(","),
+        "KW-PL" => Some("?"),
+        "TP-BG" => Some("!"),
+        _ => None,
+    }
+}
+
 fn emily_symbols(pattern: &str) -> Option<[&'static str; 4]> {
     match pattern {
         "FG" => Some(["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"]),
@@ -1928,6 +1938,14 @@ pub fn valid_vietnamese_syllables_json() -> Result<String, JsValue> {
 pub fn decode_v7_stroke_json(stroke: &str) -> Result<String, JsValue> {
     serde_json::to_string(&decode_v7_stroke(stroke))
         .map_err(|error| JsValue::from_str(&format!("Failed to serialize V7 stroke: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = decodePunctuationStrokeJson)]
+pub fn decode_punctuation_stroke_json(stroke: &str) -> Result<String, JsValue> {
+    serde_json::to_string(&decode_punctuation_stroke(stroke)).map_err(|error| {
+        JsValue::from_str(&format!("Failed to serialize punctuation stroke: {error}"))
+    })
 }
 
 #[cfg(feature = "wasm")]
@@ -3378,6 +3396,15 @@ mod tests {
         assert_eq!(decode_v7_stroke("#SPA*"), Some("ba00e0".to_string()));
         assert_eq!(decode_v7_stroke("TAL"), None);
         assert_eq!(decode_v7_stroke("A*B*C"), None);
+    }
+
+    #[test]
+    fn decodes_punctuation_strokes() {
+        assert_eq!(decode_punctuation_stroke("TP-PL"), Some("."));
+        assert_eq!(decode_punctuation_stroke("KW-BG"), Some(","));
+        assert_eq!(decode_punctuation_stroke("KW-PL"), Some("?"));
+        assert_eq!(decode_punctuation_stroke("TP-BG"), Some("!"));
+        assert_eq!(decode_punctuation_stroke("TAL"), None);
     }
 
     #[test]

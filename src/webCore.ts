@@ -124,6 +124,10 @@ export function decodeV7Stroke(stroke: string): string | null {
   return requireUiCoreProvider().decodeV7Stroke(stroke);
 }
 
+export function decodePunctuationStroke(stroke: string): string | null {
+  return requireUiCoreProvider().decodePunctuationStroke(stroke);
+}
+
 export function decodeEmilySymbol(stroke: string): EmilySymbolResult | null {
   return requireUiCoreProvider().decodeEmilySymbol(stroke);
 }

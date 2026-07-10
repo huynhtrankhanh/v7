@@ -39,34 +39,6 @@ export function createIsland(
   return { type, value, isV7, ...meta };
 }
 
-export function shouldAddSpace(prev: Island | null, curr: Island | null): boolean {
-  if (!prev || !curr) return false;
-  if (prev.value === "" && !prev.isV7) return false;
-  if (prev.type === "spacing" || curr.type === "spacing") return false;
-
-  if (prev.explicitSpacing || curr.explicitSpacing) {
-    if (curr.explicitSpacing) {
-      return !!curr.leftSpace;
-    }
-    return !!prev.rightSpace;
-  }
-
-  if (curr.type === "punctuation") return false;
-  if (prev.type === "punctuation") return true;
-
-  if (prev.type === "capital") {
-    if (curr.type === "capital") return false;
-    return true;
-  }
-
-  if (prev.type === "vietnamese") {
-    if (curr.type === "vietnamese") return true;
-    if (curr.type === "capital") return true;
-  }
-
-  return false;
-}
-
 export function convertIslandsForInference(islands: Island[]): string[] {
   return requireUiCoreProvider().convertIslandsForInference(islands);
 }
