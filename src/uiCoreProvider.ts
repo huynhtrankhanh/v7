@@ -1,7 +1,10 @@
 import type { Island } from "./textBuffer";
 import type {
+  CandidateDiffSection,
   CandidateDiffPlan,
-  PiecemealSyllableTarget
+  PiecemealSyllableTarget,
+  VisibleTextGroup,
+  VisibleTextSegment
 } from "./webCore";
 
 export interface UiCoreProvider {
@@ -12,6 +15,14 @@ export interface UiCoreProvider {
     syllableStroke: string | null;
   } | null;
   renderVisibleText(islands: Island[], candidates: string[][]): string;
+  renderVisibleTextSegments(
+    islands: Island[],
+    candidates: string[][],
+    piecemealCursorIndex: number | null,
+    candidateSections: CandidateDiffSection[],
+    validSyllables: string[]
+  ): VisibleTextSegment[];
+  groupVisibleTextSegmentsByCandidateSection(segments: VisibleTextSegment[]): VisibleTextGroup[];
   convertIslandsForInference(islands: Island[]): string[];
   getSelectedCandidateText(candidates: string[][], index: number, islands?: Island[]): string | null;
   selectCandidateIslands(candidates: string[][], index: number, islands?: Island[]): Island[] | null;

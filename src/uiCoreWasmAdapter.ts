@@ -2,7 +2,9 @@ import type { CandidateSelectionMatch } from "./candidateSelection";
 import type { Island } from "./textBuffer";
 import type {
   CandidateDiffPlan,
-  PiecemealSyllableTarget
+  PiecemealSyllableTarget,
+  VisibleTextGroup,
+  VisibleTextSegment
 } from "./webCore";
 import type { UiCoreProvider } from "./uiCoreProvider";
 
@@ -15,8 +17,16 @@ export interface UiCoreWasmExports {
   getNextPiecemealCursorIndexJson(currentIndex: number, nextTargetCount: number): string;
   getPiecemealEntryIndexJson(stroke: string): string;
   getSelectedCandidateTextJson(candidatesJson: string, index: number, islandsJson?: string | null): string;
+  groupVisibleTextSegmentsByCandidateSectionJson(segmentsJson: string): string;
   mapKeyUnique(key: string): string | undefined;
   renderVisibleTextJson(islandsJson: string, candidatesJson: string): string;
+  renderVisibleTextSegmentsJson(
+    islandsJson: string,
+    candidatesJson: string,
+    piecemealCursorIndexJson: string,
+    candidateSectionsJson: string,
+    validSyllablesJson: string
+  ): string;
   replacePiecemealSyllableJson(islandsJson: string, targetJson: string, replacement: string): string;
   selectCandidateIslandsJson(candidatesJson: string, index: number, islandsJson?: string | null): string;
   serializeStrokeKeysJson(strokeKeysJson: string): string;
@@ -44,6 +54,26 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       ),
     renderVisibleText: (islands, candidates) =>
       wasm.renderVisibleTextJson(JSON.stringify(islands), JSON.stringify(candidates)),
+    renderVisibleTextSegments: (
+      islands,
+      candidates,
+      piecemealCursorIndex,
+      candidateSections,
+      validSyllables
+    ) =>
+      parseJson<VisibleTextSegment[]>(
+        wasm.renderVisibleTextSegmentsJson(
+          JSON.stringify(islands),
+          JSON.stringify(candidates),
+          JSON.stringify(piecemealCursorIndex),
+          JSON.stringify(candidateSections),
+          JSON.stringify(validSyllables)
+        )
+      ),
+    groupVisibleTextSegmentsByCandidateSection: (segments) =>
+      parseJson<VisibleTextGroup[]>(
+        wasm.groupVisibleTextSegmentsByCandidateSectionJson(JSON.stringify(segments))
+      ),
     convertIslandsForInference: (islands) =>
       parseJson<string[]>(wasm.convertIslandsForInferenceJson(JSON.stringify(islands))),
     getSelectedCandidateText: (candidates, index, islands) =>

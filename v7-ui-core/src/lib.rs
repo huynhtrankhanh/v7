@@ -96,6 +96,32 @@ pub struct CandidateSelectionMatch {
     pub syllable_stroke: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleTextSegment {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piecemeal_number: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piecemeal_cursor: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_section: Option<CandidateDiffSectionRole>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisibleTextGroup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_section: Option<CandidateDiffSectionRole>,
+    pub segments: Vec<VisibleTextSegment>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TargetMarker {
+    number: usize,
+    cursor: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DiffToken {
     text: String,
@@ -357,6 +383,107 @@ pub fn render_visible_text(islands: &[Island], candidates: &[Vec<String>]) -> St
     text
 }
 
+pub fn render_visible_text_segments(
+    islands: &[Island],
+    candidates: &[Vec<String>],
+    piecemeal_cursor_index: Option<usize>,
+    candidate_sections: &[CandidateDiffSection],
+    valid_vietnamese_syllables: &HashSet<String>,
+) -> Vec<VisibleTextSegment> {
+    let targets = find_piecemeal_syllable_targets(islands, valid_vietnamese_syllables);
+    let target_markers: Vec<(PiecemealSyllableTarget, TargetMarker)> = targets
+        .into_iter()
+        .enumerate()
+        .map(|(index, target)| {
+            (
+                target,
+                TargetMarker {
+                    number: index + 1,
+                    cursor: Some(index) == piecemeal_cursor_index,
+                },
+            )
+        })
+        .collect();
+    let inferred_v7_parts =
+        map_inferred_parts_to_v7_islands(islands, candidates.first().map(Vec::as_slice));
+
+    let mut segments = Vec::new();
+    for (index, curr) in islands.iter().enumerate() {
+        let prev = if index > 0 {
+            islands.get(index - 1)
+        } else {
+            None
+        };
+        if should_add_space(prev, Some(curr)) {
+            segments.push(plain_segment(" "));
+        }
+
+        if curr.is_v7 {
+            if let Some(inferred_part) = inferred_v7_parts
+                .iter()
+                .find(|(island_index, _)| *island_index == index)
+                .map(|(_, part)| part.as_str())
+            {
+                let display_targets = find_inferred_v7_display_targets(inferred_part, curr, index);
+                segments.extend(render_island_with_piecemeal_targets(
+                    inferred_part,
+                    curr,
+                    index,
+                    &target_markers,
+                    valid_vietnamese_syllables,
+                    0,
+                    Some(&display_targets),
+                ));
+            } else {
+                let rendered_value = format!("[{}]", curr.value);
+                segments.extend(render_island_with_piecemeal_targets(
+                    &rendered_value,
+                    curr,
+                    index,
+                    &target_markers,
+                    valid_vietnamese_syllables,
+                    1,
+                    None,
+                ));
+            }
+        } else {
+            segments.extend(render_island_with_piecemeal_targets(
+                &curr.value,
+                curr,
+                index,
+                &target_markers,
+                valid_vietnamese_syllables,
+                0,
+                None,
+            ));
+        }
+    }
+
+    apply_candidate_sections_to_segments(&merge_plain_segments(&segments), candidate_sections)
+}
+
+pub fn group_visible_text_segments_by_candidate_section(
+    segments: &[VisibleTextSegment],
+) -> Vec<VisibleTextGroup> {
+    let mut groups: Vec<VisibleTextGroup> = Vec::new();
+
+    for segment in segments {
+        if let Some(last) = groups.last_mut() {
+            if last.candidate_section == segment.candidate_section {
+                last.segments.push(segment.clone());
+                continue;
+            }
+        }
+
+        groups.push(VisibleTextGroup {
+            candidate_section: segment.candidate_section,
+            segments: vec![segment.clone()],
+        });
+    }
+
+    groups
+}
+
 pub fn convert_islands_for_inference(islands: &[Island]) -> Vec<String> {
     let mut server_islands = Vec::new();
     let mut current_fixed = String::new();
@@ -508,6 +635,246 @@ pub fn replace_piecemeal_syllable(
     }
 }
 
+fn plain_segment(text: &str) -> VisibleTextSegment {
+    VisibleTextSegment {
+        text: text.to_string(),
+        piecemeal_number: None,
+        piecemeal_cursor: None,
+        candidate_section: None,
+    }
+}
+
+fn marked_segment(text: String, marker: TargetMarker) -> VisibleTextSegment {
+    VisibleTextSegment {
+        text,
+        piecemeal_number: Some(marker.number),
+        piecemeal_cursor: Some(marker.cursor),
+        candidate_section: None,
+    }
+}
+
+fn target_matches(a: &PiecemealSyllableTarget, b: &PiecemealSyllableTarget) -> bool {
+    a.island_index == b.island_index && a.is_v7 == b.is_v7 && a.syllable_index == b.syllable_index
+}
+
+fn render_island_with_piecemeal_targets(
+    rendered_value: &str,
+    island: &Island,
+    island_index: usize,
+    target_markers: &[(PiecemealSyllableTarget, TargetMarker)],
+    valid_vietnamese_syllables: &HashSet<String>,
+    offset: usize,
+    display_targets: Option<&[PiecemealSyllableTarget]>,
+) -> Vec<VisibleTextSegment> {
+    if target_markers.is_empty() || island.island_type != IslandType::Vietnamese {
+        return vec![plain_segment(rendered_value)];
+    }
+
+    let owned_targets;
+    let targets = if let Some(display_targets) = display_targets {
+        display_targets
+    } else if island.is_v7 {
+        owned_targets = find_v7_syllables(&island.value, island_index);
+        &owned_targets
+    } else {
+        owned_targets = find_fixed_vietnamese_syllables(
+            &island.value,
+            island_index,
+            valid_vietnamese_syllables,
+        );
+        &owned_targets
+    };
+
+    let active_targets: Vec<(&PiecemealSyllableTarget, TargetMarker)> = targets
+        .iter()
+        .filter_map(|target| {
+            target_markers
+                .iter()
+                .find(|(candidate, _)| target_matches(candidate, target))
+                .map(|(_, marker)| (target, *marker))
+        })
+        .collect();
+    if active_targets.is_empty() {
+        return vec![plain_segment(rendered_value)];
+    }
+
+    let mut segments = Vec::new();
+    let mut cursor = 0;
+    for (target, marker) in active_targets {
+        let start = target.start + offset;
+        let end = target.end + offset;
+        if start > cursor {
+            segments.push(plain_segment(&slice_utf16(rendered_value, cursor, start)));
+        }
+        segments.push(marked_segment(
+            slice_utf16(rendered_value, start, end),
+            marker,
+        ));
+        cursor = end;
+    }
+    let rendered_len = utf16_len(rendered_value);
+    if cursor < rendered_len {
+        segments.push(plain_segment(&slice_utf16(
+            rendered_value,
+            cursor,
+            rendered_len,
+        )));
+    }
+    segments
+}
+
+fn merge_plain_segments(segments: &[VisibleTextSegment]) -> Vec<VisibleTextSegment> {
+    let mut merged: Vec<VisibleTextSegment> = Vec::new();
+    for segment in segments {
+        if let Some(last) = merged.last_mut() {
+            if last.piecemeal_number.is_none()
+                && segment.piecemeal_number.is_none()
+                && last.candidate_section == segment.candidate_section
+            {
+                last.text.push_str(&segment.text);
+                continue;
+            }
+        }
+        merged.push(segment.clone());
+    }
+    merged
+}
+
+fn apply_candidate_sections_to_segments(
+    segments: &[VisibleTextSegment],
+    sections: &[CandidateDiffSection],
+) -> Vec<VisibleTextSegment> {
+    if sections.is_empty() {
+        return segments.to_vec();
+    }
+
+    let mut sorted_sections: Vec<&CandidateDiffSection> = sections
+        .iter()
+        .filter(|section| section.end > section.start)
+        .collect();
+    sorted_sections.sort_by_key(|section| (section.start, section.end));
+    if sorted_sections.is_empty() {
+        return segments.to_vec();
+    }
+
+    let mut next = Vec::new();
+    let mut offset = 0;
+    for segment in segments {
+        let mut segment_offset = 0;
+        let segment_len = utf16_len(&segment.text);
+        while segment_offset < segment_len {
+            let absolute = offset + segment_offset;
+            let section = sorted_sections
+                .iter()
+                .find(|candidate| absolute >= candidate.start && absolute < candidate.end)
+                .copied();
+            let next_boundary = section.map(|section| section.end).unwrap_or_else(|| {
+                sorted_sections
+                    .iter()
+                    .find(|candidate| candidate.start > absolute)
+                    .map(|candidate| candidate.start)
+                    .unwrap_or(usize::MAX)
+            });
+            let take = (segment_len - segment_offset).min(next_boundary - absolute);
+            let mut split = segment.clone();
+            split.text = slice_utf16(&segment.text, segment_offset, segment_offset + take);
+            if let Some(section) = section {
+                split.candidate_section = Some(section.role);
+            }
+            next.push(split);
+            segment_offset += take;
+        }
+        offset += segment_len;
+    }
+
+    merge_plain_segments(&next)
+}
+
+fn map_inferred_parts_to_v7_islands(
+    islands: &[Island],
+    top_candidate: Option<&[String]>,
+) -> Vec<(usize, String)> {
+    let Some(top_candidate) = top_candidate else {
+        return Vec::new();
+    };
+    let v7_slots = get_v7_candidate_slots(islands);
+    let uses_full_alternating_shape = uses_full_alternating_candidate_shape(islands, top_candidate);
+    let mut mapped = Vec::new();
+
+    for (v7_index, slot) in v7_slots.iter().enumerate() {
+        let inferred = if uses_full_alternating_shape {
+            top_candidate.get(slot.full_candidate_index)
+        } else {
+            top_candidate.get(v7_index)
+        };
+        if let Some(inferred) = inferred {
+            if !inferred.is_empty() {
+                mapped.push((slot.island_index, inferred.clone()));
+            }
+        }
+    }
+    mapped
+}
+
+fn find_inferred_vietnamese_syllables(
+    value: &str,
+    island_index: usize,
+) -> Vec<PiecemealSyllableTarget> {
+    let mut targets = Vec::new();
+    let mut word_start: Option<(usize, usize)> = None;
+    let mut code_unit_index = 0;
+
+    for (byte_index, ch) in value.char_indices() {
+        if is_vietnamese_word_char(ch) {
+            if word_start.is_none() {
+                word_start = Some((byte_index, code_unit_index));
+            }
+        } else if let Some((start_byte, start_code_units)) = word_start.take() {
+            targets.push(PiecemealSyllableTarget {
+                island_index,
+                syllable_index: targets.len(),
+                text: value[start_byte..byte_index].to_string(),
+                start: start_code_units,
+                end: code_unit_index,
+                is_v7: true,
+            });
+        }
+        code_unit_index += ch.len_utf16();
+    }
+
+    if let Some((start_byte, start_code_units)) = word_start {
+        targets.push(PiecemealSyllableTarget {
+            island_index,
+            syllable_index: targets.len(),
+            text: value[start_byte..].to_string(),
+            start: start_code_units,
+            end: code_unit_index,
+            is_v7: true,
+        });
+    }
+    targets
+}
+
+fn find_inferred_v7_display_targets(
+    inferred_text: &str,
+    island: &Island,
+    island_index: usize,
+) -> Vec<PiecemealSyllableTarget> {
+    let raw_targets = find_v7_syllables(&island.value, island_index);
+    let inferred_targets = find_inferred_vietnamese_syllables(inferred_text, island_index);
+
+    inferred_targets
+        .into_iter()
+        .take(raw_targets.len())
+        .enumerate()
+        .map(|(index, mut target)| {
+            target.syllable_index = index;
+            target.is_v7 = true;
+            target
+        })
+        .collect()
+}
+
 #[cfg(feature = "wasm")]
 #[wasm_bindgen(js_name = buildCandidateDiffPlanJson)]
 pub fn build_candidate_diff_plan_json(
@@ -568,6 +935,51 @@ pub fn render_visible_text_json(
     let candidates: Vec<Vec<String>> = serde_json::from_str(candidates_json)
         .map_err(|error| JsValue::from_str(&format!("Invalid candidates JSON: {error}")))?;
     Ok(render_visible_text(&islands, &candidates))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = renderVisibleTextSegmentsJson)]
+pub fn render_visible_text_segments_json(
+    islands_json: &str,
+    candidates_json: &str,
+    piecemeal_cursor_index_json: &str,
+    candidate_sections_json: &str,
+    valid_syllables_json: &str,
+) -> Result<String, JsValue> {
+    let islands: Vec<Island> = serde_json::from_str(islands_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid islands JSON: {error}")))?;
+    let candidates: Vec<Vec<String>> = serde_json::from_str(candidates_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid candidates JSON: {error}")))?;
+    let piecemeal_cursor_index: Option<usize> =
+        serde_json::from_str(piecemeal_cursor_index_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid cursor JSON: {error}")))?;
+    let candidate_sections: Vec<CandidateDiffSection> =
+        serde_json::from_str(candidate_sections_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid sections JSON: {error}")))?;
+    let valid_syllables: HashSet<String> =
+        serde_json::from_str::<Vec<String>>(valid_syllables_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid syllables JSON: {error}")))?
+            .into_iter()
+            .collect();
+    serde_json::to_string(&render_visible_text_segments(
+        &islands,
+        &candidates,
+        piecemeal_cursor_index,
+        &candidate_sections,
+        &valid_syllables,
+    ))
+    .map_err(|error| JsValue::from_str(&format!("Failed to serialize visible segments: {error}")))
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = groupVisibleTextSegmentsByCandidateSectionJson)]
+pub fn group_visible_text_segments_by_candidate_section_json(
+    segments_json: &str,
+) -> Result<String, JsValue> {
+    let segments: Vec<VisibleTextSegment> = serde_json::from_str(segments_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid segments JSON: {error}")))?;
+    serde_json::to_string(&group_visible_text_segments_by_candidate_section(&segments))
+        .map_err(|error| JsValue::from_str(&format!("Failed to serialize visible groups: {error}")))
 }
 
 #[cfg(feature = "wasm")]
@@ -1243,6 +1655,12 @@ fn utf16_to_byte_index(text: &str, target_code_units: usize) -> usize {
     text.len()
 }
 
+fn slice_utf16(text: &str, start: usize, end: usize) -> String {
+    let start_byte = utf16_to_byte_index(text, start);
+    let end_byte = utf16_to_byte_index(text, end);
+    text[start_byte..end_byte].to_string()
+}
+
 fn diff_token_values(
     base_values: &[String],
     candidate_values: &[String],
@@ -1574,17 +1992,19 @@ fn slice_token_range(text: &str, tokens: &[DiffToken], start: usize, end: usize)
 
 #[derive(Debug, Clone, Copy)]
 struct V7CandidateSlot {
+    island_index: usize,
     full_candidate_index: usize,
 }
 
 fn get_v7_candidate_slots(islands: &[Island]) -> Vec<V7CandidateSlot> {
     let mut v7_slots = Vec::new();
     let mut candidate_part_index = 0;
-    for island in islands {
+    for (island_index, island) in islands.iter().enumerate() {
         if !island.is_v7 {
             continue;
         }
         v7_slots.push(V7CandidateSlot {
+            island_index,
             full_candidate_index: candidate_part_index + 1,
         });
         candidate_part_index += 2;
