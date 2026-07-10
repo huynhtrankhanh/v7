@@ -138,6 +138,51 @@ pub struct RetroactiveSpaceResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WebAppCoreState {
+    pub islands: Vec<Island>,
+    pub pending_capitalization: bool,
+    pub candidates: Vec<Vec<String>>,
+    pub piecemeal_cursor_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrokePlanStep {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub islands: Option<Vec<Island>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub island: Option<Island>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidates: Option<Vec<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub piecemeal_cursor_index: Option<Option<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_capitalization: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StrokePlan {
+    pub handled: bool,
+    pub steps: Vec<StrokePlanStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoPolicySaveInstruction {
+    pub group: Option<String>,
+    pub piecemeal_cursor_index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DisplayPlan {
     pub text: String,
     pub candidate_diff_plan: Option<CandidateDiffPlan>,
@@ -902,6 +947,10 @@ pub fn valid_vietnamese_syllables() -> Vec<String> {
     syllables
 }
 
+fn valid_syllable_set() -> HashSet<String> {
+    valid_vietnamese_syllables().into_iter().collect()
+}
+
 fn v7_consonant_from_int(value: usize) -> Option<&'static str> {
     match value {
         0 => Some("0"),
@@ -1171,6 +1220,485 @@ pub fn apply_retroactive_space(
     RetroactiveSpaceResult {
         islands: next,
         changed,
+    }
+}
+
+fn plan_step(kind: &str) -> StrokePlanStep {
+    StrokePlanStep {
+        kind: kind.to_string(),
+        islands: None,
+        island: None,
+        candidates: None,
+        piecemeal_cursor_index: None,
+        pending_capitalization: None,
+        text: None,
+        action: None,
+        repeat: None,
+    }
+}
+
+fn island_step(kind: &str, island: Island) -> StrokePlanStep {
+    StrokePlanStep {
+        island: Some(island),
+        ..plan_step(kind)
+    }
+}
+
+fn set_islands_step(islands: Vec<Island>) -> StrokePlanStep {
+    StrokePlanStep {
+        islands: Some(islands),
+        ..plan_step("setIslands")
+    }
+}
+
+fn set_candidates_step(candidates: Vec<Vec<String>>) -> StrokePlanStep {
+    StrokePlanStep {
+        candidates: Some(candidates),
+        ..plan_step("setCandidates")
+    }
+}
+
+fn set_piecemeal_step(piecemeal_cursor_index: Option<usize>) -> StrokePlanStep {
+    StrokePlanStep {
+        piecemeal_cursor_index: Some(piecemeal_cursor_index),
+        ..plan_step("setPiecemealCursor")
+    }
+}
+
+fn set_pending_capitalization_step(pending_capitalization: bool) -> StrokePlanStep {
+    StrokePlanStep {
+        pending_capitalization: Some(pending_capitalization),
+        ..plan_step("setPendingCapitalization")
+    }
+}
+
+fn append_text_step(text: String) -> StrokePlanStep {
+    StrokePlanStep {
+        text: Some(text),
+        ..plan_step("appendText")
+    }
+}
+
+fn retro_space_step(action: String, repeat: usize) -> StrokePlanStep {
+    StrokePlanStep {
+        action: Some(action),
+        repeat: Some(repeat),
+        ..plan_step("applyRetroactiveSpace")
+    }
+}
+
+fn vietnamese_island(value: String, is_v7: bool) -> Island {
+    Island {
+        island_type: IslandType::Vietnamese,
+        value,
+        is_v7,
+        left_space: false,
+        right_space: false,
+        explicit_spacing: false,
+    }
+}
+
+fn punctuation_island(value: &str) -> Island {
+    Island {
+        island_type: IslandType::Punctuation,
+        value: value.to_string(),
+        is_v7: false,
+        left_space: false,
+        right_space: false,
+        explicit_spacing: false,
+    }
+}
+
+fn spacing_island(value: &str) -> Island {
+    Island {
+        island_type: IslandType::Spacing,
+        value: value.to_string(),
+        is_v7: false,
+        left_space: false,
+        right_space: false,
+        explicit_spacing: false,
+    }
+}
+
+fn emily_island(result: &EmilySymbolResult) -> Island {
+    Island {
+        island_type: IslandType::Emily,
+        value: result.value.clone(),
+        is_v7: false,
+        left_space: result.left_space,
+        right_space: result.right_space,
+        explicit_spacing: result.explicit_spacing,
+    }
+}
+
+fn get_first_candidate_append_stroke(stroke: &str) -> Option<String> {
+    let selection = get_candidate_selection_match(stroke, usize::MAX)?;
+    if selection.candidate_index == 0 {
+        selection.syllable_stroke
+    } else {
+        None
+    }
+}
+
+fn is_lone_candidate_selection_stroke(stroke: &str) -> bool {
+    get_candidate_selection_match(stroke, usize::MAX)
+        .is_some_and(|selection| selection.syllable_stroke.is_none())
+}
+
+pub fn plan_core_stroke(
+    state: &WebAppCoreState,
+    stroke: &str,
+    plover_available: bool,
+) -> StrokePlan {
+    let mut steps = Vec::new();
+
+    if stroke == "*" {
+        steps.push(plan_step("undo"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    if stroke == "#S-" || stroke == "#S" {
+        if !state.candidates.is_empty() {
+            if let Some(next_islands) =
+                select_candidate_islands(&state.candidates, 0, Some(&state.islands))
+            {
+                steps.push(set_islands_step(next_islands));
+                steps.push(set_candidates_step(Vec::new()));
+            }
+        }
+        steps.push(set_piecemeal_step(None));
+        steps.push(plan_step("clearHistory"));
+        steps.push(plan_step("enterRawMode"));
+        steps.push(plan_step("updateDisplay"));
+        steps.push(plan_step("focusRawInput"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    let mut suppress_piecemeal_entry = false;
+    if let Some(cursor_index) = state.piecemeal_cursor_index {
+        if let Some(entry_index) = get_piecemeal_entry_index(stroke) {
+            let targets = find_piecemeal_syllable_targets(&state.islands, &valid_syllable_set());
+            if targets.get(entry_index).is_some() {
+                steps.push(set_piecemeal_step(Some(entry_index)));
+                steps.push(plan_step("updateDisplay"));
+                return StrokePlan {
+                    handled: true,
+                    steps,
+                };
+            }
+        }
+
+        if state.candidates.is_empty() && is_lone_candidate_selection_stroke(stroke) {
+            steps.push(set_piecemeal_step(None));
+            steps.push(plan_step("updateDisplay"));
+            return StrokePlan {
+                handled: true,
+                steps,
+            };
+        }
+
+        if let Some(first_candidate_append_stroke) = get_first_candidate_append_stroke(stroke) {
+            if state.candidates.is_empty() {
+                if let Some(parsed) = parse_syllable_stroke(&first_candidate_append_stroke) {
+                    steps.push(plan_step("saveHistory"));
+                    steps.push(set_piecemeal_step(None));
+                    steps.push(append_text_step(assemble_syllable(&parsed)));
+                    steps.push(plan_step("runInference"));
+                    return StrokePlan {
+                        handled: true,
+                        steps,
+                    };
+                }
+            }
+        }
+
+        let piecemeal_selection = if state.candidates.is_empty() {
+            None
+        } else {
+            get_candidate_selection_match(stroke, state.candidates.len())
+        };
+        if piecemeal_selection.is_some() {
+            suppress_piecemeal_entry = true;
+        } else if let Some(parsed_piecemeal) = parse_syllable_stroke(stroke) {
+            let targets = find_piecemeal_syllable_targets(&state.islands, &valid_syllable_set());
+            if let Some(target) = targets.get(cursor_index) {
+                steps.push(plan_step("saveHistory"));
+                let replacement = assemble_syllable(&parsed_piecemeal);
+                let next_islands = replace_piecemeal_syllable(&state.islands, target, &replacement);
+                let next_targets =
+                    find_piecemeal_syllable_targets(&next_islands, &valid_syllable_set());
+                steps.push(set_islands_step(next_islands));
+                steps.push(set_candidates_step(Vec::new()));
+                steps.push(set_piecemeal_step(get_next_piecemeal_cursor_index(
+                    cursor_index,
+                    next_targets.len(),
+                )));
+                steps.push(plan_step("runInference"));
+                return StrokePlan {
+                    handled: true,
+                    steps,
+                };
+            }
+        } else {
+            steps.push(set_piecemeal_step(None));
+            suppress_piecemeal_entry = true;
+            steps.push(plan_step("updateDisplay"));
+        }
+    }
+
+    if !suppress_piecemeal_entry {
+        if let Some(entry_index) = get_piecemeal_entry_index(stroke) {
+            let targets = find_piecemeal_syllable_targets(&state.islands, &valid_syllable_set());
+            if targets.get(entry_index).is_some() {
+                steps.push(set_piecemeal_step(Some(entry_index)));
+                steps.push(plan_step("updateDisplay"));
+                return StrokePlan {
+                    handled: true,
+                    steps,
+                };
+            }
+        }
+    }
+
+    if stroke.contains('*') {
+        if let Some(v7_code) = decode_v7_stroke(stroke) {
+            steps.push(set_piecemeal_step(None));
+            steps.push(plan_step("saveHistory"));
+            steps.push(island_step(
+                "appendIsland",
+                vietnamese_island(v7_code, true),
+            ));
+            steps.push(plan_step("runInference"));
+            return StrokePlan {
+                handled: true,
+                steps,
+            };
+        }
+    }
+
+    if let Some(emily_result) = decode_emily_symbol(stroke) {
+        let repeat = emily_result.repeat.max(1);
+        if let Some(retro_space) = emily_result.retro_space.clone() {
+            if !state.islands.is_empty() || emily_result.cap_next {
+                steps.push(plan_step("saveHistory"));
+                steps.push(retro_space_step(retro_space, repeat));
+                steps.push(set_pending_capitalization_step(emily_result.cap_next));
+                steps.push(plan_step("runInferenceIfChangedOrCapitalized"));
+            }
+            return StrokePlan {
+                handled: true,
+                steps,
+            };
+        }
+        steps.push(plan_step("saveHistory"));
+        steps.push(island_step("appendIsland", emily_island(&emily_result)));
+        steps.push(set_pending_capitalization_step(emily_result.cap_next));
+        steps.push(set_piecemeal_step(None));
+        steps.push(plan_step("runInference"));
+        steps.push(plan_step("updateDisplay"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    let selection = if state.candidates.is_empty() {
+        None
+    } else {
+        get_candidate_selection_match(stroke, state.candidates.len())
+    };
+
+    if let Some(selection) = &selection {
+        if let Some(syllable_stroke) = &selection.syllable_stroke {
+            if let Some(combined_punctuation) = decode_punctuation_stroke(syllable_stroke) {
+                if let Some(next_islands) = select_candidate_islands(
+                    &state.candidates,
+                    selection.candidate_index,
+                    Some(&state.islands),
+                ) {
+                    steps.push(plan_step("saveHistory"));
+                    steps.push(set_islands_step(next_islands));
+                    steps.push(set_candidates_step(Vec::new()));
+                    steps.push(set_piecemeal_step(None));
+                    steps.push(island_step(
+                        "appendIsland",
+                        punctuation_island(combined_punctuation),
+                    ));
+                    steps.push(plan_step("updateDisplay"));
+                    return StrokePlan {
+                        handled: true,
+                        steps,
+                    };
+                }
+            }
+
+            if let Some(parsed_selection) = parse_syllable_stroke(syllable_stroke) {
+                if let Some(next_islands) = select_candidate_islands(
+                    &state.candidates,
+                    selection.candidate_index,
+                    Some(&state.islands),
+                ) {
+                    steps.push(plan_step("saveHistory"));
+                    steps.push(set_islands_step(next_islands));
+                    steps.push(set_candidates_step(Vec::new()));
+                    steps.push(set_piecemeal_step(None));
+                    steps.push(append_text_step(assemble_syllable(&parsed_selection)));
+                    steps.push(plan_step("runInference"));
+                    return StrokePlan {
+                        handled: true,
+                        steps,
+                    };
+                }
+            }
+        }
+    }
+
+    if stroke == "S-P" {
+        steps.push(plan_step("saveHistory"));
+        steps.push(set_piecemeal_step(None));
+        steps.push(island_step("appendIsland", spacing_island(" ")));
+        steps.push(plan_step("runInference"));
+        steps.push(plan_step("updateDisplay"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    if let Some(punctuation) = decode_punctuation_stroke(stroke) {
+        if !state.candidates.is_empty() {
+            if let Some(next_islands) =
+                select_candidate_islands(&state.candidates, 0, Some(&state.islands))
+            {
+                steps.push(plan_step("saveHistory"));
+                steps.push(set_islands_step(next_islands));
+                steps.push(set_candidates_step(Vec::new()));
+                steps.push(set_piecemeal_step(None));
+            }
+        }
+        steps.push(plan_step("saveHistory"));
+        steps.push(set_piecemeal_step(None));
+        steps.push(island_step("appendIsland", punctuation_island(punctuation)));
+        steps.push(plan_step("updateDisplay"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    if let Some(parsed) = parse_syllable_stroke(stroke) {
+        steps.push(plan_step("saveHistory"));
+        steps.push(set_piecemeal_step(None));
+        steps.push(append_text_step(assemble_syllable(&parsed)));
+        steps.push(plan_step("runInference"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    if state.candidates.is_empty() {
+        if let Some(first_candidate_append_stroke) = get_first_candidate_append_stroke(stroke) {
+            if let Some(parsed_append) = parse_syllable_stroke(&first_candidate_append_stroke) {
+                steps.push(plan_step("saveHistory"));
+                steps.push(set_piecemeal_step(None));
+                steps.push(append_text_step(assemble_syllable(&parsed_append)));
+                steps.push(plan_step("runInference"));
+                return StrokePlan {
+                    handled: true,
+                    steps,
+                };
+            }
+        }
+    }
+
+    if let Some(selection) = selection {
+        if selection.syllable_stroke.is_none() {
+            if let Some(next_islands) = select_candidate_islands(
+                &state.candidates,
+                selection.candidate_index,
+                Some(&state.islands),
+            ) {
+                steps.push(plan_step("saveHistory"));
+                steps.push(set_islands_step(next_islands));
+                steps.push(set_candidates_step(Vec::new()));
+                steps.push(set_piecemeal_step(None));
+                steps.push(plan_step("updateDisplay"));
+                return StrokePlan {
+                    handled: true,
+                    steps,
+                };
+            }
+        }
+    }
+
+    if plover_available {
+        steps.push(plan_step("handlePloverOneShot"));
+        return StrokePlan {
+            handled: true,
+            steps,
+        };
+    }
+
+    steps.push(plan_step("logIgnored"));
+    StrokePlan {
+        handled: false,
+        steps,
+    }
+}
+
+#[derive(Default)]
+pub struct UndoPolicy {
+    plover_group_counter: usize,
+    has_active_plover_group: bool,
+}
+
+impl UndoPolicy {
+    pub fn save(
+        &mut self,
+        group: Option<String>,
+        piecemeal_cursor_index: Option<usize>,
+    ) -> UndoPolicySaveInstruction {
+        self.has_active_plover_group = false;
+        UndoPolicySaveInstruction {
+            group,
+            piecemeal_cursor_index,
+        }
+    }
+
+    pub fn save_plover(
+        &mut self,
+        record_history: bool,
+        had_preedit: bool,
+        piecemeal_cursor_index: Option<usize>,
+    ) -> UndoPolicySaveInstruction {
+        if record_history {
+            self.has_active_plover_group = false;
+            return UndoPolicySaveInstruction {
+                group: None,
+                piecemeal_cursor_index,
+            };
+        }
+
+        if !had_preedit || !self.has_active_plover_group {
+            self.plover_group_counter += 1;
+            self.has_active_plover_group = true;
+        }
+
+        UndoPolicySaveInstruction {
+            group: Some(format!("plover:{}", self.plover_group_counter)),
+            piecemeal_cursor_index,
+        }
+    }
+
+    pub fn undo_applied(&mut self) {
+        self.has_active_plover_group = false;
     }
 }
 
@@ -1976,6 +2504,84 @@ pub fn apply_retroactive_space_json(
             "Failed to serialize retroactive spacing result: {error}"
         ))
     })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = planCoreStrokeJson)]
+pub fn plan_core_stroke_json(
+    state_json: &str,
+    stroke: &str,
+    plover_available: bool,
+) -> Result<String, JsValue> {
+    let state: WebAppCoreState = serde_json::from_str(state_json)
+        .map_err(|error| JsValue::from_str(&format!("Invalid web app state JSON: {error}")))?;
+    serde_json::to_string(&plan_core_stroke(&state, stroke, plover_available)).map_err(|error| {
+        JsValue::from_str(&format!("Failed to serialize core stroke plan: {error}"))
+    })
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_name = UndoPolicyCore)]
+pub struct UndoPolicyCore {
+    policy: UndoPolicy,
+}
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen(js_class = UndoPolicyCore)]
+impl UndoPolicyCore {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> UndoPolicyCore {
+        UndoPolicyCore {
+            policy: UndoPolicy::default(),
+        }
+    }
+
+    #[wasm_bindgen(js_name = saveJson)]
+    pub fn save_json(
+        &mut self,
+        group_json: &str,
+        piecemeal_cursor_index_json: &str,
+    ) -> Result<String, JsValue> {
+        let group: Option<String> = serde_json::from_str(group_json)
+            .map_err(|error| JsValue::from_str(&format!("Invalid undo group JSON: {error}")))?;
+        let piecemeal_cursor_index: Option<usize> =
+            serde_json::from_str(piecemeal_cursor_index_json).map_err(|error| {
+                JsValue::from_str(&format!("Invalid piecemeal cursor JSON: {error}"))
+            })?;
+        serde_json::to_string(&self.policy.save(group, piecemeal_cursor_index)).map_err(|error| {
+            JsValue::from_str(&format!(
+                "Failed to serialize undo save instruction: {error}"
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = savePloverJson)]
+    pub fn save_plover_json(
+        &mut self,
+        record_history: bool,
+        had_preedit: bool,
+        piecemeal_cursor_index_json: &str,
+    ) -> Result<String, JsValue> {
+        let piecemeal_cursor_index: Option<usize> =
+            serde_json::from_str(piecemeal_cursor_index_json).map_err(|error| {
+                JsValue::from_str(&format!("Invalid piecemeal cursor JSON: {error}"))
+            })?;
+        serde_json::to_string(&self.policy.save_plover(
+            record_history,
+            had_preedit,
+            piecemeal_cursor_index,
+        ))
+        .map_err(|error| {
+            JsValue::from_str(&format!(
+                "Failed to serialize plover undo save instruction: {error}"
+            ))
+        })
+    }
+
+    #[wasm_bindgen(js_name = undoApplied)]
+    pub fn undo_applied(&mut self) {
+        self.policy.undo_applied();
+    }
 }
 
 #[cfg(feature = "wasm")]
@@ -3482,6 +4088,81 @@ mod tests {
         let noop = apply_retroactive_space(&islands[..1], Some("insert"), 1);
         assert!(!noop.changed);
         assert_eq!(noop.islands, islands[..1].to_vec());
+    }
+
+    #[test]
+    fn plans_core_stroke_commands() {
+        let state = WebAppCoreState {
+            islands: vec![vietnamese("")],
+            pending_capitalization: false,
+            candidates: Vec::new(),
+            piecemeal_cursor_index: None,
+        };
+
+        let syllable = plan_core_stroke(&state, "TAL", false);
+        assert!(syllable.handled);
+        assert_eq!(
+            syllable
+                .steps
+                .iter()
+                .map(|step| step.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "saveHistory",
+                "setPiecemealCursor",
+                "appendText",
+                "runInference"
+            ]
+        );
+        assert_eq!(syllable.steps[2].text.as_deref(), Some("tá"));
+
+        let punctuation = plan_core_stroke(&state, "TP-PL", false);
+        assert_eq!(
+            punctuation
+                .steps
+                .iter()
+                .map(|step| step.kind.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "saveHistory",
+                "setPiecemealCursor",
+                "appendIsland",
+                "updateDisplay"
+            ]
+        );
+
+        let ignored = plan_core_stroke(&state, "ZZZ", true);
+        assert!(ignored.handled);
+        assert_eq!(ignored.steps[0].kind, "handlePloverOneShot");
+    }
+
+    #[test]
+    fn manages_undo_policy_in_rust() {
+        let mut policy = UndoPolicy::default();
+        assert_eq!(
+            policy.save(None, Some(2)),
+            UndoPolicySaveInstruction {
+                group: None,
+                piecemeal_cursor_index: Some(2),
+            }
+        );
+        assert_eq!(
+            policy.save_plover(false, false, None).group.as_deref(),
+            Some("plover:1")
+        );
+        assert_eq!(
+            policy.save_plover(false, true, None).group.as_deref(),
+            Some("plover:1")
+        );
+        assert_eq!(
+            policy.save_plover(false, false, None).group.as_deref(),
+            Some("plover:2")
+        );
+        policy.undo_applied();
+        assert_eq!(
+            policy.save_plover(false, true, None).group.as_deref(),
+            Some("plover:3")
+        );
     }
 
     #[test]

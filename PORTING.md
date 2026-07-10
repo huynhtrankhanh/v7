@@ -25,6 +25,8 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 - Coarse display planning for the DOM shell.
 - Inference island conversion.
 - Coarse inference request planning, including whether inference is needed and the exact request islands.
+- Coarse stroke command planning for the web shell; JavaScript applies Rust-planned state/effect steps.
+- Undo grouping policy, with history snapshots still stored as Rope-backed `TextBuffer` data.
 - Candidate text selection and selected-candidate island replacement.
 - Piecemeal entry lookup, target discovery, replacement, and cursor advancement.
 - Candidate diff planning using the structured 0-, 1-, or 2-region minimizer instead of whole-text LCS.
@@ -38,7 +40,7 @@ Tests assume the Rust UI core is present. There is no TypeScript semantic fallba
 
 ## Remaining DOM-Neutral Candidates
 
-- Coarse app state transitions around stroke command handling, piecemeal mode, candidate selection, undo, and inference request policy.
+- Remaining app state transitions that are tightly coupled to browser/Plover networking and DOM focus.
 - Practice/game logic where it is not browser-specific.
 - Serialization contracts for Android-to-core calls once the IME shell shape is known.
 

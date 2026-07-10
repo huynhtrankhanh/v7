@@ -82,6 +82,30 @@ export interface RetroactiveSpaceResult {
   changed: boolean;
 }
 
+export interface WebAppCoreState {
+  islands: Island[];
+  pendingCapitalization: boolean;
+  candidates: string[][];
+  piecemealCursorIndex: number | null;
+}
+
+export interface StrokePlanStep {
+  kind: string;
+  islands?: Island[];
+  island?: Island;
+  candidates?: string[][];
+  piecemealCursorIndex?: number | null;
+  pendingCapitalization?: boolean;
+  text?: string;
+  action?: "insert" | "delete";
+  repeat?: number;
+}
+
+export interface StrokePlan {
+  handled: boolean;
+  steps: StrokePlanStep[];
+}
+
 export interface DisplayPlan {
   text: string;
   candidateDiffPlan: CandidateDiffPlan | null;
@@ -138,6 +162,14 @@ export function applyRetroactiveSpace(
   repeat: number
 ): RetroactiveSpaceResult {
   return requireUiCoreProvider().applyRetroactiveSpace(islands, action, repeat);
+}
+
+export function planCoreStroke(
+  state: WebAppCoreState,
+  stroke: string,
+  ploverAvailable: boolean
+): StrokePlan {
+  return requireUiCoreProvider().planCoreStroke(state, stroke, ploverAvailable);
 }
 
 export class KeyboardStrokeTracker {

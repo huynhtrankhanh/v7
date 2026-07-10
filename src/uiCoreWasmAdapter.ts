@@ -9,8 +9,10 @@ import type {
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   RetroactiveSpaceResult,
+  StrokePlan,
   VisibleTextGroup,
-  VisibleTextSegment
+  VisibleTextSegment,
+  WebAppCoreState
 } from "./webCore";
 import type { UiCoreProvider } from "./uiCoreProvider";
 
@@ -18,6 +20,11 @@ export interface UiCoreWasmExports {
   KeyboardStrokeTrackerCore: new () => {
     keyDown(key: string, includeInStroke: boolean): string | undefined;
     keyUp(key: string): string | undefined;
+  };
+  UndoPolicyCore: new () => {
+    saveJson(groupJson: string, piecemealCursorIndexJson: string): string;
+    savePloverJson(recordHistory: boolean, hadPreedit: boolean, piecemealCursorIndexJson: string): string;
+    undoApplied(): void;
   };
   applyRetroactiveSpaceJson(islandsJson: string, actionJson: string, repeat: number): string;
   buildDisplayPlanJson(
@@ -42,6 +49,7 @@ export interface UiCoreWasmExports {
   mapKeyUnique(key: string): string | undefined;
   normalizeQwertyDisplayKeyJson(key: string, code: string): string;
   parseSyllableStrokeJson(stroke: string): string;
+  planCoreStrokeJson(stateJson: string, stroke: string, ploverAvailable: boolean): string;
   qwertyKeyboardLayoutJson(): string;
   renderVisibleTextJson(islandsJson: string, candidatesJson: string): string;
   renderVisibleTextSegmentsJson(
@@ -90,6 +98,9 @@ export function createUiCoreProviderFromWasm(wasm: UiCoreWasmExports): UiCorePro
       parseJson<RetroactiveSpaceResult>(
         wasm.applyRetroactiveSpaceJson(JSON.stringify(islands), JSON.stringify(action), repeat)
       ),
+    planCoreStroke: (state: WebAppCoreState, stroke, ploverAvailable) =>
+      parseJson<StrokePlan>(wasm.planCoreStrokeJson(JSON.stringify(state), stroke, ploverAvailable)),
+    createUndoPolicy: () => new wasm.UndoPolicyCore(),
     createKeyboardStrokeTracker: () => new wasm.KeyboardStrokeTrackerCore(),
     qwertyKeyboardLayout: () =>
       parseJson<QwertyKeyboardKey[][]>(wasm.qwertyKeyboardLayoutJson()),

@@ -1,6 +1,5 @@
 import { HistoryFrameFields, HistorySaveOptions, TextBuffer } from "./textBuffer";
-
-const PLOVER_GROUP_PREFIX = "plover:";
+import { requireUiCoreProvider, type UndoPolicyCore } from "./uiCoreProvider";
 
 type SaveGroup = string | undefined;
 
@@ -13,12 +12,16 @@ interface UndoManagerOptions {
   getPiecemealCursorIndex?: () => number | null;
 }
 
-function buildHistoryOptions(
-  group: SaveGroup,
-  getPiecemealCursorIndex?: () => number | null
-): HistorySaveOptions | string | undefined {
-  const piecemealCursorIndex = getPiecemealCursorIndex?.();
-  if (piecemealCursorIndex === null || piecemealCursorIndex === undefined) {
+interface UndoPolicySaveInstruction {
+  group: string | null;
+  piecemealCursorIndex: number | null;
+}
+
+function parseHistoryOptions(instructionJson: string): HistorySaveOptions | string | undefined {
+  const instruction = JSON.parse(instructionJson) as UndoPolicySaveInstruction;
+  const group = instruction.group ?? undefined;
+  const piecemealCursorIndex = instruction.piecemealCursorIndex ?? undefined;
+  if (piecemealCursorIndex === undefined) {
     return group;
   }
   return group === undefined
@@ -31,33 +34,36 @@ export function createUndoManager(
   onUndoApplied: (fields: HistoryFrameFields) => void,
   options: UndoManagerOptions = {}
 ) {
-  let ploverGroupCounter = 0;
-  let hasActivePloverGroup = false;
+  let policy: UndoPolicyCore | null = null;
+
+  function getPolicy() {
+    if (!policy) {
+      policy = requireUiCoreProvider().createUndoPolicy();
+    }
+    return policy;
+  }
 
   function save(group?: SaveGroup): void {
-    hasActivePloverGroup = false;
-    buffer.save(buildHistoryOptions(group, options.getPiecemealCursorIndex));
+    const instructionJson = getPolicy().saveJson(
+      JSON.stringify(group ?? null),
+      JSON.stringify(options.getPiecemealCursorIndex?.() ?? null)
+    );
+    buffer.save(parseHistoryOptions(instructionJson));
   }
 
   function savePlover({ recordHistory, hadPreedit }: SavePloverOptions): void {
-    if (recordHistory) {
-      hasActivePloverGroup = false;
-      buffer.save(buildHistoryOptions(undefined, options.getPiecemealCursorIndex));
-      return;
-    }
-
-    if (!hadPreedit || !hasActivePloverGroup) {
-      ploverGroupCounter += 1;
-      hasActivePloverGroup = true;
-    }
-
-    buffer.save(buildHistoryOptions(`${PLOVER_GROUP_PREFIX}${ploverGroupCounter}`, options.getPiecemealCursorIndex));
+    const instructionJson = getPolicy().savePloverJson(
+      recordHistory,
+      hadPreedit,
+      JSON.stringify(options.getPiecemealCursorIndex?.() ?? null)
+    );
+    buffer.save(parseHistoryOptions(instructionJson));
   }
 
   function undo(): boolean {
     const fields = buffer.undo();
     if (fields) {
-      hasActivePloverGroup = false;
+      getPolicy().undoApplied();
       onUndoApplied(fields);
     }
     return !!fields;

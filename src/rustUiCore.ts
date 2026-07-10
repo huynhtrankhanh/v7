@@ -1,5 +1,6 @@
 import initRustUiCore, {
   KeyboardStrokeTrackerCore,
+  UndoPolicyCore,
   applyRetroactiveSpaceJson,
   assembleSyllableJson,
   buildDisplayPlanJson,
@@ -19,6 +20,7 @@ import initRustUiCore, {
   mapKeyUnique as rustMapKeyUnique,
   normalizeQwertyDisplayKeyJson,
   parseSyllableStrokeJson,
+  planCoreStrokeJson,
   qwertyKeyboardLayoutJson,
   renderVisibleTextSegmentsJson,
   renderVisibleTextJson,
@@ -37,6 +39,7 @@ export function initializeRustUiCore(onReady?: () => void): Promise<void> {
     initPromise = initRustUiCore().then(() => {
       setUiCoreProvider(createUiCoreProviderFromWasm({
         KeyboardStrokeTrackerCore,
+        UndoPolicyCore,
         applyRetroactiveSpaceJson,
         assembleSyllableJson,
         buildDisplayPlanJson,
@@ -56,6 +59,7 @@ export function initializeRustUiCore(onReady?: () => void): Promise<void> {
         mapKeyUnique: rustMapKeyUnique,
         normalizeQwertyDisplayKeyJson,
         parseSyllableStrokeJson,
+        planCoreStrokeJson,
         qwertyKeyboardLayoutJson,
         renderVisibleTextSegmentsJson,
         renderVisibleTextJson,

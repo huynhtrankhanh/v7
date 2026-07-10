@@ -1,26 +1,14 @@
 import { TextBuffer, createIsland, ensureString, getInferenceRequest } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import {
-    getCandidateSelectionMatch,
-    getFirstCandidateAppendStroke,
-    isLoneCandidateSelectionStroke
-} from "./candidateSelection";
-import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
-import {
     applyRetroactiveSpace,
     buildDisplayPlan,
-    decodeEmilySymbol,
-    decodePunctuationStroke,
-    decodeV7Stroke,
     KeyboardStrokeTracker,
-    findPiecemealSyllableTargets,
     getQwertyKeyboardLayout,
-    getNextPiecemealCursorIndex,
-    getPiecemealEntryIndex,
     mapKeyUnique,
     normalizeQwertyDisplayKey,
+    planCoreStroke,
     renderVisibleText,
-    replacePiecemealSyllable,
     selectCandidateIslands
 } from "./webCore";
 import { initializeRustUiCore } from "./rustUiCore";
@@ -33,7 +21,7 @@ const state = {
     set islands(next) { buffer.setIslands(next); },
     get pendingCapitalization() { return buffer.pendingCapitalization; },
     set pendingCapitalization(next) { buffer.pendingCapitalization = next; },
-    candidates: []
+    candidates: [] as string[][]
 };
 let isRawMode = false;
 let piecemealCursorIndex: number | null = null;
@@ -91,7 +79,7 @@ const undoManager = createUndoManager(buffer, (fields) => {
     getPiecemealCursorIndex: () => piecemealCursorIndex
 });
 
-function saveState(group) {
+function saveState(group?: string) {
     undoManager.save(group);
 }
 
@@ -1060,233 +1048,88 @@ async function handleChord(stroke) {
         return;
     }
 
-    // 1. Escape Hatch: #S
-    if (stroke === "#S-" || stroke === "#S") {
-        if (state.candidates.length > 0) {
-            selectCandidate(0); // Select top candidate
-        }
-        piecemealCursorIndex = null;
-        isRawMode = true;
-        buffer.clearHistory();
-        updateDisplay();
-        const textArea = document.getElementById("text-input");
-        if (textArea) {
-            textArea.focus();
-            textArea.selectionStart = textArea.value.length;
-            textArea.selectionEnd = textArea.value.length;
-        }
-        return;
-    }
+    const plan = planCoreStroke({
+        islands: state.islands,
+        pendingCapitalization: state.pendingCapitalization,
+        candidates: state.candidates,
+        piecemealCursorIndex
+    }, stroke, strippedPlover.available);
+    let lastRetroactiveSpaceChanged = false;
 
-    if (stroke === "*") {
-        piecemealCursorIndex = null;
-        restoreState();
-        return;
-    }
-
-    let suppressPiecemealEntry = false;
-    if (piecemealCursorIndex !== null) {
-        const entryIndex = getPiecemealEntryIndex(stroke);
-        if (entryIndex !== null) {
-            const targets = findPiecemealSyllableTargets(state.islands);
-            if (targets[entryIndex]) {
-                piecemealCursorIndex = entryIndex;
-                updateDisplay();
-                return;
-            }
-        }
-
-        if (state.candidates.length === 0 && isLoneCandidateSelectionStroke(stroke)) {
-            piecemealCursorIndex = null;
-            updateDisplay();
-            return;
-        }
-
-        // Syllable+T exits piecemeal. With candidates it selects candidate 1 first;
-        // without candidates it still appends the syllable normally.
-        const firstCandidateAppendStroke = getFirstCandidateAppendStroke(stroke);
-        if (firstCandidateAppendStroke && state.candidates.length === 0) {
-            const parsedAppend = parse(firstCandidateAppendStroke);
-            if (parsedAppend) {
+    for (const step of plan.steps) {
+        switch (step.kind) {
+            case "saveHistory":
                 saveState();
+                break;
+            case "undo":
                 piecemealCursorIndex = null;
-                appendText(assemble(parsedAppend));
-                runInference();
-                return;
-            }
-        }
-
-        // Other active candidate-selection chords keep their normal meaning inside piecemeal mode.
-        const piecemealSelection = state.candidates.length > 0
-            ? getCandidateSelectionMatch(stroke, state.candidates.length)
-            : null;
-        if (piecemealSelection) {
-            suppressPiecemealEntry = true;
-        } else {
-            const parsedPiecemeal = parse(stroke);
-            if (parsedPiecemeal) {
-                const targets = findPiecemealSyllableTargets(state.islands);
-                const target = targets[piecemealCursorIndex];
-                if (target) {
-                    saveState();
-                    const replacement = assemble(parsedPiecemeal);
-                    buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
-                    state.candidates = [];
-                    const nextTargets = findPiecemealSyllableTargets(state.islands);
-                    piecemealCursorIndex = getNextPiecemealCursorIndex(piecemealCursorIndex, nextTargets.length);
-                    runInference();
-                    return;
+                restoreState();
+                break;
+            case "clearHistory":
+                buffer.clearHistory();
+                break;
+            case "enterRawMode":
+                isRawMode = true;
+                break;
+            case "focusRawInput": {
+                const textArea = document.getElementById("text-input");
+                if (textArea) {
+                    textArea.focus();
+                    textArea.selectionStart = textArea.value.length;
+                    textArea.selectionEnd = textArea.value.length;
                 }
+                break;
             }
-            piecemealCursorIndex = null;
-            suppressPiecemealEntry = true;
-            updateDisplay();
-        }
-    }
-
-    if (!suppressPiecemealEntry) {
-        const entryIndex = getPiecemealEntryIndex(stroke);
-        if (entryIndex !== null) {
-            const targets = findPiecemealSyllableTargets(state.islands);
-            if (targets[entryIndex]) {
-                piecemealCursorIndex = entryIndex;
-                updateDisplay();
-                return;
-            }
-        }
-    }
-    
-    // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
-    if (stroke.includes("*")) {
-        const v7Code = decodeV7Stroke(stroke);
-        if (v7Code) {
-            piecemealCursorIndex = null;
-            saveState();
-            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
-            runInference();
-            return;
-        }
-    }
-
-    // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
-    const emilyResult = decodeEmilySymbol(stroke);
-    if (emilyResult) {
-        const repeatCount = emilyResult.repeat || 1;
-        if (emilyResult.retroSpace) {
-            if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
-                saveState();
-                const retroSpaceResult = applyRetroactiveSpace(state.islands, emilyResult.retroSpace, repeatCount);
+            case "setIslands":
+                buffer.setIslands(step.islands || []);
+                break;
+            case "appendIsland":
+                if (step.island) buffer.appendIsland(step.island);
+                break;
+            case "appendText":
+                appendText(step.text || "");
+                break;
+            case "setCandidates":
+                state.candidates = step.candidates || [];
+                break;
+            case "setPiecemealCursor":
+                piecemealCursorIndex = step.piecemealCursorIndex ?? null;
+                break;
+            case "setPendingCapitalization":
+                state.pendingCapitalization = !!step.pendingCapitalization;
+                break;
+            case "applyRetroactiveSpace": {
+                const retroSpaceResult = applyRetroactiveSpace(
+                    state.islands,
+                    step.action || null,
+                    step.repeat || 1
+                );
                 buffer.setIslands(retroSpaceResult.islands);
-                state.pendingCapitalization = emilyResult.capNext || false;
-                if (retroSpaceResult.changed || emilyResult.capNext) {
+                lastRetroactiveSpaceChanged = retroSpaceResult.changed;
+                break;
+            }
+            case "runInference":
+                runInference();
+                break;
+            case "runInferenceIfChangedOrCapitalized":
+                if (lastRetroactiveSpaceChanged || state.pendingCapitalization) {
                     runInference();
                     updateDisplay();
                 }
-            }
-            return;
-        }
-        saveState();
-        // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-        buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
-            leftSpace: emilyResult.leftSpace,
-            rightSpace: emilyResult.rightSpace,
-            explicitSpacing: emilyResult.explicitSpacing
-        }));
-        state.pendingCapitalization = emilyResult.capNext || false;
-        piecemealCursorIndex = null;
-        runInference();
-        updateDisplay();
-        return;
-    }
-
-    // Check single-stroke selection+syllable first; otherwise let normal handlers run.
-    const selection = state.candidates.length > 0
-        ? getCandidateSelectionMatch(stroke, state.candidates.length)
-        : null;
-    if (selection && selection.syllableStroke !== null) {
-        const combinedPunctuation = decodePunctuationStroke(selection.syllableStroke);
-        if (combinedPunctuation) {
-            saveState();
-            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
-                piecemealCursorIndex = null;
-                buffer.appendIsland(createIsland('punctuation', combinedPunctuation));
+                break;
+            case "updateDisplay":
                 updateDisplay();
-                return;
-            }
-        }
-        const parsedSelection = parse(selection.syllableStroke);
-        if (parsedSelection) {
-            const syllableText = assemble(parsedSelection);
-            saveState();
-            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
-                piecemealCursorIndex = null;
-                appendText(syllableText);
-                runInference();
-                return;
-            }
+                break;
+            case "handlePloverOneShot":
+                await handlePloverStroke(stroke, { oneShot: true });
+                break;
+            case "logIgnored":
+                console.log("Ignored stroke:", stroke);
+                break;
+            default:
+                console.warn("Unknown stroke plan step:", step.kind);
         }
     }
-
-    // 2. Space Stroke: S-P
-    if (stroke === "S-P") {
-        saveState();
-        piecemealCursorIndex = null;
-        buffer.appendIsland(createIsland('spacing', ' '));
-        runInference();
-        updateDisplay();
-        return;
-    }
-
-    // 3. Punctuation
-    const punctuation = decodePunctuationStroke(stroke);
-    if (punctuation) {
-        // Auto-select candidate if present
-        if (state.candidates.length > 0) {
-            selectCandidate(0);
-        }
-
-        saveState();
-        piecemealCursorIndex = null;
-        buffer.appendIsland(createIsland('punctuation', punctuation));
-        updateDisplay();
-        return;
-    }
-
-    const parsed = parse(stroke);
-    if (parsed) {
-        const text = assemble(parsed);
-        saveState();
-        piecemealCursorIndex = null;
-        appendText(text);
-        runInference();
-        return;
-    }
-
-    const firstCandidateAppendStroke = state.candidates.length === 0
-        ? getFirstCandidateAppendStroke(stroke)
-        : null;
-    if (firstCandidateAppendStroke) {
-        const parsedAppend = parse(firstCandidateAppendStroke);
-        if (parsedAppend) {
-            saveState();
-            piecemealCursorIndex = null;
-            appendText(assemble(parsedAppend));
-            runInference();
-            return;
-        }
-    }
-
-    if (selection && selection.syllableStroke === null) {
-        selectCandidate(selection.candidateIndex);
-        return;
-    }
-
-    if (strippedPlover.available) {
-        await handlePloverStroke(stroke, { oneShot: true });
-        return;
-    }
-
-    console.log("Ignored stroke:", stroke);
 }
 
 async function runInference() {

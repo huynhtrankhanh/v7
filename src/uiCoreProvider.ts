@@ -9,6 +9,8 @@ import type {
   PiecemealSyllableTarget,
   QwertyKeyboardKey,
   RetroactiveSpaceResult,
+  StrokePlan,
+  WebAppCoreState,
   VisibleTextGroup,
   VisibleTextSegment
 } from "./webCore";
@@ -16,6 +18,12 @@ import type {
 export interface KeyboardStrokeTrackerCore {
   keyDown(key: string, includeInStroke: boolean): string | undefined;
   keyUp(key: string): string | undefined;
+}
+
+export interface UndoPolicyCore {
+  saveJson(groupJson: string, piecemealCursorIndexJson: string): string;
+  savePloverJson(recordHistory: boolean, hadPreedit: boolean, piecemealCursorIndexJson: string): string;
+  undoApplied(): void;
 }
 
 export interface UiCoreProvider {
@@ -28,6 +36,8 @@ export interface UiCoreProvider {
   decodePunctuationStroke(stroke: string): string | null;
   decodeEmilySymbol(stroke: string): EmilySymbolResult | null;
   applyRetroactiveSpace(islands: Island[], action: "insert" | "delete" | null, repeat: number): RetroactiveSpaceResult;
+  planCoreStroke(state: WebAppCoreState, stroke: string, ploverAvailable: boolean): StrokePlan;
+  createUndoPolicy(): UndoPolicyCore;
   createKeyboardStrokeTracker(): KeyboardStrokeTrackerCore;
   qwertyKeyboardLayout(): QwertyKeyboardKey[][];
   normalizeQwertyDisplayKey(key: string, code: string): string | null;
