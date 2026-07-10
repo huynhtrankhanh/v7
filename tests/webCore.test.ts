@@ -190,6 +190,25 @@ describe("webCore candidate diff sections", () => {
     ]);
   });
 
+  test("uses one section for adjacent changed positions", () => {
+    const plan = buildCandidateTextDiffPlan([
+      "alpha beta gamma delta",
+      "x beta gamma delta",
+      "alpha y gamma delta",
+      "alpha beta z delta"
+    ]);
+
+    expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
+      { role: "left", text: "alpha beta gamma" }
+    ]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
+      [],
+      ["left"],
+      ["left"],
+      ["left"]
+    ]);
+  });
+
   test("marks the same section in rendered buffer segments", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",

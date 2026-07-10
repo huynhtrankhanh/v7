@@ -859,20 +859,20 @@ function chooseCandidateDiffSections(
 ): CandidateDiffSection[] {
   if (baseTokens.length === 0 || intervals.length === 0) return [];
 
-  const atoms = buildChangedTokenAtoms(
+  const changedRuns = mergeChangedTokenIntervals(
     intervals
       .map((interval) => normalizeDiffInterval(interval, baseTokens.length))
       .filter((interval) => interval.end > interval.start)
   );
-  if (atoms.length === 0) return [];
+  if (changedRuns.length === 0) return [];
 
-  let bestGroups = [makeSectionRange(atoms, 0, atoms.length - 1)];
+  let bestGroups = [makeSectionRange(changedRuns, 0, changedRuns.length - 1)];
   let bestScore = scoreSectionRanges(bestGroups, baseTokens);
 
-  for (let split = 1; split < atoms.length; split++) {
+  for (let split = 1; split < changedRuns.length; split++) {
     const groups = [
-      makeSectionRange(atoms, 0, split - 1),
-      makeSectionRange(atoms, split, atoms.length - 1)
+      makeSectionRange(changedRuns, 0, split - 1),
+      makeSectionRange(changedRuns, split, changedRuns.length - 1)
     ];
     const score = scoreSectionRanges(groups, baseTokens);
     if (score <= bestScore) {
@@ -898,25 +898,24 @@ function normalizeDiffInterval(interval: DiffInterval, baseTokenCount: number): 
   return { start: 0, end: 0 };
 }
 
-function buildChangedTokenAtoms(intervals: DiffInterval[]): DiffInterval[] {
+function mergeChangedTokenIntervals(intervals: DiffInterval[]): DiffInterval[] {
   if (intervals.length === 0) return [];
 
-  const boundaries = Array.from(new Set(
-    intervals.flatMap((interval) => [interval.start, interval.end])
-  )).sort((a, b) => a - b);
-  const atoms: DiffInterval[] = [];
+  const sorted = intervals
+    .map((interval) => ({ ...interval }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const merged: DiffInterval[] = [];
 
-  for (let i = 0; i < boundaries.length - 1; i++) {
-    const start = boundaries[i];
-    const end = boundaries[i + 1];
-    if (start === end) continue;
-    const covered = intervals.some((interval) => interval.start < end && interval.end > start);
-    if (covered) {
-      atoms.push({ start, end });
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (!last || interval.start > last.end) {
+      merged.push(interval);
+    } else {
+      last.end = Math.max(last.end, interval.end);
     }
   }
 
-  return atoms;
+  return merged;
 }
 
 function makeSectionRange(intervals: DiffInterval[], startIndex: number, endIndex: number): TokenRange {
