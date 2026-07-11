@@ -1,18 +1,3 @@
-FROM rust:1.93-slim-bookworm AS ui-core-wasm
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates pkg-config libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN rustup target add wasm32-unknown-unknown \
-    && cargo install wasm-pack --version 0.13.1 --locked
-
-WORKDIR /workspace/v7-ui-core
-COPY v7-ui-core ./
-RUN export PATH=/usr/local/cargo/bin:$PATH \
-    && wasm-pack build --target web --out-dir ../src/generated/v7_ui_core --features wasm \
-    && wasm-pack build --target nodejs --out-dir ../src/generated/v7_ui_core_node --features wasm
-
 FROM node:22 AS frontend
 WORKDIR /app
 
@@ -20,9 +5,8 @@ WORKDIR /app
 COPY package.json package-lock.json tsconfig.json tsconfig.jest.json vite.config.ts ./
 COPY src ./src
 COPY static ./static
-COPY --from=ui-core-wasm /workspace/src/generated ./src/generated
 RUN npm ci
-RUN npm run build:web
+RUN npm run build
 
 FROM rust:latest AS builder
 

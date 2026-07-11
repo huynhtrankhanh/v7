@@ -1,30 +1,23 @@
 import fc from "fast-check";
 import {
-  applyRetroactiveSpace,
   buildCandidateDiffPlan,
   buildCandidateTextDiffPlan,
-  buildDisplayPlan,
-  decodeEmilySymbol,
-  decodePunctuationStroke,
-  decodeV7Stroke,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
   getPiecemealEntryIndex,
-  getQwertyKeyboardLayout,
   getSelectedCandidateText,
   groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
   normalizeQwertyDisplayKey,
+  qwertyKeyboardLayout,
   renderVisibleTextSegments,
   renderVisibleText,
   replacePiecemealSyllable,
   serializeStrokeKeys,
   selectCandidateIslands
 } from "../src/webCore";
-import { convertIslandsForInference, createIsland, getInferenceRequest } from "../src/textBuffer";
-import { assembleSyllable, parseSyllableStroke } from "../src/syllableStroke";
-import { getValidVietnameseSyllables } from "../src/vietnameseSyllables";
+import { convertIslandsForInference, createIsland } from "../src/textBuffer";
 
 const v7Consonants = [
   "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
@@ -72,74 +65,6 @@ function splitIntoThreeChunks<T>(values: T[], firstCut: number, secondCut: numbe
 }
 
 describe("webCore keyboard input", () => {
-  test("decodes Vietnamese syllable strokes through Rust UI core", () => {
-    const parsed = parseSyllableStroke("TAL");
-    expect(parsed).toMatchObject({
-      initialConsonant: "t",
-      vowel: "a",
-      tone: "sắc"
-    });
-    expect(parsed && assembleSyllable(parsed)).toBe("tá");
-    expect(getValidVietnameseSyllables().has("không")).toBe(true);
-  });
-
-  test("decodes two-syllable V7 strokes through Rust UI core", () => {
-    expect(decodeV7Stroke("#TWHO*FPUG")).toBe("tro2ma1");
-    expect(decodeV7Stroke("#SPA*")).toBe("ba00e0");
-    expect(decodeV7Stroke("TAL")).toBeNull();
-    expect(decodeV7Stroke("A*B*C")).toBeNull();
-  });
-
-  test("decodes punctuation strokes through Rust UI core", () => {
-    expect(decodePunctuationStroke("TP-PL")).toBe(".");
-    expect(decodePunctuationStroke("KW-BG")).toBe(",");
-    expect(decodePunctuationStroke("KW-PL")).toBe("?");
-    expect(decodePunctuationStroke("TP-BG")).toBe("!");
-    expect(decodePunctuationStroke("TAL")).toBeNull();
-  });
-
-  test("decodes Emily symbols through Rust UI core", () => {
-    expect(decodeEmilySymbol("WHAOFRS")).toEqual({
-      type: "emily",
-      value: "!!",
-      leftSpace: true,
-      rightSpace: true,
-      explicitSpacing: true,
-      capNext: false,
-      retroSpace: null,
-      repeat: 2
-    });
-    expect(decodeEmilySymbol("WHU")).toMatchObject({
-      value: "{*?}",
-      explicitSpacing: false,
-      retroSpace: "insert"
-    });
-    expect(decodeEmilySymbol("TAL")).toBeNull();
-  });
-
-  test("applies retroactive spacing through Rust UI core", () => {
-    const islands = [
-      createIsland("vietnamese", "xin"),
-      createIsland("vietnamese", "chào")
-    ];
-    expect(applyRetroactiveSpace(islands, "insert", 1)).toEqual({
-      changed: true,
-      islands: [
-        createIsland("vietnamese", "xin"),
-        createIsland("vietnamese", "chào", false, { explicitSpacing: true, leftSpace: true })
-      ]
-    });
-    expect(applyRetroactiveSpace([createIsland("vietnamese", "xin"), createIsland("spacing", " ")], "delete", 2))
-      .toEqual({
-        changed: true,
-        islands: [createIsland("vietnamese", "xin")]
-      });
-    expect(applyRetroactiveSpace([createIsland("vietnamese", "xin")], "insert", 1)).toEqual({
-      changed: false,
-      islands: [createIsland("vietnamese", "xin")]
-    });
-  });
-
   test("maps qwerty keys to steno symbols", () => {
     expect(mapKeyUnique("a")).toBe("S-");
     expect(mapKeyUnique(" ")).toBe("*");
@@ -165,14 +90,8 @@ describe("webCore keyboard input", () => {
     expect(tracker.keyUp("p")).toBe("SAT");
   });
 
-  test("tracks keys without adding excluded keys to the stroke", () => {
-    const tracker = new KeyboardStrokeTracker();
-    expect(tracker.keyDown("1", { includeInStroke: false })).toBe("1");
-    expect(tracker.keyUp("1")).toBeNull();
-  });
-
   test("defines the on-screen keyboard as QWERTY rows", () => {
-    const rows = getQwertyKeyboardLayout().map((row) => row.map((key) => key.key));
+    const rows = qwertyKeyboardLayout.map((row) => row.map((key) => key.key));
 
     expect(rows[0]).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
     expect(rows[1]).toEqual(["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);
@@ -381,20 +300,6 @@ describe("webCore candidate diff sections", () => {
 });
 
 describe("webCore screen output", () => {
-  test("renders Emily islands through Rust display planning", () => {
-    const islands = [
-      createIsland("vietnamese", "xin"),
-      createIsland("emily", "!", false, { explicitSpacing: true, leftSpace: false, rightSpace: true }),
-      createIsland("vietnamese", "chào")
-    ];
-
-    expect(buildDisplayPlan(islands, [], null).text).toBe("xin! chào");
-    expect(getInferenceRequest([...islands, createIsland("vietnamese", "tro2ma1", true)])).toEqual({
-      needed: true,
-      islands: ["xin! chào ", "tro2ma1", ""]
-    });
-  });
-
   test("uses top candidate as preview when candidates exist", () => {
     const islands = [createIsland("vietnamese", "raw", true)];
     const candidates = [["đã suy luận"]];
@@ -514,40 +419,15 @@ describe("webCore piecemeal syllable edit", () => {
     ]);
   });
 
-  test("builds a coarse display plan for the DOM shell", () => {
-    const islands = [
-      createIsland("vietnamese", "tôi"),
-      createIsland("vietnamese", "ko0", true)
-    ];
-    const plan = buildDisplayPlan(islands, [["tôi ", "không"]], 0);
-
-    expect(plan.text).toBe("tôi không");
-    expect(plan.empty).toBe(false);
-    expect(plan.candidateDiffPlan).not.toBeNull();
-    expect(plan.visibleGroups.flatMap((group) => group.segments).map((segment) => segment.text).join(""))
-      .toBe("tôi không");
-  });
-
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
     expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
-    expect(getInferenceRequest(islands)).toEqual({
-      needed: true,
-      islands: ["", "tro2ma1", ""]
-    });
 
     expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0)).toEqual([
       { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
       { text: "mà", piecemealNumber: 1, piecemealCursor: true }
     ]);
-  });
-
-  test("skips inference when no v7 islands are present", () => {
-    expect(getInferenceRequest([createIsland("vietnamese", "xin chào")])).toEqual({
-      needed: false,
-      islands: []
-    });
   });
 
   test("maps replacement-only model candidates back to all-v7 syllable highlights", () => {

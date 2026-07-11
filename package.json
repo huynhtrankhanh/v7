@@ -4,12 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build:ui-core": "scripts/build-ui-core-wasm.sh",
-    "build:web": "vite build",
-    "build": "npm run build:ui-core && npm run build:web",
+    "build": "vite build",
     "test:unit": "jest",
-    "test:rust-ui-core": "cd v7-ui-core && cargo test",
-    "test:all": "npm run test:unit && npm run test:rust-ui-core",
     "test:e2e": "npm run build && node scripts/fullstack-e2e.js",
     "test:e2e:v7-piecemeal": "npm run build && node scripts/v7-piecemeal-e2e.js",
     "test:practice-focus": "node scripts/practice-focus-e2e.js",

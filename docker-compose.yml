@@ -39,13 +39,6 @@ services:
     volumes:
       - ./android-artifacts:/workspace/artifacts
     command: ["sleep", "infinity"]
-  ui-core-wasm:
-    build:
-      context: .
-      dockerfile: Dockerfile.ui-core
-    volumes:
-      - .:/workspace
-    working_dir: /workspace/v7-ui-core
 
 volumes:
   stripped-plover-data:
