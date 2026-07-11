@@ -1,8 +1,6 @@
 import { Rope } from "./rope";
-import { requireUiCoreProvider } from "./uiCoreProvider";
-import type { InferenceRequest } from "./webCore";
 
-export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing" | "emily";
+export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
 
 export interface Island {
   type: IslandType;
@@ -39,12 +37,61 @@ export function createIsland(
   return { type, value, isV7, ...meta };
 }
 
-export function convertIslandsForInference(islands: Island[]): string[] {
-  return requireUiCoreProvider().convertIslandsForInference(islands);
+export function shouldAddSpace(prev: Island | null, curr: Island | null): boolean {
+  if (!prev || !curr) return false;
+  if (prev.value === "" && !prev.isV7) return false;
+  if (prev.type === "spacing" || curr.type === "spacing") return false;
+
+  if (prev.explicitSpacing || curr.explicitSpacing) {
+    if (curr.explicitSpacing) {
+      return !!curr.leftSpace;
+    }
+    return !!prev.rightSpace;
+  }
+
+  if (curr.type === "punctuation") return false;
+  if (prev.type === "punctuation") return true;
+
+  if (prev.type === "capital") {
+    if (curr.type === "capital") return false;
+    return true;
+  }
+
+  if (prev.type === "vietnamese") {
+    if (curr.type === "vietnamese") return true;
+    if (curr.type === "capital") return true;
+  }
+
+  return false;
 }
 
-export function getInferenceRequest(islands: Island[]): InferenceRequest {
-  return requireUiCoreProvider().getInferenceRequest(islands);
+export function convertIslandsForInference(islands: Island[]): string[] {
+  const serverIslands: string[] = [];
+  let currentFixed = Rope.fromString("");
+
+  for (let i = 0; i < islands.length; i++) {
+    const curr = islands[i];
+
+    if (curr.isV7) {
+      const prev = i > 0 ? islands[i - 1] : null;
+      if (prev && shouldAddSpace(prev, curr)) {
+        currentFixed.append(" ");
+      }
+      const chunk = currentFixed.toString();
+      serverIslands.push(chunk);
+      currentFixed = Rope.fromString("");
+      serverIslands.push(curr.value);
+    } else {
+      const prev = i > 0 ? islands[i - 1] : null;
+      if (prev && shouldAddSpace(prev, curr)) {
+        currentFixed.append(" ");
+      }
+      currentFixed.append(curr.value);
+    }
+  }
+
+  serverIslands.push(currentFixed.toString());
+  return serverIslands;
 }
 
 export function ensureString(text: string | undefined | null): string {

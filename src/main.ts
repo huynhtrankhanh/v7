@@ -1,17 +1,228 @@
-import { TextBuffer, createIsland, ensureString, getInferenceRequest } from "./textBuffer";
+import { TextBuffer, convertIslandsForInference, createIsland, ensureString } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import {
-    applyRetroactiveSpace,
-    buildDisplayPlan,
+    getCandidateSelectionMatch,
+    getFirstCandidateAppendStroke,
+    isLoneCandidateSelectionStroke
+} from "./candidateSelection";
+import { assembleSyllable as assemble, parseSyllableStroke as parse } from "./syllableStroke";
+import {
+    buildCandidateDiffPlan,
     KeyboardStrokeTracker,
-    getQwertyKeyboardLayout,
+    findPiecemealSyllableTargets,
+    getNextPiecemealCursorIndex,
+    getPiecemealEntryIndex,
+    groupVisibleTextSegmentsByCandidateSection,
     mapKeyUnique,
     normalizeQwertyDisplayKey,
-    planCoreStroke,
+    qwertyKeyboardLayout,
     renderVisibleText,
+    renderVisibleTextSegments,
+    replacePiecemealSyllable,
     selectCandidateIslands
 } from "./webCore";
-import { initializeRustUiCore } from "./rustUiCore";
+
+// Maps for V7 Decoding
+const consonantIntMap = {};
+consonantIntMap[0] = "0";
+consonantIntMap[2 * 4 + 3] = "b";
+consonantIntMap[1 * 4 + 1] = "k";
+consonantIntMap[7 * 4 + 1] = "d";
+consonantIntMap[1 * 4 + 3] = "dd";
+consonantIntMap[3 * 4 + 0] = "ph";
+consonantIntMap[3 * 4 + 3] = "g";
+consonantIntMap[4 * 4 + 0] = "h";
+consonantIntMap[7 * 4 + 2] = "z";
+consonantIntMap[5 * 4 + 3] = "kh";
+consonantIntMap[4 * 4 + 3] = "l";
+consonantIntMap[6 * 4 + 0] = "m";
+consonantIntMap[7 * 4 + 0] = "n";
+consonantIntMap[7 * 4 + 3] = "nh";
+consonantIntMap[3 * 4 + 1] = "ng";
+consonantIntMap[2 * 4 + 0] = "p";
+consonantIntMap[4 * 4 + 1] = "r";
+consonantIntMap[3 * 4 + 2] = "s";
+consonantIntMap[1 * 4 + 0] = "t";
+consonantIntMap[5 * 4 + 0] = "th";
+consonantIntMap[5 * 4 + 1] = "tr";
+consonantIntMap[2 * 4 + 1] = "v";
+consonantIntMap[6 * 4 + 1] = "x";
+consonantIntMap[3] = "w";
+consonantIntMap[5 * 4 + 2] = "ch";
+
+const vowelIntMap = {
+    1: "a", 2: "o", 3: "i", 0: "e" // 0 can be e or u
+};
+
+// Emily symbols (subset mapping adapted from emily-symbols)
+const EMILY_ATTACHMENT_METHOD = "space";
+const EMILY_NO_SPACING_SYMBOLS = ["{*!}", "{*?}"];
+const EMILY_SYMBOLS = {
+    // System / navigation
+    "FG": ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
+    "RPBG": ["{#Up}", "{#Left}", "{#Right}", "{#Down}"],
+    "FRPBG": ["{#Page_Up}", "{#Home}", "{#End}", "{#Page_Down}"],
+    "FRBG": ["{#AudioPlay}", "{#AudioPrev}", "{#AudioNext}", "{#AudioStop}"],
+    "FRB": ["{#AudioMute}", "{#AudioLowerVolume}", "{#AudioRaiseVolume}", "{#Eject}"],
+    "": ["", "{*!}", "{*?}", "{#Space}"],
+    "FL": ["{*-|}", "{*<}", "{<}", "{*>}"],
+    // Symbols
+    "FR": ["!", "¬", "↦", "¡"],
+    "FP": ["\"", "“", "”", "„"],
+    "FRLG": ["#", "©", "®", "™"],
+    "RPBL": ["$", "¥", "€", "£"],
+    "FRPB": ["%", "‰", "‱", "φ"],
+    "FBG": ["&", "∩", "∧", "∈"],
+    "F": ["'", "‘", "’", "‚"],
+    "FPL": ["(", "[", "<", "{"],
+    "RBG": [")", "]", ">", "}"],
+    "L": ["*", "∏", "§", "×"],
+    "G": ["+", "∑", "¶", "±"],
+    "B": [",", "∪", "∨", "∉"],
+    "PL": ["-", "−", "–", "—"],
+    "R": [".", "•", "·", "…"],
+    "RP": ["/", "⇒", "⇔", "÷"],
+    "LG": [":", "∋", "∵", "∴"],
+    "RB": [";", "∀", "∃", "∄"],
+    "PBLG": ["=", "≡", "≈", "≠"],
+    "FPB": ["?", "¿", "∝", "‽"],
+    "FRPBLG": ["@", "⊕", "⊗", "∅"],
+    "FB": ["\\", "Δ", "√", "∞"],
+    "RPG": ["^", "«", "»", "°"],
+    "BG": ["_", "≤", "≥", "µ"],
+    "P": ["`", "⊂", "⊃", "π"],
+    "PB": ["|", "⊤", "⊥", "¦"],
+    "FPBG": ["~", "⊆", "⊇", "˜"],
+    "FPBL": ["↑", "←", "→", "↓"]
+};
+const PUNCTUATION_MAP: Record<string, string> = {
+    "TP-PL": ".",
+    "KW-BG": ",",
+    "KW-PL": "?",
+    "TP-BG": "!"
+};
+
+function handleEmilySymbol(stroke) {
+    // stroke pattern: starter WH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
+    const match = stroke.match(/^([#]?WH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/);
+    if (!match) return null;
+    const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] = match;
+
+    if (!(pattern in EMILY_SYMBOLS)) return null;
+
+    let variant = 0;
+    if (variantKeys.includes("E")) variant += 1;
+    if (variantKeys.includes("U")) variant += 2;
+    const baseList = EMILY_SYMBOLS[pattern];
+    const symbol = Array.isArray(baseList) ? baseList[variant] : baseList;
+
+    let repeat = 1;
+    if (repeatKeys.includes("S")) repeat += 1;
+    if (repeatKeys.includes("T")) repeat += 2;
+
+    const usesSpaceAttachment = EMILY_ATTACHMENT_METHOD === "space";
+    const spaceBefore = usesSpaceAttachment ? attachments.includes("A") : !attachments.includes("A");
+    const spaceAfter = usesSpaceAttachment ? attachments.includes("O") : !attachments.includes("O");
+
+    let output = symbol.repeat(repeat);
+
+    const capNext = capKey === "*";
+    const shouldApplySpacing = !EMILY_NO_SPACING_SYMBOLS.includes(symbol);
+
+    // leftSpace/rightSpace tags for spacing engine
+    return {
+        type: 'emily',
+        value: output,
+        leftSpace: shouldApplySpacing ? spaceBefore : false,
+        rightSpace: shouldApplySpacing ? spaceAfter : false,
+        explicitSpacing: shouldApplySpacing,
+        capNext,
+        retroSpace: symbol === "{*?}" ? "insert" : symbol === "{*!}" ? "delete" : null,
+        repeat
+    };
+}
+
+function applyRetroactiveSpace(action, repeat) {
+    if (!action) return false;
+    let changed = false;
+    for (let i = 0; i < repeat; i++) {
+        const islandCount = buffer.getIslandCount();
+        if (islandCount === 0) break;
+        const lastIndex = islandCount - 1;
+        const last = buffer.getIslandAt(lastIndex);
+        if (!last) break;
+        if (last.type === "spacing" && last.value === " ") {
+            if (action === "delete") {
+                if (buffer.removeIslandAt(lastIndex)) {
+                    changed = true;
+                    continue;
+                }
+                break;
+            }
+            break;
+        }
+        if (lastIndex === 0) break;
+        if (buffer.replaceIslandAt(lastIndex, {
+            ...last,
+            explicitSpacing: true,
+            leftSpace: action === "insert"
+        })) {
+            changed = true;
+        }
+        break;
+    }
+    return changed;
+}
+
+// --- V7 Decoding ---
+
+function remapTone(t) {
+    if (t === 3) return 4;
+    if (t === 4) return 3;
+    if (t === 5) return 6;
+    if (t === 6) return 5;
+    return t;
+}
+
+function getV7FromStroke(stroke) {
+    if (!stroke.includes("*")) return null;
+    const parts = stroke.split("*");
+
+    if (parts.length !== 2) return null;
+    const leftKeys = parts[0];
+    const rightSide = parts[1];
+
+    const hasSuffixD = rightSide.includes("D");
+    const hasSuffixZ = rightSide.includes("Z");
+    let rightKeys = rightSide.replace("D", "").replace("Z", "");
+
+    // Left Syllable
+    const lk = (k) => leftKeys.includes(k) ? 1 : 0;
+    const cA = lk("#") * 1 + lk("S") * 2 + lk("T") * 4 + lk("P") * 8 + lk("H") * 16;
+    const tA = lk("K") * 1 + lk("W") * 2 + lk("R") * 4;
+    const vA = lk("A") * 1 + lk("O") * 2;
+
+    const consA = consonantIntMap[cA];
+    if (consA === undefined) return null;
+    let vowelCharA = vowelIntMap[vA];
+    if (vA === 0) vowelCharA = hasSuffixD ? "u" : "e";
+
+    // Right Syllable
+    const rk = (k) => rightKeys.includes(k) ? 1 : 0;
+    const vB = rk("U") * 1 + rk("E") * 2;
+    // F->C4, P->C3, L->C2, T->C0, S->C1
+    const cB = rk("T") * 1 + rk("S") * 2 + rk("L") * 4 + rk("P") * 8 + rk("F") * 16;
+    // G->T0, B->T1, R->T2
+    const tB = rk("G") * 1 + rk("B") * 2 + rk("R") * 4;
+
+    const consB = consonantIntMap[cB];
+    if (consB === undefined) return null;
+    let vowelCharB = vowelIntMap[vB];
+    if (vB === 0) vowelCharB = hasSuffixZ ? "u" : "e";
+
+    return consA + vowelCharA + remapTone(tA) + consB + vowelCharB + remapTone(tB);
+}
+
 
 // --- App State ---
 
@@ -21,7 +232,7 @@ const state = {
     set islands(next) { buffer.setIslands(next); },
     get pendingCapitalization() { return buffer.pendingCapitalization; },
     set pendingCapitalization(next) { buffer.pendingCapitalization = next; },
-    candidates: [] as string[][]
+    candidates: []
 };
 let isRawMode = false;
 let piecemealCursorIndex: number | null = null;
@@ -79,7 +290,7 @@ const undoManager = createUndoManager(buffer, (fields) => {
     getPiecemealCursorIndex: () => piecemealCursorIndex
 });
 
-function saveState(group?: string) {
+function saveState(group) {
     undoManager.save(group);
 }
 
@@ -1048,93 +1259,238 @@ async function handleChord(stroke) {
         return;
     }
 
-    const plan = planCoreStroke({
-        islands: state.islands,
-        pendingCapitalization: state.pendingCapitalization,
-        candidates: state.candidates,
-        piecemealCursorIndex
-    }, stroke, strippedPlover.available);
-    let lastRetroactiveSpaceChanged = false;
+    // 1. Escape Hatch: #S
+    if (stroke === "#S-" || stroke === "#S") {
+        if (state.candidates.length > 0) {
+            selectCandidate(0); // Select top candidate
+        }
+        piecemealCursorIndex = null;
+        isRawMode = true;
+        buffer.clearHistory();
+        updateDisplay();
+        const textArea = document.getElementById("text-input");
+        if (textArea) {
+            textArea.focus();
+            textArea.selectionStart = textArea.value.length;
+            textArea.selectionEnd = textArea.value.length;
+        }
+        return;
+    }
 
-    for (const step of plan.steps) {
-        switch (step.kind) {
-            case "saveHistory":
+    if (stroke === "*") {
+        piecemealCursorIndex = null;
+        restoreState();
+        return;
+    }
+
+    let suppressPiecemealEntry = false;
+    if (piecemealCursorIndex !== null) {
+        const entryIndex = getPiecemealEntryIndex(stroke);
+        if (entryIndex !== null) {
+            const targets = findPiecemealSyllableTargets(state.islands);
+            if (targets[entryIndex]) {
+                piecemealCursorIndex = entryIndex;
+                updateDisplay();
+                return;
+            }
+        }
+
+        if (state.candidates.length === 0 && isLoneCandidateSelectionStroke(stroke)) {
+            piecemealCursorIndex = null;
+            updateDisplay();
+            return;
+        }
+
+        // Syllable+T exits piecemeal. With candidates it selects candidate 1 first;
+        // without candidates it still appends the syllable normally.
+        const firstCandidateAppendStroke = getFirstCandidateAppendStroke(stroke);
+        if (firstCandidateAppendStroke && state.candidates.length === 0) {
+            const parsedAppend = parse(firstCandidateAppendStroke);
+            if (parsedAppend) {
                 saveState();
-                break;
-            case "undo":
                 piecemealCursorIndex = null;
-                restoreState();
-                break;
-            case "clearHistory":
-                buffer.clearHistory();
-                break;
-            case "enterRawMode":
-                isRawMode = true;
-                break;
-            case "focusRawInput": {
-                const textArea = document.getElementById("text-input");
-                if (textArea) {
-                    textArea.focus();
-                    textArea.selectionStart = textArea.value.length;
-                    textArea.selectionEnd = textArea.value.length;
-                }
-                break;
-            }
-            case "setIslands":
-                buffer.setIslands(step.islands || []);
-                break;
-            case "appendIsland":
-                if (step.island) buffer.appendIsland(step.island);
-                break;
-            case "appendText":
-                appendText(step.text || "");
-                break;
-            case "setCandidates":
-                state.candidates = step.candidates || [];
-                break;
-            case "setPiecemealCursor":
-                piecemealCursorIndex = step.piecemealCursorIndex ?? null;
-                break;
-            case "setPendingCapitalization":
-                state.pendingCapitalization = !!step.pendingCapitalization;
-                break;
-            case "applyRetroactiveSpace": {
-                const retroSpaceResult = applyRetroactiveSpace(
-                    state.islands,
-                    step.action || null,
-                    step.repeat || 1
-                );
-                buffer.setIslands(retroSpaceResult.islands);
-                lastRetroactiveSpaceChanged = retroSpaceResult.changed;
-                break;
-            }
-            case "runInference":
+                appendText(assemble(parsedAppend));
                 runInference();
-                break;
-            case "runInferenceIfChangedOrCapitalized":
-                if (lastRetroactiveSpaceChanged || state.pendingCapitalization) {
+                return;
+            }
+        }
+
+        // Other active candidate-selection chords keep their normal meaning inside piecemeal mode.
+        const piecemealSelection = state.candidates.length > 0
+            ? getCandidateSelectionMatch(stroke, state.candidates.length)
+            : null;
+        if (piecemealSelection) {
+            suppressPiecemealEntry = true;
+        } else {
+            const parsedPiecemeal = parse(stroke);
+            if (parsedPiecemeal) {
+                const targets = findPiecemealSyllableTargets(state.islands);
+                const target = targets[piecemealCursorIndex];
+                if (target) {
+                    saveState();
+                    const replacement = assemble(parsedPiecemeal);
+                    buffer.setIslands(replacePiecemealSyllable(state.islands, target, replacement));
+                    state.candidates = [];
+                    const nextTargets = findPiecemealSyllableTargets(state.islands);
+                    piecemealCursorIndex = getNextPiecemealCursorIndex(piecemealCursorIndex, nextTargets.length);
+                    runInference();
+                    return;
+                }
+            }
+            piecemealCursorIndex = null;
+            suppressPiecemealEntry = true;
+            updateDisplay();
+        }
+    }
+
+    if (!suppressPiecemealEntry) {
+        const entryIndex = getPiecemealEntryIndex(stroke);
+        if (entryIndex !== null) {
+            const targets = findPiecemealSyllableTargets(state.islands);
+            if (targets[entryIndex]) {
+                piecemealCursorIndex = entryIndex;
+                updateDisplay();
+                return;
+            }
+        }
+    }
+    
+    // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
+    if (stroke.includes("*")) {
+        const v7Code = getV7FromStroke(stroke);
+        if (v7Code) {
+            piecemealCursorIndex = null;
+            saveState();
+            buffer.appendIsland(createIsland('vietnamese', v7Code, true));
+            runInference();
+            return;
+        }
+    }
+
+    // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
+    const emilyResult = handleEmilySymbol(stroke);
+    if (emilyResult) {
+        const repeatCount = emilyResult.repeat || 1;
+        if (emilyResult.retroSpace) {
+        if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
+            saveState();
+            const changed = applyRetroactiveSpace(emilyResult.retroSpace, repeatCount);
+            state.pendingCapitalization = emilyResult.capNext || false;
+                if (changed || emilyResult.capNext) {
                     runInference();
                     updateDisplay();
                 }
-                break;
-            case "updateDisplay":
+            }
+            return;
+        }
+        saveState();
+        // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
+        buffer.appendIsland(createIsland(emilyResult.type, emilyResult.value, false, {
+            leftSpace: emilyResult.leftSpace,
+            rightSpace: emilyResult.rightSpace,
+            explicitSpacing: emilyResult.explicitSpacing
+        }));
+        state.pendingCapitalization = emilyResult.capNext || false;
+        piecemealCursorIndex = null;
+        runInference();
+        updateDisplay();
+        return;
+    }
+
+    // Check single-stroke selection+syllable first; otherwise let normal handlers run.
+    const selection = state.candidates.length > 0
+        ? getCandidateSelectionMatch(stroke, state.candidates.length)
+        : null;
+    if (selection && selection.syllableStroke !== null) {
+        const combinedPunctuation = PUNCTUATION_MAP[selection.syllableStroke];
+        if (combinedPunctuation) {
+            saveState();
+            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                piecemealCursorIndex = null;
+                buffer.appendIsland(createIsland('punctuation', combinedPunctuation));
                 updateDisplay();
-                break;
-            case "handlePloverOneShot":
-                await handlePloverStroke(stroke, { oneShot: true });
-                break;
-            case "logIgnored":
-                console.log("Ignored stroke:", stroke);
-                break;
-            default:
-                console.warn("Unknown stroke plan step:", step.kind);
+                return;
+            }
+        }
+        const parsedSelection = parse(selection.syllableStroke);
+        if (parsedSelection) {
+            const syllableText = assemble(parsedSelection);
+            saveState();
+            if (selectCandidate(selection.candidateIndex, { saveHistory: false, refreshDisplay: false })) {
+                piecemealCursorIndex = null;
+                appendText(syllableText);
+                runInference();
+                return;
+            }
         }
     }
+
+    // 2. Space Stroke: S-P
+    if (stroke === "S-P") {
+        saveState();
+        piecemealCursorIndex = null;
+        buffer.appendIsland(createIsland('spacing', ' '));
+        runInference();
+        updateDisplay();
+        return;
+    }
+
+    // 3. Punctuation
+    if (PUNCTUATION_MAP[stroke]) {
+        // Auto-select candidate if present
+        if (state.candidates.length > 0) {
+            selectCandidate(0);
+        }
+
+        saveState();
+        piecemealCursorIndex = null;
+        const punct = PUNCTUATION_MAP[stroke];
+        buffer.appendIsland(createIsland('punctuation', punct));
+        updateDisplay();
+        return;
+    }
+
+    const parsed = parse(stroke);
+    if (parsed) {
+        const text = assemble(parsed);
+        saveState();
+        piecemealCursorIndex = null;
+        appendText(text);
+        runInference();
+        return;
+    }
+
+    const firstCandidateAppendStroke = state.candidates.length === 0
+        ? getFirstCandidateAppendStroke(stroke)
+        : null;
+    if (firstCandidateAppendStroke) {
+        const parsedAppend = parse(firstCandidateAppendStroke);
+        if (parsedAppend) {
+            saveState();
+            piecemealCursorIndex = null;
+            appendText(assemble(parsedAppend));
+            runInference();
+            return;
+        }
+    }
+
+    if (selection && selection.syllableStroke === null) {
+        selectCandidate(selection.candidateIndex);
+        return;
+    }
+
+    if (strippedPlover.available) {
+        await handlePloverStroke(stroke, { oneShot: true });
+        return;
+    }
+
+    console.log("Ignored stroke:", stroke);
 }
 
 async function runInference() {
-    const inferenceRequest = getInferenceRequest(state.islands);
-    if (!inferenceRequest.needed) {
+    // Optimization: If no V7 islands, skip inference
+    const hasV7 = state.islands.some(i => i.isV7);
+    if (!hasV7) {
         abortInferenceRequest(true);
         state.candidates = [];
         updateDisplay();
@@ -1146,10 +1502,13 @@ async function runInference() {
     inferenceAbortController = controller;
 
     try {
+        // Convert client islands to server format [Fixed, V7, Fixed...]
+        const serverIslands = convertIslandsForInference(state.islands);
+
         const fetchOptions = {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ islands: inferenceRequest.islands }),
+            body: JSON.stringify({ islands: serverIslands }),
             ...(controller ? { signal: controller.signal } : {})
         };
 
@@ -1232,7 +1591,7 @@ function renderKeyboardLayout() {
     if (!board) return;
     board.replaceChildren();
 
-    for (const row of getQwertyKeyboardLayout()) {
+    for (const row of qwertyKeyboardLayout) {
         const rowEl = document.createElement("div");
         rowEl.className = "qwerty-row";
         for (const key of row) {
@@ -1320,9 +1679,10 @@ function updateDisplay() {
     const textArea = document.getElementById("text-input");
     const candArea = document.getElementById("candidate-area");
 
-    const displayPlan = buildDisplayPlan(state.islands, state.candidates, piecemealCursorIndex);
-    const text = displayPlan.text;
-    const candidateDiffPlan = displayPlan.candidateDiffPlan;
+    const text = renderVisibleText(state.islands, state.candidates);
+    const candidateDiffPlan = state.candidates.length > 0
+        ? buildCandidateDiffPlan(state.islands, state.candidates)
+        : null;
     
     if (isRawMode) {
         // Raw Mode: Show textarea
@@ -1346,13 +1706,22 @@ function updateDisplay() {
         cursor.id = "cursor";
         display.appendChild(cursor);
 
-        if (displayPlan.empty) {
+        // Check if empty (single empty Viet island)
+        const isEmpty = state.islands.length === 1 && state.islands[0].value === "" && !state.islands[0].isV7;
+
+        if (text === "" && isEmpty) {
             const placeholder = document.createElement("span");
             placeholder.textContent = "Start typing with your steno keyboard...";
             placeholder.style.color = "#999";
             display.appendChild(placeholder);
         } else {
-            for (const group of displayPlan.visibleGroups) {
+            const visibleSegments = renderVisibleTextSegments(
+                state.islands,
+                state.candidates,
+                piecemealCursorIndex,
+                candidateDiffPlan?.sections ?? []
+            );
+            for (const group of groupVisibleTextSegmentsByCandidateSection(visibleSegments)) {
                 if (group.candidateSection) {
                     const sectionSpan = document.createElement("span");
                     sectionSpan.className = `candidate-section candidate-section-${group.candidateSection}`;
@@ -1444,7 +1813,7 @@ function updateDisplay() {
 
 // --- Input Handling ---
 
-let keyboardStrokeTracker: KeyboardStrokeTracker | null = null;
+const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
     trackQwertyKey(e, true);
@@ -1533,7 +1902,7 @@ document.addEventListener("keydown", (e) => {
     const mapped = mapKeyUnique(e.key);
     if (!mapped) return;
     const immediateDigit = !ploverActive && mapped.match(/^[0-9]$/);
-    keyboardStrokeTracker?.keyDown(e.key, { includeInStroke: !immediateDigit });
+    keyboardStrokeTracker.keyDown(e.key, { includeInStroke: !immediateDigit });
 
     // Numbers should generate immediate capital island, not be part of steno chord
     if (immediateDigit) {
@@ -1557,7 +1926,7 @@ document.addEventListener("keyup", (e) => {
         return;
     }
 
-    const strokeStr = keyboardStrokeTracker?.keyUp(e.key);
+    const strokeStr = keyboardStrokeTracker.keyUp(e.key);
     if (strokeStr) {
         handleChord(strokeStr).catch((err) => {
             console.error("Stroke handling failed", err);
@@ -1808,12 +2177,6 @@ function setupPloverControls() {
     });
 }
 
+renderKeyboardLayout();
+updateKeyboardLayout();
 setupPloverControls();
-void initializeRustUiCore(() => {
-    keyboardStrokeTracker = new KeyboardStrokeTracker();
-    renderKeyboardLayout();
-    updateKeyboardLayout();
-    updateDisplay();
-}).catch((error) => {
-    console.error("Rust UI core initialization failed", error);
-});
