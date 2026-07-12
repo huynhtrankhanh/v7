@@ -5,6 +5,6 @@ const evaluate = async (
   text: string,
   inference: (request: string[]) => string[],
 ): number => {
-const segmenter = new Intl.Segmenter("en", { granularity: "word" });
-const parts = [...segmenter.segment(text)].map(x => x.segment);
+  const segmenter = new Intl.Segmenter("en", { granularity: "word" });
+  const parts = [...segmenter.segment(text)].map((x) => x.segment);
 };
