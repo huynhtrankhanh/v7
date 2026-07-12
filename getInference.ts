@@ -12,6 +12,7 @@ type Tokenizer = {
   validConsonantsMap: Map<string, string>;
   sortedConsonantKeys: string[];
   candidatesIndex: Map<string, string[]>;
+  v7CodeBySyllable: Map<string, string>;
 };
 type VowelKey = "a" | "e" | "i" | "o" | "u";
 
@@ -418,10 +419,6 @@ function generateStructuredRegexMap(): Map<string, string> {
           case "u":
             s = u[i];
             break;
-          case "i":
-            throw new Error(
-              `Unexpected vowel "i" in non-i branch for consonant "${c}".`,
-            );
         }
         if (c === "k" && v === "o") s = ko[i];
         if (c === "k" && v === "u") s = ku[i];
@@ -437,11 +434,31 @@ function createTokenizer(): Tokenizer {
   const regexMap = generateStructuredRegexMap();
   const validConsonantsMap = new Map<string, string>();
   const candidatesIndex = new Map<string, string[]>();
+  const v7CodeBySyllable = new Map<string, string>();
 
   for (const [key, regex] of regexMap.entries()) {
-    const c = key.split("_")[0];
-    validConsonantsMap.set(c, c);
-    candidatesIndex.set(key, enumerateRegex(regex));
+    const [consonant, rimeFirstLetter, tone] = key.split("_");
+    validConsonantsMap.set(consonant, consonant);
+
+    // Enumerate each regex only once, then use the result for both forward
+    // inference and the constant-time reverse lookup.
+    const candidates = enumerateRegex(regex);
+    candidatesIndex.set(key, candidates);
+
+    // "dd" is the canonical v7 spelling for the structured consonant "đ".
+    const v7Consonant = consonant === "đ" ? "dd" : consonant;
+    const v7Code = `${v7Consonant}${rimeFirstLetter}${tone}`;
+
+    for (const syllable of candidates) {
+      const existingCode = v7CodeBySyllable.get(syllable);
+      if (existingCode !== undefined && existingCode !== v7Code) {
+        throw new Error(
+          `Ambiguous v7 code for syllable "${syllable}": ` +
+            `"${existingCode}" and "${v7Code}".`,
+        );
+      }
+      v7CodeBySyllable.set(syllable, v7Code);
+    }
   }
 
   validConsonantsMap.set("dd", "đ");
@@ -449,10 +466,30 @@ function createTokenizer(): Tokenizer {
   const sortedConsonantKeys = [...validConsonantsMap.keys()].sort(
     (a, b) => b.length - a.length,
   );
-  return { validConsonantsMap, sortedConsonantKeys, candidatesIndex };
+  return {
+    validConsonantsMap,
+    sortedConsonantKeys,
+    candidatesIndex,
+    v7CodeBySyllable,
+  };
 }
 
 const TOKENIZER = createTokenizer();
+
+/**
+ * Returns the canonical v7 code for a lowercase Vietnamese syllable.
+ * Returns undefined when the input is not lowercase or has no v7 code.
+ */
+export function getV7Code(syllable: string): string | undefined {
+  if (typeof syllable !== "string") return undefined;
+
+  const normalizedSyllable = syllable.normalize("NFC");
+  if (normalizedSyllable !== normalizedSyllable.toLocaleLowerCase("vi")) {
+    return undefined;
+  }
+
+  return TOKENIZER.v7CodeBySyllable.get(normalizedSyllable);
+}
 
 function parseV7String(
   v7String: string,
