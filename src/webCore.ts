@@ -52,11 +52,27 @@ export interface CandidateDiffPlan {
 }
 
 const qwertyToUnique: Record<string, string> = {
-  "q": "#", "a": "S-", "w": "T-", "s": "K-", "e": "P-", "d": "W-", "r": "H-", "f": "R-",
-  "c": "A", "v": "O",
-  "n": "E", "m": "U",
-  "u": "-F", "j": "-R", "i": "-P", "k": "-B", "o": "-L", "l": "-G", "p": "-T", ";": "-S",
-  " ": "*"
+  q: "#",
+  a: "S-",
+  w: "T-",
+  s: "K-",
+  e: "P-",
+  d: "W-",
+  r: "H-",
+  f: "R-",
+  c: "A",
+  v: "O",
+  n: "E",
+  m: "U",
+  u: "-F",
+  j: "-R",
+  i: "-P",
+  k: "-B",
+  o: "-L",
+  l: "-G",
+  p: "-T",
+  ";": "-S",
+  " ": "*",
 };
 
 export interface QwertyKeyboardKey {
@@ -71,14 +87,14 @@ export const qwertyKeyboardLayout: QwertyKeyboardKey[][] = [
   [
     ..."asdfghjkl".split("").map((key) => ({ key, label: key.toUpperCase() })),
     { key: ";", label: ";" },
-    { key: "Enter", label: "Enter", width: 2.25 }
+    { key: "Enter", label: "Enter", width: 2.25 },
   ],
   [
     { key: "Shift", label: "Shift", width: 2.25 },
     ..."zxcvbnm".split("").map((key) => ({ key, label: key.toUpperCase() })),
-    { key: "Shift", label: "Shift", width: 2.25 }
+    { key: "Shift", label: "Shift", width: 2.25 },
   ],
-  [{ key: " ", label: "Spacebar", width: 7 }]
+  [{ key: " ", label: "Spacebar", width: 7 }],
 ];
 
 const qwertyCodeMap: Record<string, string> = {
@@ -87,10 +103,13 @@ const qwertyCodeMap: Record<string, string> = {
   NumpadEnter: "Enter",
   ShiftLeft: "Shift",
   ShiftRight: "Shift",
-  Semicolon: ";"
+  Semicolon: ";",
 };
 
-export function normalizeQwertyDisplayKey(key: string, code = ""): string | null {
+export function normalizeQwertyDisplayKey(
+  key: string,
+  code = "",
+): string | null {
   if (code in qwertyCodeMap) return qwertyCodeMap[code];
   if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
@@ -106,29 +125,82 @@ export function normalizeQwertyDisplayKey(key: string, code = ""): string | null
 }
 
 const strokeOrder = [
-  "#", "S-", "T-", "K-", "P-", "W-", "H-", "R-",
-  "A", "O", "*", "E", "U",
-  "-F", "-R", "-P", "-B", "-L", "-G", "-T", "-S", "-D", "-Z"
+  "#",
+  "S-",
+  "T-",
+  "K-",
+  "P-",
+  "W-",
+  "H-",
+  "R-",
+  "A",
+  "O",
+  "*",
+  "E",
+  "U",
+  "-F",
+  "-R",
+  "-P",
+  "-B",
+  "-L",
+  "-G",
+  "-T",
+  "-S",
+  "-D",
+  "-Z",
 ];
 const middleKeys = ["A", "O", "*", "E", "U"];
 const rightStart = strokeOrder.indexOf("-F");
 const v7ConsonantPrefixes = [
-  "dd", "ch", "kh", "ng", "nh", "ph", "th", "tr",
-  "0", "b", "d", "g", "h", "k", "l", "m", "n", "p", "r", "s", "t", "v", "w", "x", "z", "đ"
+  "dd",
+  "ch",
+  "kh",
+  "ng",
+  "nh",
+  "ph",
+  "th",
+  "tr",
+  "0",
+  "b",
+  "d",
+  "g",
+  "h",
+  "k",
+  "l",
+  "m",
+  "n",
+  "p",
+  "r",
+  "s",
+  "t",
+  "v",
+  "w",
+  "x",
+  "z",
+  "đ",
 ].sort((a, b) => b.length - a.length);
 const v7Vowels = new Set(["a", "e", "i", "o", "u"]);
 const v7TonePattern = /^[0-7]$/;
 const vietnameseWordPattern = /[\p{L}\p{M}]+/gu;
 const piecemealEntryStrokes = new Map<string, number>([
-  ["T", 0], ["T-", 0],
-  ["P", 1], ["P-", 1],
-  ["H", 2], ["H-", 2],
-  ["TK", 3], ["TK-", 3],
-  ["PW", 4], ["PW-", 4],
-  ["HR", 5], ["HR-", 5],
-  ["K", 6], ["K-", 6],
-  ["W", 7], ["W-", 7],
-  ["R", 8], ["R-", 8]
+  ["T", 0],
+  ["T-", 0],
+  ["P", 1],
+  ["P-", 1],
+  ["H", 2],
+  ["H-", 2],
+  ["TK", 3],
+  ["TK-", 3],
+  ["PW", 4],
+  ["PW-", 4],
+  ["HR", 5],
+  ["HR-", 5],
+  ["K", 6],
+  ["K-", 6],
+  ["W", 7],
+  ["W-", 7],
+  ["R", 8],
+  ["R-", 8],
 ]);
 
 export function mapKeyUnique(key: string): string | null {
@@ -146,7 +218,12 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
 
   for (let i = 0; i < strokeOrder.length; i++) {
     const key = strokeOrder[i];
-    if (!hasMiddle && !insertedHyphen && i >= rightStart && strokeKeys.has(key)) {
+    if (
+      !hasMiddle &&
+      !insertedHyphen &&
+      i >= rightStart &&
+      strokeKeys.has(key)
+    ) {
       stroke += "-";
       insertedHyphen = true;
     }
@@ -162,7 +239,10 @@ export class KeyboardStrokeTracker {
   private heldKeys = new Set<string>();
   private strokeKeys = new Set<string>();
 
-  keyDown(key: string, options: { includeInStroke?: boolean } = {}): string | null {
+  keyDown(
+    key: string,
+    options: { includeInStroke?: boolean } = {},
+  ): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
     this.heldKeys.add(mapped);
@@ -185,7 +265,10 @@ export class KeyboardStrokeTracker {
   }
 }
 
-export function renderVisibleText(islands: Island[], candidates: string[][]): string {
+export function renderVisibleText(
+  islands: Island[],
+  candidates: string[][],
+): string {
   if (candidates.length > 0) {
     return renderCandidateText(islands, candidates[0]);
   }
@@ -210,14 +293,20 @@ export function renderVisibleTextSegments(
   islands: Island[],
   candidates: string[][],
   piecemealCursorIndex: number | null = null,
-  candidateSections: CandidateDiffSection[] = []
+  candidateSections: CandidateDiffSection[] = [],
 ): VisibleTextSegment[] {
   const targets = findPiecemealSyllableTargets(islands);
   const targetIds = new Map<string, { number: number; cursor: boolean }>();
   targets.forEach((target, index) => {
-    targetIds.set(targetId(target), { number: index + 1, cursor: index === piecemealCursorIndex });
+    targetIds.set(targetId(target), {
+      number: index + 1,
+      cursor: index === piecemealCursorIndex,
+    });
   });
-  const inferredV7Parts = mapInferredPartsToV7Islands(islands, candidates[0] ?? null);
+  const inferredV7Parts = mapInferredPartsToV7Islands(
+    islands,
+    candidates[0] ?? null,
+  );
 
   const segments: VisibleTextSegment[] = [];
   for (let i = 0; i < islands.length; i++) {
@@ -229,26 +318,41 @@ export function renderVisibleTextSegments(
     if (curr.isV7) {
       const inferredPart = inferredV7Parts.get(i);
       if (inferredPart) {
-        segments.push(...renderIslandWithPiecemealTargets(
-          inferredPart,
-          curr,
-          i,
-          targetIds,
-          0,
-          findInferredV7DisplayTargets(inferredPart, curr, i)
-        ));
+        segments.push(
+          ...renderIslandWithPiecemealTargets(
+            inferredPart,
+            curr,
+            i,
+            targetIds,
+            0,
+            findInferredV7DisplayTargets(inferredPart, curr, i),
+          ),
+        );
       } else {
-        segments.push(...renderIslandWithPiecemealTargets(`[${curr.value}]`, curr, i, targetIds, 1));
+        segments.push(
+          ...renderIslandWithPiecemealTargets(
+            `[${curr.value}]`,
+            curr,
+            i,
+            targetIds,
+            1,
+          ),
+        );
       }
     } else {
-      segments.push(...renderIslandWithPiecemealTargets(curr.value, curr, i, targetIds, 0));
+      segments.push(
+        ...renderIslandWithPiecemealTargets(curr.value, curr, i, targetIds, 0),
+      );
     }
   }
-  return applyCandidateSectionsToSegments(mergePlainSegments(segments), candidateSections);
+  return applyCandidateSectionsToSegments(
+    mergePlainSegments(segments),
+    candidateSections,
+  );
 }
 
 export function groupVisibleTextSegmentsByCandidateSection(
-  segments: VisibleTextSegment[]
+  segments: VisibleTextSegment[],
 ): VisibleTextGroup[] {
   const groups: VisibleTextGroup[] = [];
 
@@ -259,7 +363,7 @@ export function groupVisibleTextSegmentsByCandidateSection(
     } else {
       groups.push({
         candidateSection: segment.candidateSection,
-        segments: [segment]
+        segments: [segment],
       });
     }
   }
@@ -270,7 +374,7 @@ export function groupVisibleTextSegmentsByCandidateSection(
 export function getSelectedCandidateText(
   candidates: string[][],
   index: number,
-  islands?: Island[]
+  islands?: Island[],
 ): string | null {
   const selected = candidates[index];
   if (!selected) return null;
@@ -280,7 +384,7 @@ export function getSelectedCandidateText(
 export function selectCandidateIslands(
   candidates: string[][],
   index: number,
-  islands?: Island[]
+  islands?: Island[],
 ): Island[] | null {
   const chosenText = getSelectedCandidateText(candidates, index, islands);
   if (chosenText === null) return null;
@@ -291,7 +395,9 @@ export function getPiecemealEntryIndex(stroke: string): number | null {
   return piecemealEntryStrokes.get(stroke) ?? null;
 }
 
-export function findPiecemealSyllableTargets(islands: Island[]): PiecemealSyllableTarget[] {
+export function findPiecemealSyllableTargets(
+  islands: Island[],
+): PiecemealSyllableTarget[] {
   const targets: PiecemealSyllableTarget[] = [];
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
     const island = islands[islandIndex];
@@ -308,7 +414,7 @@ export function findPiecemealSyllableTargets(islands: Island[]): PiecemealSyllab
 export function replacePiecemealSyllable(
   islands: Island[],
   target: PiecemealSyllableTarget,
-  replacement: string
+  replacement: string,
 ): Island[] {
   const island = islands[target.islandIndex];
   if (!island) return islands;
@@ -317,12 +423,15 @@ export function replacePiecemealSyllable(
     const next = [
       ...islands.slice(0, target.islandIndex),
       ...splitV7IslandForReplacement(island, target, replacement),
-      ...islands.slice(target.islandIndex + 1)
+      ...islands.slice(target.islandIndex + 1),
     ];
     return next.length > 0 ? next : [createIsland("vietnamese", "")];
   }
 
-  const value = island.value.slice(0, target.start) + replacement + island.value.slice(target.end);
+  const value =
+    island.value.slice(0, target.start) +
+    replacement +
+    island.value.slice(target.end);
   const next = islands.slice();
   next[target.islandIndex] = { ...island, value };
   return next;
@@ -330,19 +439,24 @@ export function replacePiecemealSyllable(
 
 export function getNextPiecemealCursorIndex(
   currentIndex: number,
-  nextTargetCount: number
+  nextTargetCount: number,
 ): number | null {
   if (currentIndex <= 0) return null;
   const nextIndex = currentIndex - 1;
   return nextIndex < nextTargetCount && nextIndex < 9 ? nextIndex : null;
 }
 
-function findV7Syllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
+function findV7Syllables(
+  value: string,
+  islandIndex: number,
+): PiecemealSyllableTarget[] {
   const targets: PiecemealSyllableTarget[] = [];
   let cursor = 0;
   while (cursor < value.length) {
     const start = cursor;
-    const consonant = v7ConsonantPrefixes.find((prefix) => value.startsWith(prefix, cursor));
+    const consonant = v7ConsonantPrefixes.find((prefix) =>
+      value.startsWith(prefix, cursor),
+    );
     if (!consonant) {
       cursor += 1;
       continue;
@@ -363,13 +477,16 @@ function findV7Syllables(value: string, islandIndex: number): PiecemealSyllableT
       text: value.slice(start, cursor),
       start,
       end: cursor,
-      isV7: true
+      isV7: true,
     });
   }
   return targets;
 }
 
-function findFixedVietnameseSyllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
+function findFixedVietnameseSyllables(
+  value: string,
+  islandIndex: number,
+): PiecemealSyllableTarget[] {
   return [...value.matchAll(vietnameseWordPattern)]
     .filter((match) => isValidVietnameseSyllable(match[0]))
     .map((match, syllableIndex) => ({
@@ -378,26 +495,30 @@ function findFixedVietnameseSyllables(value: string, islandIndex: number): Piece
       text: match[0],
       start: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
-      isV7: false
+      isV7: false,
     }));
 }
 
-function findInferredVietnameseSyllables(value: string, islandIndex: number): PiecemealSyllableTarget[] {
-  return [...value.matchAll(vietnameseWordPattern)]
-    .map((match, syllableIndex) => ({
+function findInferredVietnameseSyllables(
+  value: string,
+  islandIndex: number,
+): PiecemealSyllableTarget[] {
+  return [...value.matchAll(vietnameseWordPattern)].map(
+    (match, syllableIndex) => ({
       islandIndex,
       syllableIndex,
       text: match[0],
       start: match.index ?? 0,
       end: (match.index ?? 0) + match[0].length,
-      isV7: true
-    }));
+      isV7: true,
+    }),
+  );
 }
 
 function splitV7IslandForReplacement(
   island: Island,
   target: PiecemealSyllableTarget,
-  replacement: string
+  replacement: string,
 ): Island[] {
   const pieces: Island[] = [];
   const before = island.value.slice(0, target.start);
@@ -414,15 +535,19 @@ function renderIslandWithPiecemealTargets(
   islandIndex: number,
   targetIds: Map<string, { number: number; cursor: boolean }>,
   offset: number,
-  displayTargets?: PiecemealSyllableTarget[]
+  displayTargets?: PiecemealSyllableTarget[],
 ): VisibleTextSegment[] {
   if (targetIds.size === 0 || island.type !== "vietnamese") {
     return [{ text: renderedValue }];
   }
-  const targets = displayTargets ?? (island.isV7
-    ? findV7Syllables(island.value, islandIndex)
-    : findFixedVietnameseSyllables(island.value, islandIndex));
-  const activeTargets = targets.filter((target) => targetIds.has(targetId(target)));
+  const targets =
+    displayTargets ??
+    (island.isV7
+      ? findV7Syllables(island.value, islandIndex)
+      : findFixedVietnameseSyllables(island.value, islandIndex));
+  const activeTargets = targets.filter((target) =>
+    targetIds.has(targetId(target)),
+  );
   if (activeTargets.length === 0) return [{ text: renderedValue }];
 
   const segments: VisibleTextSegment[] = [];
@@ -430,20 +555,24 @@ function renderIslandWithPiecemealTargets(
   for (const target of activeTargets) {
     const start = target.start + offset;
     const end = target.end + offset;
-    if (start > cursor) segments.push({ text: renderedValue.slice(cursor, start) });
+    if (start > cursor)
+      segments.push({ text: renderedValue.slice(cursor, start) });
     const marker = targetIds.get(targetId(target));
     segments.push({
       text: renderedValue.slice(start, end),
       piecemealNumber: marker?.number,
-      piecemealCursor: marker?.cursor
+      piecemealCursor: marker?.cursor,
     });
     cursor = end;
   }
-  if (cursor < renderedValue.length) segments.push({ text: renderedValue.slice(cursor) });
+  if (cursor < renderedValue.length)
+    segments.push({ text: renderedValue.slice(cursor) });
   return segments;
 }
 
-function mergePlainSegments(segments: VisibleTextSegment[]): VisibleTextSegment[] {
+function mergePlainSegments(
+  segments: VisibleTextSegment[],
+): VisibleTextSegment[] {
   const merged: VisibleTextSegment[] = [];
   for (const segment of segments) {
     const last = merged[merged.length - 1];
@@ -465,7 +594,10 @@ function targetId(target: PiecemealSyllableTarget): string {
   return `${target.islandIndex}:${target.isV7 ? "v7" : "fixed"}:${target.syllableIndex}`;
 }
 
-export function renderCandidateText(islands: Island[], topCandidate: string[]): string {
+export function renderCandidateText(
+  islands: Island[],
+  topCandidate: string[],
+): string {
   if (usesFullAlternatingCandidateShape(islands, topCandidate)) {
     return topCandidate.join("");
   }
@@ -478,7 +610,9 @@ export function renderCandidateText(islands: Island[], topCandidate: string[]): 
     if (prev && shouldAddSpace(prev, curr)) {
       text += " ";
     }
-    text += curr.isV7 ? (topCandidate[v7PartIndex++] ?? `[${curr.value}]`) : curr.value;
+    text += curr.isV7
+      ? (topCandidate[v7PartIndex++] ?? `[${curr.value}]`)
+      : curr.value;
   }
   return text;
 }
@@ -486,23 +620,31 @@ export function renderCandidateText(islands: Island[], topCandidate: string[]): 
 export function buildCandidateDiffPlan(
   islands: Island[],
   candidates: string[][],
-  limit = 5
+  limit = 5,
 ): CandidateDiffPlan {
   const visibleCandidates = candidates.slice(0, limit);
-  return buildStructuredCandidateDiffPlan(islands, visibleCandidates)
-    ?? buildCandidateTextDiffPlan(
-      visibleCandidates.map((candidate) => renderCandidateText(islands, candidate))
-    );
+  return (
+    buildStructuredCandidateDiffPlan(islands, visibleCandidates) ??
+    buildCandidateTextDiffPlan(
+      visibleCandidates.map((candidate) =>
+        renderCandidateText(islands, candidate),
+      ),
+    )
+  );
 }
 
-export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateDiffPlan {
+export function buildCandidateTextDiffPlan(
+  candidateTexts: string[],
+): CandidateDiffPlan {
   const preview = candidateTexts[0] ?? "";
   const baseTokens = tokenizeDiffText(preview);
-  const alignments = candidateTexts.map((text) => diffCandidateText(preview, text, baseTokens));
+  const alignments = candidateTexts.map((text) =>
+    diffCandidateText(preview, text, baseTokens),
+  );
   const sections = chooseCandidateDiffSections(
     preview,
     baseTokens,
-    alignments.flatMap((alignment) => alignment.changedIntervals)
+    alignments.flatMap((alignment) => alignment.changedIntervals),
   );
 
   return {
@@ -511,13 +653,25 @@ export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateD
     candidates: candidateTexts.map((text, index) => {
       const alignment = alignments[index];
       const sectionsForCandidate = sections.map((section) => {
-        const range = getCandidateTokenRangeForSection(alignment.chunks, section);
-        const sectionText = sliceTokenRange(text, alignment.candidateTokens, range.start, range.end);
-        const changes = candidateChangesSection(alignment.changedIntervals, section, baseTokens.length);
+        const range = getCandidateTokenRangeForSection(
+          alignment.chunks,
+          section,
+        );
+        const sectionText = sliceTokenRange(
+          text,
+          alignment.candidateTokens,
+          range.start,
+          range.end,
+        );
+        const changes = candidateChangesSection(
+          alignment.changedIntervals,
+          section,
+          baseTokens.length,
+        );
         return {
           role: section.role,
           text: changes ? sectionText : section.text,
-          changes
+          changes,
         };
       });
 
@@ -526,9 +680,9 @@ export function buildCandidateTextDiffPlan(candidateTexts: string[]): CandidateD
         sections: sectionsForCandidate,
         changedRoles: sectionsForCandidate
           .filter((section) => section.changes)
-          .map((section) => section.role)
+          .map((section) => section.role),
       };
-    })
+    }),
   };
 }
 
@@ -578,35 +732,39 @@ function tokenizeDiffText(text: string, offset = 0): DiffToken[] {
   return [...text.matchAll(diffTokenPattern)].map((match) => ({
     text: match[0],
     start: offset + (match.index ?? 0),
-    end: offset + (match.index ?? 0) + match[0].length
+    end: offset + (match.index ?? 0) + match[0].length,
   }));
 }
 
 function buildStructuredCandidateDiffPlan(
   islands: Island[],
-  candidates: string[][]
+  candidates: string[][],
 ): CandidateDiffPlan | null {
   if (candidates.length === 0) return buildCandidateTextDiffPlan([]);
 
   // Inference candidates preserve V7 island order, so compare only those replacement parts.
   const renderedCandidates = candidates.map((candidate) =>
-    renderCandidateWithV7Parts(islands, candidate)
+    renderCandidateWithV7Parts(islands, candidate),
   );
   const preview = renderedCandidates[0].text;
   const baseParts = renderedCandidates[0].parts;
   if (baseParts.length === 0) return null;
-  if (!renderedCandidates.every((candidate) => candidate.parts.length === baseParts.length)) {
+  if (
+    !renderedCandidates.every(
+      (candidate) => candidate.parts.length === baseParts.length,
+    )
+  ) {
     return null;
   }
 
   const baseTokens = baseParts.flatMap((part) => part.tokens);
   const alignments = renderedCandidates.map((candidate) =>
-    diffCandidateParts(baseParts, candidate.parts)
+    diffCandidateParts(baseParts, candidate.parts),
   );
   const sections = chooseCandidateDiffSections(
     preview,
     baseTokens,
-    alignments.flatMap((alignment) => alignment.changedIntervals)
+    alignments.flatMap((alignment) => alignment.changedIntervals),
   );
 
   return {
@@ -615,13 +773,25 @@ function buildStructuredCandidateDiffPlan(
     candidates: renderedCandidates.map((candidate, index) => {
       const alignment = alignments[index];
       const sectionsForCandidate = sections.map((section) => {
-        const range = getCandidateTokenRangeForSection(alignment.chunks, section);
-        const sectionText = sliceTokenRange(candidate.text, alignment.candidateTokens, range.start, range.end);
-        const changes = candidateChangesSection(alignment.changedIntervals, section, baseTokens.length);
+        const range = getCandidateTokenRangeForSection(
+          alignment.chunks,
+          section,
+        );
+        const sectionText = sliceTokenRange(
+          candidate.text,
+          alignment.candidateTokens,
+          range.start,
+          range.end,
+        );
+        const changes = candidateChangesSection(
+          alignment.changedIntervals,
+          section,
+          baseTokens.length,
+        );
         return {
           role: section.role,
           text: changes ? sectionText : section.text,
-          changes
+          changes,
         };
       });
 
@@ -630,13 +800,16 @@ function buildStructuredCandidateDiffPlan(
         sections: sectionsForCandidate,
         changedRoles: sectionsForCandidate
           .filter((section) => section.changes)
-          .map((section) => section.role)
+          .map((section) => section.role),
       };
-    })
+    }),
   };
 }
 
-function renderCandidateWithV7Parts(islands: Island[], candidate: string[]): RenderedCandidateWithParts {
+function renderCandidateWithV7Parts(
+  islands: Island[],
+  candidate: string[],
+): RenderedCandidateWithParts {
   if (usesFullAlternatingCandidateShape(islands, candidate)) {
     return renderFullShapeCandidateWithV7Parts(islands, candidate);
   }
@@ -656,7 +829,7 @@ function renderCandidateWithV7Parts(islands: Island[], candidate: string[]): Ren
       const start = text.length;
       text += partText;
       parts.push({
-        tokens: tokenizeDiffText(partText, start)
+        tokens: tokenizeDiffText(partText, start),
       });
     } else {
       text += curr.value;
@@ -668,11 +841,11 @@ function renderCandidateWithV7Parts(islands: Island[], candidate: string[]): Ren
 
 function renderFullShapeCandidateWithV7Parts(
   islands: Island[],
-  candidate: string[]
+  candidate: string[],
 ): RenderedCandidateWithParts {
   const parts: RenderedCandidatePart[] = [];
   const slotByCandidateIndex = new Map(
-    getV7CandidateSlots(islands).map((slot) => [slot.fullCandidateIndex, slot])
+    getV7CandidateSlots(islands).map((slot) => [slot.fullCandidateIndex, slot]),
   );
   let text = "";
 
@@ -683,7 +856,7 @@ function renderFullShapeCandidateWithV7Parts(
     const slot = slotByCandidateIndex.get(i);
     if (slot) {
       parts.push({
-        tokens: tokenizeDiffText(partText, start)
+        tokens: tokenizeDiffText(partText, start),
       });
     }
   }
@@ -693,7 +866,7 @@ function renderFullShapeCandidateWithV7Parts(
 
 function diffCandidateParts(
   baseParts: RenderedCandidatePart[],
-  candidateParts: RenderedCandidatePart[]
+  candidateParts: RenderedCandidatePart[],
 ): CandidateTextAlignment {
   const candidateTokens = candidateParts.flatMap((part) => part.tokens);
   const chunks: DiffChunk[] = [];
@@ -708,12 +881,16 @@ function diffCandidateParts(
       basePart.tokens.map((token) => token.text),
       candidatePart.tokens.map((token) => token.text),
       baseOffset,
-      candidateOffset
+      candidateOffset,
     );
 
     for (const chunk of partChunks) {
       pushDiffChunk(chunks, chunk);
-      if (!chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd)) {
+      if (
+        !chunk.equal &&
+        (chunk.baseStart !== chunk.baseEnd ||
+          chunk.candidateStart !== chunk.candidateEnd)
+      ) {
         changedIntervals.push({ start: chunk.baseStart, end: chunk.baseEnd });
       }
     }
@@ -728,14 +905,22 @@ function diffCandidateParts(
 function diffCandidateText(
   preview: string,
   candidate: string,
-  baseTokens: DiffToken[]
+  baseTokens: DiffToken[],
 ): CandidateTextAlignment {
   const candidateTokens = tokenizeDiffText(candidate);
   if (preview === candidate) {
     return {
       candidateTokens,
-      chunks: [{ baseStart: 0, baseEnd: baseTokens.length, candidateStart: 0, candidateEnd: candidateTokens.length, equal: true }],
-      changedIntervals: []
+      chunks: [
+        {
+          baseStart: 0,
+          baseEnd: baseTokens.length,
+          candidateStart: 0,
+          candidateEnd: candidateTokens.length,
+          equal: true,
+        },
+      ],
+      changedIntervals: [],
     };
   }
 
@@ -747,8 +932,13 @@ function diffCandidateText(
     candidateTokens,
     chunks,
     changedIntervals: chunks
-      .filter((chunk) => !chunk.equal && (chunk.baseStart !== chunk.baseEnd || chunk.candidateStart !== chunk.candidateEnd))
-      .map((chunk) => ({ start: chunk.baseStart, end: chunk.baseEnd }))
+      .filter(
+        (chunk) =>
+          !chunk.equal &&
+          (chunk.baseStart !== chunk.baseEnd ||
+            chunk.candidateStart !== chunk.candidateEnd),
+      )
+      .map((chunk) => ({ start: chunk.baseStart, end: chunk.baseEnd })),
   };
 }
 
@@ -756,16 +946,19 @@ function diffTokenValues(
   baseValues: string[],
   candidateValues: string[],
   baseOffset: number,
-  candidateOffset: number
+  candidateOffset: number,
 ): DiffChunk[] {
-  const { prefix, baseEnd, candidateEnd } = findCommonTokenEdges(baseValues, candidateValues);
+  const { prefix, baseEnd, candidateEnd } = findCommonTokenEdges(
+    baseValues,
+    candidateValues,
+  );
   const chunks: DiffChunk[] = [];
   pushDiffChunk(chunks, {
     baseStart: baseOffset,
     baseEnd: baseOffset + prefix,
     candidateStart: candidateOffset,
     candidateEnd: candidateOffset + prefix,
-    equal: true
+    equal: true,
   });
 
   const baseMiddleLength = baseEnd - prefix;
@@ -780,7 +973,7 @@ function diffTokenValues(
       baseEnd: baseOffset + baseIndex + 1,
       candidateStart: candidateOffset + candidateIndex,
       candidateEnd: candidateOffset + candidateIndex + 1,
-      equal
+      equal,
     });
   }
   pushDiffChunk(chunks, {
@@ -788,7 +981,7 @@ function diffTokenValues(
     baseEnd: baseOffset + baseEnd,
     candidateStart: candidateOffset + prefix + pairedMiddleLength,
     candidateEnd: candidateOffset + candidateEnd,
-    equal: false
+    equal: false,
   });
 
   pushDiffChunk(chunks, {
@@ -796,7 +989,7 @@ function diffTokenValues(
     baseEnd: baseOffset + baseValues.length,
     candidateStart: candidateOffset + candidateEnd,
     candidateEnd: candidateOffset + candidateValues.length,
-    equal: true
+    equal: true,
   });
 
   return chunks;
@@ -804,7 +997,7 @@ function diffTokenValues(
 
 function findCommonTokenEdges(
   baseValues: string[],
-  candidateValues: string[]
+  candidateValues: string[],
 ): { prefix: number; baseEnd: number; candidateEnd: number } {
   let prefix = 0;
   while (
@@ -855,14 +1048,14 @@ function pushDiffChunk(chunks: DiffChunk[], chunk: DiffChunk): void {
 function chooseCandidateDiffSections(
   preview: string,
   baseTokens: DiffToken[],
-  intervals: DiffInterval[]
+  intervals: DiffInterval[],
 ): CandidateDiffSection[] {
   if (baseTokens.length === 0 || intervals.length === 0) return [];
 
   const changedRuns = mergeChangedTokenIntervals(
     intervals
       .map((interval) => normalizeDiffInterval(interval, baseTokens.length))
-      .filter((interval) => interval.end > interval.start)
+      .filter((interval) => interval.end > interval.start),
   );
   if (changedRuns.length === 0) return [];
 
@@ -872,7 +1065,7 @@ function chooseCandidateDiffSections(
   for (let split = 1; split < changedRuns.length; split++) {
     const groups = [
       makeSectionRange(changedRuns, 0, split - 1),
-      makeSectionRange(changedRuns, split, changedRuns.length - 1)
+      makeSectionRange(changedRuns, split, changedRuns.length - 1),
     ];
     const score = scoreSectionRanges(groups, baseTokens);
     if (score <= bestScore) {
@@ -887,14 +1080,19 @@ function chooseCandidateDiffSections(
     end: baseTokens[range.end - 1]?.end ?? preview.length,
     tokenStart: range.start,
     tokenEnd: range.end,
-    text: sliceTokenRange(preview, baseTokens, range.start, range.end)
+    text: sliceTokenRange(preview, baseTokens, range.start, range.end),
   }));
 }
 
-function normalizeDiffInterval(interval: DiffInterval, baseTokenCount: number): DiffInterval {
+function normalizeDiffInterval(
+  interval: DiffInterval,
+  baseTokenCount: number,
+): DiffInterval {
   if (interval.start < interval.end) return interval;
-  if (interval.start < baseTokenCount) return { start: interval.start, end: interval.start + 1 };
-  if (interval.start > 0) return { start: interval.start - 1, end: interval.start };
+  if (interval.start < baseTokenCount)
+    return { start: interval.start, end: interval.start + 1 };
+  if (interval.start > 0)
+    return { start: interval.start - 1, end: interval.start };
   return { start: 0, end: 0 };
 }
 
@@ -918,10 +1116,14 @@ function mergeChangedTokenIntervals(intervals: DiffInterval[]): DiffInterval[] {
   return merged;
 }
 
-function makeSectionRange(intervals: DiffInterval[], startIndex: number, endIndex: number): TokenRange {
+function makeSectionRange(
+  intervals: DiffInterval[],
+  startIndex: number,
+  endIndex: number,
+): TokenRange {
   return {
     start: intervals[startIndex].start,
-    end: intervals[endIndex].end
+    end: intervals[endIndex].end,
   };
 }
 
@@ -933,25 +1135,29 @@ function scoreSectionRanges(ranges: TokenRange[], tokens: DiffToken[]): number {
   }, ranges.length * candidateSectionPenalty);
 }
 
-function getCandidateTokenRangeForSection(chunks: DiffChunk[], section: CandidateDiffSection): TokenRange {
+function getCandidateTokenRangeForSection(
+  chunks: DiffChunk[],
+  section: CandidateDiffSection,
+): TokenRange {
   const start = mapBaseBoundaryToCandidate(chunks, section.tokenStart, "start");
   const end = mapBaseBoundaryToCandidate(chunks, section.tokenEnd, "end");
   return {
     start: Math.min(start, end),
-    end: Math.max(start, end)
+    end: Math.max(start, end),
   };
 }
 
 function mapBaseBoundaryToCandidate(
   chunks: DiffChunk[],
   boundary: number,
-  side: "start" | "end"
+  side: "start" | "end",
 ): number {
-  const insertion = chunks.find((chunk) =>
-    !chunk.equal &&
-    chunk.baseStart === boundary &&
-    chunk.baseEnd === boundary &&
-    chunk.candidateStart !== chunk.candidateEnd
+  const insertion = chunks.find(
+    (chunk) =>
+      !chunk.equal &&
+      chunk.baseStart === boundary &&
+      chunk.baseEnd === boundary &&
+      chunk.candidateStart !== chunk.candidateEnd,
   );
   if (insertion) {
     return side === "start" ? insertion.candidateStart : insertion.candidateEnd;
@@ -968,7 +1174,10 @@ function mapBaseBoundaryToCandidate(
       const candidateLength = chunk.candidateEnd - chunk.candidateStart;
       if (baseLength > 0 && candidateLength > 0) {
         const offset = boundary - chunk.baseStart;
-        return chunk.candidateStart + Math.round((offset / baseLength) * candidateLength);
+        return (
+          chunk.candidateStart +
+          Math.round((offset / baseLength) * candidateLength)
+        );
       }
       return side === "start" ? chunk.candidateStart : chunk.candidateEnd;
     }
@@ -980,15 +1189,22 @@ function mapBaseBoundaryToCandidate(
 function candidateChangesSection(
   intervals: DiffInterval[],
   section: CandidateDiffSection,
-  baseTokenCount: number
+  baseTokenCount: number,
 ): boolean {
   return intervals.some((interval) => {
     const normalized = normalizeDiffInterval(interval, baseTokenCount);
-    return normalized.start < section.tokenEnd && normalized.end > section.tokenStart;
+    return (
+      normalized.start < section.tokenEnd && normalized.end > section.tokenStart
+    );
   });
 }
 
-function sliceTokenRange(text: string, tokens: DiffToken[], start: number, end: number): string {
+function sliceTokenRange(
+  text: string,
+  tokens: DiffToken[],
+  start: number,
+  end: number,
+): string {
   if (start >= end) return "";
   const startChar = tokens[start]?.start ?? tokens[end - 1]?.end ?? text.length;
   const endChar = tokens[end - 1]?.end ?? startChar;
@@ -997,7 +1213,7 @@ function sliceTokenRange(text: string, tokens: DiffToken[], start: number, end: 
 
 function applyCandidateSectionsToSegments(
   segments: VisibleTextSegment[],
-  sections: CandidateDiffSection[]
+  sections: CandidateDiffSection[],
 ): VisibleTextSegment[] {
   if (sections.length === 0) return segments;
 
@@ -1012,17 +1228,21 @@ function applyCandidateSectionsToSegments(
     let segmentOffset = 0;
     while (segmentOffset < segment.text.length) {
       const absolute = offset + segmentOffset;
-      const section = sortedSections.find((candidate) =>
-        absolute >= candidate.start && absolute < candidate.end
+      const section = sortedSections.find(
+        (candidate) => absolute >= candidate.start && absolute < candidate.end,
       );
       const nextBoundary = section
         ? section.end
-        : sortedSections.find((candidate) => candidate.start > absolute)?.start ?? Number.POSITIVE_INFINITY;
-      const take = Math.min(segment.text.length - segmentOffset, nextBoundary - absolute);
+        : (sortedSections.find((candidate) => candidate.start > absolute)
+            ?.start ?? Number.POSITIVE_INFINITY);
+      const take = Math.min(
+        segment.text.length - segmentOffset,
+        nextBoundary - absolute,
+      );
       next.push({
         ...segment,
         text: segment.text.slice(segmentOffset, segmentOffset + take),
-        ...(section ? { candidateSection: section.role } : {})
+        ...(section ? { candidateSection: section.role } : {}),
       });
       segmentOffset += take;
     }
@@ -1032,12 +1252,18 @@ function applyCandidateSectionsToSegments(
   return mergePlainSegments(next);
 }
 
-function mapInferredPartsToV7Islands(islands: Island[], topCandidate: string[] | null): Map<number, string> {
+function mapInferredPartsToV7Islands(
+  islands: Island[],
+  topCandidate: string[] | null,
+): Map<number, string> {
   const mapped = new Map<number, string>();
   if (!topCandidate) return mapped;
 
   const v7Slots = getV7CandidateSlots(islands);
-  const usesFullAlternatingShape = usesFullAlternatingCandidateShape(islands, topCandidate);
+  const usesFullAlternatingShape = usesFullAlternatingCandidateShape(
+    islands,
+    topCandidate,
+  );
 
   for (let v7Index = 0; v7Index < v7Slots.length; v7Index++) {
     const slot = v7Slots[v7Index];
@@ -1051,7 +1277,9 @@ function mapInferredPartsToV7Islands(islands: Island[], topCandidate: string[] |
   return mapped;
 }
 
-function getV7CandidateSlots(islands: Island[]): { islandIndex: number; fullCandidateIndex: number }[] {
+function getV7CandidateSlots(
+  islands: Island[],
+): { islandIndex: number; fullCandidateIndex: number }[] {
   const v7Slots: { islandIndex: number; fullCandidateIndex: number }[] = [];
   let candidatePartIndex = 0;
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
@@ -1063,23 +1291,30 @@ function getV7CandidateSlots(islands: Island[]): { islandIndex: number; fullCand
   return v7Slots;
 }
 
-function usesFullAlternatingCandidateShape(islands: Island[], topCandidate: string[]): boolean {
+function usesFullAlternatingCandidateShape(
+  islands: Island[],
+  topCandidate: string[],
+): boolean {
   const v7Slots = getV7CandidateSlots(islands);
-  const lastFullCandidateIndex = v7Slots[v7Slots.length - 1]?.fullCandidateIndex ?? -1;
+  const lastFullCandidateIndex =
+    v7Slots[v7Slots.length - 1]?.fullCandidateIndex ?? -1;
   return topCandidate.length > lastFullCandidateIndex;
 }
 
 function findInferredV7DisplayTargets(
   inferredText: string,
   island: Island,
-  islandIndex: number
+  islandIndex: number,
 ): PiecemealSyllableTarget[] {
   const rawTargets = findV7Syllables(island.value, islandIndex);
-  const inferredTargets = findInferredVietnameseSyllables(inferredText, islandIndex);
+  const inferredTargets = findInferredVietnameseSyllables(
+    inferredText,
+    islandIndex,
+  );
 
   return inferredTargets.slice(0, rawTargets.length).map((target, index) => ({
     ...target,
     syllableIndex: index,
-    isV7: true
+    isV7: true,
   }));
 }

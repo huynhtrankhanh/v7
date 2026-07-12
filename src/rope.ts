@@ -24,7 +24,7 @@ function rebuild<T>(
   n: Node<T>,
   left: Node<T> | null,
   right: Node<T> | null,
-  measure: Measure<T>
+  measure: Measure<T>,
 ): Node<T> {
   if (n.left === left && n.right === right) {
     return n;
@@ -42,7 +42,10 @@ class SipHashRng {
 
   constructor() {
     const bytes = new Uint32Array(4);
-    if (globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+    if (
+      globalThis.crypto &&
+      typeof globalThis.crypto.getRandomValues === "function"
+    ) {
       globalThis.crypto.getRandomValues(bytes);
     } else {
       // Fallback for environments without Web Crypto (should not happen in browser)
@@ -55,7 +58,9 @@ class SipHashRng {
   }
 
   next(): number {
-    const out = Number(siphash24(this.counter++, this.k0, this.k1) & 0xffffffffn);
+    const out = Number(
+      siphash24(this.counter++, this.k0, this.k1) & 0xffffffffn,
+    );
     return out >>> 0;
   }
 }
@@ -80,7 +85,12 @@ function siphash24(msg: bigint, k0: bigint, k1: bigint): bigint {
   return (v0 ^ v1 ^ v2 ^ v3) & 0xffffffffffffffffn;
 }
 
-function sipRound(v0: bigint, v1: bigint, v2: bigint, v3: bigint): [bigint, bigint, bigint, bigint] {
+function sipRound(
+  v0: bigint,
+  v1: bigint,
+  v2: bigint,
+  v3: bigint,
+): [bigint, bigint, bigint, bigint] {
   v0 += v1;
   v1 = rotl(v1, 13n);
   v1 ^= v0;
@@ -107,23 +117,40 @@ export class Rope<T = string> {
   private readonly measure: Measure<T>;
   private readonly mapper?: Mapper<T>;
 
-  private constructor(measure: Measure<T>, mapper?: Mapper<T>, root: Node<T> | null = null) {
+  private constructor(
+    measure: Measure<T>,
+    mapper?: Mapper<T>,
+    root: Node<T> | null = null,
+  ) {
     this.measure = measure;
     this.mapper = mapper;
     this.root = root;
   }
 
   static fromString(text: string): Rope<string> {
-    const r = new Rope<string>((s) => s.length, (s) => s);
+    const r = new Rope<string>(
+      (s) => s.length,
+      (s) => s,
+    );
     if (text.length > 0) {
-      r.root = { left: null, right: null, data: text, priority: sharedRng.next(), size: text.length };
+      r.root = {
+        left: null,
+        right: null,
+        data: text,
+        priority: sharedRng.next(),
+        size: text.length,
+      };
     } else {
       r.root = null;
     }
     return r;
   }
 
-  static fromArray<U>(values: Iterable<U>, measure: Measure<U>, mapper?: Mapper<U>): Rope<U> {
+  static fromArray<U>(
+    values: Iterable<U>,
+    measure: Measure<U>,
+    mapper?: Mapper<U>,
+  ): Rope<U> {
     const r = new Rope<U>(measure, mapper);
     for (const v of values) {
       r.append(v);
@@ -138,9 +165,17 @@ export class Rope<T = string> {
   append(value: T): void {
     const size = this.measure(value);
     if (!Number.isFinite(size) || size < 0) {
-      throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
+      throw new Error(
+        `Invalid rope node size: ${size}. Size must be a finite non-negative number.`,
+      );
     }
-    const newNode: Node<T> = { left: null, right: null, data: value, priority: sharedRng.next(), size };
+    const newNode: Node<T> = {
+      left: null,
+      right: null,
+      data: value,
+      priority: sharedRng.next(),
+      size,
+    };
     this.root = merge(this.root, newNode, this.measure);
   }
 
@@ -190,11 +225,23 @@ export class Rope<T = string> {
     if (!existing) return false;
     const size = this.measure(value);
     if (!Number.isFinite(size) || size < 0) {
-      throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
+      throw new Error(
+        `Invalid rope node size: ${size}. Size must be a finite non-negative number.`,
+      );
     }
     const [left, rest] = splitAt(this.root, index, this.measure);
-    const [_removed, right] = splitAt(rest, this.measure(existing), this.measure);
-    const newNode: Node<T> = { left: null, right: null, data: value, priority: sharedRng.next(), size };
+    const [_removed, right] = splitAt(
+      rest,
+      this.measure(existing),
+      this.measure,
+    );
+    const newNode: Node<T> = {
+      left: null,
+      right: null,
+      data: value,
+      priority: sharedRng.next(),
+      size,
+    };
     this.root = merge(merge(left, newNode, this.measure), right, this.measure);
     return true;
   }
@@ -205,7 +252,11 @@ export class Rope<T = string> {
     const existing = this.getAt(index);
     if (!existing) return false;
     const [left, rest] = splitAt(this.root, index, this.measure);
-    const [_removed, right] = splitAt(rest, this.measure(existing), this.measure);
+    const [_removed, right] = splitAt(
+      rest,
+      this.measure(existing),
+      this.measure,
+    );
     this.root = merge(left, right, this.measure);
     return true;
   }
@@ -215,7 +266,11 @@ export class Rope<T = string> {
   }
 }
 
-function merge<T>(a: Node<T> | null, b: Node<T> | null, measure: Measure<T>): Node<T> | null {
+function merge<T>(
+  a: Node<T> | null,
+  b: Node<T> | null,
+  measure: Measure<T>,
+): Node<T> | null {
   if (!a) return b;
   if (!b) return a;
   if (a.priority > b.priority) {
@@ -234,7 +289,11 @@ function inorder<T>(n: Node<T> | null, out: T[]): void {
   inorder(n.right, out);
 }
 
-function inorderMapped<T>(n: Node<T> | null, out: string[], mapper: Mapper<T>): void {
+function inorderMapped<T>(
+  n: Node<T> | null,
+  out: string[],
+  mapper: Mapper<T>,
+): void {
   if (!n) return;
   inorderMapped(n.left, out, mapper);
   out.push(mapper(n.data));
@@ -244,7 +303,7 @@ function inorderMapped<T>(n: Node<T> | null, out: string[], mapper: Mapper<T>): 
 function splitAt<T>(
   node: Node<T> | null,
   index: number,
-  measure: Measure<T>
+  measure: Measure<T>,
 ): [Node<T> | null, Node<T> | null] {
   if (!node) return [null, null];
   if (index <= 0) return [null, node];
@@ -257,9 +316,15 @@ function splitAt<T>(
     return [left, right];
   }
   if (index >= leftSize + nodeSizeValue) {
-    const [leftRight, right] = splitAt(node.right, index - leftSize - nodeSizeValue, measure);
+    const [leftRight, right] = splitAt(
+      node.right,
+      index - leftSize - nodeSizeValue,
+      measure,
+    );
     const left = rebuild(node, node.left, leftRight, measure);
     return [left, right];
   }
-  throw new Error(`Cannot split at index ${index}: would split within indivisible node data.`);
+  throw new Error(
+    `Cannot split at index ${index}: would split within indivisible node data.`,
+  );
 }

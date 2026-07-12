@@ -17,7 +17,9 @@ const CONTENT_TYPES = {
 function startStaticServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
-    const pathname = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    const pathname = decodeURIComponent(
+      url.pathname === "/" ? "/index.html" : url.pathname,
+    );
     const filePath = path.normalize(path.join(STATIC_DIR, pathname));
 
     if (!filePath.startsWith(`${STATIC_DIR}${path.sep}`)) {
@@ -34,7 +36,8 @@ function startStaticServer() {
       }
 
       res.writeHead(200, {
-        "Content-Type": CONTENT_TYPES[path.extname(filePath)] || "application/octet-stream",
+        "Content-Type":
+          CONTENT_TYPES[path.extname(filePath)] || "application/octet-stream",
       });
       res.end(data);
     });
@@ -58,10 +61,20 @@ async function newPracticePage(browser, baseUrl) {
   await page.evaluateOnNewDocument(() => {
     Math.random = () => 0;
   });
-  await page.goto(`${baseUrl}/practice.html`, { waitUntil: "domcontentloaded" });
-  await page.waitForFunction(() => window.practiceGame && document.querySelector("#mode-select")?.options.length > 0);
+  await page.goto(`${baseUrl}/practice.html`, {
+    waitUntil: "domcontentloaded",
+  });
+  await page.waitForFunction(
+    () =>
+      window.practiceGame &&
+      document.querySelector("#mode-select")?.options.length > 0,
+  );
   await page.select("#mode-select", "emily");
-  await page.waitForFunction(() => getComputedStyle(document.querySelector("#emily-help-btn")).display !== "none");
+  await page.waitForFunction(
+    () =>
+      getComputedStyle(document.querySelector("#emily-help-btn")).display !==
+      "none",
+  );
   return page;
 }
 
@@ -70,7 +83,9 @@ async function score(page) {
 }
 
 async function activeId(page) {
-  return page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName || "");
+  return page.evaluate(
+    () => document.activeElement?.id || document.activeElement?.tagName || "",
+  );
 }
 
 async function assertScore(page, expected, label) {
@@ -94,11 +109,15 @@ async function scenarioStartFromFocusedSelect(browser, baseUrl) {
   try {
     await page.focus("#mode-select");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelector("#start-btn").disabled === true);
+    await page.waitForFunction(
+      () => document.querySelector("#start-btn").disabled === true,
+    );
 
     const focused = await activeId(page);
     if (focused !== "practice-area") {
-      throw new Error(`Expected practice area focus after keyboard start, got ${focused}`);
+      throw new Error(
+        `Expected practice area focus after keyboard start, got ${focused}`,
+      );
     }
 
     await sendEmilyChord(page);
@@ -113,7 +132,9 @@ async function scenarioSpaceStartsFocusedButton(browser, baseUrl) {
   try {
     await page.focus("#start-btn");
     await page.keyboard.press("Space");
-    await page.waitForFunction(() => document.querySelector("#start-btn").disabled === true);
+    await page.waitForFunction(
+      () => document.querySelector("#start-btn").disabled === true,
+    );
     await sendEmilyChord(page);
     await assertScore(page, 1, "focused start button Space activation");
   } finally {
@@ -125,7 +146,9 @@ async function scenarioFocusedButtonDuringRound(browser, baseUrl) {
   const page = await newPracticePage(browser, baseUrl);
   try {
     await page.click("#start-btn");
-    await page.waitForFunction(() => document.querySelector("#start-btn").disabled === true);
+    await page.waitForFunction(
+      () => document.querySelector("#start-btn").disabled === true,
+    );
     await page.focus("#emily-help-btn");
     await sendEmilyChord(page);
     await assertScore(page, 1, "focused help button during round");
@@ -145,11 +168,18 @@ async function scenarioDialogBlocksThenResumes(browser, baseUrl) {
     await assertScore(page, 0, "dialog should block gameplay keys");
 
     await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("#emily-help-backdrop").classList.contains("open"));
+    await page.waitForFunction(
+      () =>
+        !document
+          .querySelector("#emily-help-backdrop")
+          .classList.contains("open"),
+    );
 
     const focused = await activeId(page);
     if (focused !== "practice-area") {
-      throw new Error(`Expected practice area focus after closing dialog during round, got ${focused}`);
+      throw new Error(
+        `Expected practice area focus after closing dialog during round, got ${focused}`,
+      );
     }
 
     await sendEmilyChord(page);
@@ -164,7 +194,13 @@ async function scenarioBlurClearsStaleHeldKeys(browser, baseUrl) {
   try {
     await page.click("#start-btn");
     await page.evaluate(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "q", bubbles: true, cancelable: true }));
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "q",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
       window.dispatchEvent(new Event("blur"));
     });
 
@@ -187,7 +223,10 @@ async function main() {
   ];
 
   try {
-    browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
     for (const scenario of scenarios) {
       await scenario(browser, baseUrl);
     }

@@ -9,12 +9,12 @@ export default defineConfig({
       entry: path.resolve(__dirname, "src/main.ts"),
       formats: ["iife"],
       name: "app",
-      fileName: () => "script.js"
+      fileName: () => "script.js",
     },
     rollupOptions: {
       output: {
-        inlineDynamicImports: true
-      }
-    }
-  }
+        inlineDynamicImports: true,
+      },
+    },
+  },
 });

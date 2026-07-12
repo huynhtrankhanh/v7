@@ -2,7 +2,11 @@ import fc from "fast-check";
 import { createIsland, TextBuffer } from "../src/textBuffer";
 import { createUndoManager } from "../src/undoManager";
 
-function fastSpec<T>(name: string, arbitrary: fc.Arbitrary<T>, run: (value: T) => void): void {
+function fastSpec<T>(
+  name: string,
+  arbitrary: fc.Arbitrary<T>,
+  run: (value: T) => void,
+): void {
   it(name, () => {
     fc.assert(fc.property(arbitrary, run));
   });
@@ -18,7 +22,7 @@ describe("undoManager plover behavior", () => {
       (fields) => {
         restoredCursor = fields.piecemealCursorIndex ?? null;
       },
-      { getPiecemealCursorIndex: () => piecemealCursorIndex }
+      { getPiecemealCursorIndex: () => piecemealCursorIndex },
     );
 
     undoManager.save();
@@ -38,7 +42,7 @@ describe("undoManager plover behavior", () => {
       (fields) => {
         restoredCursor = fields.piecemealCursorIndex ?? null;
       },
-      { getPiecemealCursorIndex: () => null }
+      { getPiecemealCursorIndex: () => null },
     );
 
     undoManager.save();
@@ -53,13 +57,20 @@ describe("undoManager plover behavior", () => {
     const undoManager = createUndoManager(buffer, () => {});
 
     undoManager.savePlover({ recordHistory: false, hadPreedit: false });
-    buffer.appendIsland(createIsland("vietnamese", "first", false, { plover: true }));
+    buffer.appendIsland(
+      createIsland("vietnamese", "first", false, { plover: true }),
+    );
 
     undoManager.savePlover({ recordHistory: false, hadPreedit: false });
-    buffer.appendIsland(createIsland("vietnamese", "second", false, { plover: true }));
+    buffer.appendIsland(
+      createIsland("vietnamese", "second", false, { plover: true }),
+    );
 
     expect(undoManager.undo()).toBe(true);
-    expect(buffer.getIslands().map((island) => island.value)).toEqual(["", "first"]);
+    expect(buffer.getIslands().map((island) => island.value)).toEqual([
+      "",
+      "first",
+    ]);
 
     expect(undoManager.undo()).toBe(true);
     expect(buffer.getIslands().map((island) => island.value)).toEqual([""]);
@@ -82,7 +93,9 @@ describe("undoManager plover behavior", () => {
           expectedUndoSteps += 1;
         }
         undoManager.savePlover({ recordHistory: false, hadPreedit });
-        buffer.appendIsland(createIsland("vietnamese", `plover-${i}`, false, { plover: true }));
+        buffer.appendIsland(
+          createIsland("vietnamese", `plover-${i}`, false, { plover: true }),
+        );
       }
 
       let undoSteps = 0;
@@ -92,7 +105,7 @@ describe("undoManager plover behavior", () => {
 
       expect(undoSteps).toBe(expectedUndoSteps);
       expect(buffer.getIslands().map((island) => island.value)).toEqual([""]);
-    }
+    },
   );
 
   fastSpec(
@@ -104,7 +117,9 @@ describe("undoManager plover behavior", () => {
 
       for (const part of parts) {
         undoManager.savePlover({ recordHistory: true, hadPreedit: false });
-        buffer.appendIsland(createIsland("vietnamese", part, false, { plover: true }));
+        buffer.appendIsland(
+          createIsland("vietnamese", part, false, { plover: true }),
+        );
       }
 
       let undoSteps = 0;
@@ -113,6 +128,6 @@ describe("undoManager plover behavior", () => {
       }
       expect(undoSteps).toBe(parts.length);
       expect(buffer.getIslands().map((island) => island.value)).toEqual([""]);
-    }
+    },
   );
 });

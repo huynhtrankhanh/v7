@@ -2,10 +2,26 @@ const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
 
-const practiceHtml = fs.readFileSync(path.join(__dirname, "../static/practice.html"), "utf8");
-const scriptMatch = practiceHtml.match(/<script>\n([\s\S]*?)\n\s*<\/script>\s*<\/body>/);
-if (!scriptMatch) throw new Error("Embedded practice script not found in practice.html");
-const sandbox = { module: { exports: {} }, exports: {}, require, console, Set, Map, Math, JSON, Promise };
+const practiceHtml = fs.readFileSync(
+  path.join(__dirname, "../static/practice.html"),
+  "utf8",
+);
+const scriptMatch = practiceHtml.match(
+  /<script>\n([\s\S]*?)\n\s*<\/script>\s*<\/body>/,
+);
+if (!scriptMatch)
+  throw new Error("Embedded practice script not found in practice.html");
+const sandbox = {
+  module: { exports: {} },
+  exports: {},
+  require,
+  console,
+  Set,
+  Map,
+  Math,
+  JSON,
+  Promise,
+};
 vm.runInNewContext(scriptMatch[1], sandbox);
 
 const {
@@ -17,24 +33,32 @@ const {
   buildExpectedChordSymbolOptions,
   strokeSetToSyllable,
   buildEmilyEntries,
-  buildExpectedEmilyChord
+  buildExpectedEmilyChord,
 } = sandbox.module.exports;
 
 describe("practice game helpers", () => {
   test("enumerateRegex expands non-capturing groups and optionals", () => {
     const result = enumerateRegex("gi(?:é[cpt]|ế(?:p|ch))");
-    expect(result.sort()).toEqual(["giéc", "giép", "giét", "giếch", "giếp"].sort());
+    expect(result.sort()).toEqual(
+      ["giéc", "giép", "giét", "giếch", "giếp"].sort(),
+    );
   });
 
   test("buildSyllableEntriesFromRegexMap uses regex expansion", () => {
-    const entries = buildSyllableEntriesFromRegexMap({ "z_e_7": "gi(?:ẹ[cpt]|ệ(?:p|ch))" });
-    const syllables = entries.map((entry: { syllable: string }) => entry.syllable).sort();
+    const entries = buildSyllableEntriesFromRegexMap({
+      z_e_7: "gi(?:ẹ[cpt]|ệ(?:p|ch))",
+    });
+    const syllables = entries
+      .map((entry: { syllable: string }) => entry.syllable)
+      .sort();
     expect(syllables).toEqual(["giẹp", "giẹc", "giẹt", "giệp", "giệch"].sort());
   });
 
   test("buildSyllableEntriesFromRegexMap filters out syllables not producible by parse/assemble", () => {
-    const entries = buildSyllableEntriesFromRegexMap({ "t_a_1": "(?:tá|zzzz)" });
-    const syllables = entries.map((entry: { syllable: string }) => entry.syllable).sort();
+    const entries = buildSyllableEntriesFromRegexMap({ t_a_1: "(?:tá|zzzz)" });
+    const syllables = entries
+      .map((entry: { syllable: string }) => entry.syllable)
+      .sort();
     expect(syllables).toEqual(["tá"]);
   });
 
@@ -47,27 +71,45 @@ describe("practice game helpers", () => {
   test("buildExpectedChordSymbols combines left and right syllables for realistic two-syllable prompts", () => {
     const leftCode = parseCodeKey("tr_o_2");
     const rightCode = parseCodeKey("m_a_1");
-    const leftOnly = buildExpectedChordSymbols(leftCode, "partial-left", "left");
-    const rightOnly = buildExpectedChordSymbols(rightCode, "partial-right", "right");
+    const leftOnly = buildExpectedChordSymbols(
+      leftCode,
+      "partial-left",
+      "left",
+    );
+    const rightOnly = buildExpectedChordSymbols(
+      rightCode,
+      "partial-right",
+      "right",
+    );
     leftOnly.delete("*");
     rightOnly.delete("*");
 
-    const expected = buildExpectedChordSymbols({ left: leftCode, right: rightCode }, "realistic-double");
+    const expected = buildExpectedChordSymbols(
+      { left: leftCode, right: rightCode },
+      "realistic-double",
+    );
     expect(expected).toEqual(new Set([...leftOnly, ...rightOnly, "*"]));
   });
 
   test("buildExpectedChordSymbolOptions returns all valid chords for syllables with multiple v7 codes", () => {
     const codeA = parseCodeKey("tr_o_2");
     const codeB = parseCodeKey("m_a_1");
-    const options = buildExpectedChordSymbolOptions([
-      { syllable: "demo", code: codeA },
-      { syllable: "demo", code: codeB }
-    ], "demo", "partial-left", "left");
+    const options = buildExpectedChordSymbolOptions(
+      [
+        { syllable: "demo", code: codeA },
+        { syllable: "demo", code: codeB },
+      ],
+      "demo",
+      "partial-left",
+      "left",
+    );
     expect(options).toHaveLength(2);
-    expect(options).toEqual(expect.arrayContaining([
-      buildExpectedChordSymbols(codeA, "partial-left", "left"),
-      buildExpectedChordSymbols(codeB, "partial-left", "left")
-    ]));
+    expect(options).toEqual(
+      expect.arrayContaining([
+        buildExpectedChordSymbols(codeA, "partial-left", "left"),
+        buildExpectedChordSymbols(codeB, "partial-left", "left"),
+      ]),
+    );
   });
 
   test("strokeSetToSyllable decodes full syllable using parse/assemble logic", () => {
@@ -85,7 +127,9 @@ describe("practice game helpers", () => {
     const entries = buildEmilyEntries();
     expect(entries.length).toBeGreaterThan(0);
     // Every printable symbol pattern should have 4 variants
-    const frEntries = entries.filter((e: { pattern: string }) => e.pattern === "FR");
+    const frEntries = entries.filter(
+      (e: { pattern: string }) => e.pattern === "FR",
+    );
     expect(frEntries).toHaveLength(4);
     expect(frEntries[0].symbol).toBe("!");
     expect(frEntries[1].symbol).toBe("¬");
@@ -156,8 +200,14 @@ describe("practice game page behavior", () => {
     await Promise.resolve();
   }
 
-  function sendKey(target: EventTarget, type: "keydown" | "keyup", key: string) {
-    target.dispatchEvent(new KeyboardEvent(type, { key, bubbles: true, cancelable: true }));
+  function sendKey(
+    target: EventTarget,
+    type: "keydown" | "keyup",
+    key: string,
+  ) {
+    target.dispatchEvent(
+      new KeyboardEvent(type, { key, bubbles: true, cancelable: true }),
+    );
   }
 
   function sendActiveKey(type: "keydown" | "keyup", key: string) {
@@ -166,11 +216,16 @@ describe("practice game page behavior", () => {
 
   function sendChord(keys: string[]) {
     keys.forEach((key) => sendActiveKey("keydown", key));
-    keys.slice().reverse().forEach((key) => sendActiveKey("keyup", key));
+    keys
+      .slice()
+      .reverse()
+      .forEach((key) => sendActiveKey("keyup", key));
   }
 
   function selectEmilyMode() {
-    const modeSelect = document.getElementById("mode-select") as HTMLSelectElement;
+    const modeSelect = document.getElementById(
+      "mode-select",
+    ) as HTMLSelectElement;
     modeSelect.value = "emily";
     modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
     return modeSelect;
@@ -179,7 +234,9 @@ describe("practice game page behavior", () => {
   test("starts a round from keyboard without clicking start button", async () => {
     await initPracticePage();
 
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
 
     const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
     const promptLabel = document.getElementById("prompt-label");
@@ -196,20 +253,26 @@ describe("practice game page behavior", () => {
     sendChord(["d", "r", "u", "j"]);
 
     const score = document.getElementById("score");
-    expect(document.getElementById("start-btn")?.hasAttribute("disabled")).toBe(true);
+    expect(document.getElementById("start-btn")?.hasAttribute("disabled")).toBe(
+      true,
+    );
     expect(document.activeElement?.id).toBe("practice-area");
     expect(score?.textContent).toBe("1");
   });
 
   test("starts with the select's current mode even before change handler runs", async () => {
     await initPracticePage();
-    const modeSelect = document.getElementById("mode-select") as HTMLSelectElement;
+    const modeSelect = document.getElementById(
+      "mode-select",
+    ) as HTMLSelectElement;
     modeSelect.value = "emily";
 
     (document.getElementById("start-btn") as HTMLButtonElement).click();
     sendChord(["d", "r", "u", "j"]);
 
-    expect(document.getElementById("prompt-label")?.textContent).toBe("emily symbols");
+    expect(document.getElementById("prompt-label")?.textContent).toBe(
+      "emily symbols",
+    );
     expect(document.getElementById("score")?.textContent).toBe("1");
   });
 
@@ -217,7 +280,9 @@ describe("practice game page behavior", () => {
     await initPracticePage();
     selectEmilyMode();
     const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
-    const helpBtn = document.getElementById("emily-help-btn") as HTMLButtonElement;
+    const helpBtn = document.getElementById(
+      "emily-help-btn",
+    ) as HTMLButtonElement;
 
     startBtn.click();
     helpBtn.focus();
@@ -230,7 +295,9 @@ describe("practice game page behavior", () => {
     await initPracticePage();
     selectEmilyMode();
     const startBtn = document.getElementById("start-btn") as HTMLButtonElement;
-    const helpBtn = document.getElementById("emily-help-btn") as HTMLButtonElement;
+    const helpBtn = document.getElementById(
+      "emily-help-btn",
+    ) as HTMLButtonElement;
 
     startBtn.click();
     helpBtn.click();
@@ -245,7 +312,10 @@ describe("practice game page behavior", () => {
   });
 
   test("renders leaderboard scores as a compact summary line", async () => {
-    localStorage.setItem("v7.practice.leaderboard.partial-left", JSON.stringify([12, 9, 7]));
+    localStorage.setItem(
+      "v7.practice.leaderboard.partial-left",
+      JSON.stringify([12, 9, 7]),
+    );
     await initPracticePage();
 
     const leaderboard = document.getElementById("leaderboard");

@@ -1,4 +1,8 @@
-import { HistoryFrameFields, HistorySaveOptions, TextBuffer } from "./textBuffer";
+import {
+  HistoryFrameFields,
+  HistorySaveOptions,
+  TextBuffer,
+} from "./textBuffer";
 
 const PLOVER_GROUP_PREFIX = "plover:";
 
@@ -15,7 +19,7 @@ interface UndoManagerOptions {
 
 function buildHistoryOptions(
   group: SaveGroup,
-  getPiecemealCursorIndex?: () => number | null
+  getPiecemealCursorIndex?: () => number | null,
 ): HistorySaveOptions | string | undefined {
   const piecemealCursorIndex = getPiecemealCursorIndex?.();
   if (piecemealCursorIndex === null || piecemealCursorIndex === undefined) {
@@ -29,7 +33,7 @@ function buildHistoryOptions(
 export function createUndoManager(
   buffer: TextBuffer,
   onUndoApplied: (fields: HistoryFrameFields) => void,
-  options: UndoManagerOptions = {}
+  options: UndoManagerOptions = {},
 ) {
   let ploverGroupCounter = 0;
   let hasActivePloverGroup = false;
@@ -42,7 +46,9 @@ export function createUndoManager(
   function savePlover({ recordHistory, hadPreedit }: SavePloverOptions): void {
     if (recordHistory) {
       hasActivePloverGroup = false;
-      buffer.save(buildHistoryOptions(undefined, options.getPiecemealCursorIndex));
+      buffer.save(
+        buildHistoryOptions(undefined, options.getPiecemealCursorIndex),
+      );
       return;
     }
 
@@ -51,7 +57,12 @@ export function createUndoManager(
       hasActivePloverGroup = true;
     }
 
-    buffer.save(buildHistoryOptions(`${PLOVER_GROUP_PREFIX}${ploverGroupCounter}`, options.getPiecemealCursorIndex));
+    buffer.save(
+      buildHistoryOptions(
+        `${PLOVER_GROUP_PREFIX}${ploverGroupCounter}`,
+        options.getPiecemealCursorIndex,
+      ),
+    );
   }
 
   function undo(): boolean {
@@ -66,6 +77,6 @@ export function createUndoManager(
   return {
     save,
     savePlover,
-    undo
+    undo,
   };
 }

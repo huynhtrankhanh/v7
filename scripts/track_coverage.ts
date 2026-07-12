@@ -19,8 +19,32 @@ import * as path from "path";
 // ---------------------------------------------------------------------------
 
 const ALL_CONSONANTS = [
-  "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
-  "p", "ph", "r", "s", "t", "th", "tr", "v", "w", "x", "z", "đ", "dd",
+  "0",
+  "b",
+  "ch",
+  "d",
+  "g",
+  "h",
+  "k",
+  "kh",
+  "l",
+  "m",
+  "n",
+  "ng",
+  "nh",
+  "p",
+  "ph",
+  "r",
+  "s",
+  "t",
+  "th",
+  "tr",
+  "v",
+  "w",
+  "x",
+  "z",
+  "đ",
+  "dd",
 ];
 const ALL_VOWELS = ["a", "e", "i", "o", "u"];
 const ALL_TONES = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -71,7 +95,7 @@ function parseDataset(filePath: string): OpenAILine[] {
  * We use a greedy left-to-right parse matching known consonant prefixes.
  */
 const CONSONANT_PREFIXES_SORTED = [...ALL_CONSONANTS].sort(
-  (a, b) => b.length - a.length
+  (a, b) => b.length - a.length,
 );
 
 function extractV7CodesFromIsland(island: string): string[] {
@@ -165,12 +189,14 @@ function main() {
   }
 
   const uncoveredCodes = [...allPossibleCodes].filter(
-    (c) => !coveredCodes.has(c)
+    (c) => !coveredCodes.has(c),
   );
 
   console.log("\n=== V7 Code Coverage ===");
   console.log(`Total possible v7 codes: ${allPossibleCodes.size}`);
-  console.log(`Covered v7 codes:        ${coveredCodes.size} (${((coveredCodes.size / allPossibleCodes.size) * 100).toFixed(1)}%)`);
+  console.log(
+    `Covered v7 codes:        ${coveredCodes.size} (${((coveredCodes.size / allPossibleCodes.size) * 100).toFixed(1)}%)`,
+  );
   console.log(`Uncovered v7 codes:      ${uncoveredCodes.length}`);
 
   console.log("\n=== Syllable Coverage ===");
@@ -186,7 +212,10 @@ function main() {
   }
 
   // Write detailed coverage report
-  const reportPath = path.join(path.dirname(datasetPath), "dataset_coverage.json");
+  const reportPath = path.join(
+    path.dirname(datasetPath),
+    "dataset_coverage.json",
+  );
   fs.writeFileSync(
     reportPath,
     JSON.stringify(
@@ -196,15 +225,15 @@ function main() {
         possibleV7Codes: allPossibleCodes.size,
         coveredV7Codes: coveredCodes.size,
         coveragePercent: parseFloat(
-          ((coveredCodes.size / allPossibleCodes.size) * 100).toFixed(2)
+          ((coveredCodes.size / allPossibleCodes.size) * 100).toFixed(2),
         ),
         uncoveredV7Codes: uncoveredCodes,
         coveredVietnameseSyllables: coveredSyllables.size,
         sampleCoveredSyllables: [...coveredSyllables].sort().slice(0, 200),
       },
       null,
-      2
-    )
+      2,
+    ),
   );
   console.log(`\nDetailed report written to ${reportPath}`);
 }

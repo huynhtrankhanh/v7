@@ -1,1498 +1,2203 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>V7 Practice Game — Monkeytype Theme</title>
-  <style>
-    :root {
-      --bg: #323437;
-      --panel: #2c2e31;
-      --panel-soft: #3a3c40;
-      --fg: #d1d0c5;
-      --muted: #646669;
-      --accent: #e2b714;
-      --bad: #ca4754;
-      --ok: #7e9f46;
-      --border: rgba(209, 208, 197, 0.08);
-      --shadow: rgba(0, 0, 0, 0.18);
-    }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>V7 Practice Game — Monkeytype Theme</title>
+    <style>
+      :root {
+        --bg: #323437;
+        --panel: #2c2e31;
+        --panel-soft: #3a3c40;
+        --fg: #d1d0c5;
+        --muted: #646669;
+        --accent: #e2b714;
+        --bad: #ca4754;
+        --ok: #7e9f46;
+        --border: rgba(209, 208, 197, 0.08);
+        --shadow: rgba(0, 0, 0, 0.18);
+      }
 
-    * { box-sizing: border-box; }
+      * {
+        box-sizing: border-box;
+      }
 
-    body {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      margin: 0;
-      min-height: 100vh;
-      min-height: 100dvh;
-      overflow-x: hidden;
-      background: var(--bg);
-      color: var(--fg);
-    }
+      body {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        margin: 0;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        background: var(--bg);
+        color: var(--fg);
+      }
 
-    .wrap {
-      width: min(100%, 980px);
-      margin: 0 auto;
-      padding: clamp(14px, 4vw, 32px);
-    }
+      .wrap {
+        width: min(100%, 980px);
+        margin: 0 auto;
+        padding: clamp(14px, 4vw, 32px);
+      }
 
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: clamp(20px, 5vw, 46px);
-    }
-
-    .brand {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-      flex-wrap: wrap;
-      color: var(--accent);
-      font-size: clamp(1.15rem, 4vw, 1.75rem);
-      font-weight: 700;
-      letter-spacing: 0;
-      min-width: 0;
-    }
-
-    .brand span {
-      color: var(--muted);
-      font-size: 0.78rem;
-      font-weight: 600;
-      letter-spacing: 0.02em;
-    }
-
-    .daily-chip {
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 8px 12px;
-      white-space: normal;
-      overflow-wrap: anywhere;
-      box-shadow: 0 12px 28px var(--shadow);
-    }
-
-    .daily-chip strong { color: var(--accent); }
-
-    .controls {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, max-content));
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 18px;
-    }
-
-    select,
-    button {
-      font: inherit;
-      border-radius: 10px;
-      border: 1px solid var(--border);
-      padding: 11px 13px;
-      outline: none;
-      line-height: 1.2;
-      min-width: 0;
-    }
-
-    select {
-      width: 100%;
-      background: var(--panel);
-      color: var(--fg);
-    }
-
-    button {
-      background: var(--accent);
-      color: #2c2e31;
-      border: none;
-      cursor: pointer;
-      font-weight: 700;
-      white-space: normal;
-    }
-
-    button:disabled {
-      opacity: 0.45;
-      cursor: default;
-    }
-
-    #emily-help-btn {
-      display: none;
-      background: var(--panel-soft);
-      color: var(--accent);
-      border: 1px solid var(--border);
-    }
-
-    #emily-help-btn:hover,
-    #emily-help-btn:focus-visible {
-      border-color: var(--accent);
-    }
-
-    .dialog-backdrop {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      align-items: flex-start;
-      justify-content: center;
-      overflow-y: auto;
-      padding: 24px 12px;
-      background: rgba(0, 0, 0, 0.58);
-    }
-
-    .dialog-backdrop.open { display: flex; }
-
-    .dialog {
-      width: min(100%, 760px);
-      position: relative;
-      border-radius: 16px;
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--fg);
-      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
-      padding: clamp(18px, 4vw, 26px);
-    }
-
-    .dialog h2 {
-      margin: 0 0 6px;
-      color: var(--accent);
-      font-size: 1.15rem;
-      letter-spacing: 0;
-    }
-
-    .dialog h3 {
-      margin: 18px 0 6px;
-      color: var(--fg);
-      font-size: 0.95rem;
-    }
-
-    .dialog p,
-    .dialog .muted { color: var(--muted); }
-
-    .dialog code {
-      color: var(--accent);
-      background: var(--panel-soft);
-      border-radius: 4px;
-      padding: 1px 5px;
-    }
-
-    .dialog table {
-      width: 100%;
-      border-collapse: collapse;
-      display: block;
-      overflow-x: auto;
-      margin-top: 8px;
-      font-size: 0.86rem;
-    }
-
-    .dialog th,
-    .dialog td {
-      border: 1px solid var(--border);
-      padding: 6px 8px;
-      text-align: left;
-      vertical-align: top;
-    }
-
-    .dialog th {
-      color: var(--accent);
-      background: var(--panel-soft);
-      font-weight: 800;
-    }
-
-    .dialog-close {
-      position: absolute;
-      top: 12px;
-      right: 14px;
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 999px;
-      background: transparent;
-      color: var(--muted);
-      border: 1px solid transparent;
-      padding: 0;
-      line-height: 1;
-    }
-
-    .dialog-close:hover,
-    .dialog-close:focus-visible {
-      color: var(--accent);
-      border-color: var(--border);
-    }
-
-    .stats {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
-      gap: 10px;
-      margin-bottom: clamp(30px, 6vw, 66px);
-    }
-
-    .stat {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 11px 10px;
-      box-shadow: 0 12px 28px var(--shadow);
-    }
-
-    .stat .label {
-      color: var(--muted);
-      font-size: 0.78rem;
-      margin-bottom: 4px;
-    }
-
-    .stat .value {
-      color: var(--fg);
-      font-size: clamp(1.05rem, 4vw, 1.5rem);
-      font-weight: 800;
-      line-height: 1;
-    }
-
-    .practice-card {
-      min-height: 280px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 18px;
-    }
-
-    .practice-card:focus {
-      outline: none;
-    }
-
-    .mode-indicator {
-      min-height: 1.5rem;
-      color: var(--accent);
-      font-weight: 800;
-      text-transform: lowercase;
-      letter-spacing: 0.02em;
-    }
-
-    .word-wall {
-      display: flex;
-      flex-wrap: wrap;
-      align-content: flex-start;
-      gap: 0.75em 0.55em;
-      min-height: 0;
-      max-height: none;
-      overflow: visible;
-      color: var(--muted);
-      font-size: clamp(1.85rem, 5vw, 3.2rem);
-      font-weight: 700;
-      line-height: 1.22;
-      letter-spacing: 0;
-    }
-
-    .word-token {
-      position: relative;
-      display: inline-flex;
-      white-space: nowrap;
-      border-bottom: 0.08em solid transparent;
-      padding-bottom: 0.02em;
-      transition: color 120ms ease, border-color 120ms ease;
-    }
-
-    .word-token.unit-token {
-      border-bottom-color: rgba(226, 183, 20, 0.45);
-    }
-
-    .word-token.current {
-      color: var(--fg);
-      border-bottom-color: var(--accent);
-    }
-
-    .word-token.current-unit::after {
-      content: attr(data-unit);
-      position: absolute;
-      left: 0;
-      top: 100%;
-      margin-top: 0.15rem;
-      color: var(--accent);
-      font-size: 0.28em;
-      font-weight: 800;
-      letter-spacing: 0;
-      white-space: nowrap;
-    }
-
-    .status {
-      min-height: 1.35rem;
-      color: var(--muted);
-      font-weight: 700;
-      text-transform: lowercase;
-      overflow-wrap: anywhere;
-    }
-
-    .status.ok { color: var(--ok); }
-    .status.bad { color: var(--bad); }
-
-    .footer-row {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: clamp(24px, 5vw, 48px);
-      color: var(--muted);
-      font-size: 0.82rem;
-    }
-
-    @media (max-width: 640px) {
       .topbar {
-        align-items: flex-start;
-        flex-direction: column;
-        margin-bottom: 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: clamp(20px, 5vw, 46px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+        color: var(--accent);
+        font-size: clamp(1.15rem, 4vw, 1.75rem);
+        font-weight: 700;
+        letter-spacing: 0;
+        min-width: 0;
+      }
+
+      .brand span {
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .daily-chip {
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 8px 12px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        box-shadow: 0 12px 28px var(--shadow);
+      }
+
+      .daily-chip strong {
+        color: var(--accent);
       }
 
       .controls {
-        grid-template-columns: 1fr;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, max-content));
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+
+      select,
+      button {
+        font: inherit;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 11px 13px;
+        outline: none;
+        line-height: 1.2;
+        min-width: 0;
+      }
+
+      select {
+        width: 100%;
+        background: var(--panel);
+        color: var(--fg);
+      }
+
+      button {
+        background: var(--accent);
+        color: #2c2e31;
+        border: none;
+        cursor: pointer;
+        font-weight: 700;
+        white-space: normal;
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+
+      #emily-help-btn {
+        display: none;
+        background: var(--panel-soft);
+        color: var(--accent);
+        border: 1px solid var(--border);
+      }
+
+      #emily-help-btn:hover,
+      #emily-help-btn:focus-visible {
+        border-color: var(--accent);
+      }
+
+      .dialog-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        align-items: flex-start;
+        justify-content: center;
+        overflow-y: auto;
+        padding: 24px 12px;
+        background: rgba(0, 0, 0, 0.58);
+      }
+
+      .dialog-backdrop.open {
+        display: flex;
+      }
+
+      .dialog {
+        width: min(100%, 760px);
+        position: relative;
+        border-radius: 16px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--fg);
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.42);
+        padding: clamp(18px, 4vw, 26px);
+      }
+
+      .dialog h2 {
+        margin: 0 0 6px;
+        color: var(--accent);
+        font-size: 1.15rem;
+        letter-spacing: 0;
+      }
+
+      .dialog h3 {
+        margin: 18px 0 6px;
+        color: var(--fg);
+        font-size: 0.95rem;
+      }
+
+      .dialog p,
+      .dialog .muted {
+        color: var(--muted);
+      }
+
+      .dialog code {
+        color: var(--accent);
+        background: var(--panel-soft);
+        border-radius: 4px;
+        padding: 1px 5px;
+      }
+
+      .dialog table {
+        width: 100%;
+        border-collapse: collapse;
+        display: block;
+        overflow-x: auto;
+        margin-top: 8px;
+        font-size: 0.86rem;
+      }
+
+      .dialog th,
+      .dialog td {
+        border: 1px solid var(--border);
+        padding: 6px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      .dialog th {
+        color: var(--accent);
+        background: var(--panel-soft);
+        font-weight: 800;
+      }
+
+      .dialog-close {
+        position: absolute;
+        top: 12px;
+        right: 14px;
+        width: 36px;
+        height: 36px;
+        display: grid;
+        place-items: center;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid transparent;
+        padding: 0;
+        line-height: 1;
+      }
+
+      .dialog-close:hover,
+      .dialog-close:focus-visible {
+        color: var(--accent);
+        border-color: var(--border);
       }
 
       .stats {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+        gap: 10px;
+        margin-bottom: clamp(30px, 6vw, 66px);
+      }
+
+      .stat {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 11px 10px;
+        box-shadow: 0 12px 28px var(--shadow);
+      }
+
+      .stat .label {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin-bottom: 4px;
+      }
+
+      .stat .value {
+        color: var(--fg);
+        font-size: clamp(1.05rem, 4vw, 1.5rem);
+        font-weight: 800;
+        line-height: 1;
       }
 
       .practice-card {
-        min-height: 250px;
+        min-height: 280px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 18px;
+      }
+
+      .practice-card:focus {
+        outline: none;
+      }
+
+      .mode-indicator {
+        min-height: 1.5rem;
+        color: var(--accent);
+        font-weight: 800;
+        text-transform: lowercase;
+        letter-spacing: 0.02em;
       }
 
       .word-wall {
-        font-size: clamp(1.65rem, 8vw, 2.7rem);
+        display: flex;
+        flex-wrap: wrap;
+        align-content: flex-start;
+        gap: 0.75em 0.55em;
+        min-height: 0;
         max-height: none;
+        overflow: visible;
+        color: var(--muted);
+        font-size: clamp(1.85rem, 5vw, 3.2rem);
+        font-weight: 700;
+        line-height: 1.22;
+        letter-spacing: 0;
+      }
+
+      .word-token {
+        position: relative;
+        display: inline-flex;
+        white-space: nowrap;
+        border-bottom: 0.08em solid transparent;
+        padding-bottom: 0.02em;
+        transition:
+          color 120ms ease,
+          border-color 120ms ease;
+      }
+
+      .word-token.unit-token {
+        border-bottom-color: rgba(226, 183, 20, 0.45);
+      }
+
+      .word-token.current {
+        color: var(--fg);
+        border-bottom-color: var(--accent);
+      }
+
+      .word-token.current-unit::after {
+        content: attr(data-unit);
+        position: absolute;
+        left: 0;
+        top: 100%;
+        margin-top: 0.15rem;
+        color: var(--accent);
+        font-size: 0.28em;
+        font-weight: 800;
+        letter-spacing: 0;
+        white-space: nowrap;
+      }
+
+      .status {
+        min-height: 1.35rem;
+        color: var(--muted);
+        font-weight: 700;
+        text-transform: lowercase;
+        overflow-wrap: anywhere;
+      }
+
+      .status.ok {
+        color: var(--ok);
+      }
+      .status.bad {
+        color: var(--bad);
       }
 
       .footer-row {
-        flex-direction: column;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: clamp(24px, 5vw, 48px);
+        color: var(--muted);
+        font-size: 0.82rem;
       }
-    }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header class="topbar">
-      <div class="brand">v7 practice <span>monkeytype theme</span></div>
-      <div class="daily-chip">today: <strong id="today-games">0</strong> completed games</div>
-    </header>
 
-    <section class="controls" aria-label="game controls">
-      <select id="mode-select" aria-label="mode"></select>
-      <button id="start-btn">start 60s</button>
-      <button id="emily-help-btn" type="button">emily help</button>
-    </section>
+      @media (max-width: 640px) {
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+          margin-bottom: 24px;
+        }
 
-    <section class="stats" aria-label="game stats">
-      <div class="stat"><div class="label">time</div><div class="value" id="time-left">60</div></div>
-      <div class="stat"><div class="label">score</div><div class="value" id="score">0</div></div>
-      <div class="stat"><div class="label">best</div><div class="value" id="best">0</div></div>
-      <div class="stat"><div class="label">today</div><div class="value" id="today-games-stat">0</div></div>
-    </section>
+        .controls {
+          grid-template-columns: 1fr;
+        }
 
-    <main class="practice-card" id="practice-area" tabindex="-1">
-      <div class="mode-indicator" id="prompt-label">press start</div>
-      <div class="word-wall" id="target" aria-live="polite">-</div>
-      <div class="status" id="status"></div>
-    </main>
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
 
-    <div class="footer-row">
-      <span>daily diligence is stored locally</span>
-      <span id="leaderboard" aria-label="leaderboard"></span>
+        .practice-card {
+          min-height: 250px;
+        }
+
+        .word-wall {
+          font-size: clamp(1.65rem, 8vw, 2.7rem);
+          max-height: none;
+        }
+
+        .footer-row {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="topbar">
+        <div class="brand">v7 practice <span>monkeytype theme</span></div>
+        <div class="daily-chip">
+          today: <strong id="today-games">0</strong> completed games
+        </div>
+      </header>
+
+      <section class="controls" aria-label="game controls">
+        <select id="mode-select" aria-label="mode"></select>
+        <button id="start-btn">start 60s</button>
+        <button id="emily-help-btn" type="button">emily help</button>
+      </section>
+
+      <section class="stats" aria-label="game stats">
+        <div class="stat">
+          <div class="label">time</div>
+          <div class="value" id="time-left">60</div>
+        </div>
+        <div class="stat">
+          <div class="label">score</div>
+          <div class="value" id="score">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">best</div>
+          <div class="value" id="best">0</div>
+        </div>
+        <div class="stat">
+          <div class="label">today</div>
+          <div class="value" id="today-games-stat">0</div>
+        </div>
+      </section>
+
+      <main class="practice-card" id="practice-area" tabindex="-1">
+        <div class="mode-indicator" id="prompt-label">press start</div>
+        <div class="word-wall" id="target" aria-live="polite">-</div>
+        <div class="status" id="status"></div>
+      </main>
+
+      <div class="footer-row">
+        <span>daily diligence is stored locally</span>
+        <span id="leaderboard" aria-label="leaderboard"></span>
+      </div>
     </div>
-  </div>
 
-  <div class="dialog-backdrop" id="emily-help-backdrop" role="dialog" aria-modal="true" aria-labelledby="emily-help-title">
-    <div class="dialog">
-      <button class="dialog-close" id="emily-help-close" aria-label="Close Emily help">✕</button>
-      <h2 id="emily-help-title">Emily symbols</h2>
-      <p class="muted" style="margin:0;">Chord rules and symbol table for Emily mode.</p>
+    <div
+      class="dialog-backdrop"
+      id="emily-help-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="emily-help-title"
+    >
+      <div class="dialog">
+        <button
+          class="dialog-close"
+          id="emily-help-close"
+          aria-label="Close Emily help"
+        >
+          ✕
+        </button>
+        <h2 id="emily-help-title">Emily symbols</h2>
+        <p class="muted" style="margin: 0">
+          Chord rules and symbol table for Emily mode.
+        </p>
 
-      <h3>starter</h3>
-      <p style="margin:0;">Every Emily chord starts with <code>d</code> + <code>r</code> / <strong>W</strong> + <strong>H</strong>.</p>
+        <h3>starter</h3>
+        <p style="margin: 0">
+          Every Emily chord starts with <code>d</code> + <code>r</code> /
+          <strong>W</strong> + <strong>H</strong>.
+        </p>
 
-      <h3>pattern keys</h3>
-      <table>
-        <thead><tr><th>steno</th><th>physical</th></tr></thead>
-        <tbody>
-          <tr><td>F</td><td><code>u</code></td></tr>
-          <tr><td>R</td><td><code>j</code></td></tr>
-          <tr><td>P</td><td><code>i</code></td></tr>
-          <tr><td>B</td><td><code>k</code></td></tr>
-          <tr><td>L</td><td><code>o</code></td></tr>
-          <tr><td>G</td><td><code>l</code></td></tr>
-        </tbody>
-      </table>
+        <h3>pattern keys</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>steno</th>
+              <th>physical</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>F</td>
+              <td><code>u</code></td>
+            </tr>
+            <tr>
+              <td>R</td>
+              <td><code>j</code></td>
+            </tr>
+            <tr>
+              <td>P</td>
+              <td><code>i</code></td>
+            </tr>
+            <tr>
+              <td>B</td>
+              <td><code>k</code></td>
+            </tr>
+            <tr>
+              <td>L</td>
+              <td><code>o</code></td>
+            </tr>
+            <tr>
+              <td>G</td>
+              <td><code>l</code></td>
+            </tr>
+          </tbody>
+        </table>
 
-      <h3>variant keys</h3>
-      <table>
-        <thead><tr><th>variant</th><th>add</th><th>physical</th></tr></thead>
-        <tbody>
-          <tr><td>0</td><td><em>none</em></td><td><em>none</em></td></tr>
-          <tr><td>1</td><td>E</td><td><code>n</code></td></tr>
-          <tr><td>2</td><td>U</td><td><code>m</code></td></tr>
-          <tr><td>3</td><td>E + U</td><td><code>n</code> + <code>m</code></td></tr>
-        </tbody>
-      </table>
+        <h3>variant keys</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>variant</th>
+              <th>add</th>
+              <th>physical</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td><em>none</em></td>
+              <td><em>none</em></td>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>E</td>
+              <td><code>n</code></td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>U</td>
+              <td><code>m</code></td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>E + U</td>
+              <td><code>n</code> + <code>m</code></td>
+            </tr>
+          </tbody>
+        </table>
 
-      <h3>symbol table</h3>
-      <table id="emily-symbol-table">
-        <thead><tr><th>pattern</th><th>physical keys</th><th>var 0</th><th>var 1</th><th>var 2</th><th>var 3</th></tr></thead>
-        <tbody id="emily-symbol-tbody"></tbody>
-      </table>
+        <h3>symbol table</h3>
+        <table id="emily-symbol-table">
+          <thead>
+            <tr>
+              <th>pattern</th>
+              <th>physical keys</th>
+              <th>var 0</th>
+              <th>var 1</th>
+              <th>var 2</th>
+              <th>var 3</th>
+            </tr>
+          </thead>
+          <tbody id="emily-symbol-tbody"></tbody>
+        </table>
+      </div>
     </div>
-  </div>
 
-  <script id="embedded-generated-regexes" type="application/x-g4-format">G4</script>
-  <script>
-(function () {
-  const STORAGE_PREFIX = "v7.practice.leaderboard.";
-  const DILIGENCE_STORAGE_KEY = "v7.practice.diligence.completedGames.v1";
-  const ROUND_SECONDS = 60;
-  const PROMPT_WINDOW_SIZE = 22;
-  const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
+    <script id="embedded-generated-regexes" type="application/x-g4-format">
+      G4
+    </script>
+    <script>
+      (function () {
+        const STORAGE_PREFIX = "v7.practice.leaderboard.";
+        const DILIGENCE_STORAGE_KEY = "v7.practice.diligence.completedGames.v1";
+        const ROUND_SECONDS = 60;
+        const PROMPT_WINDOW_SIZE = 22;
+        const REALISTIC_DOUBLE_SYLLABLE_PROBABILITY = 0.5;
 
-  const EMILY_SYMBOLS_TABLE = {
-    "FR": ["!", "¬", "↦", "¡"],
-    "FP": ["\"", "\u201c", "\u201d", "\u201e"],
-    "FRLG": ["#", "©", "®", "™"],
-    "RPBL": ["$", "¥", "€", "£"],
-    "FRPB": ["%", "‰", "‱", "φ"],
-    "FBG": ["&", "∩", "∧", "∈"],
-    "F": ["'", "\u2018", "\u2019", "\u201a"],
-    "FPL": ["(", "[", "<", "{"],
-    "RBG": [")", "]", ">", "}"],
-    "L": ["*", "∏", "§", "×"],
-    "G": ["+", "∑", "¶", "±"],
-    "B": [",", "∪", "∨", "∉"],
-    "PL": ["-", "−", "–", "—"],
-    "R": [".", "•", "·", "…"],
-    "RP": ["/", "⇒", "⇔", "÷"],
-    "LG": [":", "∋", "∵", "∴"],
-    "RB": [";", "∀", "∃", "∄"],
-    "PBLG": ["=", "≡", "≈", "≠"],
-    "FPB": ["?", "¿", "∝", "‽"],
-    "FRPBLG": ["@", "⊕", "⊗", "∅"],
-    "FB": ["\\", "Δ", "√", "∞"],
-    "RPG": ["^", "«", "»", "°"],
-    "BG": ["_", "≤", "≥", "µ"],
-    "P": ["`", "⊂", "⊃", "π"],
-    "PB": ["|", "⊤", "⊥", "¦"],
-    "FPBG": ["~", "⊆", "⊇", "˜"],
-    "FPBL": ["↑", "←", "→", "↓"]
-  };
+        const EMILY_SYMBOLS_TABLE = {
+          FR: ["!", "¬", "↦", "¡"],
+          FP: ['"', "\u201c", "\u201d", "\u201e"],
+          FRLG: ["#", "©", "®", "™"],
+          RPBL: ["$", "¥", "€", "£"],
+          FRPB: ["%", "‰", "‱", "φ"],
+          FBG: ["&", "∩", "∧", "∈"],
+          F: ["'", "\u2018", "\u2019", "\u201a"],
+          FPL: ["(", "[", "<", "{"],
+          RBG: [")", "]", ">", "}"],
+          L: ["*", "∏", "§", "×"],
+          G: ["+", "∑", "¶", "±"],
+          B: [",", "∪", "∨", "∉"],
+          PL: ["-", "−", "–", "—"],
+          R: [".", "•", "·", "…"],
+          RP: ["/", "⇒", "⇔", "÷"],
+          LG: [":", "∋", "∵", "∴"],
+          RB: [";", "∀", "∃", "∄"],
+          PBLG: ["=", "≡", "≈", "≠"],
+          FPB: ["?", "¿", "∝", "‽"],
+          FRPBLG: ["@", "⊕", "⊗", "∅"],
+          FB: ["\\", "Δ", "√", "∞"],
+          RPG: ["^", "«", "»", "°"],
+          BG: ["_", "≤", "≥", "µ"],
+          P: ["`", "⊂", "⊃", "π"],
+          PB: ["|", "⊤", "⊥", "¦"],
+          FPBG: ["~", "⊆", "⊇", "˜"],
+          FPBL: ["↑", "←", "→", "↓"],
+        };
 
-  // Maps Emily pattern letters (FRPBLG) to practice-game symbol names
-  const EMILY_PATTERN_TO_GAME_KEY = { "F": "F", "R": "RR", "P": "PP", "B": "B", "L": "L", "G": "G" };
+        // Maps Emily pattern letters (FRPBLG) to practice-game symbol names
+        const EMILY_PATTERN_TO_GAME_KEY = {
+          F: "F",
+          R: "RR",
+          P: "PP",
+          B: "B",
+          L: "L",
+          G: "G",
+        };
 
-  function buildEmilyEntries() {
-    const entries = [];
-    for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
-      for (let variant = 0; variant < 4; variant++) {
-        const symbol = symbols[variant];
-        if (!symbol) continue;
-        entries.push({ symbol, pattern, variant });
-      }
-    }
-    return entries;
-  }
-
-  const EMILY_ENTRIES = buildEmilyEntries();
-
-  function buildExpectedEmilyChord(pattern, variant) {
-    const chord = new Set(["W", "H"]);
-    if (variant === 1 || variant === 3) chord.add("E");
-    if (variant === 2 || variant === 3) chord.add("U");
-    for (const ch of pattern) {
-      const gameKey = EMILY_PATTERN_TO_GAME_KEY[ch];
-      if (gameKey) chord.add(gameKey);
-    }
-    return chord;
-  }
-
-  const MODES = [
-    { id: "partial-left", label: "Partial syllable, left hand", type: "partial", hand: "left" },
-    { id: "partial-right", label: "Partial syllable, right hand", type: "partial", hand: "right" },
-    { id: "partial-random", label: "Partial syllable, random hand", type: "partial", hand: "random" },
-    { id: "full", label: "Full syllable", type: "full", hand: "both" },
-    { id: "realistic", label: "Mixed", type: "realistic", hand: "both" },
-    { id: "emily", label: "Emily symbols", type: "emily", hand: "both" }
-  ];
-
-  const qwertyToUnique = {
-    q: "#", a: "S", w: "T", s: "K", e: "P", d: "W", r: "H", f: "R",
-    c: "A", v: "O", n: "E", m: "U", u: "F", j: "RR", i: "PP", k: "B", o: "L", l: "G", p: "TT", ";": "SS", " ": "*"
-  };
-
-  const LEFT_CONSONANT = {
-    "0": [], b: ["#", "S", "P"], ch: ["S", "T", "H"], d: ["#", "T", "P", "H"], dd: ["#", "S", "T"],
-    g: ["#", "S", "T", "P"], h: ["H"], k: ["#", "T"], kh: ["#", "S", "T", "H"], l: ["#", "S", "H"],
-    m: ["P", "H"], n: ["T", "P", "H"], ng: ["#", "T", "P"], nh: ["#", "S", "T", "P", "H"], p: ["P"],
-    ph: ["T", "P"], r: ["#", "H"], s: ["S", "T", "P"], t: ["T"], th: ["T", "H"], tr: ["#", "T", "H"],
-    v: ["#", "P"], w: ["#", "S"], x: ["#", "P", "H"], z: ["S", "T", "P", "H"]
-  };
-
-  const RIGHT_CONSONANT = {
-    "0": [], b: ["TT", "SS", "PP"], ch: ["SS", "L", "F"], d: ["TT", "L", "PP", "F"], dd: ["TT", "SS", "L"],
-    g: ["TT", "SS", "L", "PP"], h: ["F"], k: ["TT", "L"], kh: ["TT", "SS", "L", "F"], l: ["TT", "SS", "F"],
-    m: ["PP", "F"], n: ["L", "PP", "F"], ng: ["TT", "L", "PP"], nh: ["TT", "SS", "L", "PP", "F"], p: ["PP"],
-    ph: ["L", "PP"], r: ["TT", "F"], s: ["SS", "L", "PP"], t: ["L"], th: ["L", "F"], tr: ["TT", "L", "F"],
-    v: ["TT", "PP"], w: ["TT", "SS"], x: ["TT", "PP", "F"], z: ["SS", "L", "PP", "F"]
-  };
-
-  const LEFT_TONE = { "0": [], "1": ["K"], "2": ["W"], "3": ["R"], "4": ["K", "W"], "5": ["W", "R"], "6": ["K", "R"], "7": ["K", "W", "R"] };
-  const RIGHT_TONE = { "0": [], "1": ["G"], "2": ["B"], "3": ["RR"], "4": ["G", "B"], "5": ["B", "RR"], "6": ["G", "RR"], "7": ["G", "B", "RR"] };
-  const stenographyMap = {
-    PW: "b", K: "c", KH: "ch", KWR: "d", TK: "đ", TP: "ph",
-    TKPW: "g", H: "h", KWH: "gi", KHR: "kh", HR: "l", PH: "m",
-    TPH: "n", TPR: "nh", TPW: "ng/ngh", P: "p", R: "r", KP: "s",
-    T: "t", TH: "th", TR: "tr", W: "v", WR: "x"
-  };
-  const vowelMap = {
-    OEU: "iê/ia", AEU: "ua/uô", AOE: "ưa/ươ", AOU: "ư", OU: "ơ",
-    OE: "ô", O: "o", AU: "ê", E: "e", EU: "i", A: "a",
-    AE: "ă", AO: "â", U: "u", AOEU: "y"
-  };
-  const finalMap = { FP: "j", F: "w", P: "m", R: "n", FR: "ng", RP: "nh" };
-  const toneMap = { L: "sắc", G: "huyền", B: "hỏi", LG: "ngã", BG: "nặng", BL: "ách", BLG: "ạch" };
-  const toneAccents = {
-    a: { "": "a", sắc: "á", huyền: "à", hỏi: "ả", ngã: "ã", nặng: "ạ" },
-    "ă": { "": "ă", sắc: "ắ", huyền: "ằ", hỏi: "ẳ", ngã: "ẵ", nặng: "ặ" },
-    "â": { "": "â", sắc: "ấ", huyền: "ầ", hỏi: "ẩ", ngã: "ẫ", nặng: "ậ" },
-    e: { "": "e", sắc: "é", huyền: "è", hỏi: "ẻ", ngã: "ẽ", nặng: "ẹ" },
-    "ê": { "": "ê", sắc: "ế", huyền: "ề", hỏi: "ể", ngã: "ễ", nặng: "ệ" },
-    i: { "": "i", sắc: "í", huyền: "ì", hỏi: "ỉ", ngã: "ĩ", nặng: "ị" },
-    o: { "": "o", sắc: "ó", huyền: "ò", hỏi: "ỏ", ngã: "õ", nặng: "ọ" },
-    "ô": { "": "ô", sắc: "ố", huyền: "ồ", hỏi: "ổ", ngã: "ỗ", nặng: "ộ" },
-    "ơ": { "": "ơ", sắc: "ớ", huyền: "ờ", hỏi: "ở", ngã: "ỡ", nặng: "ợ" },
-    u: { "": "u", sắc: "ú", huyền: "ù", hỏi: "ủ", ngã: "ũ", nặng: "ụ" },
-    "ư": { "": "ư", sắc: "ứ", huyền: "ừ", hỏi: "ử", ngã: "ữ", nặng: "ự" },
-    y: { "": "y", sắc: "ý", huyền: "ỳ", hỏi: "ỷ", ngã: "ỹ", nặng: "ỵ" }
-  };
-  const STRUCTURED_HARD_CONSONANTS = new Set(["b", "ch", "d", "g", "kh", "ng", "p", "ph", "r", "tr", "x", "đ"]);
-  const STRUCTURED_CONSONANTS = ["0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh", "p", "ph", "r", "s", "t", "th", "tr", "v", "w", "x", "z", "đ"];
-
-  function mapKeyUnique(key) {
-    const k = key.toLowerCase();
-    // -D/-Z are mirrored suffix keys; each is reachable from either of two QWERTY keys.
-    if (k === "t" || k === "g") return "D";
-    if (k === "y" || k === "h") return "Z";
-    return qwertyToUnique[k] || null;
-  }
-
-  function normalizeConsonant(cons) {
-    if (cons === "đ") return "dd";
-    return cons;
-  }
-
-  function parseCodeKey(codeKey) {
-    const parts = codeKey.split("_");
-    if (parts.length !== 3) return null;
-    const [cons, vowel, tone] = parts;
-    return { consonant: normalizeConsonant(cons), vowel, tone };
-  }
-
-  function enumerateRegex(regex) {
-    const chars = Array.from(regex);
-    let i = 0;
-
-    function expandExpr() {
-      const alternatives = [];
-      let current = [""];
-
-      while (i < chars.length) {
-        const c = chars[i];
-        if (c === ")") break;
-
-        if (c === "(") {
-          i += 1;
-          if (chars[i] === "?") {
-            i += 1;
-            if (chars[i] === ":") i += 1;
+        function buildEmilyEntries() {
+          const entries = [];
+          for (const [pattern, symbols] of Object.entries(
+            EMILY_SYMBOLS_TABLE,
+          )) {
+            for (let variant = 0; variant < 4; variant++) {
+              const symbol = symbols[variant];
+              if (!symbol) continue;
+              entries.push({ symbol, pattern, variant });
+            }
           }
-          const nested = expandExpr();
-          if (chars[i] === ")") i += 1;
-
-          const optional = chars[i] === "?";
-          if (optional) i += 1;
-
-          const next = [];
-          current.forEach((s) => {
-            nested.forEach((n) => next.push(s + n));
-            if (optional) next.push(s);
-          });
-          current = next;
-          continue;
+          return entries;
         }
 
-        if (c === "[") {
-          i += 1;
-          const classChars = [];
-          while (i < chars.length && chars[i] !== "]") {
-            classChars.push(chars[i]);
-            i += 1;
+        const EMILY_ENTRIES = buildEmilyEntries();
+
+        function buildExpectedEmilyChord(pattern, variant) {
+          const chord = new Set(["W", "H"]);
+          if (variant === 1 || variant === 3) chord.add("E");
+          if (variant === 2 || variant === 3) chord.add("U");
+          for (const ch of pattern) {
+            const gameKey = EMILY_PATTERN_TO_GAME_KEY[ch];
+            if (gameKey) chord.add(gameKey);
           }
-          if (chars[i] === "]") i += 1;
-
-          const optional = chars[i] === "?";
-          if (optional) i += 1;
-
-          const next = [];
-          current.forEach((s) => {
-            classChars.forEach((cc) => next.push(s + cc));
-            if (optional) next.push(s);
-          });
-          current = next;
-          continue;
+          return chord;
         }
 
-        if (c === "|") {
-          alternatives.push(current);
-          current = [""];
-          i += 1;
-          continue;
+        const MODES = [
+          {
+            id: "partial-left",
+            label: "Partial syllable, left hand",
+            type: "partial",
+            hand: "left",
+          },
+          {
+            id: "partial-right",
+            label: "Partial syllable, right hand",
+            type: "partial",
+            hand: "right",
+          },
+          {
+            id: "partial-random",
+            label: "Partial syllable, random hand",
+            type: "partial",
+            hand: "random",
+          },
+          { id: "full", label: "Full syllable", type: "full", hand: "both" },
+          { id: "realistic", label: "Mixed", type: "realistic", hand: "both" },
+          { id: "emily", label: "Emily symbols", type: "emily", hand: "both" },
+        ];
+
+        const qwertyToUnique = {
+          q: "#",
+          a: "S",
+          w: "T",
+          s: "K",
+          e: "P",
+          d: "W",
+          r: "H",
+          f: "R",
+          c: "A",
+          v: "O",
+          n: "E",
+          m: "U",
+          u: "F",
+          j: "RR",
+          i: "PP",
+          k: "B",
+          o: "L",
+          l: "G",
+          p: "TT",
+          ";": "SS",
+          " ": "*",
+        };
+
+        const LEFT_CONSONANT = {
+          0: [],
+          b: ["#", "S", "P"],
+          ch: ["S", "T", "H"],
+          d: ["#", "T", "P", "H"],
+          dd: ["#", "S", "T"],
+          g: ["#", "S", "T", "P"],
+          h: ["H"],
+          k: ["#", "T"],
+          kh: ["#", "S", "T", "H"],
+          l: ["#", "S", "H"],
+          m: ["P", "H"],
+          n: ["T", "P", "H"],
+          ng: ["#", "T", "P"],
+          nh: ["#", "S", "T", "P", "H"],
+          p: ["P"],
+          ph: ["T", "P"],
+          r: ["#", "H"],
+          s: ["S", "T", "P"],
+          t: ["T"],
+          th: ["T", "H"],
+          tr: ["#", "T", "H"],
+          v: ["#", "P"],
+          w: ["#", "S"],
+          x: ["#", "P", "H"],
+          z: ["S", "T", "P", "H"],
+        };
+
+        const RIGHT_CONSONANT = {
+          0: [],
+          b: ["TT", "SS", "PP"],
+          ch: ["SS", "L", "F"],
+          d: ["TT", "L", "PP", "F"],
+          dd: ["TT", "SS", "L"],
+          g: ["TT", "SS", "L", "PP"],
+          h: ["F"],
+          k: ["TT", "L"],
+          kh: ["TT", "SS", "L", "F"],
+          l: ["TT", "SS", "F"],
+          m: ["PP", "F"],
+          n: ["L", "PP", "F"],
+          ng: ["TT", "L", "PP"],
+          nh: ["TT", "SS", "L", "PP", "F"],
+          p: ["PP"],
+          ph: ["L", "PP"],
+          r: ["TT", "F"],
+          s: ["SS", "L", "PP"],
+          t: ["L"],
+          th: ["L", "F"],
+          tr: ["TT", "L", "F"],
+          v: ["TT", "PP"],
+          w: ["TT", "SS"],
+          x: ["TT", "PP", "F"],
+          z: ["SS", "L", "PP", "F"],
+        };
+
+        const LEFT_TONE = {
+          0: [],
+          1: ["K"],
+          2: ["W"],
+          3: ["R"],
+          4: ["K", "W"],
+          5: ["W", "R"],
+          6: ["K", "R"],
+          7: ["K", "W", "R"],
+        };
+        const RIGHT_TONE = {
+          0: [],
+          1: ["G"],
+          2: ["B"],
+          3: ["RR"],
+          4: ["G", "B"],
+          5: ["B", "RR"],
+          6: ["G", "RR"],
+          7: ["G", "B", "RR"],
+        };
+        const stenographyMap = {
+          PW: "b",
+          K: "c",
+          KH: "ch",
+          KWR: "d",
+          TK: "đ",
+          TP: "ph",
+          TKPW: "g",
+          H: "h",
+          KWH: "gi",
+          KHR: "kh",
+          HR: "l",
+          PH: "m",
+          TPH: "n",
+          TPR: "nh",
+          TPW: "ng/ngh",
+          P: "p",
+          R: "r",
+          KP: "s",
+          T: "t",
+          TH: "th",
+          TR: "tr",
+          W: "v",
+          WR: "x",
+        };
+        const vowelMap = {
+          OEU: "iê/ia",
+          AEU: "ua/uô",
+          AOE: "ưa/ươ",
+          AOU: "ư",
+          OU: "ơ",
+          OE: "ô",
+          O: "o",
+          AU: "ê",
+          E: "e",
+          EU: "i",
+          A: "a",
+          AE: "ă",
+          AO: "â",
+          U: "u",
+          AOEU: "y",
+        };
+        const finalMap = {
+          FP: "j",
+          F: "w",
+          P: "m",
+          R: "n",
+          FR: "ng",
+          RP: "nh",
+        };
+        const toneMap = {
+          L: "sắc",
+          G: "huyền",
+          B: "hỏi",
+          LG: "ngã",
+          BG: "nặng",
+          BL: "ách",
+          BLG: "ạch",
+        };
+        const toneAccents = {
+          a: { "": "a", sắc: "á", huyền: "à", hỏi: "ả", ngã: "ã", nặng: "ạ" },
+          ă: { "": "ă", sắc: "ắ", huyền: "ằ", hỏi: "ẳ", ngã: "ẵ", nặng: "ặ" },
+          â: { "": "â", sắc: "ấ", huyền: "ầ", hỏi: "ẩ", ngã: "ẫ", nặng: "ậ" },
+          e: { "": "e", sắc: "é", huyền: "è", hỏi: "ẻ", ngã: "ẽ", nặng: "ẹ" },
+          ê: { "": "ê", sắc: "ế", huyền: "ề", hỏi: "ể", ngã: "ễ", nặng: "ệ" },
+          i: { "": "i", sắc: "í", huyền: "ì", hỏi: "ỉ", ngã: "ĩ", nặng: "ị" },
+          o: { "": "o", sắc: "ó", huyền: "ò", hỏi: "ỏ", ngã: "õ", nặng: "ọ" },
+          ô: { "": "ô", sắc: "ố", huyền: "ồ", hỏi: "ổ", ngã: "ỗ", nặng: "ộ" },
+          ơ: { "": "ơ", sắc: "ớ", huyền: "ờ", hỏi: "ở", ngã: "ỡ", nặng: "ợ" },
+          u: { "": "u", sắc: "ú", huyền: "ù", hỏi: "ủ", ngã: "ũ", nặng: "ụ" },
+          ư: { "": "ư", sắc: "ứ", huyền: "ừ", hỏi: "ử", ngã: "ữ", nặng: "ự" },
+          y: { "": "y", sắc: "ý", huyền: "ỳ", hỏi: "ỷ", ngã: "ỹ", nặng: "ỵ" },
+        };
+        const STRUCTURED_HARD_CONSONANTS = new Set([
+          "b",
+          "ch",
+          "d",
+          "g",
+          "kh",
+          "ng",
+          "p",
+          "ph",
+          "r",
+          "tr",
+          "x",
+          "đ",
+        ]);
+        const STRUCTURED_CONSONANTS = [
+          "0",
+          "b",
+          "ch",
+          "d",
+          "g",
+          "h",
+          "k",
+          "kh",
+          "l",
+          "m",
+          "n",
+          "ng",
+          "nh",
+          "p",
+          "ph",
+          "r",
+          "s",
+          "t",
+          "th",
+          "tr",
+          "v",
+          "w",
+          "x",
+          "z",
+          "đ",
+        ];
+
+        function mapKeyUnique(key) {
+          const k = key.toLowerCase();
+          // -D/-Z are mirrored suffix keys; each is reachable from either of two QWERTY keys.
+          if (k === "t" || k === "g") return "D";
+          if (k === "y" || k === "h") return "Z";
+          return qwertyToUnique[k] || null;
         }
 
-        let literal = c;
-        i += 1;
-        if (literal === "\\" && i < chars.length) {
-          literal = chars[i];
-          i += 1;
+        function normalizeConsonant(cons) {
+          if (cons === "đ") return "dd";
+          return cons;
         }
 
-        const optional = chars[i] === "?";
-        if (optional) i += 1;
-
-        if (optional) {
-          const next = [];
-          current.forEach((s) => {
-            next.push(s + literal);
-            next.push(s);
-          });
-          current = next;
-        } else {
-          current = current.map((s) => s + literal);
+        function parseCodeKey(codeKey) {
+          const parts = codeKey.split("_");
+          if (parts.length !== 3) return null;
+          const [cons, vowel, tone] = parts;
+          return { consonant: normalizeConsonant(cons), vowel, tone };
         }
-      }
 
-      alternatives.push(current);
-      return alternatives.flat();
-    }
+        function enumerateRegex(regex) {
+          const chars = Array.from(regex);
+          let i = 0;
 
-    return expandExpr();
-  }
+          function expandExpr() {
+            const alternatives = [];
+            let current = [""];
 
-  let validParseAssembleSyllables = null;
+            while (i < chars.length) {
+              const c = chars[i];
+              if (c === ")") break;
 
-  function getValidParseAssembleSyllables() {
-    if (validParseAssembleSyllables) return validParseAssembleSyllables;
-    const syllables = new Set();
-    const initialKeys = ["", ...Object.keys(stenographyMap)];
-    const vowelKeys = Object.keys(vowelMap);
-    const finalKeys = ["", ...Object.keys(finalMap)];
-    const toneKeys = ["", ...Object.keys(toneMap)];
+              if (c === "(") {
+                i += 1;
+                if (chars[i] === "?") {
+                  i += 1;
+                  if (chars[i] === ":") i += 1;
+                }
+                const nested = expandExpr();
+                if (chars[i] === ")") i += 1;
 
-    [false, true].forEach((capitalize) => {
-      [false, true].forEach((onGlide) => {
-        initialKeys.forEach((initial) => {
-          vowelKeys.forEach((vowel) => {
-            finalKeys.forEach((final) => {
-              toneKeys.forEach((tone) => {
-                const stroke = `${capitalize ? "#" : ""}${onGlide ? "S" : ""}${initial}${vowel}${final}${tone}`;
-                const parsed = parseStroke(stroke);
-                if (!parsed) return;
-                const syllable = assembleParsedSyllable(parsed);
-                if (syllable) syllables.add(syllable);
+                const optional = chars[i] === "?";
+                if (optional) i += 1;
+
+                const next = [];
+                current.forEach((s) => {
+                  nested.forEach((n) => next.push(s + n));
+                  if (optional) next.push(s);
+                });
+                current = next;
+                continue;
+              }
+
+              if (c === "[") {
+                i += 1;
+                const classChars = [];
+                while (i < chars.length && chars[i] !== "]") {
+                  classChars.push(chars[i]);
+                  i += 1;
+                }
+                if (chars[i] === "]") i += 1;
+
+                const optional = chars[i] === "?";
+                if (optional) i += 1;
+
+                const next = [];
+                current.forEach((s) => {
+                  classChars.forEach((cc) => next.push(s + cc));
+                  if (optional) next.push(s);
+                });
+                current = next;
+                continue;
+              }
+
+              if (c === "|") {
+                alternatives.push(current);
+                current = [""];
+                i += 1;
+                continue;
+              }
+
+              let literal = c;
+              i += 1;
+              if (literal === "\\" && i < chars.length) {
+                literal = chars[i];
+                i += 1;
+              }
+
+              const optional = chars[i] === "?";
+              if (optional) i += 1;
+
+              if (optional) {
+                const next = [];
+                current.forEach((s) => {
+                  next.push(s + literal);
+                  next.push(s);
+                });
+                current = next;
+              } else {
+                current = current.map((s) => s + literal);
+              }
+            }
+
+            alternatives.push(current);
+            return alternatives.flat();
+          }
+
+          return expandExpr();
+        }
+
+        let validParseAssembleSyllables = null;
+
+        function getValidParseAssembleSyllables() {
+          if (validParseAssembleSyllables) return validParseAssembleSyllables;
+          const syllables = new Set();
+          const initialKeys = ["", ...Object.keys(stenographyMap)];
+          const vowelKeys = Object.keys(vowelMap);
+          const finalKeys = ["", ...Object.keys(finalMap)];
+          const toneKeys = ["", ...Object.keys(toneMap)];
+
+          [false, true].forEach((capitalize) => {
+            [false, true].forEach((onGlide) => {
+              initialKeys.forEach((initial) => {
+                vowelKeys.forEach((vowel) => {
+                  finalKeys.forEach((final) => {
+                    toneKeys.forEach((tone) => {
+                      const stroke = `${capitalize ? "#" : ""}${onGlide ? "S" : ""}${initial}${vowel}${final}${tone}`;
+                      const parsed = parseStroke(stroke);
+                      if (!parsed) return;
+                      const syllable = assembleParsedSyllable(parsed);
+                      if (syllable) syllables.add(syllable);
+                    });
+                  });
+                });
               });
             });
           });
-        });
-      });
-    });
 
-    validParseAssembleSyllables = syllables;
-    return validParseAssembleSyllables;
-  }
-
-  function buildSyllableEntriesFromRegexMap(regexMap) {
-    const entries = [];
-    const validSyllables = getValidParseAssembleSyllables();
-    Object.entries(regexMap).forEach(([codeKey, regex]) => {
-      const code = parseCodeKey(codeKey);
-      if (!code || typeof regex !== "string") return;
-      enumerateRegex(regex).forEach((syllable) => {
-        if (!validSyllables.has(syllable)) return;
-        entries.push({ syllable, code });
-      });
-    });
-    return entries;
-  }
-
-  function generateStructuredRegexMap() {
-    const A = ["(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:[ấắ][cpt]|á(?:ch?|[pt]))","(?:[ậặ][cpt]|ạ(?:ch?|[pt]))"];
-    const E = ["(?:e(?:(?:ng?|[mo]))?|ê(?:(?:nh?|[mu]))?)","(?:é(?:(?:ng?|[mo]))?|ế(?:(?:nh?|[mu]))?)","(?:è(?:(?:ng?|[mo]))?|ề(?:(?:nh?|[mu]))?)","(?:ẻ(?:(?:ng?|[mo]))?|ể(?:(?:nh?|[mu]))?)","(?:ẽ(?:(?:ng?|[mo]))?|ễ(?:(?:nh?|[mu]))?)","(?:ẹ(?:(?:ng?|[mo]))?|ệ(?:(?:nh?|[mu]))?)","(?:é[cpt]|ế(?:ch|[pt]))","(?:ẹ[cpt]|ệ(?:ch|[pt]))"];
-    const O = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]|ă(?:m|ng?)|e(?:[no])?|a(?:(?:[imouy]|n(?:[gh])?))?))?)","(?:ớ(?:[imn])?|ố(?:(?:ng?|[im]))?|ó(?:(?:ng?|[aeim]))?|o(?:óng|é[no]|ắ(?:m|ng?)|á(?:[imouy]|n(?:[gh])?)))","(?:ờ(?:[imn])?|ồ(?:(?:ng?|[im]))?|ò(?:(?:ng?|[aeim]))?|o(?:òng|è[no]|ằ(?:m|ng?)|à(?:[imouy]|n(?:[gh])?)))","(?:ở(?:[imn])?|ổ(?:(?:ng?|[im]))?|ỏ(?:(?:ng?|[aeim]))?|o(?:ỏng|ẻ[no]|ẳ(?:m|ng?)|ả(?:[imouy]|n(?:[gh])?)))","(?:ỡ(?:[imn])?|ỗ(?:(?:ng?|[im]))?|õ(?:(?:ng?|[aeim]))?|o(?:õng|ẽ[no]|ẵ(?:m|ng?)|ã(?:[imouy]|n(?:[gh])?)))","(?:ợ(?:[imn])?|ộ(?:(?:ng?|[im]))?|ọ(?:(?:ng?|[aeim]))?|o(?:ọng|ẹ[no]|ặ(?:m|ng?)|ạ(?:[imouy]|n(?:[gh])?)))","(?:ớ[pt]|[óố][cpt]|o(?:ét|óc|ắ[cpt]|á(?:ch?|[pt])))","(?:ợ[pt]|[ọộ][cpt]|o(?:ẹt|ọc|ặ[cpt]|ạ(?:ch?|[pt])))"];
-    const U = ["(?:ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?|u(?:(?:ng?|[aim]|ê(?:nh?)?|â(?:y|ng?)|ơ(?:[in])?|ô(?:ng?|[im])|y(?:(?:ên|nh?|[amu]))?))?)","(?:ướ(?:ng?|[imu])|ú(?:(?:ng?|[aimy]))?|ứ(?:(?:ng?|[aimu]))?|u(?:yến|ế(?:nh?)?|ấ(?:y|ng?)|ớ(?:[in])?|ố(?:ng?|[im])|ý(?:nh?|[amu])))","(?:ườ(?:ng?|[imu])|ù(?:(?:ng?|[aimy]))?|ừ(?:(?:ng?|[aimu]))?|u(?:yền|ề(?:nh?)?|ầ(?:y|ng?)|ờ(?:[in])?|ồ(?:ng?|[im])|ỳ(?:nh?|[amu])))","(?:ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aimy]))?|ử(?:(?:ng?|[aimu]))?|u(?:yển|ể(?:nh?)?|ẩ(?:y|ng?)|ở(?:[in])?|ổ(?:ng?|[im])|ỷ(?:nh?|[amu])))","(?:ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aimy]))?|ữ(?:(?:ng?|[aimu]))?|u(?:yễn|ễ(?:nh?)?|ẫ(?:y|ng?)|ỡ(?:[in])?|ỗ(?:ng?|[im])|ỹ(?:nh?|[amu])))","(?:ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aimy]))?|ự(?:(?:ng?|[aimu]))?|u(?:yện|ệ(?:nh?)?|ậ(?:y|ng?)|ợ(?:[in])?|ộ(?:ng?|[im])|ỵ(?:nh?|[amu])))","(?:ướ[cpt]|[úứ][cpt]|u(?:ớt|yết|ấ[ct]|ố[cpt]|ế(?:t|ch)|ý(?:ch|[pt])))","(?:ượ[cpt]|[ụự][cpt]|u(?:ợt|yệt|ậ[ct]|ộ[cpt]|ệ(?:t|ch)|ỵ(?:ch|[pt])))"];
-    const IZ = ["(?:i(?:(?:nh?|[amu]))?|y(?:ê(?:ng?|[mu]))?)","(?:ý|yế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:ỳ|yề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:ỷ|yể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:ỹ|yễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:ỵ|yệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:yế[cpt]|í(?:ch|[pt]))","(?:yệ[cpt]|ị(?:ch|[pt]))"];
-    const IS = ["(?:y|i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?)","(?:ý|iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:ỳ|iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:ỷ|iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:ỹ|iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:ỵ|iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:iế[cpt]|í(?:ch|[pt]))","(?:iệ[cpt]|ị(?:ch|[pt]))"];
-    const IH = ["i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?","(?:iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)","(?:iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)","(?:iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)","(?:iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)","(?:iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)","(?:iế[cpt]|í(?:ch|[pt]))","(?:iệ[cpt]|ị(?:ch|[pt]))"];
-    const WA = ["(?:ă(?:m|ng?)|â(?:y|ng?)|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:y|ng?)|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:y|ng?)|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:y|ng?)|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:y|ng?)|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:y|ng?)|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:ấ[ct]|ắ[cpt]|á(?:ch?|[pt]))","(?:ậ[ct]|ặ[cpt]|ạ(?:ch?|[pt]))"];
-    const WE = ["(?:ê(?:nh?)?|e(?:[no])?)","(?:ế(?:nh?)?|é(?:[no])?)","(?:ề(?:nh?)?|è(?:[no])?)","(?:ể(?:nh?)?|ẻ(?:[no])?)","(?:ễ(?:nh?)?|ẽ(?:[no])?)","(?:ệ(?:nh?)?|ẹ(?:[no])?)","(?:ét|ế(?:t|ch))","(?:ẹt|ệ(?:t|ch))"];
-    const WI = ["y(?:(?:ên|nh?|[amu]))?","(?:yến|ý(?:(?:nh?|[amu]))?)","(?:yền|ỳ(?:(?:nh?|[amu]))?)","(?:yển|ỷ(?:(?:nh?|[amu]))?)","(?:yễn|ỹ(?:(?:nh?|[amu]))?)","(?:yện|ỵ(?:(?:nh?|[amu]))?)","(?:yết|ý(?:ch|[pt]))","(?:yệt|ỵ(?:ch|[pt]))"];
-    const WO = ["(?:ông|ơ(?:[in])?)","(?:ống|ớ(?:[in])?)","(?:ồng|ờ(?:[in])?)","(?:ổng|ở(?:[in])?)","(?:ỗng|ỡ(?:[in])?)","(?:ộng|ợ(?:[in])?)","(?:ốc|ớt)","(?:ộc|ợt)"];
-    const KO = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)","(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)","(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)","(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)","(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)","(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)","(?:oóc|ớ[pt]|[óố][cpt])","(?:oọc|ợ[pt]|[ọộ][cpt])"];
-    const KU = ["(?:u(?:(?:ng?|[aim]|ô(?:ng?|[im])))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)","(?:uố(?:ng?|[im])|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)","(?:uồ(?:ng?|[im])|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)","(?:uổ(?:ng?|[im])|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)","(?:uỗ(?:ng?|[im])|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)","(?:uộ(?:ng?|[im])|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)","(?:uố[cpt]|ướ[cpt]|[úứ][cpt])","(?:uộ[cpt]|ượ[cpt]|[ụự][cpt])"];
-    const ZA = ["(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)","(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)","(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)","(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)","(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)","(?:[ấắ][cpt]|á(?:ch?|[pt]))","(?:[ậặ][cpt]|ạ(?:ch?|[pt]))"];
-    const ZE = ["e(?:(?:ng?|[mo]))?","é(?:(?:ng?|[mo]))?","è(?:(?:ng?|[mo]))?","ẻ(?:(?:ng?|[mo]))?","ẽ(?:(?:ng?|[mo]))?","ẹ(?:(?:ng?|[mo]))?","é[cpt]","ẹ[cpt]"];
-    const ZO = ["(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)","(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)","(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)","(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)","(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)","(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)","(?:oóc|ớ[pt]|[óố][cpt])","(?:oọc|ợ[pt]|[ọộ][cpt])"];
-    const ZU = ["(?:u(?:(?:ng?|[aim]|ô(?:i|ng)))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)","(?:uố(?:i|ng)|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)","(?:uồ(?:i|ng)|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)","(?:uổ(?:i|ng)|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)","(?:uỗ(?:i|ng)|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)","(?:uộ(?:i|ng)|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)","(?:uốc|ướ[cpt]|[úứ][cpt])","(?:uộc|ượ[cpt]|[ụự][cpt])"];
-    const ZI = ["g(?:i(?:[mn])?|iê(?:[mnu]|ng|nh)?)","g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)","g(?:ì(?:[mn])?|iề(?:[mnu]|ng|nh)?)","g(?:ỉ(?:[mn])?|iể(?:[mnu]|ng|nh)?)","g(?:ĩ(?:[mn])?|iễ(?:[mnu]|ng|nh)?)","g(?:ị(?:[mn])?|iệ(?:[mnu]|ng|nh)?)","g(?:í[pt]|iế(?:[cpt]|ch))","g(?:ị[pt]|iệ(?:[cpt]|ch))"];
-    const MAP = {};
-    const onset = (c, v) => c === "0" ? "" : c === "w" ? "qu" : c === "g" && (v === "e" || v === "i") ? "gh" : c === "ng" && (v === "e" || v === "i") ? "ngh" : c === "k" ? ((v === "e" || v === "i") ? "k" : "c") : c;
-    STRUCTURED_CONSONANTS.forEach((c) => {
-      "aeiou".split("").forEach((v) => {
-        if (c === "w" && v === "u") return;
-        for (let i = 0; i < 8; i += 1) {
-          const t = String(i);
-          const k = `${c}_${v}_${t}`;
-          if (c === "w") { MAP[k] = "qu" + { a: WA, e: WE, i: WI, o: WO }[v][i]; continue; }
-          if (c === "z") { MAP[k] = v === "i" ? ZI[i] : "gi" + { a: ZA, e: ZE, o: ZO, u: ZU }[v][i]; continue; }
-          if (v === "i") { MAP[k] = c === "0" ? IZ[i] : onset(c, v) + (STRUCTURED_HARD_CONSONANTS.has(c) ? IH[i] : IS[i]); continue; }
-          let s = { a: A, e: E, o: O, u: U }[v][i];
-          if (c === "k" && v === "o") s = KO[i];
-          if (c === "k" && v === "u") s = KU[i];
-          MAP[k] = onset(c, v) + s;
+          validParseAssembleSyllables = syllables;
+          return validParseAssembleSyllables;
         }
-      });
-    });
-    return MAP;
-  }
 
-  async function decodeEmbeddedRegexMap(encodedPayload) {
-    const payload = (encodedPayload || "").trim();
-    if (payload === "G4") return generateStructuredRegexMap();
-    try {
-      return JSON.parse(payload);
-    } catch (_) {
-      throw new Error("Invalid embedded regex payload");
-    }
-  }
-
-  function loadRegexMap() {
-    if (typeof document !== "undefined") {
-      const embedded = document.getElementById("embedded-generated-regexes");
-      if (embedded && embedded.textContent) {
-        return decodeEmbeddedRegexMap(embedded.textContent);
-      }
-    }
-    return Promise.reject(new Error("Missing embedded regex payload"));
-  }
-
-  function sideChordSymbols(code, side) {
-    const consMap = side === "left" ? LEFT_CONSONANT : RIGHT_CONSONANT;
-    const toneMap = side === "left" ? LEFT_TONE : RIGHT_TONE;
-    const set = new Set();
-
-    (consMap[code.consonant] || []).forEach((k) => set.add(k));
-    (toneMap[code.tone] || []).forEach((k) => set.add(k));
-
-    if (side === "left") {
-      if (code.vowel === "a") set.add("A");
-      else if (code.vowel === "o") set.add("O");
-      else if (code.vowel === "i") { set.add("A"); set.add("O"); }
-      else if (code.vowel === "u") set.add("D");
-    } else {
-      if (code.vowel === "a") set.add("U");
-      else if (code.vowel === "o") set.add("E");
-      else if (code.vowel === "i") { set.add("U"); set.add("E"); }
-      else if (code.vowel === "u") set.add("Z");
-    }
-
-    return set;
-  }
-
-  function buildExpectedChordSymbols(code, modeId, hand) {
-    const expected = new Set();
-
-    if (modeId === "realistic-double") {
-      sideChordSymbols(code.left, "left").forEach((k) => expected.add(k));
-      sideChordSymbols(code.right, "right").forEach((k) => expected.add(k));
-      expected.add("*");
-      return expected;
-    }
-
-    if (modeId === "full") {
-      sideChordSymbols(code, "left").forEach((k) => expected.add(k));
-      sideChordSymbols(code, "right").forEach((k) => expected.add(k));
-      expected.add("*");
-      return expected;
-    }
-
-    const side = hand === "right" ? "right" : "left";
-    sideChordSymbols(code, side).forEach((k) => expected.add(k));
-    expected.add("*");
-    return expected;
-  }
-
-  function buildExpectedChordSymbolOptions(entries, syllable, modeId, hand) {
-    // A few syllables can appear under more than one v7 code in the source map;
-    // when that happens, the practice game should accept any matching chord.
-    const expectedByChord = new Map();
-    entries
-      .filter((entry) => entry.syllable === syllable)
-      .forEach((entry) => {
-        const expected = buildExpectedChordSymbols(entry.code, modeId, hand);
-        const key = JSON.stringify([...expected].sort());
-        if (!expectedByChord.has(key)) expectedByChord.set(key, expected);
-      });
-    return Array.from(expectedByChord.values());
-  }
-
-  function setsEqual(a, b) {
-    if (a.size !== b.size) return false;
-    for (const v of a) if (!b.has(v)) return false;
-    return true;
-  }
-
-  function parseStroke(stroke) {
-    let currentStroke = stroke;
-    let capitalize = false;
-    if (currentStroke.startsWith("#")) {
-      capitalize = true;
-      currentStroke = currentStroke.substring(1);
-    }
-
-    const onGlide = currentStroke.startsWith("S");
-    if (onGlide) currentStroke = currentStroke.substring(1);
-
-    let initialConsonant = "";
-    let survived = false;
-    for (let length = 4; length > 0; length--) {
-      if (length > currentStroke.length) continue;
-      const candidate = currentStroke.substring(0, length);
-      if (stenographyMap[candidate] !== undefined) {
-        initialConsonant = stenographyMap[candidate];
-        currentStroke = currentStroke.substring(length);
-        survived = true;
-        break;
-      }
-    }
-
-    let vowel = "";
-    survived = false;
-    for (let length = 4; length > 0; length--) {
-      if (length > currentStroke.length) continue;
-      const candidate = currentStroke.substring(0, length);
-      if (vowelMap[candidate] !== undefined) {
-        vowel = vowelMap[candidate];
-        currentStroke = currentStroke.substring(length);
-        survived = true;
-        break;
-      }
-    }
-    if (!survived) return null;
-
-    let finalConsonant = "";
-    let finalSteno = "";
-    for (let length = 2; length > 0; length--) {
-      if (length > currentStroke.length) continue;
-      const candidate = currentStroke.substring(0, length);
-      if (finalMap[candidate] !== undefined) {
-        finalConsonant = finalMap[candidate];
-        finalSteno = candidate;
-        currentStroke = currentStroke.substring(length);
-        survived = true;
-        break;
-      }
-    }
-
-    let tone = "";
-    let toneSteno = "";
-    survived = currentStroke.length === 0;
-    if (currentStroke.length > 0) {
-      if (toneMap[currentStroke] !== undefined) {
-        tone = toneMap[currentStroke];
-        toneSteno = currentStroke;
-        currentStroke = "";
-        survived = true;
-      }
-    }
-    if (!survived) return null;
-
-    if (toneSteno === "BL" || toneSteno === "BLG") {
-      const stopFinals = { P: "p", R: "t", FR: "c", RP: "ch" };
-      if (stopFinals[finalSteno]) {
-        finalConsonant = stopFinals[finalSteno];
-        tone = toneSteno === "BL" ? "sắc" : "nặng";
-      } else {
-        return null;
-      }
-    }
-
-    return { capitalize, onGlide, initialConsonant, vowel, finalConsonant, tone };
-  }
-
-  function assembleParsedSyllable(parsed) {
-    const initial = () => {
-      const f = ["a", "ă", "â", "o", "ô", "ơ", "u", "ư", "ua/uô", "ưa/ươ"].includes(parsed.vowel);
-      if (parsed.initialConsonant === "ng/ngh") return (parsed.onGlide || f) ? "ng" : "ngh";
-      if (parsed.initialConsonant === "g") return (parsed.onGlide || f) ? "g" : "gh";
-      if (parsed.initialConsonant === "gi") return (!parsed.onGlide && (parsed.vowel === "i" || parsed.vowel === "iê/ia")) ? "g" : "gi";
-      if (parsed.initialConsonant === "c") return parsed.onGlide ? "q" : (f ? "c" : "k");
-      return parsed.initialConsonant;
-    };
-
-    const middle = () => {
-      if (parsed.vowel === "iê/ia") {
-        if (parsed.initialConsonant === "") {
-          if (parsed.onGlide) return parsed.finalConsonant === "" ? "uy" + toneAccents.a[parsed.tone] : "uy" + toneAccents["ê"][parsed.tone];
-          return parsed.finalConsonant === "" ? toneAccents.i[parsed.tone] + "a" : "y" + toneAccents["ê"][parsed.tone];
+        function buildSyllableEntriesFromRegexMap(regexMap) {
+          const entries = [];
+          const validSyllables = getValidParseAssembleSyllables();
+          Object.entries(regexMap).forEach(([codeKey, regex]) => {
+            const code = parseCodeKey(codeKey);
+            if (!code || typeof regex !== "string") return;
+            enumerateRegex(regex).forEach((syllable) => {
+              if (!validSyllables.has(syllable)) return;
+              entries.push({ syllable, code });
+            });
+          });
+          return entries;
         }
-        if (parsed.onGlide) return parsed.finalConsonant === "" ? "uy" + toneAccents.a[parsed.tone] : "uy" + toneAccents["ê"][parsed.tone];
-        return parsed.finalConsonant === "" ? toneAccents.i[parsed.tone] + "a" : "i" + toneAccents["ê"][parsed.tone];
-      }
-      if (parsed.vowel === "ua/uô") return parsed.finalConsonant === "" ? toneAccents.u[parsed.tone] + "a" : "u" + toneAccents["ô"][parsed.tone];
-      if (parsed.vowel === "ưa/ươ") return parsed.finalConsonant === "" ? toneAccents["ư"][parsed.tone] + "a" : "ư" + toneAccents["ơ"][parsed.tone];
-      if (parsed.vowel === "i") {
-        if (parsed.onGlide) {
-          if (parsed.finalConsonant === "") return parsed.initialConsonant !== "c" ? toneAccents.u[parsed.tone] + "y" : "u" + toneAccents.y[parsed.tone];
-          return "u" + toneAccents.y[parsed.tone];
+
+        function generateStructuredRegexMap() {
+          const A = [
+            "(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:[ấắ][cpt]|á(?:ch?|[pt]))",
+            "(?:[ậặ][cpt]|ạ(?:ch?|[pt]))",
+          ];
+          const E = [
+            "(?:e(?:(?:ng?|[mo]))?|ê(?:(?:nh?|[mu]))?)",
+            "(?:é(?:(?:ng?|[mo]))?|ế(?:(?:nh?|[mu]))?)",
+            "(?:è(?:(?:ng?|[mo]))?|ề(?:(?:nh?|[mu]))?)",
+            "(?:ẻ(?:(?:ng?|[mo]))?|ể(?:(?:nh?|[mu]))?)",
+            "(?:ẽ(?:(?:ng?|[mo]))?|ễ(?:(?:nh?|[mu]))?)",
+            "(?:ẹ(?:(?:ng?|[mo]))?|ệ(?:(?:nh?|[mu]))?)",
+            "(?:é[cpt]|ế(?:ch|[pt]))",
+            "(?:ẹ[cpt]|ệ(?:ch|[pt]))",
+          ];
+          const O = [
+            "(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]|ă(?:m|ng?)|e(?:[no])?|a(?:(?:[imouy]|n(?:[gh])?))?))?)",
+            "(?:ớ(?:[imn])?|ố(?:(?:ng?|[im]))?|ó(?:(?:ng?|[aeim]))?|o(?:óng|é[no]|ắ(?:m|ng?)|á(?:[imouy]|n(?:[gh])?)))",
+            "(?:ờ(?:[imn])?|ồ(?:(?:ng?|[im]))?|ò(?:(?:ng?|[aeim]))?|o(?:òng|è[no]|ằ(?:m|ng?)|à(?:[imouy]|n(?:[gh])?)))",
+            "(?:ở(?:[imn])?|ổ(?:(?:ng?|[im]))?|ỏ(?:(?:ng?|[aeim]))?|o(?:ỏng|ẻ[no]|ẳ(?:m|ng?)|ả(?:[imouy]|n(?:[gh])?)))",
+            "(?:ỡ(?:[imn])?|ỗ(?:(?:ng?|[im]))?|õ(?:(?:ng?|[aeim]))?|o(?:õng|ẽ[no]|ẵ(?:m|ng?)|ã(?:[imouy]|n(?:[gh])?)))",
+            "(?:ợ(?:[imn])?|ộ(?:(?:ng?|[im]))?|ọ(?:(?:ng?|[aeim]))?|o(?:ọng|ẹ[no]|ặ(?:m|ng?)|ạ(?:[imouy]|n(?:[gh])?)))",
+            "(?:ớ[pt]|[óố][cpt]|o(?:ét|óc|ắ[cpt]|á(?:ch?|[pt])))",
+            "(?:ợ[pt]|[ọộ][cpt]|o(?:ẹt|ọc|ặ[cpt]|ạ(?:ch?|[pt])))",
+          ];
+          const U = [
+            "(?:ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?|u(?:(?:ng?|[aim]|ê(?:nh?)?|â(?:y|ng?)|ơ(?:[in])?|ô(?:ng?|[im])|y(?:(?:ên|nh?|[amu]))?))?)",
+            "(?:ướ(?:ng?|[imu])|ú(?:(?:ng?|[aimy]))?|ứ(?:(?:ng?|[aimu]))?|u(?:yến|ế(?:nh?)?|ấ(?:y|ng?)|ớ(?:[in])?|ố(?:ng?|[im])|ý(?:nh?|[amu])))",
+            "(?:ườ(?:ng?|[imu])|ù(?:(?:ng?|[aimy]))?|ừ(?:(?:ng?|[aimu]))?|u(?:yền|ề(?:nh?)?|ầ(?:y|ng?)|ờ(?:[in])?|ồ(?:ng?|[im])|ỳ(?:nh?|[amu])))",
+            "(?:ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aimy]))?|ử(?:(?:ng?|[aimu]))?|u(?:yển|ể(?:nh?)?|ẩ(?:y|ng?)|ở(?:[in])?|ổ(?:ng?|[im])|ỷ(?:nh?|[amu])))",
+            "(?:ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aimy]))?|ữ(?:(?:ng?|[aimu]))?|u(?:yễn|ễ(?:nh?)?|ẫ(?:y|ng?)|ỡ(?:[in])?|ỗ(?:ng?|[im])|ỹ(?:nh?|[amu])))",
+            "(?:ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aimy]))?|ự(?:(?:ng?|[aimu]))?|u(?:yện|ệ(?:nh?)?|ậ(?:y|ng?)|ợ(?:[in])?|ộ(?:ng?|[im])|ỵ(?:nh?|[amu])))",
+            "(?:ướ[cpt]|[úứ][cpt]|u(?:ớt|yết|ấ[ct]|ố[cpt]|ế(?:t|ch)|ý(?:ch|[pt])))",
+            "(?:ượ[cpt]|[ụự][cpt]|u(?:ợt|yệt|ậ[ct]|ộ[cpt]|ệ(?:t|ch)|ỵ(?:ch|[pt])))",
+          ];
+          const IZ = [
+            "(?:i(?:(?:nh?|[amu]))?|y(?:ê(?:ng?|[mu]))?)",
+            "(?:ý|yế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+            "(?:ỳ|yề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+            "(?:ỷ|yể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+            "(?:ỹ|yễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+            "(?:ỵ|yệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+            "(?:yế[cpt]|í(?:ch|[pt]))",
+            "(?:yệ[cpt]|ị(?:ch|[pt]))",
+          ];
+          const IS = [
+            "(?:y|i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?)",
+            "(?:ý|iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+            "(?:ỳ|iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+            "(?:ỷ|iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+            "(?:ỹ|iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+            "(?:ỵ|iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+            "(?:iế[cpt]|í(?:ch|[pt]))",
+            "(?:iệ[cpt]|ị(?:ch|[pt]))",
+          ];
+          const IH = [
+            "i(?:(?:nh?|[amu]|ê(?:ng?|[mu])))?",
+            "(?:iế(?:ng?|[mu])|í(?:(?:nh?|[amu]))?)",
+            "(?:iề(?:ng?|[mu])|ì(?:(?:nh?|[amu]))?)",
+            "(?:iể(?:ng?|[mu])|ỉ(?:(?:nh?|[amu]))?)",
+            "(?:iễ(?:ng?|[mu])|ĩ(?:(?:nh?|[amu]))?)",
+            "(?:iệ(?:ng?|[mu])|ị(?:(?:nh?|[amu]))?)",
+            "(?:iế[cpt]|í(?:ch|[pt]))",
+            "(?:iệ[cpt]|ị(?:ch|[pt]))",
+          ];
+          const WA = [
+            "(?:ă(?:m|ng?)|â(?:y|ng?)|a(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ắ(?:m|ng?)|ấ(?:y|ng?)|á(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ằ(?:m|ng?)|ầ(?:y|ng?)|à(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẳ(?:m|ng?)|ẩ(?:y|ng?)|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẵ(?:m|ng?)|ẫ(?:y|ng?)|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ặ(?:m|ng?)|ậ(?:y|ng?)|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ấ[ct]|ắ[cpt]|á(?:ch?|[pt]))",
+            "(?:ậ[ct]|ặ[cpt]|ạ(?:ch?|[pt]))",
+          ];
+          const WE = [
+            "(?:ê(?:nh?)?|e(?:[no])?)",
+            "(?:ế(?:nh?)?|é(?:[no])?)",
+            "(?:ề(?:nh?)?|è(?:[no])?)",
+            "(?:ể(?:nh?)?|ẻ(?:[no])?)",
+            "(?:ễ(?:nh?)?|ẽ(?:[no])?)",
+            "(?:ệ(?:nh?)?|ẹ(?:[no])?)",
+            "(?:ét|ế(?:t|ch))",
+            "(?:ẹt|ệ(?:t|ch))",
+          ];
+          const WI = [
+            "y(?:(?:ên|nh?|[amu]))?",
+            "(?:yến|ý(?:(?:nh?|[amu]))?)",
+            "(?:yền|ỳ(?:(?:nh?|[amu]))?)",
+            "(?:yển|ỷ(?:(?:nh?|[amu]))?)",
+            "(?:yễn|ỹ(?:(?:nh?|[amu]))?)",
+            "(?:yện|ỵ(?:(?:nh?|[amu]))?)",
+            "(?:yết|ý(?:ch|[pt]))",
+            "(?:yệt|ỵ(?:ch|[pt]))",
+          ];
+          const WO = [
+            "(?:ông|ơ(?:[in])?)",
+            "(?:ống|ớ(?:[in])?)",
+            "(?:ồng|ờ(?:[in])?)",
+            "(?:ổng|ở(?:[in])?)",
+            "(?:ỗng|ỡ(?:[in])?)",
+            "(?:ộng|ợ(?:[in])?)",
+            "(?:ốc|ớt)",
+            "(?:ộc|ợt)",
+          ];
+          const KO = [
+            "(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)",
+            "(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)",
+            "(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)",
+            "(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)",
+            "(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)",
+            "(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)",
+            "(?:oóc|ớ[pt]|[óố][cpt])",
+            "(?:oọc|ợ[pt]|[ọộ][cpt])",
+          ];
+          const KU = [
+            "(?:u(?:(?:ng?|[aim]|ô(?:ng?|[im])))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)",
+            "(?:uố(?:ng?|[im])|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)",
+            "(?:uồ(?:ng?|[im])|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)",
+            "(?:uổ(?:ng?|[im])|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)",
+            "(?:uỗ(?:ng?|[im])|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)",
+            "(?:uộ(?:ng?|[im])|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)",
+            "(?:uố[cpt]|ướ[cpt]|[úứ][cpt])",
+            "(?:uộ[cpt]|ượ[cpt]|[ụự][cpt])",
+          ];
+          const ZA = [
+            "(?:ă(?:m|ng?)|â(?:ng?|[muy])|a(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ắ(?:m|ng?)|ấ(?:ng?|[muy])|á(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ằ(?:m|ng?)|ầ(?:ng?|[muy])|à(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẳ(?:m|ng?)|ẩ(?:ng?|[muy])|ả(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ẵ(?:m|ng?)|ẫ(?:ng?|[muy])|ã(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:ặ(?:m|ng?)|ậ(?:ng?|[muy])|ạ(?:(?:[imouy]|n(?:[gh])?))?)",
+            "(?:[ấắ][cpt]|á(?:ch?|[pt]))",
+            "(?:[ậặ][cpt]|ạ(?:ch?|[pt]))",
+          ];
+          const ZE = [
+            "e(?:(?:ng?|[mo]))?",
+            "é(?:(?:ng?|[mo]))?",
+            "è(?:(?:ng?|[mo]))?",
+            "ẻ(?:(?:ng?|[mo]))?",
+            "ẽ(?:(?:ng?|[mo]))?",
+            "ẹ(?:(?:ng?|[mo]))?",
+            "é[cpt]",
+            "ẹ[cpt]",
+          ];
+          const ZO = [
+            "(?:ơ(?:[imn])?|ô(?:(?:ng?|[im]))?|o(?:(?:ng?|ong|[im]))?)",
+            "(?:oóng|ớ(?:[imn])?|[óố](?:(?:ng?|[im]))?)",
+            "(?:oòng|ờ(?:[imn])?|[òồ](?:(?:ng?|[im]))?)",
+            "(?:oỏng|ở(?:[imn])?|[ỏổ](?:(?:ng?|[im]))?)",
+            "(?:oõng|ỡ(?:[imn])?|[õỗ](?:(?:ng?|[im]))?)",
+            "(?:oọng|ợ(?:[imn])?|[ọộ](?:(?:ng?|[im]))?)",
+            "(?:oóc|ớ[pt]|[óố][cpt])",
+            "(?:oọc|ợ[pt]|[ọộ][cpt])",
+          ];
+          const ZU = [
+            "(?:u(?:(?:ng?|[aim]|ô(?:i|ng)))?|ư(?:(?:ng?|[aimu]|ơ(?:ng?|[imu])))?)",
+            "(?:uố(?:i|ng)|ướ(?:ng?|[imu])|ú(?:(?:ng?|[aim]))?|ứ(?:(?:ng?|[aimu]))?)",
+            "(?:uồ(?:i|ng)|ườ(?:ng?|[imu])|ù(?:(?:ng?|[aim]))?|ừ(?:(?:ng?|[aimu]))?)",
+            "(?:uổ(?:i|ng)|ưở(?:ng?|[imu])|ủ(?:(?:ng?|[aim]))?|ử(?:(?:ng?|[aimu]))?)",
+            "(?:uỗ(?:i|ng)|ưỡ(?:ng?|[imu])|ũ(?:(?:ng?|[aim]))?|ữ(?:(?:ng?|[aimu]))?)",
+            "(?:uộ(?:i|ng)|ượ(?:ng?|[imu])|ụ(?:(?:ng?|[aim]))?|ự(?:(?:ng?|[aimu]))?)",
+            "(?:uốc|ướ[cpt]|[úứ][cpt])",
+            "(?:uộc|ượ[cpt]|[ụự][cpt])",
+          ];
+          const ZI = [
+            "g(?:i(?:[mn])?|iê(?:[mnu]|ng|nh)?)",
+            "g(?:í(?:[mn])?|iế(?:[mnu]|ng|nh)?)",
+            "g(?:ì(?:[mn])?|iề(?:[mnu]|ng|nh)?)",
+            "g(?:ỉ(?:[mn])?|iể(?:[mnu]|ng|nh)?)",
+            "g(?:ĩ(?:[mn])?|iễ(?:[mnu]|ng|nh)?)",
+            "g(?:ị(?:[mn])?|iệ(?:[mnu]|ng|nh)?)",
+            "g(?:í[pt]|iế(?:[cpt]|ch))",
+            "g(?:ị[pt]|iệ(?:[cpt]|ch))",
+          ];
+          const MAP = {};
+          const onset = (c, v) =>
+            c === "0"
+              ? ""
+              : c === "w"
+                ? "qu"
+                : c === "g" && (v === "e" || v === "i")
+                  ? "gh"
+                  : c === "ng" && (v === "e" || v === "i")
+                    ? "ngh"
+                    : c === "k"
+                      ? v === "e" || v === "i"
+                        ? "k"
+                        : "c"
+                      : c;
+          STRUCTURED_CONSONANTS.forEach((c) => {
+            "aeiou".split("").forEach((v) => {
+              if (c === "w" && v === "u") return;
+              for (let i = 0; i < 8; i += 1) {
+                const t = String(i);
+                const k = `${c}_${v}_${t}`;
+                if (c === "w") {
+                  MAP[k] = "qu" + { a: WA, e: WE, i: WI, o: WO }[v][i];
+                  continue;
+                }
+                if (c === "z") {
+                  MAP[k] =
+                    v === "i"
+                      ? ZI[i]
+                      : "gi" + { a: ZA, e: ZE, o: ZO, u: ZU }[v][i];
+                  continue;
+                }
+                if (v === "i") {
+                  MAP[k] =
+                    c === "0"
+                      ? IZ[i]
+                      : onset(c, v) +
+                        (STRUCTURED_HARD_CONSONANTS.has(c) ? IH[i] : IS[i]);
+                  continue;
+                }
+                let s = { a: A, e: E, o: O, u: U }[v][i];
+                if (c === "k" && v === "o") s = KO[i];
+                if (c === "k" && v === "u") s = KU[i];
+                MAP[k] = onset(c, v) + s;
+              }
+            });
+          });
+          return MAP;
         }
-        return toneAccents.i[parsed.tone];
-      }
-      if (parsed.vowel === "ă" && ["w", "j"].includes(parsed.finalConsonant)) {
-        const prefix = parsed.onGlide ? (parsed.initialConsonant === "c" ? "u" : "o") : "";
-        return prefix + toneAccents.a[parsed.tone];
-      }
-      if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide) return "u" + toneAccents[parsed.vowel][parsed.tone];
-      if (parsed.initialConsonant === "c" && parsed.onGlide) return "u" + toneAccents[parsed.vowel][parsed.tone];
-      if (parsed.onGlide) return parsed.finalConsonant === "" ? toneAccents.o[parsed.tone] + parsed.vowel : "o" + toneAccents[parsed.vowel][parsed.tone];
-      return toneAccents[parsed.vowel][parsed.tone];
-    };
 
-    const final = () => {
-      if (parsed.finalConsonant === "w") return [ "iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i" ].includes(parsed.vowel) ? "u" : "o";
-      if (parsed.finalConsonant === "j") return [ "ă", "â" ].includes(parsed.vowel) ? "y" : "i";
-      return parsed.finalConsonant;
-    };
-
-    const text = initial() + middle() + final();
-    return parsed.capitalize ? text.charAt(0).toUpperCase() + text.slice(1) : text;
-  }
-
-  function strokeSetToSyllable(strokeSet) {
-    const order = ["#", "S", "T", "K", "P", "W", "H", "R", "A", "O", "E", "U", "F", "RR", "PP", "B", "L", "G", "TT", "SS", "D", "Z"];
-    const symbolMap = { RR: "R", PP: "P", TT: "T", SS: "S", D: "D", Z: "Z" };
-    let stroke = "";
-    order.forEach((key) => {
-      if (strokeSet.has(key)) stroke += symbolMap[key] || key;
-    });
-    const parsed = parseStroke(stroke);
-    return parsed ? assembleParsedSyllable(parsed) : null;
-  }
-
-  function readLeaderboard(modeId) {
-    try {
-      const raw = localStorage.getItem(STORAGE_PREFIX + modeId);
-      const list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list.filter((n) => Number.isInteger(n) && n >= 0) : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function writeLeaderboard(modeId, score) {
-    if (!Number.isInteger(score) || score < 0) return;
-    const next = readLeaderboard(modeId);
-    next.push(score);
-    next.sort((a, b) => b - a);
-    localStorage.setItem(STORAGE_PREFIX + modeId, JSON.stringify(next.slice(0, 10)));
-  }
-
-  function initPracticePage() {
-    const modeSelect = document.getElementById("mode-select");
-    const startBtn = document.getElementById("start-btn");
-    const timeLeft = document.getElementById("time-left");
-    const scoreEl = document.getElementById("score");
-    const bestEl = document.getElementById("best");
-    const todayGamesEl = document.getElementById("today-games");
-    const todayGamesStatEl = document.getElementById("today-games-stat");
-    const promptLabel = document.getElementById("prompt-label");
-    const targetEl = document.getElementById("target");
-    const practiceArea = document.getElementById("practice-area");
-    const statusEl = document.getElementById("status");
-    const leaderboardEl = document.getElementById("leaderboard");
-    const emilyHelpBtn = document.getElementById("emily-help-btn");
-    const emilyHelpBackdrop = document.getElementById("emily-help-backdrop");
-    const emilyHelpClose = document.getElementById("emily-help-close");
-    const emilySymbolTbody = document.getElementById("emily-symbol-tbody");
-
-    const state = {
-      entries: [],
-      running: false,
-      modeId: MODES[0].id,
-      score: 0,
-      time: ROUND_SECONDS,
-      timer: null,
-      prompt: null,
-      promptQueue: [],
-      lastSyllable: null
-    };
-
-    let heldKeys = new Set();
-    let strokeKeys = new Set();
-
-    function resetStrokeState() {
-      heldKeys = new Set();
-      strokeKeys = new Set();
-    }
-
-    function focusPracticeArea() {
-      if (!practiceArea || typeof practiceArea.focus !== "function") return;
-      try {
-        practiceArea.focus({ preventScroll: true });
-      } catch (_) {
-        practiceArea.focus();
-      }
-    }
-
-    function isEditableTarget(target) {
-      if (!target || target.nodeType !== 1) return false;
-      const tagName = target.tagName;
-      return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable === true;
-    }
-
-    function isFocusedControlTarget(target) {
-      if (!target || target.nodeType !== 1) return false;
-      return ["SELECT", "BUTTON"].includes(target.tagName);
-    }
-
-    function isEmilyHelpOpen() {
-      return !!emilyHelpBackdrop && emilyHelpBackdrop.classList.contains("open");
-    }
-
-    function modeById(modeId) {
-      return MODES.find((m) => m.id === modeId) || null;
-    }
-
-    function syncModeFromSelect() {
-      const selectedMode = modeById(modeSelect.value);
-      if (selectedMode) state.modeId = selectedMode.id;
-      return selectedMode || modeById(state.modeId) || MODES[0];
-    }
-
-    function currentMode() {
-      return modeById(state.modeId) || MODES[0];
-    }
-
-    function refreshLeaderboard() {
-      const list = readLeaderboard(state.modeId);
-      bestEl.textContent = String(list[0] || 0);
-      if (!leaderboardEl) return;
-      leaderboardEl.textContent = list.length ? `top: ${list.slice(0, 5).join(" · ")}` : "top: —";
-    }
-
-    function localDateKey() {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      return `${year}-${month}-${day}`;
-    }
-
-    function readDiligence() {
-      try {
-        const raw = localStorage.getItem(DILIGENCE_STORAGE_KEY);
-        const data = raw ? JSON.parse(raw) : {};
-        return data && typeof data === "object" && !Array.isArray(data) ? data : {};
-      } catch (_) {
-        return {};
-      }
-    }
-
-    function writeDiligence(data) {
-      try {
-        localStorage.setItem(DILIGENCE_STORAGE_KEY, JSON.stringify(data));
-      } catch (_) {}
-    }
-
-    function readTodayCompletedGames() {
-      const value = readDiligence()[localDateKey()];
-      return Number.isInteger(value) && value >= 0 ? value : 0;
-    }
-
-    function recordCompletedGame() {
-      const data = readDiligence();
-      const key = localDateKey();
-      const next = (Number.isInteger(data[key]) && data[key] >= 0 ? data[key] : 0) + 1;
-      data[key] = next;
-      writeDiligence(data);
-      return next;
-    }
-
-    function refreshDiligence() {
-      const today = readTodayCompletedGames();
-      if (todayGamesEl) todayGamesEl.textContent = String(today);
-      if (todayGamesStatEl) todayGamesStatEl.textContent = String(today);
-    }
-
-    function setStatus(text, cls) {
-      statusEl.textContent = text || "";
-      statusEl.className = "status" + (cls ? " " + cls : "");
-    }
-
-    function promptText(prompt) {
-      if (!prompt) return "";
-      if (prompt.type === "emily") return prompt.entry.symbol;
-      if (prompt.type === "realistic-double") return `${prompt.leftEntry.syllable} ${prompt.rightEntry.syllable}`;
-      if (prompt.type === "realistic-single") return prompt.entry.syllable;
-      return prompt.entry ? prompt.entry.syllable : "";
-    }
-
-    function promptUnitLabel(prompt) {
-      if (!prompt) return "";
-      if (prompt.type === "realistic-double") return "2 syllables";
-      if (prompt.type === "realistic-single") return "1 syllable";
-      return "";
-    }
-
-    function renderPromptLine() {
-      targetEl.innerHTML = "";
-      const prompts = state.prompt ? [state.prompt, ...state.promptQueue] : [];
-      if (!prompts.length) {
-        targetEl.textContent = state.entries.length || state.modeId === "emily" ? "-" : "loading...";
-        return;
-      }
-      prompts.forEach((prompt, index) => {
-        const token = document.createElement("span");
-        token.className = "word-token" + (index === 0 ? " current" : "");
-        token.textContent = promptText(prompt);
-        if (state.modeId === "realistic") {
-          token.dataset.unit = promptUnitLabel(prompt);
-          token.classList.add("unit-token");
-          if (index === 0) token.classList.add("current-unit");
+        async function decodeEmbeddedRegexMap(encodedPayload) {
+          const payload = (encodedPayload || "").trim();
+          if (payload === "G4") return generateStructuredRegexMap();
+          try {
+            return JSON.parse(payload);
+          } catch (_) {
+            throw new Error("Invalid embedded regex payload");
+          }
         }
-        targetEl.appendChild(token);
-      });
-    }
 
-    function updatePromptLabel() {
-      const mode = currentMode();
-      if (!state.prompt) {
-        promptLabel.textContent = state.running ? "loading" : "press start";
-        return;
-      }
-      if (mode.id === "emily") {
-        promptLabel.textContent = "emily symbols";
-        return;
-      }
-      if (mode.id === "realistic") {
-        promptLabel.textContent = `mixed · ${promptUnitLabel(state.prompt)} unit`;
-        return;
-      }
-      if (mode.id === "full") {
-        promptLabel.textContent = "full syllable";
-        return;
-      }
-      promptLabel.textContent = `${state.prompt.hand} hand`;
-    }
-
-    function pickEntryAvoidingLast() {
-      if (!state.entries.length) return null;
-      const entry = state.entries[Math.floor(Math.random() * state.entries.length)];
-      if (state.entries.length > 1 && state.lastSyllable === entry.syllable) {
-        return state.entries.find((candidate) => candidate.syllable !== state.lastSyllable) || entry;
-      }
-      return entry;
-    }
-
-    function createPrompt() {
-      const mode = currentMode();
-      if (mode.id === "emily") {
-        let entry = EMILY_ENTRIES[Math.floor(Math.random() * EMILY_ENTRIES.length)];
-        if (EMILY_ENTRIES.length > 1 && state.lastSyllable === entry.symbol) {
-          entry = EMILY_ENTRIES.find((e) => e.symbol !== state.lastSyllable) || entry;
+        function loadRegexMap() {
+          if (typeof document !== "undefined") {
+            const embedded = document.getElementById(
+              "embedded-generated-regexes",
+            );
+            if (embedded && embedded.textContent) {
+              return decodeEmbeddedRegexMap(embedded.textContent);
+            }
+          }
+          return Promise.reject(new Error("Missing embedded regex payload"));
         }
-        state.lastSyllable = entry.symbol;
-        return { type: "emily", entry };
-      }
-      const pickedEntry = pickEntryAvoidingLast();
-      if (!pickedEntry) return null;
-      if (mode.id === "realistic") {
-        const useDouble = state.entries.length > 1 && Math.random() < REALISTIC_DOUBLE_SYLLABLE_PROBABILITY;
-        if (useDouble) {
-          const rightEntry = pickEntryAvoidingLast() || pickedEntry;
-          const pickedRightEntry = state.entries.length > 1 && rightEntry.syllable === pickedEntry.syllable
-            ? state.entries.find((candidate) => candidate.syllable !== pickedEntry.syllable) || rightEntry
-            : rightEntry;
-          state.lastSyllable = pickedRightEntry.syllable;
-          return { type: "realistic-double", leftEntry: pickedEntry, rightEntry: pickedRightEntry };
+
+        function sideChordSymbols(code, side) {
+          const consMap = side === "left" ? LEFT_CONSONANT : RIGHT_CONSONANT;
+          const toneMap = side === "left" ? LEFT_TONE : RIGHT_TONE;
+          const set = new Set();
+
+          (consMap[code.consonant] || []).forEach((k) => set.add(k));
+          (toneMap[code.tone] || []).forEach((k) => set.add(k));
+
+          if (side === "left") {
+            if (code.vowel === "a") set.add("A");
+            else if (code.vowel === "o") set.add("O");
+            else if (code.vowel === "i") {
+              set.add("A");
+              set.add("O");
+            } else if (code.vowel === "u") set.add("D");
+          } else {
+            if (code.vowel === "a") set.add("U");
+            else if (code.vowel === "o") set.add("E");
+            else if (code.vowel === "i") {
+              set.add("U");
+              set.add("E");
+            } else if (code.vowel === "u") set.add("Z");
+          }
+
+          return set;
         }
-        state.lastSyllable = pickedEntry.syllable;
-        return { type: "realistic-single", entry: pickedEntry };
-      }
-      let hand = mode.hand;
-      if (mode.hand === "random") hand = Math.random() < 0.5 ? "left" : "right";
-      state.lastSyllable = pickedEntry.syllable;
-      return { entry: pickedEntry, hand };
-    }
 
-    function refillPromptQueue() {
-      while (state.promptQueue.length < PROMPT_WINDOW_SIZE) {
-        const next = createPrompt();
-        if (!next) break;
-        state.promptQueue.push(next);
-      }
-    }
+        function buildExpectedChordSymbols(code, modeId, hand) {
+          const expected = new Set();
 
-    function pickPrompt() {
-      if (currentMode().id !== "emily" && !state.entries.length) {
-        state.prompt = null;
-        renderPromptLine();
-        updatePromptLabel();
-        return;
-      }
-      refillPromptQueue();
-      state.prompt = state.promptQueue.shift() || createPrompt();
-      refillPromptQueue();
-      renderPromptLine();
-      updatePromptLabel();
-    }
+          if (modeId === "realistic-double") {
+            sideChordSymbols(code.left, "left").forEach((k) => expected.add(k));
+            sideChordSymbols(code.right, "right").forEach((k) =>
+              expected.add(k),
+            );
+            expected.add("*");
+            return expected;
+          }
 
-    function endRound() {
-      state.running = false;
-      resetStrokeState();
-      if (state.timer) clearInterval(state.timer);
-      state.timer = null;
-      writeLeaderboard(state.modeId, state.score);
-      recordCompletedGame();
-      refreshLeaderboard();
-      refreshDiligence();
-      setStatus(`complete · final score ${state.score}`, "ok");
-      promptLabel.textContent = "press start";
-      startBtn.disabled = false;
-      modeSelect.disabled = false;
-    }
+          if (modeId === "full") {
+            sideChordSymbols(code, "left").forEach((k) => expected.add(k));
+            sideChordSymbols(code, "right").forEach((k) => expected.add(k));
+            expected.add("*");
+            return expected;
+          }
 
-    function startRound() {
-      syncModeFromSelect();
-      if (currentMode().id !== "emily" && !state.entries.length) return;
-      resetStrokeState();
-      state.running = true;
-      state.score = 0;
-      state.time = ROUND_SECONDS;
-      scoreEl.textContent = "0";
-      timeLeft.textContent = String(ROUND_SECONDS);
-      setStatus("", "");
-      state.prompt = null;
-      state.promptQueue = [];
-      startBtn.disabled = true;
-      modeSelect.disabled = true;
-      startBtn.blur();
-      focusPracticeArea();
-      pickPrompt();
-
-      state.timer = setInterval(() => {
-        state.time -= 1;
-        timeLeft.textContent = String(state.time);
-        if (state.time <= 0) endRound();
-      }, 1000);
-    }
-
-    function handleStroke(strokeSet) {
-      if (!state.running || !state.prompt) return;
-      if (state.modeId === "emily") {
-        const expected = buildExpectedEmilyChord(state.prompt.entry.pattern, state.prompt.entry.variant);
-        if (setsEqual(strokeSet, expected)) {
-          state.score += 1;
-          scoreEl.textContent = String(state.score);
-          setStatus("correct", "ok");
-          pickPrompt();
-        } else {
-          setStatus("wrong chord", "bad");
+          const side = hand === "right" ? "right" : "left";
+          sideChordSymbols(code, side).forEach((k) => expected.add(k));
+          expected.add("*");
+          return expected;
         }
-        return;
-      }
-      if (state.modeId === "full" || (state.modeId === "realistic" && state.prompt.type === "realistic-single")) {
-        const targetSyllable = state.prompt.entry.syllable;
-        const syllable = strokeSetToSyllable(strokeSet);
-        if (syllable === targetSyllable) {
-          state.score += 1;
-          scoreEl.textContent = String(state.score);
-          setStatus("correct", "ok");
-          pickPrompt();
-        } else {
-          setStatus("wrong chord", "bad");
+
+        function buildExpectedChordSymbolOptions(
+          entries,
+          syllable,
+          modeId,
+          hand,
+        ) {
+          // A few syllables can appear under more than one v7 code in the source map;
+          // when that happens, the practice game should accept any matching chord.
+          const expectedByChord = new Map();
+          entries
+            .filter((entry) => entry.syllable === syllable)
+            .forEach((entry) => {
+              const expected = buildExpectedChordSymbols(
+                entry.code,
+                modeId,
+                hand,
+              );
+              const key = JSON.stringify([...expected].sort());
+              if (!expectedByChord.has(key)) expectedByChord.set(key, expected);
+            });
+          return Array.from(expectedByChord.values());
         }
-        return;
-      }
-      const expectedOptions = state.modeId === "realistic" && state.prompt.type === "realistic-double"
-        ? [buildExpectedChordSymbols({ left: state.prompt.leftEntry.code, right: state.prompt.rightEntry.code }, "realistic-double")]
-        : buildExpectedChordSymbolOptions(state.entries, state.prompt.entry.syllable, state.modeId, state.prompt.hand);
-      if (expectedOptions.some((expected) => setsEqual(strokeSet, expected))) {
-        state.score += 1;
-        scoreEl.textContent = String(state.score);
-        setStatus("correct", "ok");
-        pickPrompt();
-      } else {
-        setStatus("wrong chord", "bad");
-      }
-    }
 
-    modeSelect.innerHTML = "";
-    MODES.forEach((m) => {
-      const option = document.createElement("option");
-      option.value = m.id;
-      option.textContent = m.label;
-      modeSelect.appendChild(option);
-    });
-    if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
-
-    modeSelect.addEventListener("change", () => {
-      resetStrokeState();
-      syncModeFromSelect();
-      refreshLeaderboard();
-      if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
-      state.prompt = null;
-      state.promptQueue = [];
-      if (!state.running) {
-        renderPromptLine();
-        promptLabel.textContent = "press start";
-        setStatus("", "");
-      }
-    });
-
-    const PATTERN_LETTER_TO_PHYSICAL = { F: "u", R: "j", P: "i", B: "k", L: "o", G: "l" };
-
-    function patternToPhysical(pattern) {
-      return pattern.split("").map((ch) => PATTERN_LETTER_TO_PHYSICAL[ch] || ch).join(" + ");
-    }
-
-    function buildEmilyHelpTable() {
-      if (!emilySymbolTbody) return;
-      emilySymbolTbody.innerHTML = "";
-      for (const [pattern, symbols] of Object.entries(EMILY_SYMBOLS_TABLE)) {
-        const tr = document.createElement("tr");
-        const patternTd = document.createElement("td");
-        const patternCode = document.createElement("code");
-        patternCode.textContent = pattern || "(none)";
-        patternTd.appendChild(patternCode);
-
-        const physicalTd = document.createElement("td");
-        physicalTd.textContent = patternToPhysical(pattern);
-
-        tr.appendChild(patternTd);
-        tr.appendChild(physicalTd);
-        symbols.forEach((symbol) => {
-          const td = document.createElement("td");
-          td.textContent = symbol;
-          tr.appendChild(td);
-        });
-        emilySymbolTbody.appendChild(tr);
-      }
-    }
-
-    function openEmilyHelp() {
-      resetStrokeState();
-      buildEmilyHelpTable();
-      emilyHelpBackdrop.classList.add("open");
-      emilyHelpClose.focus();
-    }
-
-    function closeEmilyHelp() {
-      resetStrokeState();
-      emilyHelpBackdrop.classList.remove("open");
-      if (state.running) focusPracticeArea();
-      else emilyHelpBtn.focus();
-    }
-
-    if (emilyHelpBtn && emilyHelpBackdrop && emilyHelpClose) {
-      emilyHelpBtn.addEventListener("click", openEmilyHelp);
-      emilyHelpClose.addEventListener("click", closeEmilyHelp);
-      emilyHelpBackdrop.addEventListener("click", (e) => {
-        if (e.target === emilyHelpBackdrop) closeEmilyHelp();
-      });
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && emilyHelpBackdrop.classList.contains("open")) {
-          e.preventDefault();
-          closeEmilyHelp();
+        function setsEqual(a, b) {
+          if (a.size !== b.size) return false;
+          for (const v of a) if (!b.has(v)) return false;
+          return true;
         }
-      }, true);
-    }
 
-    startBtn.addEventListener("click", startRound);
+        function parseStroke(stroke) {
+          let currentStroke = stroke;
+          let capitalize = false;
+          if (currentStroke.startsWith("#")) {
+            capitalize = true;
+            currentStroke = currentStroke.substring(1);
+          }
 
-    document.addEventListener("keydown", (e) => {
-      if (isEmilyHelpOpen()) return;
-      if (!state.running && !e.repeat && e.key === "Enter") {
-        if (!isEditableTarget(e.target)) {
-          e.preventDefault();
-          startRound();
-          return;
+          const onGlide = currentStroke.startsWith("S");
+          if (onGlide) currentStroke = currentStroke.substring(1);
+
+          let initialConsonant = "";
+          let survived = false;
+          for (let length = 4; length > 0; length--) {
+            if (length > currentStroke.length) continue;
+            const candidate = currentStroke.substring(0, length);
+            if (stenographyMap[candidate] !== undefined) {
+              initialConsonant = stenographyMap[candidate];
+              currentStroke = currentStroke.substring(length);
+              survived = true;
+              break;
+            }
+          }
+
+          let vowel = "";
+          survived = false;
+          for (let length = 4; length > 0; length--) {
+            if (length > currentStroke.length) continue;
+            const candidate = currentStroke.substring(0, length);
+            if (vowelMap[candidate] !== undefined) {
+              vowel = vowelMap[candidate];
+              currentStroke = currentStroke.substring(length);
+              survived = true;
+              break;
+            }
+          }
+          if (!survived) return null;
+
+          let finalConsonant = "";
+          let finalSteno = "";
+          for (let length = 2; length > 0; length--) {
+            if (length > currentStroke.length) continue;
+            const candidate = currentStroke.substring(0, length);
+            if (finalMap[candidate] !== undefined) {
+              finalConsonant = finalMap[candidate];
+              finalSteno = candidate;
+              currentStroke = currentStroke.substring(length);
+              survived = true;
+              break;
+            }
+          }
+
+          let tone = "";
+          let toneSteno = "";
+          survived = currentStroke.length === 0;
+          if (currentStroke.length > 0) {
+            if (toneMap[currentStroke] !== undefined) {
+              tone = toneMap[currentStroke];
+              toneSteno = currentStroke;
+              currentStroke = "";
+              survived = true;
+            }
+          }
+          if (!survived) return null;
+
+          if (toneSteno === "BL" || toneSteno === "BLG") {
+            const stopFinals = { P: "p", R: "t", FR: "c", RP: "ch" };
+            if (stopFinals[finalSteno]) {
+              finalConsonant = stopFinals[finalSteno];
+              tone = toneSteno === "BL" ? "sắc" : "nặng";
+            } else {
+              return null;
+            }
+          }
+
+          return {
+            capitalize,
+            onGlide,
+            initialConsonant,
+            vowel,
+            finalConsonant,
+            tone,
+          };
         }
-      }
-      if (e.repeat) return;
-      if (isEditableTarget(e.target)) return;
-      const mapped = mapKeyUnique(e.key);
-      if (!mapped) return;
-      if (!state.running && isFocusedControlTarget(e.target)) return;
-      heldKeys.add(mapped);
-      strokeKeys.add(mapped);
-      e.preventDefault();
-    });
 
-    document.addEventListener("keyup", (e) => {
-      if (isEmilyHelpOpen()) return;
-      const mapped = mapKeyUnique(e.key);
-      if (!mapped) return;
-      if (!state.running && !heldKeys.has(mapped) && !strokeKeys.has(mapped)) return;
-      heldKeys.delete(mapped);
-      if (heldKeys.size === 0 && strokeKeys.size > 0) {
-        handleStroke(new Set(strokeKeys));
-        strokeKeys = new Set();
-      }
-      e.preventDefault();
-    });
+        function assembleParsedSyllable(parsed) {
+          const initial = () => {
+            const f = [
+              "a",
+              "ă",
+              "â",
+              "o",
+              "ô",
+              "ơ",
+              "u",
+              "ư",
+              "ua/uô",
+              "ưa/ươ",
+            ].includes(parsed.vowel);
+            if (parsed.initialConsonant === "ng/ngh")
+              return parsed.onGlide || f ? "ng" : "ngh";
+            if (parsed.initialConsonant === "g")
+              return parsed.onGlide || f ? "g" : "gh";
+            if (parsed.initialConsonant === "gi")
+              return !parsed.onGlide &&
+                (parsed.vowel === "i" || parsed.vowel === "iê/ia")
+                ? "g"
+                : "gi";
+            if (parsed.initialConsonant === "c")
+              return parsed.onGlide ? "q" : f ? "c" : "k";
+            return parsed.initialConsonant;
+          };
 
-    window.addEventListener("blur", resetStrokeState);
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) resetStrokeState();
-    });
+          const middle = () => {
+            if (parsed.vowel === "iê/ia") {
+              if (parsed.initialConsonant === "") {
+                if (parsed.onGlide)
+                  return parsed.finalConsonant === ""
+                    ? "uy" + toneAccents.a[parsed.tone]
+                    : "uy" + toneAccents["ê"][parsed.tone];
+                return parsed.finalConsonant === ""
+                  ? toneAccents.i[parsed.tone] + "a"
+                  : "y" + toneAccents["ê"][parsed.tone];
+              }
+              if (parsed.onGlide)
+                return parsed.finalConsonant === ""
+                  ? "uy" + toneAccents.a[parsed.tone]
+                  : "uy" + toneAccents["ê"][parsed.tone];
+              return parsed.finalConsonant === ""
+                ? toneAccents.i[parsed.tone] + "a"
+                : "i" + toneAccents["ê"][parsed.tone];
+            }
+            if (parsed.vowel === "ua/uô")
+              return parsed.finalConsonant === ""
+                ? toneAccents.u[parsed.tone] + "a"
+                : "u" + toneAccents["ô"][parsed.tone];
+            if (parsed.vowel === "ưa/ươ")
+              return parsed.finalConsonant === ""
+                ? toneAccents["ư"][parsed.tone] + "a"
+                : "ư" + toneAccents["ơ"][parsed.tone];
+            if (parsed.vowel === "i") {
+              if (parsed.onGlide) {
+                if (parsed.finalConsonant === "")
+                  return parsed.initialConsonant !== "c"
+                    ? toneAccents.u[parsed.tone] + "y"
+                    : "u" + toneAccents.y[parsed.tone];
+                return "u" + toneAccents.y[parsed.tone];
+              }
+              return toneAccents.i[parsed.tone];
+            }
+            if (
+              parsed.vowel === "ă" &&
+              ["w", "j"].includes(parsed.finalConsonant)
+            ) {
+              const prefix = parsed.onGlide
+                ? parsed.initialConsonant === "c"
+                  ? "u"
+                  : "o"
+                : "";
+              return prefix + toneAccents.a[parsed.tone];
+            }
+            if (["â", "ê"].includes(parsed.vowel) && parsed.onGlide)
+              return "u" + toneAccents[parsed.vowel][parsed.tone];
+            if (parsed.initialConsonant === "c" && parsed.onGlide)
+              return "u" + toneAccents[parsed.vowel][parsed.tone];
+            if (parsed.onGlide)
+              return parsed.finalConsonant === ""
+                ? toneAccents.o[parsed.tone] + parsed.vowel
+                : "o" + toneAccents[parsed.vowel][parsed.tone];
+            return toneAccents[parsed.vowel][parsed.tone];
+          };
 
-    syncModeFromSelect();
-    if (emilyHelpBtn) emilyHelpBtn.style.display = state.modeId === "emily" ? "inline-flex" : "none";
-    refreshLeaderboard();
-    refreshDiligence();
+          const final = () => {
+            if (parsed.finalConsonant === "w")
+              return ["iê/ia", "ư", "ưa/ươ", "ê", "u", "ă", "â", "i"].includes(
+                parsed.vowel,
+              )
+                ? "u"
+                : "o";
+            if (parsed.finalConsonant === "j")
+              return ["ă", "â"].includes(parsed.vowel) ? "y" : "i";
+            return parsed.finalConsonant;
+          };
 
-    loadRegexMap()
-      .then((regexMap) => {
-        state.entries = buildSyllableEntriesFromRegexMap(regexMap);
-        if (!state.entries.length) {
-          targetEl.textContent = "no syllables loaded";
+          const text = initial() + middle() + final();
+          return parsed.capitalize
+            ? text.charAt(0).toUpperCase() + text.slice(1)
+            : text;
         }
-      })
-      .catch(() => {
-        targetEl.textContent = "failed to load syllables";
-      });
-  }
 
-  const exported = {
-    enumerateRegex,
-    buildSyllableEntriesFromRegexMap,
-    generateStructuredRegexMap,
-    decodeEmbeddedRegexMap,
-    parseCodeKey,
-    buildExpectedChordSymbols,
-    buildExpectedChordSymbolOptions,
-    strokeSetToSyllable,
-    buildEmilyEntries,
-    buildExpectedEmilyChord
-  };
+        function strokeSetToSyllable(strokeSet) {
+          const order = [
+            "#",
+            "S",
+            "T",
+            "K",
+            "P",
+            "W",
+            "H",
+            "R",
+            "A",
+            "O",
+            "E",
+            "U",
+            "F",
+            "RR",
+            "PP",
+            "B",
+            "L",
+            "G",
+            "TT",
+            "SS",
+            "D",
+            "Z",
+          ];
+          const symbolMap = {
+            RR: "R",
+            PP: "P",
+            TT: "T",
+            SS: "S",
+            D: "D",
+            Z: "Z",
+          };
+          let stroke = "";
+          order.forEach((key) => {
+            if (strokeSet.has(key)) stroke += symbolMap[key] || key;
+          });
+          const parsed = parseStroke(stroke);
+          return parsed ? assembleParsedSyllable(parsed) : null;
+        }
 
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = exported;
-  }
+        function readLeaderboard(modeId) {
+          try {
+            const raw = localStorage.getItem(STORAGE_PREFIX + modeId);
+            const list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list)
+              ? list.filter((n) => Number.isInteger(n) && n >= 0)
+              : [];
+          } catch (_) {
+            return [];
+          }
+        }
 
-  if (typeof window !== "undefined" && typeof document !== "undefined" && document.getElementById("mode-select")) {
-    window.practiceGame = exported;
-    initPracticePage();
-  }
-})();
+        function writeLeaderboard(modeId, score) {
+          if (!Number.isInteger(score) || score < 0) return;
+          const next = readLeaderboard(modeId);
+          next.push(score);
+          next.sort((a, b) => b - a);
+          localStorage.setItem(
+            STORAGE_PREFIX + modeId,
+            JSON.stringify(next.slice(0, 10)),
+          );
+        }
 
-  </script>
-</body>
+        function initPracticePage() {
+          const modeSelect = document.getElementById("mode-select");
+          const startBtn = document.getElementById("start-btn");
+          const timeLeft = document.getElementById("time-left");
+          const scoreEl = document.getElementById("score");
+          const bestEl = document.getElementById("best");
+          const todayGamesEl = document.getElementById("today-games");
+          const todayGamesStatEl = document.getElementById("today-games-stat");
+          const promptLabel = document.getElementById("prompt-label");
+          const targetEl = document.getElementById("target");
+          const practiceArea = document.getElementById("practice-area");
+          const statusEl = document.getElementById("status");
+          const leaderboardEl = document.getElementById("leaderboard");
+          const emilyHelpBtn = document.getElementById("emily-help-btn");
+          const emilyHelpBackdrop = document.getElementById(
+            "emily-help-backdrop",
+          );
+          const emilyHelpClose = document.getElementById("emily-help-close");
+          const emilySymbolTbody =
+            document.getElementById("emily-symbol-tbody");
+
+          const state = {
+            entries: [],
+            running: false,
+            modeId: MODES[0].id,
+            score: 0,
+            time: ROUND_SECONDS,
+            timer: null,
+            prompt: null,
+            promptQueue: [],
+            lastSyllable: null,
+          };
+
+          let heldKeys = new Set();
+          let strokeKeys = new Set();
+
+          function resetStrokeState() {
+            heldKeys = new Set();
+            strokeKeys = new Set();
+          }
+
+          function focusPracticeArea() {
+            if (!practiceArea || typeof practiceArea.focus !== "function")
+              return;
+            try {
+              practiceArea.focus({ preventScroll: true });
+            } catch (_) {
+              practiceArea.focus();
+            }
+          }
+
+          function isEditableTarget(target) {
+            if (!target || target.nodeType !== 1) return false;
+            const tagName = target.tagName;
+            return (
+              tagName === "INPUT" ||
+              tagName === "TEXTAREA" ||
+              target.isContentEditable === true
+            );
+          }
+
+          function isFocusedControlTarget(target) {
+            if (!target || target.nodeType !== 1) return false;
+            return ["SELECT", "BUTTON"].includes(target.tagName);
+          }
+
+          function isEmilyHelpOpen() {
+            return (
+              !!emilyHelpBackdrop &&
+              emilyHelpBackdrop.classList.contains("open")
+            );
+          }
+
+          function modeById(modeId) {
+            return MODES.find((m) => m.id === modeId) || null;
+          }
+
+          function syncModeFromSelect() {
+            const selectedMode = modeById(modeSelect.value);
+            if (selectedMode) state.modeId = selectedMode.id;
+            return selectedMode || modeById(state.modeId) || MODES[0];
+          }
+
+          function currentMode() {
+            return modeById(state.modeId) || MODES[0];
+          }
+
+          function refreshLeaderboard() {
+            const list = readLeaderboard(state.modeId);
+            bestEl.textContent = String(list[0] || 0);
+            if (!leaderboardEl) return;
+            leaderboardEl.textContent = list.length
+              ? `top: ${list.slice(0, 5).join(" · ")}`
+              : "top: —";
+          }
+
+          function localDateKey() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, "0");
+            const day = String(now.getDate()).padStart(2, "0");
+            return `${year}-${month}-${day}`;
+          }
+
+          function readDiligence() {
+            try {
+              const raw = localStorage.getItem(DILIGENCE_STORAGE_KEY);
+              const data = raw ? JSON.parse(raw) : {};
+              return data && typeof data === "object" && !Array.isArray(data)
+                ? data
+                : {};
+            } catch (_) {
+              return {};
+            }
+          }
+
+          function writeDiligence(data) {
+            try {
+              localStorage.setItem(DILIGENCE_STORAGE_KEY, JSON.stringify(data));
+            } catch (_) {}
+          }
+
+          function readTodayCompletedGames() {
+            const value = readDiligence()[localDateKey()];
+            return Number.isInteger(value) && value >= 0 ? value : 0;
+          }
+
+          function recordCompletedGame() {
+            const data = readDiligence();
+            const key = localDateKey();
+            const next =
+              (Number.isInteger(data[key]) && data[key] >= 0 ? data[key] : 0) +
+              1;
+            data[key] = next;
+            writeDiligence(data);
+            return next;
+          }
+
+          function refreshDiligence() {
+            const today = readTodayCompletedGames();
+            if (todayGamesEl) todayGamesEl.textContent = String(today);
+            if (todayGamesStatEl) todayGamesStatEl.textContent = String(today);
+          }
+
+          function setStatus(text, cls) {
+            statusEl.textContent = text || "";
+            statusEl.className = "status" + (cls ? " " + cls : "");
+          }
+
+          function promptText(prompt) {
+            if (!prompt) return "";
+            if (prompt.type === "emily") return prompt.entry.symbol;
+            if (prompt.type === "realistic-double")
+              return `${prompt.leftEntry.syllable} ${prompt.rightEntry.syllable}`;
+            if (prompt.type === "realistic-single")
+              return prompt.entry.syllable;
+            return prompt.entry ? prompt.entry.syllable : "";
+          }
+
+          function promptUnitLabel(prompt) {
+            if (!prompt) return "";
+            if (prompt.type === "realistic-double") return "2 syllables";
+            if (prompt.type === "realistic-single") return "1 syllable";
+            return "";
+          }
+
+          function renderPromptLine() {
+            targetEl.innerHTML = "";
+            const prompts = state.prompt
+              ? [state.prompt, ...state.promptQueue]
+              : [];
+            if (!prompts.length) {
+              targetEl.textContent =
+                state.entries.length || state.modeId === "emily"
+                  ? "-"
+                  : "loading...";
+              return;
+            }
+            prompts.forEach((prompt, index) => {
+              const token = document.createElement("span");
+              token.className = "word-token" + (index === 0 ? " current" : "");
+              token.textContent = promptText(prompt);
+              if (state.modeId === "realistic") {
+                token.dataset.unit = promptUnitLabel(prompt);
+                token.classList.add("unit-token");
+                if (index === 0) token.classList.add("current-unit");
+              }
+              targetEl.appendChild(token);
+            });
+          }
+
+          function updatePromptLabel() {
+            const mode = currentMode();
+            if (!state.prompt) {
+              promptLabel.textContent = state.running
+                ? "loading"
+                : "press start";
+              return;
+            }
+            if (mode.id === "emily") {
+              promptLabel.textContent = "emily symbols";
+              return;
+            }
+            if (mode.id === "realistic") {
+              promptLabel.textContent = `mixed · ${promptUnitLabel(state.prompt)} unit`;
+              return;
+            }
+            if (mode.id === "full") {
+              promptLabel.textContent = "full syllable";
+              return;
+            }
+            promptLabel.textContent = `${state.prompt.hand} hand`;
+          }
+
+          function pickEntryAvoidingLast() {
+            if (!state.entries.length) return null;
+            const entry =
+              state.entries[Math.floor(Math.random() * state.entries.length)];
+            if (
+              state.entries.length > 1 &&
+              state.lastSyllable === entry.syllable
+            ) {
+              return (
+                state.entries.find(
+                  (candidate) => candidate.syllable !== state.lastSyllable,
+                ) || entry
+              );
+            }
+            return entry;
+          }
+
+          function createPrompt() {
+            const mode = currentMode();
+            if (mode.id === "emily") {
+              let entry =
+                EMILY_ENTRIES[Math.floor(Math.random() * EMILY_ENTRIES.length)];
+              if (
+                EMILY_ENTRIES.length > 1 &&
+                state.lastSyllable === entry.symbol
+              ) {
+                entry =
+                  EMILY_ENTRIES.find((e) => e.symbol !== state.lastSyllable) ||
+                  entry;
+              }
+              state.lastSyllable = entry.symbol;
+              return { type: "emily", entry };
+            }
+            const pickedEntry = pickEntryAvoidingLast();
+            if (!pickedEntry) return null;
+            if (mode.id === "realistic") {
+              const useDouble =
+                state.entries.length > 1 &&
+                Math.random() < REALISTIC_DOUBLE_SYLLABLE_PROBABILITY;
+              if (useDouble) {
+                const rightEntry = pickEntryAvoidingLast() || pickedEntry;
+                const pickedRightEntry =
+                  state.entries.length > 1 &&
+                  rightEntry.syllable === pickedEntry.syllable
+                    ? state.entries.find(
+                        (candidate) =>
+                          candidate.syllable !== pickedEntry.syllable,
+                      ) || rightEntry
+                    : rightEntry;
+                state.lastSyllable = pickedRightEntry.syllable;
+                return {
+                  type: "realistic-double",
+                  leftEntry: pickedEntry,
+                  rightEntry: pickedRightEntry,
+                };
+              }
+              state.lastSyllable = pickedEntry.syllable;
+              return { type: "realistic-single", entry: pickedEntry };
+            }
+            let hand = mode.hand;
+            if (mode.hand === "random")
+              hand = Math.random() < 0.5 ? "left" : "right";
+            state.lastSyllable = pickedEntry.syllable;
+            return { entry: pickedEntry, hand };
+          }
+
+          function refillPromptQueue() {
+            while (state.promptQueue.length < PROMPT_WINDOW_SIZE) {
+              const next = createPrompt();
+              if (!next) break;
+              state.promptQueue.push(next);
+            }
+          }
+
+          function pickPrompt() {
+            if (currentMode().id !== "emily" && !state.entries.length) {
+              state.prompt = null;
+              renderPromptLine();
+              updatePromptLabel();
+              return;
+            }
+            refillPromptQueue();
+            state.prompt = state.promptQueue.shift() || createPrompt();
+            refillPromptQueue();
+            renderPromptLine();
+            updatePromptLabel();
+          }
+
+          function endRound() {
+            state.running = false;
+            resetStrokeState();
+            if (state.timer) clearInterval(state.timer);
+            state.timer = null;
+            writeLeaderboard(state.modeId, state.score);
+            recordCompletedGame();
+            refreshLeaderboard();
+            refreshDiligence();
+            setStatus(`complete · final score ${state.score}`, "ok");
+            promptLabel.textContent = "press start";
+            startBtn.disabled = false;
+            modeSelect.disabled = false;
+          }
+
+          function startRound() {
+            syncModeFromSelect();
+            if (currentMode().id !== "emily" && !state.entries.length) return;
+            resetStrokeState();
+            state.running = true;
+            state.score = 0;
+            state.time = ROUND_SECONDS;
+            scoreEl.textContent = "0";
+            timeLeft.textContent = String(ROUND_SECONDS);
+            setStatus("", "");
+            state.prompt = null;
+            state.promptQueue = [];
+            startBtn.disabled = true;
+            modeSelect.disabled = true;
+            startBtn.blur();
+            focusPracticeArea();
+            pickPrompt();
+
+            state.timer = setInterval(() => {
+              state.time -= 1;
+              timeLeft.textContent = String(state.time);
+              if (state.time <= 0) endRound();
+            }, 1000);
+          }
+
+          function handleStroke(strokeSet) {
+            if (!state.running || !state.prompt) return;
+            if (state.modeId === "emily") {
+              const expected = buildExpectedEmilyChord(
+                state.prompt.entry.pattern,
+                state.prompt.entry.variant,
+              );
+              if (setsEqual(strokeSet, expected)) {
+                state.score += 1;
+                scoreEl.textContent = String(state.score);
+                setStatus("correct", "ok");
+                pickPrompt();
+              } else {
+                setStatus("wrong chord", "bad");
+              }
+              return;
+            }
+            if (
+              state.modeId === "full" ||
+              (state.modeId === "realistic" &&
+                state.prompt.type === "realistic-single")
+            ) {
+              const targetSyllable = state.prompt.entry.syllable;
+              const syllable = strokeSetToSyllable(strokeSet);
+              if (syllable === targetSyllable) {
+                state.score += 1;
+                scoreEl.textContent = String(state.score);
+                setStatus("correct", "ok");
+                pickPrompt();
+              } else {
+                setStatus("wrong chord", "bad");
+              }
+              return;
+            }
+            const expectedOptions =
+              state.modeId === "realistic" &&
+              state.prompt.type === "realistic-double"
+                ? [
+                    buildExpectedChordSymbols(
+                      {
+                        left: state.prompt.leftEntry.code,
+                        right: state.prompt.rightEntry.code,
+                      },
+                      "realistic-double",
+                    ),
+                  ]
+                : buildExpectedChordSymbolOptions(
+                    state.entries,
+                    state.prompt.entry.syllable,
+                    state.modeId,
+                    state.prompt.hand,
+                  );
+            if (
+              expectedOptions.some((expected) => setsEqual(strokeSet, expected))
+            ) {
+              state.score += 1;
+              scoreEl.textContent = String(state.score);
+              setStatus("correct", "ok");
+              pickPrompt();
+            } else {
+              setStatus("wrong chord", "bad");
+            }
+          }
+
+          modeSelect.innerHTML = "";
+          MODES.forEach((m) => {
+            const option = document.createElement("option");
+            option.value = m.id;
+            option.textContent = m.label;
+            modeSelect.appendChild(option);
+          });
+          if (emilyHelpBtn)
+            emilyHelpBtn.style.display =
+              state.modeId === "emily" ? "inline-flex" : "none";
+
+          modeSelect.addEventListener("change", () => {
+            resetStrokeState();
+            syncModeFromSelect();
+            refreshLeaderboard();
+            if (emilyHelpBtn)
+              emilyHelpBtn.style.display =
+                state.modeId === "emily" ? "inline-flex" : "none";
+            state.prompt = null;
+            state.promptQueue = [];
+            if (!state.running) {
+              renderPromptLine();
+              promptLabel.textContent = "press start";
+              setStatus("", "");
+            }
+          });
+
+          const PATTERN_LETTER_TO_PHYSICAL = {
+            F: "u",
+            R: "j",
+            P: "i",
+            B: "k",
+            L: "o",
+            G: "l",
+          };
+
+          function patternToPhysical(pattern) {
+            return pattern
+              .split("")
+              .map((ch) => PATTERN_LETTER_TO_PHYSICAL[ch] || ch)
+              .join(" + ");
+          }
+
+          function buildEmilyHelpTable() {
+            if (!emilySymbolTbody) return;
+            emilySymbolTbody.innerHTML = "";
+            for (const [pattern, symbols] of Object.entries(
+              EMILY_SYMBOLS_TABLE,
+            )) {
+              const tr = document.createElement("tr");
+              const patternTd = document.createElement("td");
+              const patternCode = document.createElement("code");
+              patternCode.textContent = pattern || "(none)";
+              patternTd.appendChild(patternCode);
+
+              const physicalTd = document.createElement("td");
+              physicalTd.textContent = patternToPhysical(pattern);
+
+              tr.appendChild(patternTd);
+              tr.appendChild(physicalTd);
+              symbols.forEach((symbol) => {
+                const td = document.createElement("td");
+                td.textContent = symbol;
+                tr.appendChild(td);
+              });
+              emilySymbolTbody.appendChild(tr);
+            }
+          }
+
+          function openEmilyHelp() {
+            resetStrokeState();
+            buildEmilyHelpTable();
+            emilyHelpBackdrop.classList.add("open");
+            emilyHelpClose.focus();
+          }
+
+          function closeEmilyHelp() {
+            resetStrokeState();
+            emilyHelpBackdrop.classList.remove("open");
+            if (state.running) focusPracticeArea();
+            else emilyHelpBtn.focus();
+          }
+
+          if (emilyHelpBtn && emilyHelpBackdrop && emilyHelpClose) {
+            emilyHelpBtn.addEventListener("click", openEmilyHelp);
+            emilyHelpClose.addEventListener("click", closeEmilyHelp);
+            emilyHelpBackdrop.addEventListener("click", (e) => {
+              if (e.target === emilyHelpBackdrop) closeEmilyHelp();
+            });
+            document.addEventListener(
+              "keydown",
+              (e) => {
+                if (
+                  e.key === "Escape" &&
+                  emilyHelpBackdrop.classList.contains("open")
+                ) {
+                  e.preventDefault();
+                  closeEmilyHelp();
+                }
+              },
+              true,
+            );
+          }
+
+          startBtn.addEventListener("click", startRound);
+
+          document.addEventListener("keydown", (e) => {
+            if (isEmilyHelpOpen()) return;
+            if (!state.running && !e.repeat && e.key === "Enter") {
+              if (!isEditableTarget(e.target)) {
+                e.preventDefault();
+                startRound();
+                return;
+              }
+            }
+            if (e.repeat) return;
+            if (isEditableTarget(e.target)) return;
+            const mapped = mapKeyUnique(e.key);
+            if (!mapped) return;
+            if (!state.running && isFocusedControlTarget(e.target)) return;
+            heldKeys.add(mapped);
+            strokeKeys.add(mapped);
+            e.preventDefault();
+          });
+
+          document.addEventListener("keyup", (e) => {
+            if (isEmilyHelpOpen()) return;
+            const mapped = mapKeyUnique(e.key);
+            if (!mapped) return;
+            if (
+              !state.running &&
+              !heldKeys.has(mapped) &&
+              !strokeKeys.has(mapped)
+            )
+              return;
+            heldKeys.delete(mapped);
+            if (heldKeys.size === 0 && strokeKeys.size > 0) {
+              handleStroke(new Set(strokeKeys));
+              strokeKeys = new Set();
+            }
+            e.preventDefault();
+          });
+
+          window.addEventListener("blur", resetStrokeState);
+          document.addEventListener("visibilitychange", () => {
+            if (document.hidden) resetStrokeState();
+          });
+
+          syncModeFromSelect();
+          if (emilyHelpBtn)
+            emilyHelpBtn.style.display =
+              state.modeId === "emily" ? "inline-flex" : "none";
+          refreshLeaderboard();
+          refreshDiligence();
+
+          loadRegexMap()
+            .then((regexMap) => {
+              state.entries = buildSyllableEntriesFromRegexMap(regexMap);
+              if (!state.entries.length) {
+                targetEl.textContent = "no syllables loaded";
+              }
+            })
+            .catch(() => {
+              targetEl.textContent = "failed to load syllables";
+            });
+        }
+
+        const exported = {
+          enumerateRegex,
+          buildSyllableEntriesFromRegexMap,
+          generateStructuredRegexMap,
+          decodeEmbeddedRegexMap,
+          parseCodeKey,
+          buildExpectedChordSymbols,
+          buildExpectedChordSymbolOptions,
+          strokeSetToSyllable,
+          buildEmilyEntries,
+          buildExpectedEmilyChord,
+        };
+
+        if (typeof module !== "undefined" && module.exports) {
+          module.exports = exported;
+        }
+
+        if (
+          typeof window !== "undefined" &&
+          typeof document !== "undefined" &&
+          document.getElementById("mode-select")
+        ) {
+          window.practiceGame = exported;
+          initPracticePage();
+        }
+      })();
+    </script>
+  </body>
 </html>
