@@ -58,15 +58,9 @@ class SipHashRng {
     const out = Number(siphash24(this.counter++, this.k0, this.k1) & 0xffffffffn);
     return out >>> 0;
   }
-
-  clone(): SipHashRng {
-    const copy = new SipHashRng();
-    copy.k0 = this.k0;
-    copy.k1 = this.k1;
-    copy.counter = this.counter;
-    return copy;
-  }
 }
+
+const sharedRng = new SipHashRng();
 
 // SipHash-2-4 implementation adapted for bigint arithmetic.
 function siphash24(msg: bigint, k0: bigint, k1: bigint): bigint {
@@ -110,21 +104,19 @@ function rotl(x: bigint, b: bigint): bigint {
 
 export class Rope<T = string> {
   private root: Node<T> | null;
-  private rng: SipHashRng;
   private readonly measure: Measure<T>;
   private readonly mapper?: Mapper<T>;
 
-  private constructor(measure: Measure<T>, mapper?: Mapper<T>, root: Node<T> | null = null, rng?: SipHashRng) {
+  private constructor(measure: Measure<T>, mapper?: Mapper<T>, root: Node<T> | null = null) {
     this.measure = measure;
     this.mapper = mapper;
     this.root = root;
-    this.rng = rng ? rng.clone() : new SipHashRng();
   }
 
   static fromString(text: string): Rope<string> {
     const r = new Rope<string>((s) => s.length, (s) => s);
     if (text.length > 0) {
-      r.root = { left: null, right: null, data: text, priority: r.rng.next(), size: text.length };
+      r.root = { left: null, right: null, data: text, priority: sharedRng.next(), size: text.length };
     } else {
       r.root = null;
     }
@@ -140,7 +132,7 @@ export class Rope<T = string> {
   }
 
   clone(): Rope<T> {
-    return new Rope<T>(this.measure, this.mapper, this.root, this.rng);
+    return new Rope<T>(this.measure, this.mapper, this.root);
   }
 
   append(value: T): void {
@@ -148,7 +140,7 @@ export class Rope<T = string> {
     if (!Number.isFinite(size) || size < 0) {
       throw new Error(`Invalid rope node size: ${size}. Size must be a finite non-negative number.`);
     }
-    const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
+    const newNode: Node<T> = { left: null, right: null, data: value, priority: sharedRng.next(), size };
     this.root = merge(this.root, newNode, this.measure);
   }
 
@@ -202,7 +194,7 @@ export class Rope<T = string> {
     }
     const [left, rest] = splitAt(this.root, index, this.measure);
     const [_removed, right] = splitAt(rest, this.measure(existing), this.measure);
-    const newNode: Node<T> = { left: null, right: null, data: value, priority: this.rng.next(), size };
+    const newNode: Node<T> = { left: null, right: null, data: value, priority: sharedRng.next(), size };
     this.root = merge(merge(left, newNode, this.measure), right, this.measure);
     return true;
   }
