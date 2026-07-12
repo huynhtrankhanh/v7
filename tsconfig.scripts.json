@@ -7,5 +7,5 @@
     "rootDir": ".",
     "outDir": "./.ts-scripts"
   },
-  "include": ["scripts/**/*.ts", "getInference.ts"]
+  "include": ["scripts/**/*.ts", "evaluator/**/*.ts"]
 }

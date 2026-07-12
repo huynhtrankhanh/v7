@@ -4,7 +4,7 @@
  * Generates an OpenAI fine-tuning JSONL dataset for V7 inference.
  *
  * Usage:
- *   npx ts-node -P tsconfig.scripts.json scripts/generate_dataset.ts
+ *   npx ts-node -P tsconfig.scripts.json evaluator/generate_dataset.ts
  *
  * Environment variables (optional overrides):
  *   GEMINI_API_KEY   – Gemini Flash API key
@@ -15,7 +15,7 @@
 import * as fs from "fs";
 import * as https from "https";
 import * as path from "path";
-import { V7DatasetGenerator, getInference } from "../getInference";
+import { V7DatasetGenerator } from "./getInference";
 
 // ---------------------------------------------------------------------------
 // Config

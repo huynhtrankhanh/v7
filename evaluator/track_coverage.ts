@@ -7,7 +7,7 @@
  *  - Which v7 codes are NOT yet covered
  *
  * Usage:
- *   npx ts-node -P tsconfig.scripts.json scripts/track_coverage.ts [dataset.jsonl]
+ *   npx ts-node -P tsconfig.scripts.json evaluator/track_coverage.ts [dataset.jsonl]
  */
 
 import * as fs from "fs";
