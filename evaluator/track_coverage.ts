@@ -7,7 +7,7 @@
  *  - Which v7 codes are NOT yet covered
  *
  * Usage:
- *   npx ts-node -P tsconfig.scripts.json evaluator/track_coverage.ts [dataset.jsonl]
+ *   npx ts-node -P tsconfig.scripts.json evaluator/track_coverage.ts [evaluator/dataset.jsonl]
  */
 
 import * as fs from "fs";
@@ -129,8 +129,7 @@ function extractV7CodesFromIsland(island: string): string[] {
 // ---------------------------------------------------------------------------
 
 function main() {
-  const datasetPath =
-    process.argv[2] ?? path.join(__dirname, "..", "dataset.jsonl");
+  const datasetPath = process.argv[2] ?? path.join(__dirname, "dataset.jsonl");
 
   if (!fs.existsSync(datasetPath)) {
     console.error(`Dataset file not found: ${datasetPath}`);

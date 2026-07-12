@@ -8,7 +8,7 @@
  *
  * Environment variables (optional overrides):
  *   GEMINI_API_KEY   – Gemini Flash API key
- *   OUTPUT_FILE      – path for the output JSONL (default: dataset.jsonl)
+ *   OUTPUT_FILE      – path for the output JSONL (default: evaluator/dataset.jsonl)
  *   TARGET_SAMPLES   – minimum number of JSONL lines to produce (default: 1200)
  */
 
@@ -27,10 +27,9 @@ if (!GEMINI_API_KEY) {
   process.exit(1);
 }
 const OUTPUT_FILE =
-  process.env.OUTPUT_FILE ?? path.join(__dirname, "..", "dataset.jsonl");
+  process.env.OUTPUT_FILE ?? path.join(__dirname, "dataset.jsonl");
 const COVERAGE_FILE =
-  process.env.COVERAGE_FILE ??
-  path.join(__dirname, "..", "dataset_coverage.json");
+  process.env.COVERAGE_FILE ?? path.join(__dirname, "dataset_coverage.json");
 const TARGET_SAMPLES = parseInt(process.env.TARGET_SAMPLES ?? "50000", 10);
 const PARALLELISM = parseInt(process.env.PARALLELISM ?? "10", 10);
 
