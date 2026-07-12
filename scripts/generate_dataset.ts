@@ -26,8 +26,11 @@ if (!GEMINI_API_KEY) {
   console.error("Error: GEMINI_API_KEY environment variable is required.");
   process.exit(1);
 }
-const OUTPUT_FILE = process.env.OUTPUT_FILE ?? path.join(__dirname, "..", "dataset.jsonl");
-const COVERAGE_FILE = process.env.COVERAGE_FILE ?? path.join(__dirname, "..", "dataset_coverage.json");
+const OUTPUT_FILE =
+  process.env.OUTPUT_FILE ?? path.join(__dirname, "..", "dataset.jsonl");
+const COVERAGE_FILE =
+  process.env.COVERAGE_FILE ??
+  path.join(__dirname, "..", "dataset_coverage.json");
 const TARGET_SAMPLES = parseInt(process.env.TARGET_SAMPLES ?? "50000", 10);
 const PARALLELISM = parseInt(process.env.PARALLELISM ?? "10", 10);
 
@@ -35,7 +38,11 @@ const PARALLELISM = parseInt(process.env.PARALLELISM ?? "10", 10);
 // Gemini Flash helpers
 // ---------------------------------------------------------------------------
 
-function httpsPost(url: string, body: string, headers: Record<string, string>): Promise<string> {
+function httpsPost(
+  url: string,
+  body: string,
+  headers: Record<string, string>,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const req = https.request(
@@ -50,7 +57,7 @@ function httpsPost(url: string, body: string, headers: Record<string, string>): 
         res.on("data", (d: Buffer) => chunks.push(d));
         res.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
         res.on("error", reject);
-      }
+      },
     );
     req.on("error", reject);
     req.write(body);
@@ -204,10 +211,7 @@ function extractSentences(raw: string): string[] {
 const SYSTEM_MSG =
   "Bạn là công cụ chuyển đổi mã v7 sang tiếng Việt. Hãy trả về kết quả dưới dạng mảng JSON.";
 
-function buildOpenAILine(
-  input: string[],
-  output: string[]
-): string | null {
+function buildOpenAILine(input: string[], output: string[]): string | null {
   if (input.length === 0) return null;
 
   // Reconstruct the expected full-resolution array
@@ -236,7 +240,10 @@ function buildOpenAILine(
 async function main() {
   const generator = new V7DatasetGenerator();
 
-  const outStream = fs.createWriteStream(OUTPUT_FILE, { encoding: "utf8", flags: "w" });
+  const outStream = fs.createWriteStream(OUTPUT_FILE, {
+    encoding: "utf8",
+    flags: "w",
+  });
 
   let totalLines = 0;
   let promptIndex = 0;
@@ -271,7 +278,9 @@ async function main() {
     }
   };
 
-  console.log(`Generating dataset… target: ${TARGET_SAMPLES} samples, parallelism: ${PARALLELISM}`);
+  console.log(
+    `Generating dataset… target: ${TARGET_SAMPLES} samples, parallelism: ${PARALLELISM}`,
+  );
   console.log(`Output: ${OUTPUT_FILE}`);
 
   while (totalLines < TARGET_SAMPLES && promptIndex < PROMPTS.length * 60) {
@@ -281,7 +290,8 @@ async function main() {
       let p = 0;
       p < PARALLELISM &&
       promptIndex < PROMPTS.length * 60 &&
-      totalLines + batchPromises.length * 4 * 10 < TARGET_SAMPLES + PARALLELISM * 40;
+      totalLines + batchPromises.length * 4 * 10 <
+        TARGET_SAMPLES + PARALLELISM * 40;
       p++
     ) {
       const prompt = PROMPTS[promptIndex % PROMPTS.length];
@@ -290,7 +300,7 @@ async function main() {
     }
 
     process.stdout.write(
-      `[${totalLines}/${TARGET_SAMPLES}] Fetching batch of ${batchPromises.length} prompts… `
+      `[${totalLines}/${TARGET_SAMPLES}] Fetching batch of ${batchPromises.length} prompts… `,
     );
 
     const raws = await Promise.all(batchPromises);
@@ -304,7 +314,8 @@ async function main() {
         for (const v7Prob of [0.3, 0.5, 0.7, 0.9]) {
           try {
             const sample = generator.generateSample(sentence, v7Prob);
-            if (sample.input.length === 0 || sample.output.length === 0) continue;
+            if (sample.input.length === 0 || sample.output.length === 0)
+              continue;
             // Only include samples that have at least one v7 island
             const hasV7Island = sample.input.some((_, i) => i % 2 === 1);
             if (!hasV7Island) continue;
@@ -343,8 +354,8 @@ async function main() {
         sampleSyllables: [...coveredSyllables].slice(0, 100),
       },
       null,
-      2
-    )
+      2,
+    ),
   );
   console.log(`Coverage report written to ${COVERAGE_FILE}`);
 }

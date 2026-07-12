@@ -6,7 +6,10 @@ type RopeNode<T> = {
   priority: number;
 };
 
-function collectPriorities<T>(node: RopeNode<T> | null, out: number[] = []): number[] {
+function collectPriorities<T>(
+  node: RopeNode<T> | null,
+  out: number[] = [],
+): number[] {
   if (!node) return out;
   collectPriorities(node.left, out);
   out.push(node.priority);
@@ -25,8 +28,10 @@ describe("Rope RNG state", () => {
       right.append(i + 100);
     }
 
-    const leftRoot = (left as unknown as { root: RopeNode<number> | null }).root;
-    const rightRoot = (right as unknown as { root: RopeNode<number> | null }).root;
+    const leftRoot = (left as unknown as { root: RopeNode<number> | null })
+      .root;
+    const rightRoot = (right as unknown as { root: RopeNode<number> | null })
+      .root;
 
     const leftPriorities = collectPriorities(leftRoot);
     const rightPriorities = collectPriorities(rightRoot);

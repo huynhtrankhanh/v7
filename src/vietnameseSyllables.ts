@@ -4,7 +4,7 @@ import {
   parseSyllableStroke,
   stenographyMap,
   toneMap,
-  vowelMap
+  vowelMap,
 } from "./syllableStroke";
 
 let validVietnameseSyllables: Set<string> | null = null;
@@ -27,7 +27,9 @@ export function getValidVietnameseSyllables(): Set<string> {
       for (const vowel of vowelKeys) {
         for (const final of finalKeys) {
           for (const tone of toneKeys) {
-            const parsed = parseSyllableStroke(`${onGlide ? "S" : ""}${initial}${vowel}${final}${tone}`);
+            const parsed = parseSyllableStroke(
+              `${onGlide ? "S" : ""}${initial}${vowel}${final}${tone}`,
+            );
             if (parsed) syllables.add(assembleSyllable(parsed));
           }
         }

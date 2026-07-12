@@ -18,7 +18,9 @@ const CONTENT_TYPES = {
 function startStaticServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
-    const pathname = decodeURIComponent(url.pathname === "/" ? "/index.html" : url.pathname);
+    const pathname = decodeURIComponent(
+      url.pathname === "/" ? "/index.html" : url.pathname,
+    );
     const filePath = path.normalize(path.join(STATIC_DIR, pathname));
 
     if (!filePath.startsWith(`${STATIC_DIR}${path.sep}`)) {
@@ -35,7 +37,8 @@ function startStaticServer() {
       }
 
       res.writeHead(200, {
-        "Content-Type": CONTENT_TYPES[path.extname(filePath)] || "application/octet-stream",
+        "Content-Type":
+          CONTENT_TYPES[path.extname(filePath)] || "application/octet-stream",
       });
       res.end(data);
     });
@@ -58,14 +61,18 @@ async function applyTextZoom(page) {
   await page.addStyleTag({
     content: `html { font-size: ${TEXT_ZOOM_PX}px !important; }`,
   });
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve)),
+  );
 }
 
 async function assertNoHorizontalOverflow(page, label) {
   const metrics = await page.evaluate(() => {
     function describe(el) {
       const id = el.id ? `#${el.id}` : "";
-      const classes = Array.from(el.classList || []).map((name) => `.${name}`).join("");
+      const classes = Array.from(el.classList || [])
+        .map((name) => `.${name}`)
+        .join("");
       return `${el.tagName.toLowerCase()}${id}${classes}`;
     }
 
@@ -75,7 +82,11 @@ async function assertNoHorizontalOverflow(page, label) {
 
     for (const el of document.querySelectorAll("body *")) {
       const style = getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden" || style.position === "fixed") {
+      if (
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.position === "fixed"
+      ) {
         continue;
       }
 
@@ -98,7 +109,9 @@ async function assertNoHorizontalOverflow(page, label) {
   });
 
   if (metrics.scrollWidth > metrics.clientWidth + 2) {
-    throw new Error(`${label} has horizontal overflow: ${JSON.stringify(metrics)}`);
+    throw new Error(
+      `${label} has horizontal overflow: ${JSON.stringify(metrics)}`,
+    );
   }
 }
 
@@ -117,10 +130,17 @@ async function assertScrollable(page, selector, label) {
   });
 
   if (metrics.clientHeight < 48) {
-    throw new Error(`${label} collapsed under text zoom: ${JSON.stringify(metrics)}`);
+    throw new Error(
+      `${label} collapsed under text zoom: ${JSON.stringify(metrics)}`,
+    );
   }
-  if (metrics.scrollHeight > metrics.clientHeight + 2 && metrics.after <= metrics.before) {
-    throw new Error(`${label} cannot scroll under text zoom: ${JSON.stringify(metrics)}`);
+  if (
+    metrics.scrollHeight > metrics.clientHeight + 2 &&
+    metrics.after <= metrics.before
+  ) {
+    throw new Error(
+      `${label} cannot scroll under text zoom: ${JSON.stringify(metrics)}`,
+    );
   }
 }
 
@@ -137,9 +157,11 @@ async function exerciseMainWebUi(baseUrl, browser) {
     if (!display || !candidates) throw new Error("Main UI targets not found");
 
     display.replaceChildren();
-    display.appendChild(document.createTextNode(
-      Array.from({ length: 90 }, (_, i) => `dong-${i} tieng-viet`).join(" ")
-    ));
+    display.appendChild(
+      document.createTextNode(
+        Array.from({ length: 90 }, (_, i) => `dong-${i} tieng-viet`).join(" "),
+      ),
+    );
 
     candidates.classList.add("horizontal");
     candidates.replaceChildren();
@@ -165,7 +187,9 @@ async function exerciseMainWebUi(baseUrl, browser) {
 async function exercisePracticeUi(baseUrl, browser) {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 640, deviceScaleFactor: 1 });
-  await page.goto(`${baseUrl}/practice.html`, { waitUntil: "domcontentloaded" });
+  await page.goto(`${baseUrl}/practice.html`, {
+    waitUntil: "domcontentloaded",
+  });
   await page.waitForSelector("#target");
   await applyTextZoom(page);
 
@@ -175,27 +199,54 @@ async function exercisePracticeUi(baseUrl, browser) {
 
     target.replaceChildren();
     const words = [
-      "nghieng", "truyen", "khuya", "chuong", "thuan", "quyen", "vang", "thich",
-      "nhanh", "luong", "xuyen", "phuong", "rieng", "song", "tieng", "dung",
-      "kiem", "ngang", "choi", "nhom", "giong", "vuon",
+      "nghieng",
+      "truyen",
+      "khuya",
+      "chuong",
+      "thuan",
+      "quyen",
+      "vang",
+      "thich",
+      "nhanh",
+      "luong",
+      "xuyen",
+      "phuong",
+      "rieng",
+      "song",
+      "tieng",
+      "dung",
+      "kiem",
+      "ngang",
+      "choi",
+      "nhom",
+      "giong",
+      "vuon",
     ];
     words.forEach((word, index) => {
       const token = document.createElement("span");
-      token.className = index === 0 ? "word-token current current-unit" : "word-token";
+      token.className =
+        index === 0 ? "word-token current current-unit" : "word-token";
       token.textContent = word;
       if (index === 0) token.dataset.unit = "SKWH";
       target.appendChild(token);
     });
   });
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(resolve)),
+  );
 
   const wordWall = await page.$eval("#target", (el) => ({
     clientHeight: el.clientHeight,
     scrollHeight: el.scrollHeight,
     overflowY: getComputedStyle(el).overflowY,
   }));
-  if (wordWall.overflowY === "hidden" && wordWall.scrollHeight > wordWall.clientHeight + 2) {
-    throw new Error(`Practice word wall clips text under zoom: ${JSON.stringify(wordWall)}`);
+  if (
+    wordWall.overflowY === "hidden" &&
+    wordWall.scrollHeight > wordWall.clientHeight + 2
+  ) {
+    throw new Error(
+      `Practice word wall clips text under zoom: ${JSON.stringify(wordWall)}`,
+    );
   }
 
   await assertNoHorizontalOverflow(page, "practice UI");
@@ -206,7 +257,10 @@ async function main() {
   const { server, baseUrl } = await startStaticServer();
   let browser;
   try {
-    browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    browser = await puppeteer.launch({
+      headless: "new",
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
     await exerciseMainWebUi(baseUrl, browser);
     await exercisePracticeUi(baseUrl, browser);
   } finally {

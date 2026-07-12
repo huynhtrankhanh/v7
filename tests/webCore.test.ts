@@ -15,19 +15,60 @@ import {
   renderVisibleText,
   replacePiecemealSyllable,
   serializeStrokeKeys,
-  selectCandidateIslands
+  selectCandidateIslands,
 } from "../src/webCore";
 import { convertIslandsForInference, createIsland } from "../src/textBuffer";
 
 const v7Consonants = [
-  "0", "b", "ch", "d", "g", "h", "k", "kh", "l", "m", "n", "ng", "nh",
-  "p", "ph", "r", "s", "t", "th", "tr", "v", "w", "x", "z", "đ", "dd"
+  "0",
+  "b",
+  "ch",
+  "d",
+  "g",
+  "h",
+  "k",
+  "kh",
+  "l",
+  "m",
+  "n",
+  "ng",
+  "nh",
+  "p",
+  "ph",
+  "r",
+  "s",
+  "t",
+  "th",
+  "tr",
+  "v",
+  "w",
+  "x",
+  "z",
+  "đ",
+  "dd",
 ];
 const v7Vowels = ["a", "e", "i", "o", "u"];
 const v7Tones = ["0", "1", "2", "3", "4", "5", "6", "7"];
 const inferredWords = [
-  "ba", "cá", "dê", "em", "gió", "hoa", "khê", "lúa", "mẹ", "nó",
-  "phố", "rồi", "sẽ", "tôi", "thơ", "trẻ", "về", "xưa", "già"
+  "ba",
+  "cá",
+  "dê",
+  "em",
+  "gió",
+  "hoa",
+  "khê",
+  "lúa",
+  "mẹ",
+  "nó",
+  "phố",
+  "rồi",
+  "sẽ",
+  "tôi",
+  "thơ",
+  "trẻ",
+  "về",
+  "xưa",
+  "già",
 ];
 const fixedWords = ["a", "à", "ả", "ã", "á", "ạ", "ai", "tôi", "không", "thẹn"];
 
@@ -35,7 +76,7 @@ const v7CodeArbitrary = fc
   .record({
     consonant: fc.constantFrom(...v7Consonants),
     vowel: fc.constantFrom(...v7Vowels),
-    tone: fc.constantFrom(...v7Tones)
+    tone: fc.constantFrom(...v7Tones),
   })
   .filter(({ consonant, vowel }) => !(consonant === "w" && vowel === "u"))
   .map(({ consonant, vowel, tone }) => `${consonant}${vowel}${tone}`);
@@ -44,24 +85,34 @@ const fixedWordArbitrary = fc.constantFrom(...fixedWords);
 function expectedNumberedSegments(targetCount: number, cursor: number) {
   return Array.from({ length: targetCount }, (_, index) => ({
     number: targetCount - index,
-    cursor: index === targetCount - cursor - 1
+    cursor: index === targetCount - cursor - 1,
   }));
 }
 
-function markedSegments(islands: ReturnType<typeof createIsland>[], candidates: string[][], cursor: number) {
+function markedSegments(
+  islands: ReturnType<typeof createIsland>[],
+  candidates: string[][],
+  cursor: number,
+) {
   return renderVisibleTextSegments(islands, candidates, cursor)
     .filter((segment) => segment.piecemealNumber !== undefined)
     .map((segment) => ({
       text: segment.text,
       number: segment.piecemealNumber,
-      cursor: !!segment.piecemealCursor
+      cursor: !!segment.piecemealCursor,
     }));
 }
 
-function splitIntoThreeChunks<T>(values: T[], firstCut: number, secondCut: number): T[][] {
+function splitIntoThreeChunks<T>(
+  values: T[],
+  firstCut: number,
+  secondCut: number,
+): T[][] {
   const a = Math.min(firstCut, values.length);
   const b = Math.min(a + secondCut, values.length);
-  return [values.slice(0, a), values.slice(a, b), values.slice(b)].filter((chunk) => chunk.length > 0);
+  return [values.slice(0, a), values.slice(a, b), values.slice(b)].filter(
+    (chunk) => chunk.length > 0,
+  );
 }
 
 describe("webCore keyboard input", () => {
@@ -95,8 +146,30 @@ describe("webCore keyboard input", () => {
 
     expect(rows[0]).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
     expect(rows[1]).toEqual(["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);
-    expect(rows[2]).toEqual(["a", "s", "d", "f", "g", "h", "j", "k", "l", ";", "Enter"]);
-    expect(rows[3]).toEqual(["Shift", "z", "x", "c", "v", "b", "n", "m", "Shift"]);
+    expect(rows[2]).toEqual([
+      "a",
+      "s",
+      "d",
+      "f",
+      "g",
+      "h",
+      "j",
+      "k",
+      "l",
+      ";",
+      "Enter",
+    ]);
+    expect(rows[3]).toEqual([
+      "Shift",
+      "z",
+      "x",
+      "c",
+      "v",
+      "b",
+      "n",
+      "m",
+      "Shift",
+    ]);
     expect(rows[4]).toEqual([" "]);
   });
 
@@ -112,25 +185,32 @@ describe("webCore keyboard input", () => {
 
 describe("webCore candidate selection", () => {
   test("returns joined selected candidate text", () => {
-    const candidates = [["xin ", "chào"], ["xin ", "cháo"]];
+    const candidates = [
+      ["xin ", "chào"],
+      ["xin ", "cháo"],
+    ];
     expect(getSelectedCandidateText(candidates, 0)).toBe("xin chào");
     expect(getSelectedCandidateText(candidates, 99)).toBeNull();
   });
 
   test("builds replacement islands for selected candidate", () => {
     const candidates = [["hôm ", "nay"]];
-    expect(selectCandidateIslands(candidates, 0)).toEqual([createIsland("vietnamese", "hôm nay")]);
+    expect(selectCandidateIslands(candidates, 0)).toEqual([
+      createIsland("vietnamese", "hôm nay"),
+    ]);
     expect(selectCandidateIslands(candidates, 1)).toBeNull();
   });
 
   test("builds selected text from replacement-only v7 candidates", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true)
+      createIsland("vietnamese", "ko0", true),
     ];
-    expect(getSelectedCandidateText([["trời mà", "không"]], 0, islands)).toBe("trời mà không");
+    expect(getSelectedCandidateText([["trời mà", "không"]], 0, islands)).toBe(
+      "trời mà không",
+    );
     expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
-      createIsland("vietnamese", "trời mà không")
+      createIsland("vietnamese", "trời mà không"),
     ]);
   });
 });
@@ -139,30 +219,45 @@ describe("webCore candidate diff sections", () => {
   test("uses zero sections when visible candidates do not differ", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",
-      "ta mà ca trời mắm"
+      "ta mà ca trời mắm",
     ]);
 
     expect(plan.sections).toEqual([]);
-    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([[], []]);
+    expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
+      [],
+      [],
+    ]);
   });
 
   test("uses one whole-buffer section for a single differing range", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",
       "ta mà ca trời mắng",
-      "ta mà ca trời mắn"
+      "ta mà ca trời mắn",
     ]);
 
     expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
-      { role: "left", text: "mắm" }
+      { role: "left", text: "mắm" },
     ]);
-    expect(plan.candidates.map((candidate) => ({
-      roles: candidate.changedRoles,
-      sections: candidate.sections.map(({ role, text, changes }) => ({ role, text, changes }))
-    }))).toEqual([
+    expect(
+      plan.candidates.map((candidate) => ({
+        roles: candidate.changedRoles,
+        sections: candidate.sections.map(({ role, text, changes }) => ({
+          role,
+          text,
+          changes,
+        })),
+      })),
+    ).toEqual([
       { roles: [], sections: [{ role: "left", text: "mắm", changes: false }] },
-      { roles: ["left"], sections: [{ role: "left", text: "mắng", changes: true }] },
-      { roles: ["left"], sections: [{ role: "left", text: "mắn", changes: true }] }
+      {
+        roles: ["left"],
+        sections: [{ role: "left", text: "mắng", changes: true }],
+      },
+      {
+        roles: ["left"],
+        sections: [{ role: "left", text: "mắn", changes: true }],
+      },
     ]);
   });
 
@@ -171,22 +266,28 @@ describe("webCore candidate diff sections", () => {
       "alpha beta keep delta omega",
       "alpha x keep delta omega",
       "alpha beta keep y omega",
-      "alpha x keep y omega"
+      "alpha x keep y omega",
     ]);
 
     expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
       { role: "left", text: "beta" },
-      { role: "right", text: "delta" }
+      { role: "right", text: "delta" },
     ]);
     expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
       [],
       ["left"],
       ["right"],
-      ["left", "right"]
+      ["left", "right"],
     ]);
-    expect(plan.candidates[3].sections.map(({ role, text, changes }) => ({ role, text, changes }))).toEqual([
+    expect(
+      plan.candidates[3].sections.map(({ role, text, changes }) => ({
+        role,
+        text,
+        changes,
+      })),
+    ).toEqual([
       { role: "left", text: "x", changes: true },
-      { role: "right", text: "y", changes: true }
+      { role: "right", text: "y", changes: true },
     ]);
   });
 
@@ -195,30 +296,36 @@ describe("webCore candidate diff sections", () => {
       "alpha beta gamma delta",
       "x beta gamma delta",
       "alpha y gamma delta",
-      "alpha beta z delta"
+      "alpha beta z delta",
     ]);
 
     expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
-      { role: "left", text: "alpha beta gamma" }
+      { role: "left", text: "alpha beta gamma" },
     ]);
     expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
       [],
       ["left"],
       ["left"],
-      ["left"]
+      ["left"],
     ]);
   });
 
   test("marks the same section in rendered buffer segments", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",
-      "ta mà ca trời mắng"
+      "ta mà ca trời mắng",
     ]);
-    const boxed = renderVisibleTextSegments([
-      createIsland("vietnamese", "ta mà ca trời mắm")
-    ], [], null, plan.sections)
+    const boxed = renderVisibleTextSegments(
+      [createIsland("vietnamese", "ta mà ca trời mắm")],
+      [],
+      null,
+      plan.sections,
+    )
       .filter((segment) => segment.candidateSection)
-      .map((segment) => ({ text: segment.text, section: segment.candidateSection }));
+      .map((segment) => ({
+        text: segment.text,
+        section: segment.candidateSection,
+      }));
 
     expect(boxed).toEqual([{ text: "mắm", section: "left" }]);
   });
@@ -226,19 +333,29 @@ describe("webCore candidate diff sections", () => {
   test("groups a multi-syllable candidate section into one render region", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",
-      "ta mà ca dời hắm"
+      "ta mà ca dời hắm",
     ]);
-    const segments = renderVisibleTextSegments([
-      createIsland("vietnamese", "ta mà ca trời mắm")
-    ], [], null, plan.sections);
-    const boxedGroups = groupVisibleTextSegmentsByCandidateSection(segments)
-      .filter((group) => group.candidateSection);
+    const segments = renderVisibleTextSegments(
+      [createIsland("vietnamese", "ta mà ca trời mắm")],
+      [],
+      null,
+      plan.sections,
+    );
+    const boxedGroups = groupVisibleTextSegmentsByCandidateSection(
+      segments,
+    ).filter((group) => group.candidateSection);
 
     expect(plan.sections.map(({ text }) => text)).toEqual(["trời mắm"]);
     expect(boxedGroups).toHaveLength(1);
     expect(boxedGroups[0].candidateSection).toBe("left");
-    expect(boxedGroups[0].segments.map((segment) => segment.text).join("")).toBe("trời mắm");
-    expect(boxedGroups[0].segments.filter((segment) => segment.piecemealNumber !== undefined)).toHaveLength(2);
+    expect(
+      boxedGroups[0].segments.map((segment) => segment.text).join(""),
+    ).toBe("trời mắm");
+    expect(
+      boxedGroups[0].segments.filter(
+        (segment) => segment.piecemealNumber !== undefined,
+      ),
+    ).toHaveLength(2);
   });
 
   test("uses v7 candidate parts for replacement-only candidate sections", () => {
@@ -247,28 +364,34 @@ describe("webCore candidate diff sections", () => {
       createIsland("vietnamese", fixedContext),
       createIsland("vietnamese", "tro2ma1", true),
       createIsland("vietnamese", fixedContext),
-      createIsland("vietnamese", "ko0", true)
+      createIsland("vietnamese", "ko0", true),
     ];
     const plan = buildCandidateDiffPlan(islands, [
       ["trời mà", "không"],
       ["dời mà", "không"],
       ["trời mà", "công"],
-      ["dời mà", "công"]
+      ["dời mà", "công"],
     ]);
 
     expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
       { role: "left", text: "trời" },
-      { role: "right", text: "không" }
+      { role: "right", text: "không" },
     ]);
     expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
       [],
       ["left"],
       ["right"],
-      ["left", "right"]
+      ["left", "right"],
     ]);
-    expect(plan.candidates[3].sections.map(({ role, text, changes }) => ({ role, text, changes }))).toEqual([
+    expect(
+      plan.candidates[3].sections.map(({ role, text, changes }) => ({
+        role,
+        text,
+        changes,
+      })),
+    ).toEqual([
       { role: "left", text: "dời", changes: true },
-      { role: "right", text: "công", changes: true }
+      { role: "right", text: "công", changes: true },
     ]);
   });
 
@@ -278,23 +401,23 @@ describe("webCore candidate diff sections", () => {
       createIsland("vietnamese", "tro2ma1", true),
       createIsland("vietnamese", "ăn"),
       createIsland("vietnamese", "ko0", true),
-      createIsland("punctuation", ".")
+      createIsland("punctuation", "."),
     ];
     const plan = buildCandidateDiffPlan(islands, [
       ["tôi ", "trời mà", " ăn ", "không", "."],
       ["tôi ", "trời mà", " ăn ", "công", "."],
-      ["tôi ", "dời mà", " ăn ", "không", "."]
+      ["tôi ", "dời mà", " ăn ", "không", "."],
     ]);
 
     expect(plan.preview).toBe("tôi trời mà ăn không.");
     expect(plan.sections.map(({ role, text }) => ({ role, text }))).toEqual([
       { role: "left", text: "trời" },
-      { role: "right", text: "không" }
+      { role: "right", text: "không" },
     ]);
     expect(plan.candidates.map((candidate) => candidate.changedRoles)).toEqual([
       [],
       ["right"],
-      ["left"]
+      ["left"],
     ]);
   });
 });
@@ -309,16 +432,18 @@ describe("webCore screen output", () => {
   test("renders replacement-only v7 candidates with island spacing", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true)
+      createIsland("vietnamese", "ko0", true),
     ];
-    expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe("trời mà không");
+    expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
+      "trời mà không",
+    );
   });
 
   test("renders unresolved v7 islands as raw blocks when no candidates exist", () => {
     const islands = [
       createIsland("vietnamese", "xin"),
       createIsland("vietnamese", "tro2", true),
-      createIsland("punctuation", ".")
+      createIsland("punctuation", "."),
     ];
     expect(renderVisibleText(islands, [])).toBe("xin [tro2].");
   });
@@ -341,30 +466,50 @@ describe("webCore piecemeal syllable edit", () => {
 
   test("finds fixed Vietnamese syllables using the generated valid syllable set", () => {
     const targets = findPiecemealSyllableTargets([
-      createIsland("vietnamese", "hello tôi không xyz thẹn")
+      createIsland("vietnamese", "hello tôi không xyz thẹn"),
     ]);
 
-    expect(targets.map((target) => target.text)).toEqual(["thẹn", "không", "tôi"]);
+    expect(targets.map((target) => target.text)).toEqual([
+      "thẹn",
+      "không",
+      "tôi",
+    ]);
   });
 
   test("keeps only the nine rightmost syllables across fixed text and v7 islands", () => {
     const targets = findPiecemealSyllableTargets([
       createIsland("vietnamese", "a à ả ã á ạ ai"),
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "tôi")
+      createIsland("vietnamese", "tôi"),
     ]);
 
-    expect(targets.map((target) => target.text)).toEqual(["tôi", "ma1", "tro2", "ai", "ạ", "á", "ã", "ả", "à"]);
+    expect(targets.map((target) => target.text)).toEqual([
+      "tôi",
+      "ma1",
+      "tro2",
+      "ai",
+      "ạ",
+      "á",
+      "ã",
+      "ả",
+      "à",
+    ]);
   });
 
   test("renders fixed and v7 syllables as one shared nine-slot highlight sequence", () => {
     const islands = [
       createIsland("vietnamese", "tôi không"),
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "thẹn về")
+      createIsland("vietnamese", "thẹn về"),
     ];
 
-    expect(renderVisibleTextSegments(islands, [["tôi không ", "trời mà", " thẹn về"]], 0)).toEqual([
+    expect(
+      renderVisibleTextSegments(
+        islands,
+        [["tôi không ", "trời mà", " thẹn về"]],
+        0,
+      ),
+    ).toEqual([
       { text: "tôi", piecemealNumber: 6, piecemealCursor: false },
       { text: " " },
       { text: "không", piecemealNumber: 5, piecemealCursor: false },
@@ -375,47 +520,67 @@ describe("webCore piecemeal syllable edit", () => {
       { text: " " },
       { text: "thẹn", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "về", piecemealNumber: 1, piecemealCursor: true }
+      { text: "về", piecemealNumber: 1, piecemealCursor: true },
     ]);
   });
 
   test("parses every v7 code in long compact islands", () => {
     const islands = [
-      createIsland("vietnamese", "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7", true),
-      createIsland("vietnamese", "đo7đa1ku3", true)
+      createIsland(
+        "vietnamese",
+        "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7",
+        true,
+      ),
+      createIsland("vietnamese", "đo7đa1ku3", true),
     ];
 
-    expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual([
-      "ku3", "đa1", "đo7", "me7", "ra6", "no1", "thi2", "mu0", "tro2"
+    expect(
+      findPiecemealSyllableTargets(islands).map((target) => target.text),
+    ).toEqual([
+      "ku3",
+      "đa1",
+      "đo7",
+      "me7",
+      "ra6",
+      "no1",
+      "thi2",
+      "mu0",
+      "tro2",
     ]);
   });
 
   test("renders piecemeal numbering and hides the number on the active cursor", () => {
-    const segments = renderVisibleTextSegments([
-      createIsland("vietnamese", "tôi không thẹn")
-    ], [], 1);
+    const segments = renderVisibleTextSegments(
+      [createIsland("vietnamese", "tôi không thẹn")],
+      [],
+      1,
+    );
 
     expect(segments).toEqual([
       { text: "tôi", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
       { text: "không", piecemealNumber: 2, piecemealCursor: true },
       { text: " " },
-      { text: "thẹn", piecemealNumber: 1, piecemealCursor: false }
+      { text: "thẹn", piecemealNumber: 1, piecemealCursor: false },
     ]);
   });
 
   test("renders inferred v7 text while candidates are active", () => {
-    const segments = renderVisibleTextSegments([
-      createIsland("vietnamese", "tôi"),
-      createIsland("vietnamese", "tro2ma1", true)
-    ], [["tôi ", "trời mà"]], 0);
+    const segments = renderVisibleTextSegments(
+      [
+        createIsland("vietnamese", "tôi"),
+        createIsland("vietnamese", "tro2ma1", true),
+      ],
+      [["tôi ", "trời mà"]],
+      0,
+    );
 
     expect(segments).toEqual([
       { text: "tôi", piecemealNumber: 3, piecemealCursor: false },
       { text: " " },
       { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "mà", piecemealNumber: 1, piecemealCursor: true }
+      { text: "mà", piecemealNumber: 1, piecemealCursor: true },
     ]);
   });
 
@@ -423,17 +588,19 @@ describe("webCore piecemeal syllable edit", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
     expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
 
-    expect(renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0)).toEqual([
+    expect(
+      renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0),
+    ).toEqual([
       { text: "trời", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "mà", piecemealNumber: 1, piecemealCursor: true }
+      { text: "mà", piecemealNumber: 1, piecemealCursor: true },
     ]);
   });
 
   test("maps replacement-only model candidates back to all-v7 syllable highlights", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true)
+      createIsland("vietnamese", "ko0", true),
     ];
     const candidates = [["trời mà", "không"]];
 
@@ -442,7 +609,7 @@ describe("webCore piecemeal syllable edit", () => {
       { text: " " },
       { text: "mà", piecemealNumber: 2, piecemealCursor: true },
       { text: " " },
-      { text: "không", piecemealNumber: 1, piecemealCursor: false }
+      { text: "không", piecemealNumber: 1, piecemealCursor: false },
     ]);
 
     expect(renderVisibleTextSegments(islands, candidates, 2)).toEqual([
@@ -450,25 +617,32 @@ describe("webCore piecemeal syllable edit", () => {
       { text: " " },
       { text: "mà", piecemealNumber: 2, piecemealCursor: false },
       { text: " " },
-      { text: "không", piecemealNumber: 1, piecemealCursor: false }
+      { text: "không", piecemealNumber: 1, piecemealCursor: false },
     ]);
   });
 
   test("preserves one highlight per editable v7 syllable for every cursor position", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true)
+      createIsland("vietnamese", "ko0", true),
     ];
     const candidates = [["trời mà", "không"]];
     const targetCount = findPiecemealSyllableTargets(islands).length;
 
     for (let cursor = 0; cursor < targetCount; cursor++) {
-      const marked = renderVisibleTextSegments(islands, candidates, cursor)
-        .filter((segment) => segment.piecemealNumber !== undefined);
+      const marked = renderVisibleTextSegments(
+        islands,
+        candidates,
+        cursor,
+      ).filter((segment) => segment.piecemealNumber !== undefined);
 
       expect(marked).toHaveLength(targetCount);
-      expect(marked.map((segment) => segment.piecemealNumber)).toEqual([3, 2, 1]);
-      expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([marked[targetCount - cursor - 1]]);
+      expect(marked.map((segment) => segment.piecemealNumber)).toEqual([
+        3, 2, 1,
+      ]);
+      expect(marked.filter((segment) => segment.piecemealCursor)).toEqual([
+        marked[targetCount - cursor - 1],
+      ]);
     }
   });
 
@@ -477,19 +651,24 @@ describe("webCore piecemeal syllable edit", () => {
 
     expect(markedSegments(islands, [["hello xyz"]], 1)).toEqual([
       { text: "hello", number: 2, cursor: true },
-      { text: "xyz", number: 1, cursor: false }
+      { text: "xyz", number: 1, cursor: false },
     ]);
   });
 
   test("property: v7 target discovery preserves generated code boundaries", () => {
     fc.assert(
-      fc.property(fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 30 }), (codes) => {
-        const islands = [createIsland("vietnamese", codes.join(""), true)];
-        const expected = codes.slice(-9).reverse();
+      fc.property(
+        fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 30 }),
+        (codes) => {
+          const islands = [createIsland("vietnamese", codes.join(""), true)];
+          const expected = codes.slice(-9).reverse();
 
-        expect(findPiecemealSyllableTargets(islands).map((target) => target.text)).toEqual(expected);
-      }),
-      { numRuns: 500 }
+          expect(
+            findPiecemealSyllableTargets(islands).map((target) => target.text),
+          ).toEqual(expected);
+        },
+      ),
+      { numRuns: 500 },
     );
   });
 
@@ -501,23 +680,32 @@ describe("webCore piecemeal syllable edit", () => {
         fc.integer({ min: 1, max: 8 }),
         (codes, firstCut, secondCut) => {
           const chunks = splitIntoThreeChunks(codes, firstCut, secondCut);
-          const islands = chunks.map((chunk) => createIsland("vietnamese", chunk.join(""), true));
+          const islands = chunks.map((chunk) =>
+            createIsland("vietnamese", chunk.join(""), true),
+          );
           const candidateParts = chunks.map((chunk, chunkIndex) =>
-            chunk.map((_, index) => inferredWords[(chunkIndex + index) % inferredWords.length]).join(" ")
+            chunk
+              .map(
+                (_, index) =>
+                  inferredWords[(chunkIndex + index) % inferredWords.length],
+              )
+              .join(" "),
           );
           const targetCount = Math.min(codes.length, 9);
 
           for (let cursor = 0; cursor < targetCount; cursor++) {
             const marked = markedSegments(islands, [candidateParts], cursor);
             expect(marked).toHaveLength(targetCount);
-            expect(marked.map(({ number, cursor }) => ({ number, cursor }))).toEqual(
-              expectedNumberedSegments(targetCount, cursor)
+            expect(
+              marked.map(({ number, cursor }) => ({ number, cursor })),
+            ).toEqual(expectedNumberedSegments(targetCount, cursor));
+            expect(marked.every((segment) => segment.text.length > 0)).toBe(
+              true,
             );
-            expect(marked.every((segment) => segment.text.length > 0)).toBe(true);
           }
-        }
+        },
       ),
-      { numRuns: 500 }
+      { numRuns: 500 },
     );
   });
 
@@ -531,25 +719,36 @@ describe("webCore piecemeal syllable edit", () => {
           const chunks = splitIntoThreeChunks(codes, cut, cut);
           const islands = [
             createIsland("vietnamese", fixed.join(" ")),
-            ...chunks.map((chunk) => createIsland("vietnamese", chunk.join(""), true))
+            ...chunks.map((chunk) =>
+              createIsland("vietnamese", chunk.join(""), true),
+            ),
           ];
-          const candidates = [[
-            ...chunks.map((chunk, chunkIndex) =>
-              chunk.map((_, index) => inferredWords[(chunkIndex + index) % inferredWords.length]).join(" ")
-            )
-          ]];
+          const candidates = [
+            [
+              ...chunks.map((chunk, chunkIndex) =>
+                chunk
+                  .map(
+                    (_, index) =>
+                      inferredWords[
+                        (chunkIndex + index) % inferredWords.length
+                      ],
+                  )
+                  .join(" "),
+              ),
+            ],
+          ];
           const targetCount = Math.min(fixed.length + codes.length, 9);
 
           for (let cursor = 0; cursor < targetCount; cursor++) {
             const marked = markedSegments(islands, candidates, cursor);
             expect(marked).toHaveLength(targetCount);
-            expect(marked.map(({ number, cursor }) => ({ number, cursor }))).toEqual(
-              expectedNumberedSegments(targetCount, cursor)
-            );
+            expect(
+              marked.map(({ number, cursor }) => ({ number, cursor })),
+            ).toEqual(expectedNumberedSegments(targetCount, cursor));
           }
-        }
+        },
       ),
-      { numRuns: 300 }
+      { numRuns: 300 },
     );
   });
 
@@ -568,7 +767,7 @@ describe("webCore piecemeal syllable edit", () => {
 
     expect(next).toEqual([
       createIsland("vietnamese", "tro2", true),
-      createIsland("vietnamese", "tôi")
+      createIsland("vietnamese", "tôi"),
     ]);
   });
 });

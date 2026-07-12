@@ -32,12 +32,15 @@ export function createIsland(
   type: IslandType,
   value: string,
   isV7 = false,
-  meta: Partial<Island> = {}
+  meta: Partial<Island> = {},
 ): Island {
   return { type, value, isV7, ...meta };
 }
 
-export function shouldAddSpace(prev: Island | null, curr: Island | null): boolean {
+export function shouldAddSpace(
+  prev: Island | null,
+  curr: Island | null,
+): boolean {
   if (!prev || !curr) return false;
   if (prev.value === "" && !prev.isV7) return false;
   if (prev.type === "spacing" || curr.type === "spacing") return false;
@@ -104,7 +107,10 @@ export class TextBuffer {
   private history: HistoryEntry[] = [];
 
   constructor(initialIslands?: Island[]) {
-    const seeds = initialIslands && initialIslands.length > 0 ? initialIslands : [createIsland("vietnamese", "")];
+    const seeds =
+      initialIslands && initialIslands.length > 0
+        ? initialIslands
+        : [createIsland("vietnamese", "")];
     this.islands = Rope.fromArray(seeds, () => 1);
   }
 
@@ -140,7 +146,8 @@ export class TextBuffer {
     const lastIndex = this.islands.length() - 1;
     if (lastIndex < 0) return false;
     const last = this.islands.getAt(lastIndex);
-    if (!last || last.type !== "vietnamese" || !last.value.endsWith(" ")) return false;
+    if (!last || last.type !== "vietnamese" || !last.value.endsWith(" "))
+      return false;
     const trimmedValue = last.value.slice(0, -1);
     return this.islands.replaceAt(lastIndex, { ...last, value: trimmedValue });
   }
@@ -166,23 +173,28 @@ export class TextBuffer {
   snapshot(): BufferSnapshot {
     return {
       islands: this.islands.clone(),
-      pendingCapitalization: this._pendingCapitalization
+      pendingCapitalization: this._pendingCapitalization,
     };
   }
 
   save(groupOrOptions?: string | HistorySaveOptions): void {
-    const options = typeof groupOrOptions === "string"
-      ? { group: groupOrOptions }
-      : groupOrOptions ?? {};
+    const options =
+      typeof groupOrOptions === "string"
+        ? { group: groupOrOptions }
+        : (groupOrOptions ?? {});
     const { group, piecemealCursorIndex } = options;
-    if (group && this.history.length > 0 && this.history[this.history.length - 1].group === group) {
+    if (
+      group &&
+      this.history.length > 0 &&
+      this.history[this.history.length - 1].group === group
+    ) {
       return;
     }
     const snap = this.snapshot();
     this.history.push({
       ...snap,
       group,
-      ...(piecemealCursorIndex === undefined ? {} : { piecemealCursorIndex })
+      ...(piecemealCursorIndex === undefined ? {} : { piecemealCursorIndex }),
     });
   }
 
@@ -224,7 +236,10 @@ export class TextBuffer {
 
   replaceWithText(text: string, meta: Partial<Island> = {}): void {
     this.save();
-    this.islands = Rope.fromArray([createIsland("vietnamese", text, false, meta)], () => 1);
+    this.islands = Rope.fromArray(
+      [createIsland("vietnamese", text, false, meta)],
+      () => 1,
+    );
     this._pendingCapitalization = false;
   }
 
