@@ -1,0 +1,67 @@
+name: Generate Practice Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name for the generated app bundle (for example 1.0.0)
+        required: true
+        type: string
+      version_code:
+        description: Optional Android versionCode override
+        required: false
+        type: string
+      signing_password:
+        description: Secret signing password used to derive the release key
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-practice-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker compose build practice-android
+
+      - name: Generate Android artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SIGNING_PASSWORD: ${{ inputs.signing_password }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SIGNING_PASSWORD}"
+          rm -rf android-artifacts
+          mkdir -p android-artifacts
+          if [ -n "${VERSION_CODE}" ]; then
+            docker compose run --rm \
+              -e V7_SIGNING_PASSWORD="${SIGNING_PASSWORD}" \
+              practice-android build-practice-aab "${VERSION}" "${VERSION_CODE}"
+          else
+            docker compose run --rm \
+              -e V7_SIGNING_PASSWORD="${SIGNING_PASSWORD}" \
+              practice-android build-practice-aab "${VERSION}"
+          fi
+
+      - name: Bundle artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tar -C android-artifacts -czf "android-artifacts-${VERSION}.tar.gz" .
+
+      - name: Upload generated artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: practice-android-artifacts-${{ inputs.version }}
+          path: |
+            android-artifacts/**
+            android-artifacts-${{ inputs.version }}.tar.gz
+          if-no-files-found: error
