@@ -163,7 +163,7 @@ def start_static_server(static_dir: Path) -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_port}"
 
 
-def chromium_path() -> str:
+def chromium_path() -> str | None:
     env = subprocess.run(
         ["bash", "-lc", "command -v chromium || command -v chromium-browser || command -v google-chrome"],
         check=False,
@@ -171,7 +171,7 @@ def chromium_path() -> str:
         text=True,
     )
     if env.returncode != 0 or not env.stdout.strip():
-        raise RuntimeError("Unable to find a Chromium executable")
+        return None
     return env.stdout.strip()
 
 
@@ -188,7 +188,10 @@ def generate_screenshots(root_dir: Path, artifacts_dir: Path) -> None:
     exec_path = chromium_path()
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, executable_path=exec_path, args=["--no-sandbox"])
+            launch_options = {"headless": True, "args": ["--no-sandbox"]}
+            if exec_path:
+                launch_options["executable_path"] = exec_path
+            browser = playwright.chromium.launch(**launch_options)
             page = browser.new_page()
             for name, width, height in SCREENSHOTS:
                 page.set_viewport_size({"width": width, "height": height})
