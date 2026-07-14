@@ -77,7 +77,7 @@ build-practice-aab <versionName> [versionCode]
 | `versionName` | Yes | Human-readable Android version name, for example `1.0.0`. |
 | `versionCode` | No | Integer Android version code. If omitted, digits are derived from `versionName`; if no digits exist, `1` is used. |
 
-The signing password is prompted from stdin with `*` masking when run interactively. For automation, provide `V7_SIGNING_PASSWORD` in the environment instead of passing the secret as a command-line argument.
+For Google Play uploads, sign with the upload key registered in Play Console (`Setup > App integrity > Upload key certificate`). Provide that keystore with `SIGNING_STORE_FILE`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, and `SIGNING_KEY_PASSWORD`; the build script now preserves those values instead of replacing them with a derived key. If you do not provide `SIGNING_STORE_FILE`, the signing password is prompted from stdin with `*` masking when run interactively. For automation with the derived fallback, provide `V7_SIGNING_PASSWORD` in the environment instead of passing the secret as a command-line argument.
 
 Example with explicit version code:
 
@@ -89,7 +89,10 @@ The same values can be supplied via environment variables:
 
 ```sh
 docker compose exec \
-  -e V7_SIGNING_PASSWORD="your signing password" \
+  -e SIGNING_STORE_FILE="/workspace/secrets/play-upload.jks" \
+  -e SIGNING_STORE_PASSWORD="your keystore password" \
+  -e SIGNING_KEY_ALIAS="your upload key alias" \
+  -e SIGNING_KEY_PASSWORD="your key password" \
   -e V7_VERSION="1.0.0" \
   -e V7_VERSION_CODE="100" \
   practice-android build-practice-aab
@@ -97,11 +100,13 @@ docker compose exec \
 
 ## Signing Model
 
-The build does not store a signing key in the repository. Instead, `derive-v7-practice-keystore.py` derives a P-256 private key from the supplied password and writes a temporary PKCS12 keystore inside the container. Gradle uses that keystore for release signing.
+The build does not store a signing key in the repository. For Play uploads, provide the Play Console upload keystore through the `SIGNING_*` environment variables. If no keystore is provided, `derive-v7-practice-keystore.py` derives a deterministic 4096-bit RSA private key from the supplied password and writes a temporary PKCS12 keystore inside the container. Gradle uses the selected keystore for release signing.
 
 Important consequences:
 
-*   The same password recreates the same signing key, so future versions can be signed consistently.
+*   The `.aab` must be signed with the upload certificate shown in Play Console. A different key can be cryptographically valid but still rejected by Google Play.
+*   The build runs `jarsigner -verify -verbose` after `bundleRelease` and writes the upload certificate SHA-1/SHA-256 fingerprints to `android-artifacts/v7-practice-<version>.upload-certificate.txt` so the pipeline can compare them with Play Console.
+*   In derived-key fallback mode, the same password recreates the same 4096-bit RSA signing key and certificate (valid from 2024-01-01 through 2054-01-01), so future versions can be signed consistently only if that derived certificate has been registered as the Play upload key.
 *   Losing or changing the password changes the signing key and produces bundles that are not compatible as updates to an app signed with the previous password.
 *   The derived keystore is temporary container build material. It is not copied to `android-artifacts/` and should not be committed.
 
@@ -119,7 +124,7 @@ The build entrypoint also generates the launcher icon resources consumed by the 
 
 ## Verification
 
-A successful build ends with Gradle's `bundleRelease` task and prints the bundle path plus SHA-256 checksum, for example:
+A successful build ends with Gradle's `bundleRelease` task, a `jarsigner` verification, and the bundle path plus SHA-256 checksum, for example:
 
 ```text
 BUILD SUCCESSFUL
