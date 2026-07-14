@@ -8,9 +8,16 @@ if [[ $# -gt 2 || -z "${version}" ]]; then
   cat >&2 <<'USAGE'
 usage: build-practice-aab <version> [versionCode]
 
-The signing password is read from stdin with masking when run interactively.
-You can also supply V7_SIGNING_PASSWORD, V7_VERSION, and optional V7_VERSION_CODE.
-The same password deterministically recreates the same P-256 signing key.
+For Google Play uploads, provide the registered upload keystore with
+SIGNING_STORE_FILE, SIGNING_STORE_PASSWORD, SIGNING_KEY_ALIAS, and
+SIGNING_KEY_PASSWORD. The bundle is signed with that key and verified before it
+is copied to artifacts.
+
+If SIGNING_STORE_FILE is not provided, the signing password is read from stdin
+with masking when run interactively. You can also supply V7_SIGNING_PASSWORD,
+V7_VERSION, and optional V7_VERSION_CODE. The same password deterministically
+recreates the same 4096-bit RSA signing key, which is useful only when that certificate
+has been registered as the Play upload key.
 USAGE
   exit 2
 fi
@@ -43,14 +50,8 @@ read_signing_password() {
     return
   fi
 
-  IFS= read -r password || password=""
+  IFS= read -r password || [[ -n "${password}" ]]
 }
-
-read_signing_password
-if [[ -z "${password}" ]]; then
-  printf 'Signing password is required.\n' >&2
-  exit 2
-fi
 
 project_dir="/workspace/practice-android"
 signing_dir="/tmp/v7-practice-signing"
@@ -60,13 +61,30 @@ artifacts_dir="/workspace/artifacts"
 root_dir="/workspace"
 
 mkdir -p "$(dirname "${keystore}")" "${artifacts_dir}"
-printf '%s' "${password}" | derive-v7-practice-keystore.py "${keystore}" > "${signing_env}"
-chmod 600 "${signing_env}"
-set -a
-# shellcheck disable=SC1090
-source "${signing_env}"
-set +a
-export SIGNING_STORE_FILE="${keystore}"
+
+if [[ -n "${SIGNING_STORE_FILE:-}" ]]; then
+  : "${SIGNING_STORE_PASSWORD:?SIGNING_STORE_PASSWORD is required when SIGNING_STORE_FILE is set}"
+  : "${SIGNING_KEY_ALIAS:?SIGNING_KEY_ALIAS is required when SIGNING_STORE_FILE is set}"
+  : "${SIGNING_KEY_PASSWORD:?SIGNING_KEY_PASSWORD is required when SIGNING_STORE_FILE is set}"
+  if [[ ! -f "${SIGNING_STORE_FILE}" ]]; then
+    printf 'SIGNING_STORE_FILE does not exist: %s\n' "${SIGNING_STORE_FILE}" >&2
+    exit 2
+  fi
+else
+  read_signing_password
+  if [[ -z "${password}" ]]; then
+    printf 'Signing password is required.\n' >&2
+    exit 2
+  fi
+
+  printf '%s' "${password}" | derive-v7-practice-keystore.py "${keystore}" > "${signing_env}"
+  chmod 600 "${signing_env}"
+  set -a
+  # shellcheck disable=SC1090
+  source "${signing_env}"
+  set +a
+  export SIGNING_STORE_FILE="${keystore}"
+fi
 
 python3 "${root_dir}/practice-android/container/generate-play-assets.py" \
   --artifacts-dir "${artifacts_dir}" \
@@ -83,6 +101,14 @@ cd "${project_dir}"
 gradle --no-daemon clean bundleRelease "${gradle_args[@]}"
 
 bundle_path="${project_dir}/app/build/outputs/bundle/release/app-release.aab"
+jarsigner -verify -verbose "${bundle_path}"
+keytool -list -v \
+  -keystore "${SIGNING_STORE_FILE}" \
+  -storepass "${SIGNING_STORE_PASSWORD}" \
+  -alias "${SIGNING_KEY_ALIAS}" \
+  | awk '/SHA1:|SHA256:/{print}' \
+  | tee "${artifacts_dir}/v7-practice-${version}.upload-certificate.txt"
+
 artifact_name="v7-practice-${version}.aab"
 cp "${bundle_path}" "${artifacts_dir}/${artifact_name}"
 
