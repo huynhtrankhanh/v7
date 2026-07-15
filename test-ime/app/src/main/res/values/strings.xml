@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Test IME</string>
+    <string name="ime_name">Test WebView IME</string>
+</resources>
