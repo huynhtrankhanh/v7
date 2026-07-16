@@ -19,6 +19,7 @@ public class TestImeService extends InputMethodService {
     private FrameLayout inputContainer;
     private WebView webView;
     private String preeditText = "";
+    private int pendingPreeditSelectionUpdates = 0;
 
     @Override
     public View onCreateInputView() {
@@ -59,17 +60,23 @@ public class TestImeService extends InputMethodService {
             int candidatesStart,
             int candidatesEnd) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd);
-        if (preeditText.isEmpty() || (oldSelStart == newSelStart && oldSelEnd == newSelEnd)) {
+        if (preeditText.isEmpty()) {
+            pendingPreeditSelectionUpdates = 0;
             return;
         }
 
-        boolean hasComposingRegion = candidatesStart >= 0 && candidatesEnd >= candidatesStart;
-        boolean selectionInsideComposingRegion = hasComposingRegion
-                && newSelStart >= candidatesStart
-                && newSelStart <= candidatesEnd
-                && newSelEnd >= candidatesStart
-                && newSelEnd <= candidatesEnd;
-        if (!selectionInsideComposingRegion) {
+        boolean preeditChangedSelection = isExpectedPreeditChangedSelection(
+                newSelStart,
+                newSelEnd,
+                candidatesStart,
+                candidatesEnd);
+        if (preeditChangedSelection) {
+            pendingPreeditSelectionUpdates = 0;
+            return;
+        }
+        pendingPreeditSelectionUpdates = 0;
+
+        if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) {
             clearPreeditSession();
         }
     }
@@ -126,11 +133,26 @@ public class TestImeService extends InputMethodService {
         return true;
     }
 
+    private boolean isExpectedPreeditChangedSelection(
+            int newSelStart,
+            int newSelEnd,
+            int candidatesStart,
+            int candidatesEnd) {
+        if (pendingPreeditSelectionUpdates <= 0 || candidatesStart < 0 || candidatesEnd < candidatesStart) {
+            return false;
+        }
+        int composingLength = candidatesEnd - candidatesStart;
+        return composingLength == preeditText.length()
+                && newSelStart == candidatesEnd
+                && newSelEnd == candidatesEnd;
+    }
+
     private void clearPreeditSession() {
         if (preeditText.isEmpty()) {
             return;
         }
         preeditText = "";
+        pendingPreeditSelectionUpdates = 0;
         InputConnection connection = getCurrentInputConnection();
         if (connection != null) {
             connection.finishComposingText();
@@ -194,7 +216,14 @@ public class TestImeService extends InputMethodService {
             preeditText = text == null ? "" : text;
             InputConnection connection = getCurrentInputConnection();
             if (connection != null) {
+                if (preeditText.isEmpty()) {
+                    pendingPreeditSelectionUpdates = 0;
+                } else {
+                    pendingPreeditSelectionUpdates += 1;
+                }
                 connection.setComposingText(preeditText, 1);
+            } else {
+                pendingPreeditSelectionUpdates = 0;
             }
         }
 
@@ -206,6 +235,7 @@ public class TestImeService extends InputMethodService {
                 connection.finishComposingText();
             }
             preeditText = "";
+            pendingPreeditSelectionUpdates = 0;
         }
 
         @JavascriptInterface
