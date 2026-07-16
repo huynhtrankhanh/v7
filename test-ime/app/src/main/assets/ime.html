@@ -66,20 +66,11 @@
       const api = window.AndroidIme;
       let preedit = "";
 
-      function renderPreedit() {
+      function refresh() {
         document.getElementById("preedit").textContent =
           preedit || "Preedit is empty";
-      }
-
-      function refresh() {
-        renderPreedit();
         if (api) api.setPreeditText(preedit);
       }
-
-      window.clearPreeditFromAndroid = () => {
-        preedit = "";
-        renderPreedit();
-      };
 
       function randomChar() {
         return String.fromCharCode(97 + Math.floor(Math.random() * 26));

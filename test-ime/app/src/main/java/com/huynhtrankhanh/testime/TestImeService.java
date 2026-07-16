@@ -5,7 +5,6 @@ import android.inputmethodservice.InputMethodService;
 import android.os.Build;
 import android.view.KeyEvent;
 import android.view.View;
-import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
@@ -31,32 +30,6 @@ public class TestImeService extends InputMethodService {
         configureWebView(webView);
         webView.loadUrl("file:///android_asset/ime.html");
         return inputContainer;
-    }
-
-    @Override
-    public void onStartInput(EditorInfo attribute, boolean restarting) {
-        clearPreeditSession();
-        super.onStartInput(attribute, restarting);
-    }
-
-    @Override
-    public void onFinishInput() {
-        clearPreeditSession();
-        super.onFinishInput();
-    }
-
-    @Override
-    public void onUpdateSelection(
-            int oldSelStart,
-            int oldSelEnd,
-            int newSelStart,
-            int newSelEnd,
-            int candidatesStart,
-            int candidatesEnd) {
-        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd);
-        if (!preeditText.isEmpty() && (oldSelStart != newSelStart || oldSelEnd != newSelEnd)) {
-            clearPreeditSession();
-        }
     }
 
     @Override
@@ -111,37 +84,6 @@ public class TestImeService extends InputMethodService {
         return true;
     }
 
-    private void clearPreeditSession() {
-        if (preeditText.isEmpty()) {
-            return;
-        }
-        preeditText = "";
-        InputConnection connection = getCurrentInputConnection();
-        if (connection != null) {
-            connection.finishComposingText();
-        }
-        if (webView != null) {
-            webView.post(() -> {
-                if (webView != null) {
-                    webView.evaluateJavascript(
-                            "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid()",
-                            null);
-                }
-            });
-        }
-    }
-
-    private void showExpandedInputMethodPicker() {
-        if (inputContainer != null) {
-            inputContainer.getLayoutParams().height = getResources().getDisplayMetrics().heightPixels;
-            inputContainer.requestLayout();
-        }
-        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-        if (imm != null) {
-            imm.showInputMethodPicker();
-        }
-    }
-
     private int dpToPx(int dp) {
         return Math.round(dp * getResources().getDisplayMetrics().density);
     }
@@ -180,7 +122,7 @@ public class TestImeService extends InputMethodService {
                 if (inputContainer == null) {
                     return;
                 }
-                inputContainer.getLayoutParams().height = Math.max(dpToPx(120), dpToPx(heightDp));
+                inputContainer.getLayoutParams().height = dpToPx(Math.max(120, heightDp));
                 inputContainer.requestLayout();
             });
         }
@@ -206,7 +148,10 @@ public class TestImeService extends InputMethodService {
 
         @JavascriptInterface
         public void changeInputMethod() {
-            webView.post(() -> showExpandedInputMethodPicker());
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.showInputMethodPicker();
+            }
         }
     }
 }
