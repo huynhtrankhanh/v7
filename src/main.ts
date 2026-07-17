@@ -26,7 +26,6 @@ import {
   qwertyKeyboardLayout,
   renderVisibleText,
   renderVisibleTextSegments,
-  renderStrippedDisplayText,
   replacePiecemealSyllable,
   selectCandidateIslands,
 } from "./webCore";
@@ -273,7 +272,6 @@ const state = {
   candidates: [],
 };
 let isRawMode = false;
-let strippedDisplay: { copyAllowed: boolean } | null = null;
 let piecemealCursorIndex: number | null = null;
 let inferenceAbortController = null;
 let isKeyboardLayoutVisible = false;
@@ -737,7 +735,6 @@ async function togglePloverMode() {
     runInference();
   }
   updatePloverStatusUI();
-  updateDisplay();
 }
 
 async function refreshPloverDictionaries({ force = false } = {}) {
@@ -1367,7 +1364,6 @@ async function handleChord(stroke) {
 
   // 1. Escape Hatch: #S
   if (stroke === "#S-" || stroke === "#S") {
-    if (strippedDisplay) return;
     if (state.candidates.length > 0) {
       selectCandidate(0); // Select top candidate
     }
@@ -1837,41 +1833,6 @@ function updateDisplay() {
       ? buildCandidateDiffPlan(state.islands, state.candidates)
       : null;
 
-  document.body.classList.toggle("stripped-display", !!strippedDisplay);
-  document.body.classList.toggle(
-    "stripped-plover-active",
-    !!strippedDisplay && strippedPlover.enabled,
-  );
-  if (strippedDisplay) {
-    isRawMode = false;
-    textArea.style.display = "none";
-    candArea.replaceChildren();
-    const strippedCandidates = candidateDiffPlan?.candidates.slice(1, 5) ?? [];
-    candArea.style.display =
-      !strippedPlover.enabled && strippedCandidates.length > 0
-        ? "flex"
-        : "none";
-    strippedCandidates.forEach((candidate, index) => {
-      const div = document.createElement("div");
-      div.className = "candidate";
-      const number = document.createElement("sup");
-      number.textContent = String(index + 2);
-      const label = document.createElement("span");
-      label.className = "candidate-text";
-      label.textContent = renderStrippedDisplayText(candidate.text);
-      div.append(number, document.createTextNode(" "), label);
-      div.onclick = () => selectCandidate(index + 1);
-      candArea.appendChild(div);
-    });
-    display.style.display = strippedPlover.enabled ? "none" : "block";
-    display.textContent = strippedPlover.enabled
-      ? ""
-      : renderStrippedDisplayText(text);
-    updateInputPadding(display, textArea, candArea);
-    scrollToBottom(display);
-    return;
-  }
-
   if (isRawMode) {
     // Raw Mode: Show textarea
     display.style.display = "none";
@@ -1934,11 +1895,7 @@ function updateDisplay() {
     // Render Candidates
     candArea.replaceChildren();
     if (candidateDiffPlan && state.candidates.length > 0) {
-      const candidateOffset = strippedDisplay ? 1 : 0;
-      const visibleCandidates = candidateDiffPlan.candidates.slice(
-        candidateOffset,
-        5,
-      );
+      const visibleCandidates = candidateDiffPlan.candidates.slice(0, 5);
       const maxSummaryLength = Math.max(
         ...visibleCandidates.map((candidate) => {
           const changedSections = candidate.sections.filter(
@@ -2035,18 +1992,13 @@ document.addEventListener("keydown", (e) => {
 
   // Global Shortcuts
   if (e.ctrlKey && e.key === "c") {
-    if (strippedDisplay && !strippedDisplay.copyAllowed) {
-      e.preventDefault();
-      return;
-    }
     // Copy entire buffer if nothing selected
-    if (strippedDisplay || !window.getSelection().toString()) {
-      const textToCopy = renderVisibleText(state.islands, []);
+    if (!window.getSelection().toString()) {
+      const textToCopy = renderVisibleText(state.islands, state.candidates);
 
       navigator.clipboard.writeText(textToCopy).catch((err) => {
         console.error("Failed to copy: ", err);
       });
-      if (strippedDisplay) e.preventDefault();
       // We can prevent default if we want, but let's allow it to be safe?
       // Actually request says "Ctrl+C copies the whole buffer when nothing is selected."
       // Standard behavior is copy selected.
@@ -2412,15 +2364,3 @@ function setupPloverControls() {
 renderKeyboardLayout();
 updateKeyboardLayout();
 setupPloverControls();
-
-declare global {
-  interface Window {
-    setStrippedDisplay(options?: { copyAllowed?: boolean }): void;
-  }
-}
-
-window.setStrippedDisplay = (options = {}) => {
-  strippedDisplay = { copyAllowed: options.copyAllowed === true };
-  isRawMode = false;
-  updateDisplay();
-};

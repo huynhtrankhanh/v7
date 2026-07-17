@@ -130,16 +130,6 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
 - `Ctrl+K`: Toggles the pressed-key keyboard display. The display is informational only; it does not accept clicks or change input behavior. In landscape orientation it appears to the right of the text and candidates, and in portrait orientation it appears below the candidate list.
 
-### Stripped display mode
-
-Embedding clients can enable a privacy-oriented presentation with:
-
-```js
-window.setStrippedDisplay({ copyAllowed: true });
-```
-
-This shows only the rightmost nine Vietnamese syllables, abbreviates long non-Vietnamese segments, hides empty candidate UI and the redundant `current` candidate, and disables the raw-text escape hatch. Stripped Plover controls are hidden; while Stripped Plover input is active, all content is blank and the page background is yellow. `copyAllowed` controls whether Ctrl+C may copy the complete, unabridged text buffer.
-
 ### Stripped Plover Integration
 The web demo can optionally integrate with Stripped Plover for strokes that do not match the built-in rules. Press the `#` key (Q on the QWERTY layout) to toggle Stripped Plover mode. When enabled, all strokes are routed to Stripped Plover. When disabled, unrecognized strokes are sent to Stripped Plover as a one-shot translation.
 
