@@ -21,3 +21,5 @@ In the stripped display mode:
 The stripped display mode can be triggered by calling window.setStrippedDisplay({ copyAllowed: true }).
 
 Test and document the feature.
+
+The ultimate purpose is for eventual embedding in an Android IME.
