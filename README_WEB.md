@@ -132,7 +132,7 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 
 ### Stripped display mode
 
-Embedding clients can enable a privacy-oriented presentation with:
+Embedding clients can enable a minimized presentation with:
 
 ```js
 window.setStrippedDisplay({ copyAllowed: true });
