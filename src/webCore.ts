@@ -371,6 +371,29 @@ export function groupVisibleTextSegmentsByCandidateSection(
   return groups;
 }
 
+/**
+ * Reduces an already annotated buffer to the portion useful to an IME. The
+ * piecemeal annotations identify the (at most) nine rightmost Vietnamese
+ * syllables, so this deliberately reuses the exact same eligibility rules as
+ * piecemeal editing rather than maintaining a second Vietnamese tokenizer.
+ */
+export function stripVisibleTextSegments(
+  segments: VisibleTextSegment[],
+): VisibleTextSegment[] {
+  const firstSyllable = segments.findIndex(
+    (segment) => segment.piecemealNumber !== undefined,
+  );
+  const visible = firstSyllable < 0 ? segments : segments.slice(firstSyllable);
+
+  return visible
+    .map((segment) => {
+      if (segment.piecemealNumber !== undefined) return { ...segment };
+      if (Array.from(segment.text).length <= 3) return { ...segment };
+      return { ...segment, text: "…" };
+    })
+    .filter((segment) => segment.text !== "");
+}
+
 export function getSelectedCandidateText(
   candidates: string[][],
   index: number,

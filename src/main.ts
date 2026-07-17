@@ -28,6 +28,7 @@ import {
   renderVisibleTextSegments,
   replacePiecemealSyllable,
   selectCandidateIslands,
+  stripVisibleTextSegments,
 } from "./webCore";
 
 // Maps for V7 Decoding
@@ -272,6 +273,10 @@ const state = {
   candidates: [],
 };
 let isRawMode = false;
+let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
+  enabled: false,
+  copyAllowed: false,
+};
 let piecemealCursorIndex: number | null = null;
 let inferenceAbortController = null;
 let isKeyboardLayoutVisible = false;
@@ -1363,7 +1368,7 @@ async function handleChord(stroke) {
   }
 
   // 1. Escape Hatch: #S
-  if (stroke === "#S-" || stroke === "#S") {
+  if (!strippedDisplay.enabled && (stroke === "#S-" || stroke === "#S")) {
     if (state.candidates.length > 0) {
       selectCandidate(0); // Select top candidate
     }
@@ -1833,6 +1838,22 @@ function updateDisplay() {
       ? buildCandidateDiffPlan(state.islands, state.candidates)
       : null;
 
+  document.body.classList.toggle("stripped-display", strippedDisplay.enabled);
+  document.body.classList.toggle(
+    "stripped-plover-active",
+    strippedDisplay.enabled && strippedPlover.enabled,
+  );
+  if (strippedDisplay.enabled && candidateDiffPlan?.sections.length) {
+    console.info(
+      "Candidate diff regions:",
+      candidateDiffPlan.sections.map(({ role, start, end }) => ({
+        role,
+        start,
+        end,
+      })),
+    );
+  }
+
   if (isRawMode) {
     // Raw Mode: Show textarea
     display.style.display = "none";
@@ -1846,7 +1867,10 @@ function updateDisplay() {
     // Steno Mode: Show div
     display.style.display = "block";
     textArea.style.display = "none";
-    candArea.style.display = "flex";
+    candArea.style.display =
+      state.candidates.length > (strippedDisplay.enabled ? 1 : 0)
+        ? "flex"
+        : "none";
 
     // Render text with cursor
     display.replaceChildren(); // clear
@@ -1864,16 +1888,22 @@ function updateDisplay() {
 
     if (text === "" && isEmpty) {
       const placeholder = document.createElement("span");
-      placeholder.textContent = "Start typing with your steno keyboard...";
-      placeholder.style.color = "#999";
+      placeholder.textContent = strippedDisplay.enabled
+        ? "👋"
+        : "Start typing with your steno keyboard...";
+      placeholder.className = strippedDisplay.enabled ? "empty-wave" : "";
+      placeholder.style.color = strippedDisplay.enabled ? "" : "#999";
       display.appendChild(placeholder);
     } else {
-      const visibleSegments = renderVisibleTextSegments(
+      let visibleSegments = renderVisibleTextSegments(
         state.islands,
         state.candidates,
         piecemealCursorIndex,
         candidateDiffPlan?.sections ?? [],
       );
+      if (strippedDisplay.enabled) {
+        visibleSegments = stripVisibleTextSegments(visibleSegments);
+      }
       for (const group of groupVisibleTextSegmentsByCandidateSection(
         visibleSegments,
       )) {
@@ -1916,7 +1946,8 @@ function updateDisplay() {
       candArea.classList.toggle("horizontal", useCompactCandidates);
       candArea.classList.toggle("compact", useCompactCandidates);
 
-      for (let i = 0; i < visibleCandidates.length; i++) {
+      const firstVisibleCandidate = strippedDisplay.enabled ? 1 : 0;
+      for (let i = firstVisibleCandidate; i < visibleCandidates.length; i++) {
         const candidate = visibleCandidates[i];
         const div = document.createElement("div");
         div.className = "candidate";
@@ -1993,7 +2024,10 @@ document.addEventListener("keydown", (e) => {
   // Global Shortcuts
   if (e.ctrlKey && e.key === "c") {
     // Copy entire buffer if nothing selected
-    if (!window.getSelection().toString()) {
+    if (
+      (!strippedDisplay.enabled || strippedDisplay.copyAllowed) &&
+      !window.getSelection().toString()
+    ) {
       const textToCopy = renderVisibleText(state.islands, state.candidates);
 
       navigator.clipboard.writeText(textToCopy).catch((err) => {
@@ -2364,3 +2398,20 @@ function setupPloverControls() {
 renderKeyboardLayout();
 updateKeyboardLayout();
 setupPloverControls();
+
+declare global {
+  interface Window {
+    setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
+  }
+}
+
+window.setStrippedDisplay = (options = {}) => {
+  isRawMode = false;
+  strippedDisplay = {
+    enabled: true,
+    copyAllowed: options.copyAllowed === true,
+  };
+  updateDisplay();
+};
+
+updateDisplay();

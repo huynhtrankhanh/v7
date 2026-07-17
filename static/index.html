@@ -18,6 +18,28 @@
         overflow: hidden;
         background-color: #f0f0f0;
       }
+      body.stripped-display #plover-controls,
+      body.stripped-display #plover-dictionary-dialog,
+      body.stripped-display #keyboard-layout,
+      body.stripped-display #text-input {
+        display: none !important;
+      }
+      body.stripped-display #text-display {
+        align-items: flex-end;
+        display: flex !important;
+        font-size: clamp(1.5rem, 6vw, 3rem);
+      }
+      body.stripped-display .empty-wave {
+        align-self: center;
+        font-size: clamp(5rem, 24vw, 12rem);
+        margin: auto;
+      }
+      body.stripped-display.stripped-plover-active {
+        background: #ffeb3b;
+      }
+      body.stripped-display.stripped-plover-active #inference-shell {
+        visibility: hidden;
+      }
       #inference-shell {
         flex: 1 1 auto;
         min-height: 0;

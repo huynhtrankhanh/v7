@@ -16,8 +16,42 @@ import {
   replacePiecemealSyllable,
   serializeStrokeKeys,
   selectCandidateIslands,
+  stripVisibleTextSegments,
 } from "../src/webCore";
 import { convertIslandsForInference, createIsland } from "../src/textBuffer";
+
+describe("stripped display segments", () => {
+  test("starts at the leftmost retained syllable and abbreviates long separators", () => {
+    expect(
+      stripVisibleTextSegments([
+        { text: "discard this " },
+        { text: "xin", piecemealNumber: 2 },
+        { text: " -- " },
+        { text: "chào", piecemealNumber: 1 },
+        { text: "!" },
+      ]),
+    ).toEqual([
+      { text: "xin", piecemealNumber: 2 },
+      { text: "…" },
+      { text: "chào", piecemealNumber: 1 },
+      { text: "!" },
+    ]);
+  });
+
+  test("retains separators of up to three Unicode characters", () => {
+    expect(
+      stripVisibleTextSegments([
+        { text: "một", piecemealNumber: 2, candidateSection: "left" },
+        { text: " 7 " },
+        { text: "hai", piecemealNumber: 1 },
+      ]),
+    ).toEqual([
+      { text: "một", piecemealNumber: 2, candidateSection: "left" },
+      { text: " 7 " },
+      { text: "hai", piecemealNumber: 1 },
+    ]);
+  });
+});
 
 const v7Consonants = [
   "0",
