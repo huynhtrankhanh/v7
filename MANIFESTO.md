@@ -9,6 +9,14 @@ In the stripped display mode:
   * Otherwise, the UI shouldn't display anything related to Stripped Plover.
 * Escape hatch (raw text mode) is not allowed.
 * If copy is allowed, Ctrl+C still copies the entire text buffer.
+* **Things to be retained:**
+  * Two-region candidate diffing
+
+    It is true that the two regions can't really be displayed in the reduced buffer anymore. But the two regions must still be displayed in the candidate list anyway. **And** the ranges of the two regions are to be logged in the console.
+  * Piecemeal syllable edit
+
+    The syllables must still be numbered and highlighted according to the old rules, because we have 9 syllables anyway.
+* Empty state (not Stripped Plover mode): Display a big 👋 emoji at the center.
 
 The stripped display mode can be triggered by calling window.setStrippedDisplay({ copyAllowed: true }).
 
