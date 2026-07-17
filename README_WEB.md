@@ -130,6 +130,20 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
 - `Ctrl+K`: Toggles the pressed-key keyboard display. The display is informational only; it does not accept clicks or change input behavior. In landscape orientation it appears to the right of the text and candidates, and in portrait orientation it appears below the candidate list.
 
+### Stripped Display Mode
+
+The compact, IME-oriented display is enabled from an embedding page or the browser console:
+
+```js
+window.setStrippedDisplay({ copyAllowed: true });
+```
+
+This mode shows only the nine rightmost Vietnamese syllables (with the normal piecemeal numbers and highlighting). Intervening non-Vietnamese runs of up to three characters remain visible; longer runs become `…`. An empty buffer shows a centered 👋. The candidate panel is absent when there are no alternatives and omits candidate 1 (`current`) when alternatives exist, while preserving the two-region red/black diff summaries. The corresponding diff ranges are also written to the browser console.
+
+Raw-text mode and all Stripped Plover status/management controls are disabled in this display. While Stripped Plover input itself is enabled, the whole UI is blank with a yellow background. With `copyAllowed: true`, Ctrl+C (when no text selection exists) still copies the complete underlying buffer, including text that the compact display has hidden.
+
+Run `npm run test:stripped-display` for the browser interaction suite covering the empty state, nine-syllable truncation and numbering, separator abbreviation, whole-buffer copying, raw-mode suppression, candidate diffing, and Stripped Plover blanking.
+
 ### Stripped Plover Integration
 The web demo can optionally integrate with Stripped Plover for strokes that do not match the built-in rules. Press the `#` key (Q on the QWERTY layout) to toggle Stripped Plover mode. When enabled, all strokes are routed to Stripped Plover. When disabled, unrecognized strokes are sent to Stripped Plover as a one-shot translation.
 
