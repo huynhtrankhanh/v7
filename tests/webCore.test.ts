@@ -13,7 +13,6 @@ import {
   qwertyKeyboardLayout,
   renderVisibleTextSegments,
   renderVisibleText,
-  renderStrippedDisplayText,
   replacePiecemealSyllable,
   serializeStrokeKeys,
   selectCandidateIslands,
@@ -72,24 +71,6 @@ const inferredWords = [
   "già",
 ];
 const fixedWords = ["a", "à", "ả", "ã", "á", "ạ", "ai", "tôi", "không", "thẹn"];
-
-describe("renderStrippedDisplayText", () => {
-  test("keeps the rightmost nine Vietnamese syllables", () => {
-    expect(
-      renderStrippedDisplayText("một hai ba bốn năm sáu bảy tám chín mười"),
-    ).toBe("hai ba bốn năm sáu bảy tám chín mười");
-  });
-
-  test("abbreviates only long non-Vietnamese segments", () => {
-    expect(renderStrippedDisplayText("tôi hello 123 và ! bạn")).toBe(
-      "tôi … 123 và ! bạn",
-    );
-  });
-
-  test("does not reveal text without Vietnamese syllables", () => {
-    expect(renderStrippedDisplayText("private English 12345")).toBe("");
-  });
-});
 
 const v7CodeArbitrary = fc
   .record({

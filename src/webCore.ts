@@ -182,35 +182,6 @@ const v7ConsonantPrefixes = [
 const v7Vowels = new Set(["a", "e", "i", "o", "u"]);
 const v7TonePattern = /^[0-7]$/;
 const vietnameseWordPattern = /[\p{L}\p{M}]+/gu;
-const strippedDisplayTokenPattern = /[\p{L}\p{M}]+|[^\p{L}\p{M}\s]+|\s+/gu;
-
-/** Format text for the privacy-oriented stripped display. */
-export function renderStrippedDisplayText(text: string, limit = 9): string {
-  const tokens = Array.from(text.matchAll(strippedDisplayTokenPattern)).map(
-    (match) => ({ text: match[0], start: match.index ?? 0 }),
-  );
-  const vietnamese = tokens.filter(
-    (token) =>
-      /^[\p{L}\p{M}]+$/u.test(token.text) &&
-      isValidVietnameseSyllable(token.text.toLocaleLowerCase("vi")),
-  );
-  if (vietnamese.length === 0) return "";
-
-  const first = vietnamese[Math.max(0, vietnamese.length - limit)];
-  return tokens
-    .filter((token) => token.start >= first.start)
-    .map((token) => {
-      if (/^\s+$/u.test(token.text)) return token.text;
-      if (
-        /^[\p{L}\p{M}]+$/u.test(token.text) &&
-        isValidVietnameseSyllable(token.text.toLocaleLowerCase("vi"))
-      ) {
-        return token.text;
-      }
-      return Array.from(token.text).length <= 3 ? token.text : "…";
-    })
-    .join("");
-}
 const piecemealEntryStrokes = new Map<string, number>([
   ["T", 0],
   ["T-", 0],
