@@ -387,9 +387,17 @@ export function stripVisibleTextSegments(
 
   return visible
     .map((segment) => {
-      if (segment.piecemealNumber !== undefined) return { ...segment };
-      if (Array.from(segment.text).length <= 3) return { ...segment };
-      return { ...segment, text: "…" };
+      // Candidate diff regions are still computed for logging and candidate-list
+      // summaries, but the stripped buffer itself should remain visually clean.
+      // In particular, do not carry region-box annotations into these segments.
+      const { candidateSection: _candidateSection, ...strippedSegment } = segment;
+      if (strippedSegment.piecemealNumber !== undefined) {
+        return { ...strippedSegment };
+      }
+      if (Array.from(strippedSegment.text).length <= 3) {
+        return { ...strippedSegment };
+      }
+      return { ...strippedSegment, text: "…" };
     })
     .filter((segment) => segment.text !== "");
 }
