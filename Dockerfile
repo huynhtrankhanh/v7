@@ -1,45 +1,71 @@
-FROM node:22 AS frontend
-WORKDIR /app
+# syntax=docker/dockerfile:1.7
 
-# Install and build the web assets (Vite + TypeScript)
-COPY package.json package-lock.json tsconfig.json tsconfig.jest.json vite.config.ts ./
+FROM node:22 AS frontend-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+FROM frontend-deps AS frontend
+WORKDIR /app
+# Build configuration and application sources change more often than dependencies.
+COPY tsconfig.json tsconfig.jest.json vite.config.ts ./
 COPY src ./src
 COPY static ./static
-RUN npm ci
 RUN npm run build
 
-FROM rust:latest AS builder
+FROM rust:1.88-bookworm AS kenlm
 
-# Install build dependencies for KenLM
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     cmake \
     g++ \
     git \
-    zlib1g-dev \
+    libboost-program-options-dev \
+    libboost-system-dev \
+    libboost-thread-dev \
     libbz2-dev \
     liblzma-dev \
-    libboost-all-dev \
+    make \
+    zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Download and compile KenLM
-# We clone into /app/kenlm so that it is a sibling of inference-rs as expected by build.rs
-RUN git clone https://github.com/kpu/kenlm.git
+# Keep KenLM in its own stage so Rust or frontend changes do not rebuild it.
+ARG KENLM_REF=master
+RUN git clone --depth 1 --branch "${KENLM_REF}" https://github.com/kpu/kenlm.git /app/kenlm
 WORKDIR /app/kenlm
-RUN mkdir -p build \
-    && cd build \
-    && cmake .. \
-    && make -j$(nproc)
+RUN --mount=type=cache,target=/root/.cache/cmake \
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build --parallel "$(nproc)"
+
+FROM rust:1.88-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    g++ \
+    libbz2-dev \
+    liblzma-dev \
+    zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY --from=kenlm /app/kenlm ./kenlm
 
-# Copy Rust project
-COPY inference-rs ./inference-rs
-
-# Build Rust project
+# Cache crate downloads and third-party compilation separately from local source edits.
 WORKDIR /app/inference-rs
-RUN cargo build --release
+COPY inference-rs/Cargo.toml inference-rs/Cargo.lock ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo fetch --locked
+
+COPY inference-rs/build.rs ./
+COPY inference-rs/cpp ./cpp
+COPY inference-rs/src ./src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/app/inference-rs/target \
+    cargo build --release --locked \
+    && cp /app/inference-rs/target/release/inference-rs /tmp/inference-rs
 
 # ---------------------------------------------------------------------------
 # Training stage: Python + tqdm + KenLM binaries
@@ -48,34 +74,42 @@ RUN cargo build --release
 # ---------------------------------------------------------------------------
 FROM python:3.11-slim AS train
 
-RUN apt-get update && apt-get install -y \
-    cmake \
-    g++ \
-    git \
-    zlib1g-dev \
-    libbz2-dev \
-    liblzma-dev \
-    libboost-all-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libbz2-1.0 \
+    libgcc-s1 \
+    libgomp1 \
+    liblzma5 \
+    libstdc++6 \
+    zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy KenLM binaries from the builder stage
-COPY --from=builder /app/kenlm ./kenlm
+# Copy KenLM binaries from the dedicated KenLM stage without rebuilding Rust.
+COPY --from=kenlm /app/kenlm ./kenlm
 
 # Install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Copy training scripts.
 COPY train_lm.sh ./
+COPY preprocess_corpus.py preprocess_corpus.cpp ./
 
-FROM rust:latest
+FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libbz2-1.0 \
+    libgcc-s1 \
+    liblzma5 \
+    libstdc++6 \
+    zlib1g \
+    && rm -rf /var/lib/apt/lists/*
+
 # Runtime deps for inference binary only (KenLM and web assets copied from builders)
-COPY --from=builder /app/inference-rs/target/release/inference-rs ./inference-rs/target/release/inference-rs
-COPY --from=builder /app/kenlm ./kenlm
+COPY --from=builder /tmp/inference-rs ./inference-rs/target/release/inference-rs
+COPY --from=kenlm /app/kenlm ./kenlm
 COPY --from=frontend /app/static ./static
 
 # Entrypoint runs the binary
