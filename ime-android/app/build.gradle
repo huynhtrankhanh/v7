@@ -1,14 +1,47 @@
 plugins { id "com.android.application" }
 
 android {
-    namespace "com.huynhtrankhanh.testime"
+    namespace "com.huynhtrankhanh.v7ime"
     compileSdk 35
 
     defaultConfig {
-        applicationId "com.huynhtrankhanh.testime"
+        applicationId "com.huynhtrankhanh.v7ime"
         minSdk 23
         targetSdk 35
         versionCode 1
         versionName "1.0.0"
     }
+
+    sourceSets {
+        main.assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
+    }
+}
+
+def webRoot = rootProject.file("..")
+def generatedWebAssets = layout.buildDirectory.dir("generated/v7WebUi")
+
+tasks.register("buildWebUi", Exec) {
+    workingDir webRoot
+    commandLine "npm", "run", "build"
+    inputs.files(
+            fileTree("${webRoot}/src") { include "**/*.ts" },
+            "${webRoot}/static/index.html",
+            "${webRoot}/package.json",
+            "${webRoot}/package-lock.json",
+            "${webRoot}/vite.config.ts"
+    )
+    outputs.file "${webRoot}/static/script.js"
+}
+
+tasks.register("syncWebUi", Sync) {
+    dependsOn "buildWebUi"
+    from("${webRoot}/static") {
+        include "index.html"
+        include "script.js"
+    }
+    into generatedWebAssets
+}
+
+tasks.named("preBuild").configure {
+    dependsOn "syncWebUi"
 }

@@ -1,4 +1,17 @@
 <resources>
-    <string name="app_name">Test IME</string>
-    <string name="ime_name">Test WebView IME</string>
+    <string name="app_name">V7 IME</string>
+    <string name="ime_name">V7 Vietnamese IME</string>
+    <string name="settings_title">V7 IME settings</string>
+    <string name="inference_server_heading">Inference server</string>
+    <string name="inference_server_description">V7 sends inference requests to this server. Enter either the server base URL or the full /infer endpoint.</string>
+    <string name="server_url_label">Server URL</string>
+    <string name="http_auth_heading">HTTP Basic authentication (optional)</string>
+    <string name="http_auth_description">Leave both fields blank when the server does not require authentication.</string>
+    <string name="username_label">Username</string>
+    <string name="password_label">Password</string>
+    <string name="save_settings">Save settings</string>
+    <string name="enable_keyboard">Enable V7 IME</string>
+    <string name="choose_keyboard">Choose input method</string>
+    <string name="invalid_server_url">Enter a valid HTTP or HTTPS URL</string>
+    <string name="settings_saved">Settings saved</string>
 </resources>

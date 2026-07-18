@@ -10,6 +10,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `tests/`: Jest unit tests for the web frontend logic.
 *   `scripts/`: Helper scripts (e2e tests, Stripped Plover agent, etc.).
 *   `practice-android/`: Android WebView wrapper that packages `static/practice.html` as a signed release app bundle.
+*   `ime-android/`: Android input method that packages the stripped V7 WebUI and connects it to native composing text and inference settings.
 *   `evaluator/`: Evaluation and dataset (JSONL) tooling, including the TypeScript port of the V7 tokenizer/candidate-enumeration logic.
 *   `preprocess_corpus.py`: Python corpus preprocessor used by the Docker training build.
 *   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).

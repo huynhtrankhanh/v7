@@ -277,6 +277,23 @@ let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
   enabled: false,
   copyAllowed: false,
 };
+
+interface AndroidImeBridge {
+  requestInference(body: string, requestId: number): void;
+  setPreeditText(text: string): void;
+  setKeyboardHeight(heightDp: number): void;
+}
+
+const androidIme = window.AndroidIme;
+let androidInferenceRequestId = 1;
+const androidInferencePending = new Map<
+  number,
+  {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+  }
+>();
+
 let piecemealCursorIndex: number | null = null;
 let inferenceAbortController = null;
 let isKeyboardLayoutVisible = false;
@@ -1639,24 +1656,28 @@ async function runInference() {
     // Convert client islands to server format [Fixed, V7, Fixed...]
     const serverIslands = convertIslandsForInference(state.islands);
 
-    const fetchOptions = {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ islands: serverIslands }),
-      ...(controller ? { signal: controller.signal } : {}),
-    };
-
-    const resp = await fetch("/infer", fetchOptions);
+    const requestBody = JSON.stringify({ islands: serverIslands });
+    let data;
+    if (androidIme) {
+      data = await requestAndroidInference(requestBody, controller?.signal);
+    } else {
+      const fetchOptions = {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+        ...(controller ? { signal: controller.signal } : {}),
+      };
+      const resp = await fetch("/infer", fetchOptions);
+      if (!resp.ok) {
+        throw new Error(`Inference server returned HTTP ${resp.status}`);
+      }
+      data = await resp.json();
+    }
     if (isStaleInference(controller)) {
       // A newer inference request has started; discard this response.
       return;
     }
-    const data = await resp.json();
-    if (isStaleInference(controller)) {
-      // A newer request may have started while parsing the response.
-      return;
-    }
-    state.candidates = data.candidates;
+    state.candidates = getInferenceCandidates(data);
     updateDisplay();
   } catch (e) {
     if (e && e.name === "AbortError") {
@@ -1669,6 +1690,24 @@ async function runInference() {
       inferenceAbortController = null;
     }
   }
+}
+
+function getInferenceCandidates(data: unknown): string[][] {
+  if (!data || typeof data !== "object") {
+    throw new Error("Inference server returned an invalid response");
+  }
+  const candidates = (data as { candidates?: unknown }).candidates;
+  if (
+    !Array.isArray(candidates) ||
+    !candidates.every(
+      (candidate) =>
+        Array.isArray(candidate) &&
+        candidate.every((part) => typeof part === "string"),
+    )
+  ) {
+    throw new Error("Inference response is missing valid candidates");
+  }
+  return candidates;
 }
 
 type SelectCandidateOptions = {
@@ -2028,6 +2067,7 @@ function updateDisplay() {
 
   updateInputPadding(display, textArea, candArea);
   scrollToBottom(isRawMode ? textArea : display);
+  syncAndroidPreedit();
 }
 
 // --- Input Handling ---
@@ -2412,11 +2452,13 @@ function setupPloverControls() {
     });
   }
 
-  void ensurePloverAvailability().then(() => {
-    if (!strippedPlover.available) {
-      renderPloverDictionaries();
-    }
-  });
+  if (!androidIme) {
+    void ensurePloverAvailability().then(() => {
+      if (!strippedPlover.available) {
+        renderPloverDictionaries();
+      }
+    });
+  }
 }
 
 renderKeyboardLayout();
@@ -2425,9 +2467,128 @@ setupPloverControls();
 
 declare global {
   interface Window {
+    AndroidIme?: AndroidImeBridge;
+    clearPreeditFromAndroid?: () => void;
+    handleAndroidInferenceResponse?: (
+      requestId: number,
+      statusCode: number,
+      responseBody: string,
+      errorMessage: string,
+    ) => void;
+    handleAndroidKeyEvent?: (
+      action: "keydown" | "keyup",
+      key: string,
+      code: string,
+      repeat: boolean,
+      shiftKey: boolean,
+      ctrlKey: boolean,
+      altKey: boolean,
+      metaKey: boolean,
+    ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
 }
+
+function requestAndroidInference(
+  body: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    if (!androidIme) {
+      reject(new Error("Android IME bridge is unavailable"));
+      return;
+    }
+
+    const requestId = androidInferenceRequestId++;
+    const abort = () => {
+      androidInferencePending.delete(requestId);
+      reject(new DOMException("Inference request was aborted", "AbortError"));
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+
+    androidInferencePending.set(requestId, { resolve, reject });
+    signal?.addEventListener("abort", abort, { once: true });
+    try {
+      androidIme.requestInference(body, requestId);
+    } catch (error) {
+      androidInferencePending.delete(requestId);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
+window.handleAndroidInferenceResponse = (
+  requestId,
+  statusCode,
+  responseBody,
+  errorMessage,
+) => {
+  const pending = androidInferencePending.get(requestId);
+  if (!pending) return;
+  androidInferencePending.delete(requestId);
+
+  if (errorMessage) {
+    pending.reject(new Error(errorMessage));
+    return;
+  }
+  if (statusCode < 200 || statusCode >= 300) {
+    pending.reject(
+      new Error(
+        `Inference server returned HTTP ${statusCode}${
+          responseBody ? `: ${responseBody}` : ""
+        }`,
+      ),
+    );
+    return;
+  }
+  try {
+    pending.resolve(JSON.parse(responseBody));
+  } catch {
+    pending.reject(new Error("Inference server returned invalid JSON"));
+  }
+};
+
+function syncAndroidPreedit() {
+  if (!androidIme) return;
+  androidIme.setPreeditText(renderVisibleText(state.islands, state.candidates));
+}
+
+window.clearPreeditFromAndroid = () => {
+  abortInferenceRequest(true);
+  buffer.reset();
+  state.candidates = [];
+  piecemealCursorIndex = null;
+  isRawMode = false;
+  updateDisplay();
+};
+
+window.handleAndroidKeyEvent = (
+  action,
+  key,
+  code,
+  repeat,
+  shiftKey,
+  ctrlKey,
+  altKey,
+  metaKey,
+) => {
+  document.dispatchEvent(
+    new KeyboardEvent(action, {
+      key,
+      code,
+      repeat,
+      shiftKey,
+      ctrlKey,
+      altKey,
+      metaKey,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+};
 
 window.setStrippedDisplay = (options = {}) => {
   isRawMode = false;
@@ -2437,5 +2598,10 @@ window.setStrippedDisplay = (options = {}) => {
   };
   updateDisplay();
 };
+
+if (androidIme) {
+  window.setStrippedDisplay();
+  androidIme.setKeyboardHeight(300);
+}
 
 updateDisplay();

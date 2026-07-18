@@ -199,3 +199,4 @@ kenlm/
 
 # Android bundle outputs
 android-artifacts/
+.gradle/

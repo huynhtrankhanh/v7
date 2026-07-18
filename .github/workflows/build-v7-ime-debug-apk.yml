@@ -1,4 +1,4 @@
-name: Build Test IME Debug APK
+name: Build V7 IME Debug APK
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: test-ime
+        working-directory: ime-android
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,10 +26,20 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install WebUI dependencies
+        working-directory: .
+        run: npm ci
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.14.4
+          gradle-version: "8.9"
 
       - name: Build debug APK
         run: gradle assembleDebug
@@ -37,6 +47,6 @@ jobs:
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: test-ime-debug-apk
-          path: test-ime/app/build/outputs/apk/debug/*.apk
+          name: v7-ime-debug-apk
+          path: ime-android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
