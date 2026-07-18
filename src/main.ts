@@ -1789,15 +1789,19 @@ function renderVisibleSegmentFragment(segment) {
     ? "piecemeal-syllable active"
     : "piecemeal-syllable";
   span.textContent = segment.text;
-  fragment.appendChild(span);
+
+  const token = document.createElement("span");
+  token.className = "piecemeal-token";
+  token.appendChild(span);
 
   if (!segment.piecemealCursor) {
     const sup = document.createElement("sup");
     sup.className = "piecemeal-number";
     sup.textContent = String(segment.piecemealNumber);
-    fragment.appendChild(sup);
+    token.appendChild(sup);
   }
 
+  fragment.appendChild(token);
   return fragment;
 }
 

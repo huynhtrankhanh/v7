@@ -38,7 +38,7 @@ describe("stripped display segments", () => {
     ]);
   });
 
-  test("retains separators of up to three Unicode characters", () => {
+  test("retains separators of up to three Unicode characters without region boxes", () => {
     expect(
       stripVisibleTextSegments([
         { text: "một", piecemealNumber: 2, candidateSection: "left" },
@@ -46,7 +46,7 @@ describe("stripped display segments", () => {
         { text: "hai", piecemealNumber: 1 },
       ]),
     ).toEqual([
-      { text: "một", piecemealNumber: 2, candidateSection: "left" },
+      { text: "một", piecemealNumber: 2 },
       { text: " 7 " },
       { text: "hai", piecemealNumber: 1 },
     ]);
