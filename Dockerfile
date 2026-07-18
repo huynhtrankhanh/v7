@@ -79,7 +79,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM python:3.11-slim AS train
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
     libbz2-1.0 \
     libgcc-s1 \
     libgomp1 \
@@ -105,6 +104,7 @@ FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     libbz2-1.0 \
     libgcc-s1 \
     liblzma5 \
