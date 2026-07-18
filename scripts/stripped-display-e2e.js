@@ -58,7 +58,7 @@ async function chord(page, keys) {
   for (const key of [...keys].reverse()) await page.keyboard.up(key);
 }
 
-async function newPage(browser, url) {
+async function newPage(browser, url, viewport = { width: 412, height: 300 }) {
   const page = await browser.newPage();
   await page.evaluateOnNewDocument(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -98,7 +98,7 @@ async function newPage(browser, url) {
     }
     window.WebSocket = FakeWebSocket;
   });
-  await page.setViewport({ width: 480, height: 800, deviceScaleFactor: 1 });
+  await page.setViewport({ ...viewport, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: "networkidle0" });
   return page;
 }
@@ -119,6 +119,33 @@ async function testEmptyAndBufferInteractions(browser, url) {
   );
   assert(view.candidates === "none", "Empty candidate panel is visible");
   assert(view.plover === "none", "Plover controls are visible");
+  const emptyMetrics = await page.$eval("#text-display", (node) => {
+    const style = getComputedStyle(node);
+    const wave = node.querySelector(".empty-wave");
+    return {
+      fontSize: parseFloat(style.fontSize),
+      lineHeight: parseFloat(style.lineHeight),
+      paddingLeft: parseFloat(style.paddingLeft),
+      waveSize: parseFloat(getComputedStyle(wave).fontSize),
+    };
+  });
+  assert(
+    emptyMetrics.fontSize >= 20 && emptyMetrics.fontSize <= 24,
+    `Stripped text is outside the 20–24px IME scale: ${JSON.stringify(emptyMetrics)}`,
+  );
+  assert(
+    emptyMetrics.lineHeight / emptyMetrics.fontSize >= 1.25 &&
+      emptyMetrics.lineHeight / emptyMetrics.fontSize <= 1.35,
+    `Stripped line height is not compact: ${JSON.stringify(emptyMetrics)}`,
+  );
+  assert(
+    emptyMetrics.paddingLeft === 16,
+    `Stripped display is not on the 8px spacing grid: ${JSON.stringify(emptyMetrics)}`,
+  );
+  assert(
+    emptyMetrics.waveSize <= 80,
+    `Empty state overwhelms an IME viewport: ${JSON.stringify(emptyMetrics)}`,
+  );
 
   // KAO produces a fixed Vietnamese syllable. Surround a four-character
   // capital run with enough syllables to exercise both truncation and ellipsis.
@@ -143,6 +170,36 @@ async function testEmptyAndBufferInteractions(browser, url) {
   assert(
     view.text.includes("…"),
     `Long non-Vietnamese run was not abbreviated: ${JSON.stringify(view)}`,
+  );
+  const renderedBuffer = await page.$eval("#text-display", (display) => {
+    const flow = display.querySelector(".text-display-flow");
+    const walker = document.createTreeWalker(flow, NodeFilter.SHOW_TEXT);
+    let text = "";
+    while (walker.nextNode()) text += walker.currentNode.textContent;
+    const interTokenSpace = [...flow.childNodes].find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent === " ",
+    );
+    const range = document.createRange();
+    if (interTokenSpace) range.selectNodeContents(interTokenSpace);
+    return {
+      directChildren: display.children.length,
+      flowText: text,
+      flowWhiteSpace: getComputedStyle(flow).whiteSpace,
+      fontSize: parseFloat(getComputedStyle(flow).fontSize),
+      interTokenSpaceWidth: interTokenSpace
+        ? range.getBoundingClientRect().width
+        : 0,
+    };
+  });
+  assert(
+    renderedBuffer.directChildren === 1 &&
+      renderedBuffer.flowWhiteSpace === "pre-wrap",
+    `Buffer fragments escaped the normal text flow: ${JSON.stringify(renderedBuffer)}`,
+  );
+  assert(
+    renderedBuffer.interTokenSpaceWidth / renderedBuffer.fontSize >= 0.15 &&
+      renderedBuffer.interTokenSpaceWidth / renderedBuffer.fontSize <= 0.5,
+    `Rendered whitespace no longer matches the text buffer: ${JSON.stringify(renderedBuffer)}`,
   );
 
   await page.keyboard.down("Control");
@@ -191,6 +248,39 @@ async function testCandidates(browser, url) {
     logs.some((line) => line.includes("Candidate diff regions:")),
     "Diff ranges not logged",
   );
+  const candidateMetrics = await page.$eval(
+    "#candidate-area .candidate",
+    (node) => {
+      const areaStyle = getComputedStyle(node.parentElement);
+      const style = getComputedStyle(node);
+      return {
+        areaGap: parseFloat(areaStyle.gap),
+        areaPaddingLeft: parseFloat(areaStyle.paddingLeft),
+        bufferFontSize: parseFloat(
+          getComputedStyle(document.querySelector("#text-display")).fontSize,
+        ),
+        fontSize: parseFloat(
+          getComputedStyle(node.querySelector(".candidate-text")).fontSize,
+        ),
+        height: node.getBoundingClientRect().height,
+        paddingLeft: parseFloat(style.paddingLeft),
+      };
+    },
+  );
+  assert(
+    candidateMetrics.height >= 48,
+    `Candidate touch target is shorter than 48px: ${JSON.stringify(candidateMetrics)}`,
+  );
+  assert(
+    candidateMetrics.fontSize === 16 &&
+      candidateMetrics.bufferFontSize === 20 &&
+      candidateMetrics.fontSize / candidateMetrics.bufferFontSize === 0.8 &&
+      candidateMetrics.areaGap === 8 &&
+      candidateMetrics.areaPaddingLeft === 12 &&
+      candidateMetrics.paddingLeft === 12,
+    `Candidate type or spacing left the IME scale: ${JSON.stringify(candidateMetrics)}`,
+  );
+  await page.screenshot({ path: "/tmp/stripped-candidates.png" });
   await page.click("#candidate-area .candidate");
   await page.waitForFunction(
     () =>
@@ -211,6 +301,88 @@ async function testCandidates(browser, url) {
     (await page.evaluate(() => window.__copiedText)) === undefined,
     "copyAllowed: false still copied the buffer",
   );
+  await page.close();
+}
+
+async function testNaturalPiecemealLayout(browser, url) {
+  const page = await newPage(browser, url);
+  await page.evaluate(() => window.setStrippedDisplay({ copyAllowed: false }));
+
+  const phrase = [
+    { keys: ["w", "c"], text: "ta" },
+    { keys: ["e", "r", "c", "o"], text: "má" },
+    { keys: ["s", "c"], text: "ca" },
+    { keys: ["r", "f", "c", "l"], text: "là" },
+    { keys: ["e", "d", "c"], text: "ba" },
+    { keys: ["w", "e", "r", "v", "o"], text: "nó" },
+  ];
+  for (const word of phrase) await chord(page, word.keys);
+  await page.waitForFunction(
+    () => document.querySelectorAll(".piecemeal-syllable").length === 6,
+  );
+
+  const layout = await page.evaluate(() => {
+    const flow = document.querySelector(".text-display-flow");
+    const words = [...document.querySelectorAll(".piecemeal-token")];
+    return {
+      text: flow.textContent,
+      words: words.map((word) => {
+        const rect = word.getBoundingClientRect();
+        const syllable = word.querySelector(".piecemeal-syllable");
+        const number = word.querySelector(".piecemeal-number");
+        return {
+          left: rect.left,
+          right: rect.right,
+          top: rect.top,
+          syllableRight: syllable.getBoundingClientRect().right,
+          numberLeft: number?.getBoundingClientRect().left ?? null,
+          numberPosition: number ? getComputedStyle(number).position : null,
+          numberWidth: number?.getBoundingClientRect().width ?? null,
+        };
+      }),
+    };
+  });
+  assert(
+    phrase.every((word) => layout.text.includes(word.text)),
+    `Natural phrase did not render as entered: ${JSON.stringify(layout)}`,
+  );
+  assert(
+    layout.words
+      .filter((word) => word.numberLeft !== null)
+      .every(
+        (word) =>
+          word.numberPosition === "absolute" &&
+          word.numberLeft >= word.syllableRight - 0.1 &&
+          Math.abs(word.right - word.syllableRight) < 0.1,
+      ),
+    `Piecemeal labels alter buffer spacing or moved before a syllable: ${JSON.stringify(layout)}`,
+  );
+  const numberWidths = layout.words
+    .map((word) => word.numberWidth)
+    .filter((width) => width !== null);
+  assert(
+    Math.max(...numberWidths) - Math.min(...numberWidths) < 0.1,
+    `Piecemeal superscripts do not share one width: ${JSON.stringify(numberWidths)}`,
+  );
+  await page.screenshot({ path: "/tmp/stripped-words.png" });
+
+  await chord(page, ["w"]); // T selects the first piecemeal target.
+  await page.waitForFunction(
+    () => document.querySelectorAll(".piecemeal-syllable.active").length === 1,
+  );
+  const activeWordPositions = await page.$$eval(".piecemeal-token", (words) =>
+    words.map((word) => word.getBoundingClientRect().left),
+  );
+  assert(
+    activeWordPositions.every(
+      (left, index) => Math.abs(left - layout.words[index].left) < 0.1,
+    ),
+    `Entering piecemeal mode shifted the buffer: ${JSON.stringify({
+      before: layout.words.map((word) => word.left),
+      active: activeWordPositions,
+    })}`,
+  );
+  await page.screenshot({ path: "/tmp/stripped-piecemeal-active.png" });
   await page.close();
 }
 
@@ -246,6 +418,7 @@ async function testPloverBlanking(browser, url) {
   try {
     await testEmptyAndBufferInteractions(browser, url);
     await testCandidates(browser, url);
+    await testNaturalPiecemealLayout(browser, url);
     await testPloverBlanking(browser, url);
     console.log("Stripped display interactions passed");
   } finally {

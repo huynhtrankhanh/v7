@@ -1713,10 +1713,17 @@ function updateInputPadding(display, textArea, candidateArea) {
   const candidateHeight = Math.ceil(
     candidateArea.getBoundingClientRect().height,
   );
-  const displayBase = parseFloat(display.dataset.basePaddingBottom) || 0;
+  const configuredDisplayBase = parseFloat(
+    getComputedStyle(display).getPropertyValue("--input-padding-bottom"),
+  );
+  const displayBase = Number.isFinite(configuredDisplayBase)
+    ? configuredDisplayBase
+    : parseFloat(display.dataset.basePaddingBottom) || 0;
   const textAreaBase = parseFloat(textArea.dataset.basePaddingBottom) || 0;
 
-  display.style.paddingBottom = `${displayBase + candidateHeight}px`;
+  display.style.paddingBottom = `${
+    displayBase + (strippedDisplay.enabled ? 0 : candidateHeight)
+  }px`;
   textArea.style.paddingBottom = `${textAreaBase + candidateHeight}px`;
 }
 
@@ -1876,19 +1883,29 @@ function updateDisplay() {
         ? "flex"
         : "none";
 
-    // Render text with cursor
-    display.replaceChildren(); // clear
-
-    // Fix: Cursor should be at the start if placeholder is present
-    const cursor = document.createElement("span");
-    cursor.id = "cursor";
-    display.appendChild(cursor);
-
     // Check if empty (single empty Viet island)
     const isEmpty =
       state.islands.length === 1 &&
       state.islands[0].value === "" &&
       !state.islands[0].isV7;
+
+    display.replaceChildren();
+    let textFlow = display;
+    if (strippedDisplay.enabled) {
+      // Stripped display uses flex layout to anchor the buffer to the bottom.
+      // Keep its contents in one normal inline formatting context so text
+      // nodes, especially spaces, do not become individual flex items.
+      textFlow = document.createElement("div");
+      textFlow.className = isEmpty
+        ? "text-display-flow empty-text-display-flow"
+        : "text-display-flow";
+      display.appendChild(textFlow);
+    }
+
+    // Fix: Cursor should be at the start if placeholder is present
+    const cursor = document.createElement("span");
+    cursor.id = "cursor";
+    textFlow.appendChild(cursor);
 
     if (text === "" && isEmpty) {
       const placeholder = document.createElement("span");
@@ -1897,7 +1914,7 @@ function updateDisplay() {
         : "Start typing with your steno keyboard...";
       placeholder.className = strippedDisplay.enabled ? "empty-wave" : "";
       placeholder.style.color = strippedDisplay.enabled ? "" : "#999";
-      display.appendChild(placeholder);
+      textFlow.appendChild(placeholder);
     } else {
       let visibleSegments = renderVisibleTextSegments(
         state.islands,
@@ -1917,10 +1934,13 @@ function updateDisplay() {
           for (const segment of group.segments) {
             sectionSpan.appendChild(renderVisibleSegmentFragment(segment));
           }
-          display.insertBefore(sectionSpan, cursor);
+          textFlow.insertBefore(sectionSpan, cursor);
         } else {
           for (const segment of group.segments) {
-            display.insertBefore(renderVisibleSegmentFragment(segment), cursor);
+            textFlow.insertBefore(
+              renderVisibleSegmentFragment(segment),
+              cursor,
+            );
           }
         }
       }
