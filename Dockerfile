@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libboost-program-options-dev \
     libboost-system-dev \
+    libboost-test-dev \
     libboost-thread-dev \
     libbz2-dev \
     liblzma-dev \
@@ -54,6 +55,9 @@ COPY --from=kenlm /app/kenlm ./kenlm
 # Cache crate downloads and third-party compilation separately from local source edits.
 WORKDIR /app/inference-rs
 COPY inference-rs/Cargo.toml inference-rs/Cargo.lock ./
+# Cargo validates that the manifest has a target before `cargo fetch`, even
+# though fetching does not compile application sources.
+RUN mkdir -p src && touch src/main.rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo fetch --locked
@@ -75,6 +79,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 FROM python:3.11-slim AS train
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
     libbz2-1.0 \
     libgcc-s1 \
     libgomp1 \
@@ -111,6 +116,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /tmp/inference-rs ./inference-rs/target/release/inference-rs
 COPY --from=kenlm /app/kenlm ./kenlm
 COPY --from=frontend /app/static ./static
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
+    CMD curl --fail --silent --show-error http://localhost:3000/ > /dev/null || exit 1
 
 # Entrypoint runs the binary
 # Usage: docker run ... <v7_string>

@@ -43,6 +43,48 @@ docker compose up inference
 
 Access the demo at `http://localhost:3000`.
 
+The language model can take roughly 20 seconds to load. During that startup
+window, Compose reports the `inference` container as `health: starting`; wait
+until it is healthy before sending requests:
+
+```bash
+docker compose up -d inference stripped-plover
+docker compose ps
+curl --fail http://localhost:3000/ > /dev/null
+```
+
+Both long-running services restart automatically unless explicitly stopped.
+Their health checks verify the inference HTTP endpoint and the Stripped Plover
+TCP listener.
+
+### Docker validation and troubleshooting
+
+Validate the Compose file and rebuild every image after changing dependencies:
+
+```bash
+docker compose config --quiet
+docker compose build
+docker compose up -d inference stripped-plover
+docker compose ps
+docker compose logs --tail=100 inference stripped-plover
+```
+
+The KenLM build requires Boost program-options, system, thread, and unit-test
+development packages. These are installed by the multi-stage `Dockerfile`; no
+host Boost installation is needed. The Rust dependency-cache layer also creates
+a temporary empty binary target before `cargo fetch`, because Cargo validates
+that a manifest has at least one target.
+
+If `inference` is unhealthy, first confirm that `lm.binary` exists as a regular,
+readable file in the repository root, then inspect `docker compose logs
+inference`. A missing or invalid model prevents the server from becoming ready.
+To discard only the stack's containers and network while preserving the
+Stripped Plover dictionary volume, run:
+
+```bash
+docker compose down
+```
+
 ### Run Inference from the Command Line
 
 ```bash

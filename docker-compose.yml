@@ -12,6 +12,7 @@ services:
     # e.g., docker-compose run inference "some input string"
     ports:
       - "3000:3000"
+    restart: unless-stopped
   stripped-plover:
     build:
       context: .
@@ -23,6 +24,19 @@ services:
       - stripped-plover-data:/data
     ports:
       - "4020:4020"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const net=require('net');const s=net.connect(4020,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)",
+        ]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
   train:
     build:
       context: .
