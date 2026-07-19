@@ -290,7 +290,7 @@ interface AndroidImeBridge {
 
 const androidIme = window.AndroidIme;
 let androidInferenceRequestId = 1;
-let lastRequestedAndroidKeyboardHeight = 300;
+let lastRequestedAndroidKeyboardHeight = 0;
 const androidInferencePending = new Map<
   number,
   {
@@ -790,6 +790,7 @@ async function togglePloverMode() {
     runInference();
   }
   updatePloverStatusUI();
+  updateDisplay();
 }
 
 async function refreshPloverDictionaries({ force = false } = {}) {
@@ -2685,30 +2686,48 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
 function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   if (!androidIme) return;
   window.requestAnimationFrame(() => {
+    if (document.body.classList.contains("stripped-plover-active")) {
+      if (lastRequestedAndroidKeyboardHeight !== 48) {
+        lastRequestedAndroidKeyboardHeight = 48;
+        androidIme.setKeyboardHeight(48);
+      }
+      return;
+    }
+
     const candidatesVisible =
       getComputedStyle(candidateArea).display !== "none";
-    let desiredHeight = 300;
-    if (candidatesVisible) {
-      const workbench = document.getElementById("workbench");
-      const label = document.querySelector<HTMLElement>(
-        ".ime-composition-label",
-      );
-      if (workbench) {
-        const style = getComputedStyle(workbench);
-        const verticalPadding =
-          parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-        desiredHeight = Math.max(
-          300,
-          Math.ceil(
-            verticalPadding +
-              (label?.offsetHeight ?? 0) +
-              6 +
-              136 +
-              candidateArea.scrollHeight,
-          ),
-        );
-      }
-    }
+    const toolbar = document.querySelector<HTMLElement>(".ime-toolbar");
+    const workbench = document.getElementById("workbench");
+    const label = document.querySelector<HTMLElement>(".ime-composition-label");
+    const display = document.getElementById("text-display");
+    const flow = display?.querySelector<HTMLElement>(".text-display-flow");
+    if (!toolbar || !workbench || !display || !flow) return;
+
+    const workbenchStyle = getComputedStyle(workbench);
+    const displayStyle = getComputedStyle(display);
+    const verticalPadding =
+      parseFloat(workbenchStyle.paddingTop) +
+      parseFloat(workbenchStyle.paddingBottom);
+    const displayPadding =
+      parseFloat(displayStyle.paddingTop) +
+      parseFloat(displayStyle.paddingBottom);
+    const labelHeight =
+      label && getComputedStyle(label).display !== "none"
+        ? label.offsetHeight + 4
+        : 0;
+    const bufferContentHeight = Math.max(32, flow.scrollHeight);
+    const candidateHeight = candidatesVisible ? candidateArea.scrollHeight : 0;
+    const desiredHeight = Math.max(
+      112,
+      Math.ceil(
+        toolbar.offsetHeight +
+          verticalPadding +
+          labelHeight +
+          displayPadding +
+          bufferContentHeight +
+          candidateHeight,
+      ),
+    );
     if (desiredHeight !== lastRequestedAndroidKeyboardHeight) {
       lastRequestedAndroidKeyboardHeight = desiredHeight;
       androidIme.setKeyboardHeight(desiredHeight);
@@ -2768,7 +2787,6 @@ window.setStrippedDisplay = (options = {}) => {
 
 if (androidIme) {
   window.setStrippedDisplay();
-  androidIme.setKeyboardHeight(300);
 }
 
 updateDisplay();

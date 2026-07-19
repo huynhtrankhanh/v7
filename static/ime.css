@@ -34,7 +34,7 @@ body {
 
 body.ime-surface {
   background:
-    radial-gradient(circle at 18% -40%, #2d3726 0, transparent 48%),
+    radial-gradient(circle at 18% -90%, #2d3726 0, transparent 56%),
     var(--ime-bg);
   color: var(--ime-text);
   min-width: 280px;
@@ -47,27 +47,49 @@ button {
 
 #inference-shell {
   display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   min-width: 0;
-  position: relative;
 }
 
 .ime-toolbar {
   align-items: center;
-  border-right: 1px solid var(--ime-line);
+  border-bottom: 1px solid var(--ime-line);
   display: flex;
-  flex: 0 0 8.5rem;
-  flex-direction: column;
+  flex: 0 0 44px;
+  gap: 12px;
   justify-content: space-between;
-  padding: max(10px, env(safe-area-inset-top)) 10px
-    max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  min-width: 0;
+  padding: max(6px, env(safe-area-inset-top))
+    max(10px, env(safe-area-inset-right)) 6px
+    max(10px, env(safe-area-inset-left));
+}
+
+.ime-plover-banner {
+  align-items: center;
+  display: none;
+  gap: 9px;
+  justify-content: center;
+}
+
+.ime-plover-banner strong {
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+}
+
+.ime-plover-pulse {
+  background: var(--ime-plover);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(245 189 79 / 14%);
+  height: 7px;
+  width: 7px;
 }
 
 .ime-identity {
   align-items: center;
-  align-self: stretch;
   display: flex;
+  flex: 0 1 auto;
   gap: 8px;
   min-width: 0;
 }
@@ -75,42 +97,42 @@ button {
 .ime-mark {
   align-items: center;
   background: var(--ime-accent);
-  border-radius: 8px;
+  border-radius: 7px;
   color: var(--ime-accent-ink);
   display: inline-flex;
   flex: 0 0 auto;
-  font-size: 0.77rem;
+  font-size: 0.72rem;
   font-weight: 900;
-  height: 30px;
+  height: 28px;
   justify-content: center;
   letter-spacing: -0.04em;
-  width: 30px;
+  width: 28px;
 }
 
 .ime-mode {
+  align-items: baseline;
   display: flex;
-  flex-direction: column;
-  line-height: 1.05;
+  gap: 6px;
+  line-height: 1;
   min-width: 0;
 }
 
 .ime-mode-title {
-  font-size: 0.75rem;
-  font-weight: 750;
+  font-size: 0.73rem;
+  font-weight: 760;
 }
 
 .ime-mode-detail {
   color: var(--ime-muted);
   font-size: 0.61rem;
-  margin-top: 3px;
 }
 
 .ime-toolbar-actions {
-  align-items: stretch;
+  align-items: center;
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
+  flex: 0 1 auto;
+  gap: 7px;
+  min-width: 0;
 }
 
 .ime-plover-state {
@@ -119,9 +141,7 @@ button {
   display: flex;
   font-size: 0.62rem;
   gap: 6px;
-  min-height: 24px;
-  overflow: hidden;
-  padding: 0 5px;
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -134,6 +154,7 @@ button {
 }
 
 #plover-status {
+  max-width: 6rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -149,47 +170,33 @@ button {
 
 .ime-tool-button {
   align-items: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  color: var(--ime-muted);
+  background: var(--ime-accent);
+  border: 0;
+  border-radius: 8px;
+  color: var(--ime-accent-ink);
   cursor: pointer;
   display: flex;
-  font-size: 0.66rem;
-  font-weight: 700;
-  gap: 7px;
-  min-height: 38px;
-  padding: 0 8px;
-  text-align: left;
-  width: 100%;
+  flex: 0 0 auto;
+  font-size: 0.64rem;
+  font-weight: 760;
+  gap: 5px;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 9px;
 }
 
 .ime-tool-button svg {
   fill: none;
-  flex: 0 0 auto;
-  height: 17px;
+  height: 15px;
   stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.7;
-  width: 17px;
+  stroke-width: 1.8;
+  width: 15px;
 }
 
 .ime-tool-button:active {
-  background: var(--ime-panel-raised);
-  border-color: var(--ime-line);
-  color: var(--ime-text);
-}
-
-.ime-switch-button {
-  background: var(--ime-accent);
-  color: var(--ime-accent-ink);
-}
-
-.ime-switch-button:active {
   background: #b5df5d;
-  border-color: transparent;
-  color: var(--ime-accent-ink);
 }
 
 #workbench {
@@ -198,8 +205,8 @@ button {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  padding: 14px max(14px, env(safe-area-inset-right))
-    max(10px, env(safe-area-inset-bottom)) 16px;
+  padding: 9px max(12px, env(safe-area-inset-right))
+    max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
 }
 
 .ime-composition-label {
@@ -207,19 +214,19 @@ button {
   color: var(--ime-muted);
   display: flex;
   flex: 0 0 auto;
-  font-size: 0.65rem;
-  font-weight: 700;
+  font-size: 0.59rem;
+  font-weight: 720;
   justify-content: space-between;
   letter-spacing: 0.07em;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   text-transform: uppercase;
 }
 
 .ime-hardware-hint {
-  font-size: 0.58rem;
-  font-weight: 550;
+  font-size: 0.56rem;
+  font-weight: 540;
   letter-spacing: 0;
-  opacity: 0.7;
+  opacity: 0.68;
   text-transform: none;
 }
 
@@ -228,15 +235,15 @@ button {
   color: var(--ime-text) !important;
   display: flex !important;
   flex: 1 1 auto;
-  font-size: clamp(1.15rem, 4.2vw, 1.75rem);
-  font-weight: 550;
-  line-height: 1.32;
+  font-size: clamp(1.08rem, 4.2vw, 1.62rem);
+  font-weight: 560;
+  line-height: 1.38;
   min-height: 0;
   min-width: 0;
   overflow: auto;
   overflow-wrap: anywhere;
-  padding: 4px 2px 10px;
-  scroll-padding-block: 8px;
+  padding: 3px 2px 7px;
+  scroll-padding-block: 6px;
   white-space: pre-wrap;
 }
 
@@ -253,25 +260,44 @@ button {
   margin-block-start: 0;
 }
 
+.empty-text-display-flow #cursor {
+  display: none;
+}
+
 .empty-wave {
+  align-items: center;
+  background: rgb(201 245 111 / 8%);
+  border: 1px solid rgb(201 245 111 / 20%);
+  border-radius: 999px;
   color: var(--ime-accent);
+  display: inline-flex;
   font-size: 0;
-  filter: saturate(0.7);
+  gap: 8px;
   line-height: 1;
+  padding: 6px 11px 6px 8px;
+}
+
+.empty-wave::before {
+  background: var(--ime-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(201 245 111 / 10%);
+  content: "";
+  height: 7px;
+  width: 7px;
 }
 
 .empty-wave::after {
-  content: "Ready for a chord";
-  font-size: clamp(1.15rem, 4vw, 1.55rem);
+  content: "Ready when you are";
+  font-size: clamp(1rem, 3.6vw, 1.3rem);
   font-weight: 650;
 }
 
 #cursor {
   border-left: 2px solid var(--ime-accent);
   display: inline-block;
-  height: 1.12em;
+  height: 1.08em;
   margin-right: -2px;
-  transform: translateY(0.15em);
+  transform: translateY(0.14em);
 }
 
 #text-input {
@@ -282,14 +308,13 @@ button {
   border-top: 1px solid var(--ime-line);
   display: grid;
   flex: 0 0 auto;
-  gap: 7px;
-  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
-  margin: 0 -2px;
-  max-height: calc(100dvh - 118px);
+  gap: 6px;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  max-height: calc(100dvh - 104px);
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 9px 2px 1px;
+  padding: 7px 0 0;
   scrollbar-color: var(--ime-line) transparent;
   scrollbar-width: thin;
 }
@@ -300,18 +325,17 @@ button {
   align-items: flex-start;
   background: var(--ime-panel);
   border: 1px solid var(--ime-line);
-  border-radius: 10px;
+  border-radius: 9px;
   color: var(--ime-text);
   cursor: pointer;
   display: flex;
-  flex: 1 1 auto;
   gap: 6px;
   justify-content: flex-start;
   max-width: none;
-  min-height: 43px;
+  min-height: 40px;
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 9px 11px;
+  padding: 8px 10px;
   width: 100%;
 }
 
@@ -322,7 +346,7 @@ button {
 
 .candidate sup {
   color: var(--ime-accent);
-  font-size: 0.58rem;
+  font-size: 0.57rem;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   line-height: 1.5;
@@ -332,8 +356,8 @@ button {
 #candidate-area.compact .candidate-text {
   color: var(--ime-text) !important;
   flex: 1 1 auto;
-  font-size: 0.82rem !important;
-  line-height: 1.3;
+  font-size: 0.8rem !important;
+  line-height: 1.32;
   min-width: 0;
 }
 
@@ -366,89 +390,77 @@ button {
 }
 
 .piecemeal-token {
+  display: inline;
   position: relative;
+  white-space: nowrap;
+}
+
+.piecemeal-syllable {
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 .piecemeal-syllable.active {
-  background: rgb(201 245 111 / 18%);
-  border-radius: 3px;
+  background: rgb(201 245 111 / 17%);
+  box-shadow: 0 0 0 2px rgb(201 245 111 / 32%);
 }
 
 .piecemeal-number {
   color: var(--ime-accent);
   font-size: 0.48em;
   font-variant-numeric: tabular-nums;
-  inset-block-start: -0.45em;
+  inline-size: 1ch;
+  inset-block-start: -0.43em;
   inset-inline-start: 100%;
   line-height: 1;
+  margin: 0;
+  pointer-events: none;
   position: absolute;
+  text-align: center;
 }
 
 body.stripped-plover-active {
-  --ime-accent: var(--ime-plover);
-  --ime-accent-ink: #251a05;
+  background: #17140e;
 }
 
-body.stripped-plover-active .ime-mode-title::after {
-  color: var(--ime-plover);
-  content: " · Plover";
+body.stripped-plover-active .ime-toolbar {
+  border: 0;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 0;
+  padding-block: 0;
 }
 
-@media (max-width: 520px) {
+body.stripped-plover-active .ime-plover-banner {
+  display: flex;
+}
+
+body.stripped-plover-active .ime-identity,
+body.stripped-plover-active .ime-toolbar-actions,
+body.stripped-plover-active #workbench {
+  display: none !important;
+}
+
+@media (max-width: 380px) {
+  .ime-mode-detail,
+  .ime-hardware-hint,
+  #plover-status {
+    display: none;
+  }
+
   .ime-toolbar {
-    flex-basis: 7.25rem;
-    padding-inline: 8px;
-  }
-
-  .ime-mode {
-    display: none;
-  }
-
-  .ime-identity {
-    justify-content: center;
-  }
-
-  .ime-plover-state {
-    justify-content: center;
-    padding-inline: 0;
-  }
-
-  .ime-tool-button {
-    flex-direction: column;
-    font-size: 0.56rem;
-    gap: 2px;
-    justify-content: center;
-    min-height: 44px;
-    padding: 3px;
-    text-align: center;
-  }
-
-  #workbench {
-    padding-left: 13px;
+    gap: 8px;
   }
 }
 
-@media (max-height: 220px) {
-  .ime-composition-label,
-  .ime-plover-state,
-  .ime-tool-button span {
+@media (max-height: 110px) {
+  .ime-composition-label {
     display: none;
   }
 
-  .ime-tool-button {
-    min-height: 36px;
-  }
-
   #workbench {
-    padding-block: 8px 6px;
-  }
-
-  #text-display {
-    padding-bottom: 5px;
-  }
-
-  #candidate-area {
-    padding-top: 6px;
+    padding-block: 6px;
   }
 }
 
@@ -456,10 +468,21 @@ body.stripped-plover-active .ime-mode-title::after {
   #cursor {
     animation: ime-cursor 1.1s steps(1, end) infinite;
   }
+
+  .ime-plover-pulse {
+    animation: ime-plover-pulse 1.6s ease-out infinite;
+  }
 }
 
 @keyframes ime-cursor {
   50% {
     opacity: 0.2;
+  }
+}
+
+@keyframes ime-plover-pulse {
+  70%,
+  100% {
+    box-shadow: 0 0 0 7px rgb(245 189 79 / 0%);
   }
 }

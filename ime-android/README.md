@@ -51,15 +51,28 @@ intentionally excludes user language models.
 
 The IME is a compact companion for an external steno keyboard. It keeps the
 reduced composing buffer and fitted alternatives visible without drawing an
-on-screen key layout. Android increases the IME height when candidates need
-more room; the candidate area scrolls only after the safe screen-height cap is
-reached.
+on-screen key layout. Its height follows the content: the empty and short-text
+states stay compact, while longer text and alternatives receive more room.
+
+<img src="docs/ime-empty.png" width="412" alt="Compact empty V7 IME inviting the user to begin a hardware chord">
+
+Alternatives use the available width first, laying out beside one another and
+wrapping onto another row only when needed. Android expands the IME to fit those
+rows; the candidate area becomes vertically scrollable only after the safe
+screen-height cap is reached.
 
 <img src="docs/ime-candidates.png" width="412" alt="V7 IME showing the reduced composing buffer and three candidate alternatives">
 
-Piecemeal mode numbers the editable syllables and highlights the active target:
+Piecemeal mode keeps natural spaces between editable syllables. Its highlight
+does not shift the surrounding text, including when the active target is in the
+middle of the phrase:
 
-<img src="docs/ime-piecemeal-edit.png" width="412" alt="V7 IME showing numbered syllables with the final syllable active for piecemeal editing">
+<img src="docs/ime-piecemeal-edit.png" width="412" alt="V7 IME showing naturally spaced numbered syllables with a middle syllable active for piecemeal editing">
+
+While Stripped Plover is active, the composition interface collapses to a
+48 dp status bar:
+
+<img src="docs/ime-plover.png" width="412" alt="Thin V7 IME status bar showing that Stripped Plover is active">
 
 ## Build
 
