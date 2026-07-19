@@ -217,6 +217,40 @@ async function main() {
       `Android IME did not expose initial model readiness: ${JSON.stringify(initial)}`,
     );
 
+    await page.evaluate(() => {
+      window.handleAndroidKeyEvent(
+        "keydown",
+        "c",
+        "KeyC",
+        false,
+        false,
+        true,
+        false,
+        false,
+      );
+      window.handleAndroidKeyEvent(
+        "keyup",
+        "c",
+        "KeyC",
+        false,
+        false,
+        true,
+        false,
+        false,
+      );
+    });
+    const modifiedKeyState = await page.evaluate(() => ({
+      inferenceBodies: window.__androidInferenceBodies.length,
+      preedits: window.__androidPreedits.length,
+      text: document.querySelector("#text-display").textContent,
+    }));
+    assert(
+      modifiedKeyState.inferenceBodies === 0 &&
+        modifiedKeyState.preedits === 0 &&
+        modifiedKeyState.text === "👋",
+      `Modified hardware keys leaked into V7 handling: ${JSON.stringify(modifiedKeyState)}`,
+    );
+
     await androidChord(page, ["c", " ", "m"]);
     await page.waitForFunction(
       () =>
@@ -309,6 +343,7 @@ async function main() {
     await applyRequestedImeHeight(page);
     const cleared = await page.evaluate(() => ({
       preedit: window.__androidPreedits.at(-1),
+      preeditCount: window.__androidPreedits.length,
       text: document.querySelector("#text-display").textContent,
     }));
     assert(
@@ -322,6 +357,36 @@ async function main() {
     );
 
     await page.evaluate(() => {
+      window.__androidInferenceDelay = 200;
+      window.__androidInferenceResponse = {
+        candidates: [["ready pending result"]],
+      };
+    });
+    await androidChord(page, ["c", " ", "m"]);
+    const readyPendingInference = await page.evaluate(() => ({
+      reducedBuffer: document.querySelector("#text-display").textContent,
+      preedits: window.__androidPreedits.length,
+      inferenceBodies: window.__androidInferenceBodies.length,
+    }));
+    assert(
+      readyPendingInference.reducedBuffer === "👋" &&
+        readyPendingInference.preedits === cleared.preeditCount &&
+        readyPendingInference.inferenceBodies === 2,
+      `Android rendered raw V7 while ready inference was pending: ${JSON.stringify(readyPendingInference)}`,
+    );
+    await page.waitForFunction(() =>
+      document
+        .querySelector("#text-display")
+        .textContent.includes("ready pending result"),
+    );
+    await page.evaluate(() => {
+      window.__androidInferenceResponse = null;
+      window.clearPreeditFromAndroid();
+    });
+
+    await page.evaluate(() => {
+      window.__androidModelState = "loading";
+      window.handleAndroidInferenceState("loading");
       window.__androidInferenceDelay = 200;
       window.__androidInferenceError =
         "Unable to memory-map the selected lm.binary file";
