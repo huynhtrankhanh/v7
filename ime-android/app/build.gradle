@@ -64,7 +64,8 @@ tasks.register("prepareKenlm", Exec) {
     )
     inputs.files(
             rootProject.file("KENLM_REVISION"),
-            rootProject.file("scripts/prepare-kenlm.sh")
+            rootProject.file("scripts/prepare-kenlm.sh"),
+            rootProject.file("patches/kenlm-load-from-fd.patch")
     )
     outputs.dir kenlmRoot
 }

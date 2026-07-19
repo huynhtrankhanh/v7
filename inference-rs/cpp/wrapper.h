@@ -8,6 +8,8 @@ extern "C" {
 typedef void* ModelPtr;
 
 ModelPtr load_model(const char* path);
+ModelPtr load_model_fd(int fd, const char* name);
+const char* last_model_error();
 void destroy_model(ModelPtr model);
 
 float score_model(const ModelPtr model, const void* in_state, unsigned int new_word, void* out_state);

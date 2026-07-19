@@ -1030,6 +1030,15 @@ impl EmbeddedInference {
         })
     }
 
+    #[cfg(target_os = "android")]
+    pub(crate) fn from_fd(model_fd: libc::c_int, model_name: &str) -> Result<Self> {
+        Ok(Self {
+            tokenizer: Tokenizer::new()?,
+            model: kenlm::Model::from_fd(model_fd, model_name)
+                .map_err(|error| anyhow::anyhow!(error))?,
+        })
+    }
+
     pub(crate) fn infer_json(&self, request_body: &str) -> Result<String> {
         let payload: InferRequest = serde_json::from_str(request_body)?;
         let candidates = if payload.is_empty() {

@@ -52,11 +52,11 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
             .map(|cached| cached.model_id != model_id)
             .unwrap_or(true);
         if needs_load {
-            let model_path = format!("/proc/self/fd/{}", model_fd.0);
-            let engine = EmbeddedInference::new(&model_path).map_err(|error| {
+            let engine = EmbeddedInference::from_fd(model_fd.0, &model_id).map_err(|error| {
                 anyhow::anyhow!(
                     "Unable to memory-map the selected lm.binary file. \
-                     Choose a seekable local file in the system picker: {error}"
+                     The document provider must expose a seekable, mappable \
+                     descriptor; the model is not copied: {error}"
                 )
             })?;
             *guard = Some(CachedInference { model_id, engine });

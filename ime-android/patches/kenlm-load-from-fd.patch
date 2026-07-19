@@ -1,0 +1,81 @@
+diff --git a/lm/binary_format.cc b/lm/binary_format.cc
+index 0ae0e53..02f75e5 100644
+--- a/lm/binary_format.cc
++++ b/lm/binary_format.cc
+@@ -290,2 +290,2 @@ void BinaryFormat::MapFile(void *&vocab_base, void *&search_base) {
+-bool RecognizeBinary(const char *file, ModelType &recognized) {
+-  util::scoped_fd fd(util::OpenReadOrThrow(file));
++bool RecognizeBinary(int source_fd, ModelType &recognized) {
++  util::scoped_fd fd(util::DupOrThrow(source_fd));
+@@ -300,0 +301,5 @@ bool RecognizeBinary(const char *file, ModelType &recognized) {
++bool RecognizeBinary(const char *file, ModelType &recognized) {
++  util::scoped_fd fd(util::OpenReadOrThrow(file));
++  return RecognizeBinary(fd.get(), recognized);
++}
++
+diff --git a/lm/binary_format.hh b/lm/binary_format.hh
+index 73d9fcc..52000d5 100644
+--- a/lm/binary_format.hh
++++ b/lm/binary_format.hh
+@@ -26,0 +27 @@ bool RecognizeBinary(const char *file, ModelType &recognized);
++bool RecognizeBinary(int fd, ModelType &recognized);
+diff --git a/lm/model.cc b/lm/model.cc
+index b968edd..e078cc8 100644
+--- a/lm/model.cc
++++ b/lm/model.cc
+@@ -59,3 +59,6 @@ void CheckCounts(const std::vector<uint64_t> &counts) {
+-template <class Search, class VocabularyT> GenericModel<Search, VocabularyT>::GenericModel(const char *file, const Config &init_config) : backing_(init_config) {
+-  util::scoped_fd fd(util::OpenReadOrThrow(file));
+-  if (IsBinaryFormat(fd.get())) {
++template <class Search, class VocabularyT> GenericModel<Search, VocabularyT>::GenericModel(const char *file, const Config &init_config)
++  : GenericModel(util::OpenReadOrThrow(file), file, init_config) {}
++
++template <class Search, class VocabularyT> GenericModel<Search, VocabularyT>::GenericModel(int fd, const char *file, const Config &init_config) : backing_(init_config) {
++  util::scoped_fd owned_fd(fd);
++  if (IsBinaryFormat(owned_fd.get())) {
+@@ -63 +66 @@ template <class Search, class VocabularyT> GenericModel<Search, VocabularyT>::Ge
+-    int fd_shallow = fd.release();
++    int fd_shallow = owned_fd.release();
+@@ -76 +79 @@ template <class Search, class VocabularyT> GenericModel<Search, VocabularyT>::Ge
+-    InitializeFromARPA(fd.release(), file, init_config);
++    InitializeFromARPA(owned_fd.release(), file, init_config);
+@@ -328,2 +331,3 @@ template class GenericModel<trie::TrieSearch<SeparatelyQuantize, trie::ArrayBhik
+-base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType model_type) {
+-  RecognizeBinary(file_name, model_type);
++base::Model *LoadVirtual(int fd, const char *file_name, const Config &config, ModelType model_type) {
++  util::scoped_fd owned_fd(fd);
++  RecognizeBinary(owned_fd.get(), model_type);
+@@ -332 +336 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new ProbingModel(file_name, config);
++      return new ProbingModel(owned_fd.release(), file_name, config);
+@@ -334 +338 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new RestProbingModel(file_name, config);
++      return new RestProbingModel(owned_fd.release(), file_name, config);
+@@ -336 +340 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new TrieModel(file_name, config);
++      return new TrieModel(owned_fd.release(), file_name, config);
+@@ -338 +342 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new QuantTrieModel(file_name, config);
++      return new QuantTrieModel(owned_fd.release(), file_name, config);
+@@ -340 +344 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new ArrayTrieModel(file_name, config);
++      return new ArrayTrieModel(owned_fd.release(), file_name, config);
+@@ -342 +346 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
+-      return new QuantArrayTrieModel(file_name, config);
++      return new QuantArrayTrieModel(owned_fd.release(), file_name, config);
+@@ -347,0 +352,5 @@ base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType
++base::Model *LoadVirtual(const char *file_name, const Config &config, ModelType model_type) {
++  util::scoped_fd fd(util::OpenReadOrThrow(file_name));
++  return LoadVirtual(fd.release(), file_name, config, model_type);
++}
++
+diff --git a/lm/model.hh b/lm/model.hh
+index db43d8b..f77359c 100644
+--- a/lm/model.hh
++++ b/lm/model.hh
+@@ -51,0 +52 @@ template <class Search, class VocabularyT> class GenericModel : public base::Mod
++    GenericModel(int fd, const char *file, const Config &config = Config());
+@@ -133,0 +135 @@ class name : public from {\
++    name(int fd, const char *file, const Config &config = Config()) : from(fd, file, config) {}\
+@@ -150,0 +153 @@ base::Model *LoadVirtual(const char *file_name, const Config &config = Config(),
++base::Model *LoadVirtual(int fd, const char *file_name, const Config &config = Config(), ModelType if_arpa = PROBING);

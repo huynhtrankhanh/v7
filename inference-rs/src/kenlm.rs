@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use libc::{c_char, c_float, c_uint, c_void};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 
 mod ffi {
     use super::*;
@@ -9,6 +9,8 @@ mod ffi {
 
     extern "C" {
         pub fn load_model(path: *const c_char) -> *mut Model;
+        pub fn load_model_fd(fd: libc::c_int, name: *const c_char) -> *mut Model;
+        pub fn last_model_error() -> *const c_char;
         pub fn destroy_model(model: *mut Model);
         pub fn score_model(
             model: *mut Model,
@@ -54,6 +56,36 @@ impl Model {
         }
         let state_size = unsafe { ffi::get_state_size(ptr) };
         if state_size > 128 {
+            return Err(format!(
+                "Model state size {} exceeds buffer size 128",
+                state_size
+            ));
+        }
+        Ok(Model { ptr, state_size })
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn from_fd(fd: libc::c_int, name: &str) -> Result<Self, String> {
+        let c_name = CString::new(name).map_err(|e| e.to_string())?;
+        let ptr = unsafe { ffi::load_model_fd(fd, c_name.as_ptr()) };
+        if ptr.is_null() {
+            let detail = unsafe {
+                let error = ffi::last_model_error();
+                if error.is_null() {
+                    String::new()
+                } else {
+                    CStr::from_ptr(error).to_string_lossy().into_owned()
+                }
+            };
+            return Err(if detail.is_empty() {
+                format!("Failed to load model descriptor for {name}")
+            } else {
+                format!("Failed to load model descriptor for {name}: {detail}")
+            });
+        }
+        let state_size = unsafe { ffi::get_state_size(ptr) };
+        if state_size > 128 {
+            unsafe { ffi::destroy_model(ptr) };
             return Err(format!(
                 "Model state size {} exceeds buffer size 128",
                 state_size
