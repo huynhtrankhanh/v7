@@ -274,12 +274,15 @@ const state = {
   candidates: [],
 };
 let isRawMode = false;
+let inferenceErrorMessage = "";
 let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
   enabled: false,
   copyAllowed: false,
 };
 
 interface AndroidImeBridge {
+  getInferenceModelError(): string;
+  getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
@@ -289,6 +292,10 @@ interface AndroidImeBridge {
 }
 
 const androidIme = window.AndroidIme;
+let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
+if (androidIme) {
+  inferenceErrorMessage = androidIme.getInferenceModelError();
+}
 let androidInferenceRequestId = 1;
 let lastRequestedAndroidKeyboardHeight = 0;
 const androidInferencePending = new Map<
@@ -1678,6 +1685,10 @@ async function runInference() {
   if (!hasV7) {
     abortInferenceRequest(true);
     state.candidates = [];
+    inferenceErrorMessage =
+      androidIme && inferenceModelState === "error"
+        ? androidIme.getInferenceModelError()
+        : "";
     updateDisplay();
     return;
   }
@@ -1685,6 +1696,12 @@ async function runInference() {
   abortInferenceRequest(false);
   const controller = hasAbortController ? new AbortController() : null;
   inferenceAbortController = controller;
+
+  // Reflect the edited buffer immediately. Native model loading and inference
+  // can take noticeable time, and candidates from the previous buffer are no
+  // longer valid while this request is in flight.
+  state.candidates = [];
+  updateDisplay();
 
   try {
     // Convert client islands to server format [Fixed, V7, Fixed...]
@@ -1712,12 +1729,17 @@ async function runInference() {
       return;
     }
     state.candidates = getInferenceCandidates(data);
+    inferenceErrorMessage = "";
     updateDisplay();
   } catch (e) {
     if (e && e.name === "AbortError") {
       return;
     }
     console.error("Inference failed", e);
+    inferenceErrorMessage =
+      e instanceof Error ? e.message : `Unknown inference error: ${String(e)}`;
+    state.candidates = [];
+    updateDisplay();
   } finally {
     if (controller && controller === inferenceAbortController) {
       // Only clear if this is still the latest inference request.
@@ -1906,6 +1928,21 @@ function setupImeControls() {
   }
 }
 
+function updateInferenceStatusUI() {
+  const status = document.getElementById("inference-status");
+  if (!status || !androidIme) return;
+  const labels = {
+    missing: "Model missing",
+    not_loaded: "Model not loaded",
+    loading: "Loading model… · raw buffer",
+    ready: "Model ready",
+    error: "Model error",
+  };
+  status.textContent =
+    labels[inferenceModelState] ?? `Model ${inferenceModelState}`;
+  status.className = `ime-mode-detail ${inferenceModelState}`;
+}
+
 function trackQwertyKey(event, isPressed) {
   const key = normalizeQwertyDisplayKey(event.key, event.code || "");
   if (!key) return;
@@ -1927,6 +1964,7 @@ function updateDisplay() {
   const display = document.getElementById("text-display");
   const textArea = document.getElementById("text-input");
   const candArea = document.getElementById("candidate-area");
+  const inferenceError = document.getElementById("inference-error");
 
   const text = renderVisibleText(state.islands, state.candidates);
   const candidateDiffPlan =
@@ -1939,6 +1977,12 @@ function updateDisplay() {
     "stripped-plover-active",
     strippedDisplay.enabled && strippedPlover.enabled,
   );
+  if (inferenceError) {
+    inferenceError.hidden = inferenceErrorMessage === "";
+    inferenceError.textContent = inferenceErrorMessage
+      ? `Inference error: ${inferenceErrorMessage}`
+      : "";
+  }
   if (strippedDisplay.enabled && candidateDiffPlan?.sections.length) {
     console.info(
       "Candidate diff regions:",
@@ -2514,6 +2558,8 @@ declare global {
   interface Window {
     AndroidIme?: AndroidImeBridge;
     clearPreeditFromAndroid?: () => void;
+    handleAndroidInferenceState?: (state: string) => void;
+    handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
     handleAndroidInferenceResponse?: (
       requestId: number,
       statusCode: number,
@@ -2624,6 +2670,20 @@ window.handleAndroidInferenceResponse = (
   }
 };
 
+window.handleAndroidInferenceState = (modelState) => {
+  inferenceModelState = modelState;
+  if (modelState !== "error") {
+    inferenceErrorMessage = "";
+  }
+  updateInferenceStatusUI();
+  updateDisplay();
+};
+
+window.handleAndroidInferenceWarmupError = (errorMessage) => {
+  inferenceErrorMessage = errorMessage;
+  updateDisplay();
+};
+
 window.handleAndroidPloverResponse = (
   requestId,
   responseBody,
@@ -2697,6 +2757,8 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
     const label = document.querySelector<HTMLElement>(".ime-composition-label");
     const display = document.getElementById("text-display");
     const flow = display?.querySelector<HTMLElement>(".text-display-flow");
+    const inferenceError =
+      document.getElementById<HTMLElement>("inference-error");
     if (!toolbar || !workbench || !display || !flow) return;
 
     const workbenchStyle = getComputedStyle(workbench);
@@ -2712,6 +2774,10 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
         ? label.offsetHeight + 4
         : 0;
     const bufferContentHeight = Math.max(32, flow.scrollHeight);
+    const inferenceErrorHeight =
+      inferenceError && !inferenceError.hidden
+        ? inferenceError.offsetHeight + 6
+        : 0;
     const candidateHeight = candidatesVisible ? candidateArea.scrollHeight : 0;
     const desiredHeight = Math.max(
       112,
@@ -2721,6 +2787,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
           labelHeight +
           displayPadding +
           bufferContentHeight +
+          inferenceErrorHeight +
           candidateHeight,
       ),
     );
@@ -2742,6 +2809,10 @@ window.clearPreeditFromAndroid = () => {
   abortInferenceRequest(true);
   buffer.reset();
   state.candidates = [];
+  inferenceErrorMessage =
+    androidIme && inferenceModelState === "error"
+      ? androidIme.getInferenceModelError()
+      : "";
   piecemealCursorIndex = null;
   isRawMode = false;
   updateDisplay();
@@ -2783,6 +2854,7 @@ window.setStrippedDisplay = (options = {}) => {
 
 if (androidIme) {
   window.setStrippedDisplay();
+  updateInferenceStatusUI();
 }
 
 updateDisplay();

@@ -127,6 +127,19 @@ button {
   font-size: 0.61rem;
 }
 
+#inference-status.loading {
+  color: var(--ime-plover);
+}
+
+#inference-status.ready {
+  color: var(--ime-accent);
+}
+
+#inference-status.error,
+#inference-status.missing {
+  color: var(--ime-danger);
+}
+
 .ime-toolbar-actions {
   align-items: center;
   display: flex;
@@ -304,6 +317,23 @@ button {
   display: none;
 }
 
+#inference-error {
+  background: rgb(255 142 130 / 10%);
+  border: 1px solid rgb(255 142 130 / 32%);
+  border-radius: 7px;
+  color: var(--ime-danger);
+  flex: 0 0 auto;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  margin-bottom: 6px;
+  max-height: 5.4em;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  white-space: pre-wrap;
+}
+
 #candidate-area {
   align-content: flex-start;
   border-top: 1px solid var(--ime-line);
@@ -330,8 +360,9 @@ button {
   color: var(--ime-text);
   cursor: pointer;
   display: flex;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   gap: 5px;
+  inline-size: max-content;
   justify-content: flex-start;
   max-width: 100%;
   min-height: 34px;
@@ -357,10 +388,12 @@ button {
 .candidate-text,
 #candidate-area.compact .candidate-text {
   color: var(--ime-text) !important;
-  flex: 0 1 auto;
+  flex: 0 1 max-content;
   font-size: 0.8rem !important;
   line-height: 1.32;
+  max-width: 100%;
   min-width: 0;
+  white-space: normal;
 }
 
 .candidate-diff-summary,

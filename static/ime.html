@@ -22,7 +22,7 @@
           <span class="ime-mark" aria-hidden="true">V7</span>
           <span class="ime-mode">
             <span class="ime-mode-title">Compose</span>
-            <span class="ime-mode-detail">on-device</span>
+            <span id="inference-status" class="ime-mode-detail">on-device</span>
           </span>
         </div>
 
@@ -58,6 +58,12 @@
           Start typing with your steno keyboard...
         </div>
         <textarea id="text-input" aria-label="Raw text input"></textarea>
+        <div
+          id="inference-error"
+          role="alert"
+          aria-live="assertive"
+          hidden
+        ></div>
         <div id="candidate-area" aria-label="Alternative candidates">
           <div class="candidate">Candidates will appear here...</div>
         </div>

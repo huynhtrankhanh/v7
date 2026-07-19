@@ -104,10 +104,20 @@ async function main() {
     await page.evaluateOnNewDocument(() => {
       window.__androidPreedits = [];
       window.__androidInferenceBodies = [];
+      window.__androidInferenceDelay = 0;
+      window.__androidInferenceError = "";
+      window.__androidInferenceResponse = null;
+      window.__androidModelState = "loading";
       window.__androidPloverBodies = [];
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
+        getInferenceModelError() {
+          return "";
+        },
+        getInferenceModelState() {
+          return window.__androidModelState;
+        },
         hasPloverConfiguration() {
           return true;
         },
@@ -122,21 +132,38 @@ async function main() {
         },
         requestInference(body, requestId) {
           window.__androidInferenceBodies.push(JSON.parse(body));
+          window.__androidModelState = "loading";
+          window.handleAndroidInferenceState("loading");
           setTimeout(() => {
+            if (window.__androidInferenceError) {
+              window.__androidModelState = "error";
+              window.handleAndroidInferenceState("error");
+              window.handleAndroidInferenceResponse(
+                requestId,
+                0,
+                "",
+                window.__androidInferenceError,
+              );
+              return;
+            }
+            window.__androidModelState = "ready";
+            window.handleAndroidInferenceState("ready");
             window.handleAndroidInferenceResponse(
               requestId,
               200,
-              JSON.stringify({
-                candidates: [
-                  ["alpha beta keep delta omega"],
-                  ["alpha x keep delta omega"],
-                  ["alpha beta keep y omega"],
-                  ["alpha x keep y omega"],
-                ],
-              }),
+              JSON.stringify(
+                window.__androidInferenceResponse || {
+                  candidates: [
+                    ["alpha beta keep delta omega"],
+                    ["alpha x keep delta omega"],
+                    ["alpha beta keep y omega"],
+                    ["alpha x keep y omega"],
+                  ],
+                },
+              ),
               "",
             );
-          }, 0);
+          }, window.__androidInferenceDelay);
         },
         requestPlover(body, requestId) {
           const request = JSON.parse(body);
@@ -170,6 +197,7 @@ async function main() {
       height: window.__androidHeight,
       text: document.querySelector("#text-display").textContent,
       dedicatedSurface: document.body.classList.contains("ime-surface"),
+      inferenceStatus: document.querySelector("#inference-status").textContent,
     }));
     assert(initial.stripped, "Android bridge did not enable stripped mode");
     assert(
@@ -183,6 +211,10 @@ async function main() {
     assert(
       initial.text === "👋",
       "Android IME did not start with an empty buffer",
+    );
+    assert(
+      initial.inferenceStatus === "Loading model… · raw buffer",
+      `Android IME did not expose initial model readiness: ${JSON.stringify(initial)}`,
     );
 
     await androidChord(page, ["c", " ", "m"]);
@@ -288,6 +320,103 @@ async function main() {
       cleared.text === "👋",
       "Android reset did not clear the WebUI buffer",
     );
+
+    await page.evaluate(() => {
+      window.__androidInferenceDelay = 200;
+      window.__androidInferenceError =
+        "Unable to memory-map the selected lm.binary file";
+    });
+    await androidChord(page, ["c", " ", "m"]);
+    const pendingInference = await page.evaluate(() => ({
+      reducedBuffer: document.querySelector("#text-display").textContent,
+      preedit: window.__androidPreedits.at(-1).text,
+      candidatesHidden:
+        getComputedStyle(document.querySelector("#candidate-area")).display ===
+        "none",
+      inferenceStatus: document.querySelector("#inference-status").textContent,
+    }));
+    assert(
+      pendingInference.reducedBuffer.trim() !== "" &&
+        pendingInference.preedit.trim() !== "" &&
+        pendingInference.candidatesHidden &&
+        pendingInference.inferenceStatus === "Loading model… · raw buffer",
+      `Edited buffer was not rendered while inference was pending: ${JSON.stringify(pendingInference)}`,
+    );
+    await page.waitForFunction(
+      () =>
+        !document.querySelector("#inference-error").hidden &&
+        document
+          .querySelector("#inference-error")
+          .textContent.includes("Unable to memory-map"),
+    );
+    const failedInference = await page.evaluate(() => ({
+      error: document.querySelector("#inference-error").textContent,
+      reducedBuffer: document.querySelector("#text-display").textContent,
+      preedit: window.__androidPreedits.at(-1).text,
+      inferenceStatus: document.querySelector("#inference-status").textContent,
+    }));
+    assert(
+      failedInference.error.startsWith("Inference error:") &&
+        failedInference.reducedBuffer.trim() !== "" &&
+        failedInference.preedit.trim() !== "" &&
+        failedInference.inferenceStatus === "Model error",
+      `Inference failure was not visible while preserving the buffer: ${JSON.stringify(failedInference)}`,
+    );
+
+    await page.evaluate(() => {
+      window.__androidInferenceDelay = 0;
+      window.__androidInferenceError = "";
+      window.clearPreeditFromAndroid();
+      window.__androidInferenceResponse = {
+        candidates: [
+          ["current"],
+          ["one"],
+          ["two"],
+          [
+            "an-extraordinarily-long-candidate-that-must-wrap-inside-its-own-box",
+          ],
+          ["three"],
+        ],
+      };
+    });
+    await androidChord(page, ["c", " ", "m"]);
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll("#candidate-area .candidate").length === 4,
+    );
+    await applyRequestedImeHeight(page);
+    const packedCandidates = await page.evaluate(() => {
+      const area = document.querySelector("#candidate-area");
+      const candidates = [...area.querySelectorAll(".candidate")];
+      const rects = candidates.map((candidate) =>
+        candidate.getBoundingClientRect(),
+      );
+      return {
+        areaWidth: area.getBoundingClientRect().width,
+        sameFirstRow: Math.abs(rects[0].top - rects[1].top) < 1,
+        longCandidateMoved: rects[2].top > rects[1].top + rects[1].height - 1,
+        longCandidateFits: rects[2].width <= area.clientWidth + 1,
+        longCandidateWrapped: rects[2].height > rects[0].height + 1,
+        candidatesOverflow: area.scrollHeight > area.clientHeight + 1,
+        inferenceStatus:
+          document.querySelector("#inference-status").textContent,
+      };
+    });
+    assert(
+      packedCandidates.sameFirstRow &&
+        packedCandidates.longCandidateMoved &&
+        packedCandidates.longCandidateFits &&
+        packedCandidates.longCandidateWrapped &&
+        !packedCandidates.candidatesOverflow &&
+        packedCandidates.inferenceStatus === "Model ready",
+      `Candidates did not wrap whole items before splitting an oversized item: ${JSON.stringify(packedCandidates)}`,
+    );
+
+    await page.evaluate(() => {
+      window.__androidInferenceResponse = null;
+      window.clearPreeditFromAndroid();
+    });
+    await applyRequestedImeHeight(page);
     assert(
       !(await page.$("#keyboard-layout")) &&
         !(await page.$("#ime-layout-toggle")) &&
