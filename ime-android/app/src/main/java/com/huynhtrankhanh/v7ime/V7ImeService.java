@@ -46,7 +46,7 @@ public class V7ImeService extends InputMethodService {
                 dpToPx(DEFAULT_KEYBOARD_HEIGHT_DP)
         ));
         configureWebView(webView);
-        webView.loadUrl("file:///android_asset/index.html");
+        webView.loadUrl("file:///android_asset/ime.html");
         return inputContainer;
     }
 

@@ -5,9 +5,10 @@
 
 ## Architecture
 
-- The root Vite build remains the source of truth for the keyboard UI. Android's
-  `syncWebUi` Gradle task builds and packages `static/index.html` and
-  `static/script.js`.
+- Android uses the dedicated `static/ime.html` and `static/ime.css` interface,
+  while sharing the inference and input behavior compiled into `static/script.js`.
+  The traditional `static/index.html` WebUI remains structurally and visually
+  independent.
 - `V7ImeService` hosts that UI in a `WebView`. The WebUI detects
   `window.AndroidIme`, enables stripped display mode, and mirrors its current
   rendered text into Android composing text.

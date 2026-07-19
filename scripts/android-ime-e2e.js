@@ -88,6 +88,7 @@ async function main() {
       window.__androidInferenceBodies = [];
       window.__androidPloverBodies = [];
       window.__androidHeight = 0;
+      window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
         hasPloverConfiguration() {
           return true;
@@ -128,17 +129,25 @@ async function main() {
             );
           }, 0);
         },
+        changeInputMethod() {
+          window.__androidKeyboardSwitches += 1;
+        },
       };
     });
     await page.setViewport({ width: 412, height: 300, deviceScaleFactor: 1 });
-    await page.goto(url, { waitUntil: "networkidle0" });
+    await page.goto(`${url}/ime.html`, { waitUntil: "networkidle0" });
 
     const initial = await page.evaluate(() => ({
       stripped: document.body.classList.contains("stripped-display"),
       height: window.__androidHeight,
       text: document.querySelector("#text-display").textContent,
+      dedicatedSurface: document.body.classList.contains("ime-surface"),
     }));
     assert(initial.stripped, "Android bridge did not enable stripped mode");
+    assert(
+      initial.dedicatedSurface,
+      "Android did not load the dedicated IME UI",
+    );
     assert(initial.height === 300, "Android keyboard height was not requested");
     assert(
       initial.text === "👋",
@@ -183,6 +192,18 @@ async function main() {
     assert(
       cleared.text === "👋",
       "Android reset did not clear the WebUI buffer",
+    );
+    await page.click("#ime-layout-toggle");
+    assert(
+      await page.$eval("#keyboard-layout", (layout) =>
+        layout.classList.contains("visible"),
+      ),
+      "IME layout button did not open the physical keyboard visualization",
+    );
+    await page.click("#ime-switch-keyboard");
+    assert(
+      await page.evaluate(() => window.__androidKeyboardSwitches === 1),
+      "IME keyboard button did not invoke the Android input method picker",
     );
     assert(
       !requests.some((request) => request.startsWith("/infer")),

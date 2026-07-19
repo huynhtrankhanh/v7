@@ -280,6 +280,7 @@ let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
 
 interface AndroidImeBridge {
   hasPloverConfiguration(): boolean;
+  changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string): void;
@@ -1839,6 +1840,19 @@ function updateKeyboardLayout() {
     "aria-hidden",
     isKeyboardLayoutVisible ? "false" : "true",
   );
+  const toggle = document.getElementById("ime-layout-toggle");
+  if (toggle) {
+    toggle.setAttribute(
+      "aria-pressed",
+      isKeyboardLayoutVisible ? "true" : "false",
+    );
+    toggle.setAttribute(
+      "aria-label",
+      isKeyboardLayoutVisible
+        ? "Hide physical keyboard layout"
+        : "Show physical keyboard layout",
+    );
+  }
 
   for (const keyEl of layout.querySelectorAll(".qwerty-key")) {
     const key = keyEl.dataset.key || "";
@@ -1888,6 +1902,22 @@ function setKeyboardLayoutVisible(visible) {
 
 function toggleKeyboardLayout() {
   setKeyboardLayoutVisible(!isKeyboardLayoutVisible);
+}
+
+function setupImeControls() {
+  const layoutToggle = document.getElementById("ime-layout-toggle");
+  layoutToggle?.addEventListener("click", toggleKeyboardLayout);
+
+  const switchKeyboard = document.getElementById("ime-switch-keyboard");
+  if (switchKeyboard) {
+    if (androidIme) {
+      switchKeyboard.addEventListener("click", () => {
+        androidIme.changeInputMethod();
+      });
+    } else {
+      switchKeyboard.setAttribute("hidden", "");
+    }
+  }
 }
 
 function trackQwertyKey(event, isPressed) {
@@ -2491,6 +2521,7 @@ function setupPloverControls() {
 
 renderKeyboardLayout();
 updateKeyboardLayout();
+setupImeControls();
 setupPloverControls();
 
 declare global {

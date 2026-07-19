@@ -36,6 +36,8 @@ tasks.register("buildWebUi", Exec) {
     inputs.files(
             fileTree("${webRoot}/src") { include "**/*.ts" },
             "${webRoot}/static/index.html",
+            "${webRoot}/static/ime.html",
+            "${webRoot}/static/ime.css",
             "${webRoot}/package.json",
             "${webRoot}/package-lock.json",
             "${webRoot}/vite.config.ts"
@@ -47,6 +49,8 @@ tasks.register("syncWebUi", Sync) {
     dependsOn "buildWebUi"
     from("${webRoot}/static") {
         include "index.html"
+        include "ime.html"
+        include "ime.css"
         include "script.js"
     }
     into generatedWebAssets
