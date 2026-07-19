@@ -1,5 +1,5 @@
-use std::str::Chars;
 use std::iter::Peekable;
+use std::str::Chars;
 
 pub fn enumerate(regex: &str) -> Vec<String> {
     let mut chars = regex.chars().peekable();
@@ -25,7 +25,7 @@ fn expand_expr(chars: &mut Peekable<Chars>) -> Vec<String> {
                 if chars.peek() == Some(&')') {
                     chars.next(); // skip )
                 }
-                
+
                 // Handle optional after group
                 if chars.peek() == Some(&'?') {
                     chars.next();
@@ -51,10 +51,12 @@ fn expand_expr(chars: &mut Peekable<Chars>) -> Vec<String> {
                 chars.next(); // skip [
                 let mut class_chars = Vec::new();
                 while let Some(cc) = chars.next() {
-                    if cc == ']' { break; }
+                    if cc == ']' {
+                        break;
+                    }
                     class_chars.push(cc);
                 }
-                
+
                 // Handle optional after class
                 if chars.peek() == Some(&'?') {
                     chars.next();
@@ -86,13 +88,13 @@ fn expand_expr(chars: &mut Peekable<Chars>) -> Vec<String> {
                 if let Some(escaped) = chars.next() {
                     let next_s = escaped.to_string();
                     if chars.peek() == Some(&'?') {
-                         chars.next();
-                         let mut new_seq = Vec::new();
-                         for s in &current_sequence {
-                             new_seq.push(format!("{}{}", s, next_s));
-                             new_seq.push(s.clone());
-                         }
-                         current_sequence = new_seq;
+                        chars.next();
+                        let mut new_seq = Vec::new();
+                        for s in &current_sequence {
+                            new_seq.push(format!("{}{}", s, next_s));
+                            new_seq.push(s.clone());
+                        }
+                        current_sequence = new_seq;
                     } else {
                         for s in &mut current_sequence {
                             s.push_str(&next_s);
@@ -118,7 +120,7 @@ fn expand_expr(chars: &mut Peekable<Chars>) -> Vec<String> {
             }
         }
     }
-    
+
     alternatives.push(current_sequence);
     alternatives.into_iter().flatten().collect()
 }
@@ -137,7 +139,7 @@ mod tests {
         assert!(res.contains(&"giếch".to_string()));
         assert_eq!(res.len(), 5);
     }
-    
+
     #[test]
     fn test_optional() {
         let res = enumerate("a(?:b)?c");

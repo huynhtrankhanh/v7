@@ -30,7 +30,9 @@ function startStaticServer() {
       res.writeHead(200, {
         "Content-Type": file.endsWith(".js")
           ? "text/javascript; charset=utf-8"
-          : "text/html; charset=utf-8",
+          : file.endsWith(".css")
+            ? "text/css; charset=utf-8"
+            : "text/html; charset=utf-8",
       });
       res.end(data);
     });
@@ -86,13 +88,21 @@ async function main() {
     await page.evaluateOnNewDocument(() => {
       window.__androidPreedits = [];
       window.__androidInferenceBodies = [];
+      window.__androidPloverBodies = [];
       window.__androidHeight = 0;
+      window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
+        hasPloverConfiguration() {
+          return true;
+        },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
-        setPreeditText(text) {
-          window.__androidPreedits.push(text);
+        setPreeditText(text, grammarSectionsJson) {
+          window.__androidPreedits.push({
+            text,
+            grammarSections: JSON.parse(grammarSectionsJson),
+          });
         },
         requestInference(body, requestId) {
           window.__androidInferenceBodies.push(JSON.parse(body));
@@ -101,23 +111,53 @@ async function main() {
               requestId,
               200,
               JSON.stringify({
-                candidates: [["xin chào"], ["chào bạn"]],
+                candidates: [
+                  ["alpha beta keep delta omega"],
+                  ["alpha x keep delta omega"],
+                  ["alpha beta keep y omega"],
+                  ["alpha x keep y omega"],
+                ],
               }),
               "",
             );
           }, 0);
         },
+        requestPlover(body, requestId) {
+          const request = JSON.parse(body);
+          window.__androidPloverBodies.push(request);
+          setTimeout(() => {
+            window.handleAndroidPloverResponse(
+              requestId,
+              JSON.stringify({
+                id: request.id,
+                result:
+                  request.method === "list_dictionaries"
+                    ? { dictionaries: [] }
+                    : {},
+              }),
+              "",
+            );
+          }, 0);
+        },
+        changeInputMethod() {
+          window.__androidKeyboardSwitches += 1;
+        },
       };
     });
     await page.setViewport({ width: 412, height: 300, deviceScaleFactor: 1 });
-    await page.goto(url, { waitUntil: "networkidle0" });
+    await page.goto(`${url}/ime.html`, { waitUntil: "networkidle0" });
 
     const initial = await page.evaluate(() => ({
       stripped: document.body.classList.contains("stripped-display"),
       height: window.__androidHeight,
       text: document.querySelector("#text-display").textContent,
+      dedicatedSurface: document.body.classList.contains("ime-surface"),
     }));
     assert(initial.stripped, "Android bridge did not enable stripped mode");
+    assert(
+      initial.dedicatedSurface,
+      "Android did not load the dedicated IME UI",
+    );
     assert(initial.height === 300, "Android keyboard height was not requested");
     assert(
       initial.text === "👋",
@@ -128,26 +168,60 @@ async function main() {
     await page.waitForFunction(
       () =>
         window.__androidInferenceBodies.length === 1 &&
-        window.__androidPreedits.at(-1) === "xin chào",
+        window.__androidPreedits.at(-1).text === "alpha beta keep delta omega",
     );
+    await page.waitForFunction(() => window.__androidHeight > 300);
 
     const bridgeState = await page.evaluate(() => ({
       inferenceBodies: window.__androidInferenceBodies,
       preedit: window.__androidPreedits.at(-1),
-      visible: document.querySelector("#text-display").textContent,
+      reducedBuffer: document.querySelector("#text-display").textContent,
+      candidateCount: document.querySelectorAll("#candidate-area .candidate")
+        .length,
+      candidatesVisible:
+        getComputedStyle(document.querySelector("#candidate-area")).display !==
+        "none",
+      candidatesOverflow:
+        document.querySelector("#candidate-area").scrollHeight >
+        document.querySelector("#candidate-area").clientHeight + 1,
+      requestedHeight: window.__androidHeight,
     }));
     assert(
       bridgeState.inferenceBodies[0].islands.length === 3,
       "Inference request did not use the V7 island protocol",
     );
     assert(
-      bridgeState.preedit === "xin chào",
+      bridgeState.preedit.text === "alpha beta keep delta omega",
       "Candidate text was not mirrored to Android composing text",
     );
     assert(
-      bridgeState.visible.includes("xin") &&
-        bridgeState.visible.includes("chào"),
-      "Inference candidate was not rendered in the stripped WebUI",
+      bridgeState.preedit.grammarSections.length === 2,
+      "Android composing text did not receive both grammar diff sections",
+    );
+    assert(
+      bridgeState.preedit.grammarSections[0].start === 6 &&
+        bridgeState.preedit.grammarSections[0].end === 10 &&
+        bridgeState.preedit.grammarSections[0].suggestions.includes("x"),
+      "Android left grammar suggestion range was incorrect",
+    );
+    assert(
+      bridgeState.preedit.grammarSections[1].start === 16 &&
+        bridgeState.preedit.grammarSections[1].end === 21 &&
+        bridgeState.preedit.grammarSections[1].suggestions.includes("y"),
+      "Android right grammar suggestion range was incorrect",
+    );
+    assert(
+      bridgeState.reducedBuffer.trim() !== "" &&
+        bridgeState.reducedBuffer !== "👋",
+      "Reduced composing buffer was not rendered in the IME",
+    );
+    assert(
+      bridgeState.candidatesVisible && bridgeState.candidateCount === 3,
+      "Alternative candidates were not rendered in the IME",
+    );
+    assert(
+      !bridgeState.candidatesOverflow && bridgeState.requestedHeight > 300,
+      `IME did not expand to fit alternatives before enabling scrolling: ${JSON.stringify(bridgeState)}`,
     );
 
     await page.evaluate(() => window.clearPreeditFromAndroid());
@@ -156,7 +230,8 @@ async function main() {
       text: document.querySelector("#text-display").textContent,
     }));
     assert(
-      cleared.preedit === "",
+      cleared.preedit.text === "" &&
+        cleared.preedit.grammarSections.length === 0,
       "Android reset did not clear composing text",
     );
     assert(
@@ -164,12 +239,27 @@ async function main() {
       "Android reset did not clear the WebUI buffer",
     );
     assert(
+      !(await page.$("#keyboard-layout")) &&
+        !(await page.$("#ime-layout-toggle")) &&
+        !(await page.$("#qwerty-board")),
+      "Dedicated IME UI must not render a physical keyboard layout",
+    );
+    await page.click("#ime-switch-keyboard");
+    assert(
+      await page.evaluate(() => window.__androidKeyboardSwitches === 1),
+      "IME keyboard button did not invoke the Android input method picker",
+    );
+    assert(
       !requests.some((request) => request.startsWith("/infer")),
       "Android inference bypassed the native bridge",
     );
     assert(
       !requests.some((request) => request.startsWith("/plover")),
-      "Android mode polled the unavailable Plover service",
+      "Android Stripped Plover traffic bypassed the native bridge",
+    );
+    assert(
+      await page.evaluate(() => window.__androidPloverBodies.length > 0),
+      "Android mode did not use the native Stripped Plover bridge",
     );
     console.log("Android IME WebUI bridge interactions passed");
   } finally {

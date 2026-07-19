@@ -170,6 +170,8 @@ history/
 */deprecated/
 misc/
 test/
+!ime-android/app/src/test/
+!ime-android/app/src/test/**
 *.ig.*
 
 # Checkpoints
@@ -200,3 +202,4 @@ kenlm/
 # Android bundle outputs
 android-artifacts/
 .gradle/
+ime-android/.native/

@@ -105,7 +105,10 @@ impl PloverClient {
                         error.to_string()
                     ));
                 }
-                return Ok(value.get("result").cloned().unwrap_or(serde_json::Value::Null));
+                return Ok(value
+                    .get("result")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null));
             }
         }
     }

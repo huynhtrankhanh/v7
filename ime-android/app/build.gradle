@@ -13,12 +13,22 @@ android {
     }
 
     sourceSets {
-        main.assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
+        main {
+            assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
+            assets.srcDir layout.buildDirectory.dir("generated/sourceArchive")
+            jniLibs.srcDir layout.buildDirectory.dir("generated/nativeJniLibs")
+        }
     }
 }
 
 def webRoot = rootProject.file("..")
 def generatedWebAssets = layout.buildDirectory.dir("generated/v7WebUi")
+def kenlmRoot = layout.buildDirectory.dir("kenlm")
+def generatedNativeLibraries = layout.buildDirectory.dir("generated/nativeJniLibs")
+def cargoTargetDirectory = layout.buildDirectory.dir("rust-target")
+def generatedSourceArchive = layout.buildDirectory.file(
+        "generated/sourceArchive/v7-ime-source.zip"
+)
 
 tasks.register("buildWebUi", Exec) {
     workingDir webRoot
@@ -26,6 +36,8 @@ tasks.register("buildWebUi", Exec) {
     inputs.files(
             fileTree("${webRoot}/src") { include "**/*.ts" },
             "${webRoot}/static/index.html",
+            "${webRoot}/static/ime.html",
+            "${webRoot}/static/ime.css",
             "${webRoot}/package.json",
             "${webRoot}/package-lock.json",
             "${webRoot}/vite.config.ts"
@@ -37,11 +49,79 @@ tasks.register("syncWebUi", Sync) {
     dependsOn "buildWebUi"
     from("${webRoot}/static") {
         include "index.html"
+        include "ime.html"
+        include "ime.css"
         include "script.js"
     }
     into generatedWebAssets
 }
 
+tasks.register("prepareKenlm", Exec) {
+    commandLine(
+            rootProject.file("scripts/prepare-kenlm.sh"),
+            kenlmRoot.get().asFile,
+            rootProject.file("KENLM_REVISION")
+    )
+    inputs.files(
+            rootProject.file("KENLM_REVISION"),
+            rootProject.file("scripts/prepare-kenlm.sh")
+    )
+    outputs.dir kenlmRoot
+}
+
+tasks.register("buildNativeInference", Exec) {
+    dependsOn "prepareKenlm"
+    commandLine(
+            rootProject.file("scripts/build-native.sh"),
+            webRoot,
+            kenlmRoot.get().asFile,
+            generatedNativeLibraries.get().asFile,
+            cargoTargetDirectory.get().asFile
+    )
+    inputs.files(
+            fileTree("${webRoot}/inference-rs") {
+                include "Cargo.toml"
+                include "Cargo.lock"
+                include "build.rs"
+                include "src/**"
+                include "cpp/**"
+            },
+            rootProject.file("scripts/build-native.sh"),
+            rootProject.file("KENLM_REVISION")
+    )
+    outputs.dir generatedNativeLibraries
+}
+
+tasks.register("buildSourceArchive", Exec) {
+    dependsOn "prepareKenlm"
+    commandLine(
+            rootProject.file("scripts/make-source-archive.sh"),
+            webRoot,
+            kenlmRoot.get().asFile,
+            generatedSourceArchive.get().asFile
+    )
+    inputs.files(
+            fileTree(webRoot) {
+                exclude ".git/**"
+                exclude "**/build/**"
+                exclude "**/.gradle/**"
+                exclude "**/node_modules/**"
+                exclude "**/target/**"
+                exclude "static/script.js"
+                exclude "lm.binary"
+                exclude "kenlm/**"
+            },
+            rootProject.file("KENLM_REVISION")
+    )
+    outputs.file generatedSourceArchive
+}
+
 tasks.named("preBuild").configure {
     dependsOn "syncWebUi"
+    dependsOn "buildNativeInference"
+    dependsOn "buildSourceArchive"
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
 }

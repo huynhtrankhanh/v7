@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>V7 Keyboard</title>
+    <link rel="stylesheet" href="ime.css" />
+  </head>
+  <body class="ime-surface">
+    <main id="inference-shell">
+      <header class="ime-toolbar">
+        <div class="ime-identity" aria-label="V7 local inference">
+          <span class="ime-mark" aria-hidden="true">V7</span>
+          <span class="ime-mode">
+            <span class="ime-mode-title">Compose</span>
+            <span class="ime-mode-detail">on-device</span>
+          </span>
+        </div>
+
+        <div class="ime-toolbar-actions">
+          <div class="ime-plover-state" title="Stripped Plover status">
+            <span class="ime-status-dot" aria-hidden="true"></span>
+            <span id="plover-status" class="unavailable">Unavailable</span>
+          </div>
+
+          <button
+            id="ime-switch-keyboard"
+            class="ime-tool-button ime-switch-button"
+            type="button"
+            aria-label="Switch input method"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path
+                d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9S14.4 18.5 12 21M12 3C9.6 5.5 8.4 8.5 8.4 12s1.2 6.5 3.6 9"
+              ></path>
+            </svg>
+            <span>Keyboard</span>
+          </button>
+        </div>
+      </header>
+
+      <section id="workbench" aria-label="V7 composition">
+        <div class="ime-composition-label" aria-hidden="true">
+          <span>Current phrase</span>
+          <span class="ime-hardware-hint">hardware chord input</span>
+        </div>
+        <div id="text-display" aria-live="polite">
+          Start typing with your steno keyboard...
+        </div>
+        <textarea id="text-input" aria-label="Raw text input"></textarea>
+        <div id="candidate-area" aria-label="Alternative candidates">
+          <div class="candidate">Candidates will appear here...</div>
+        </div>
+      </section>
+    </main>
+    <script src="script.js"></script>
+  </body>
+</html>
