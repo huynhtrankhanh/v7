@@ -29,8 +29,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class V7ImeService extends InputMethodService {
-    private static final int DEFAULT_KEYBOARD_HEIGHT_DP = 300;
-    private static final int MIN_KEYBOARD_HEIGHT_DP = 160;
+    private static final int DEFAULT_KEYBOARD_HEIGHT_DP = 160;
+    private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
     private final ExecutorService inferenceExecutor = Executors.newCachedThreadPool();
     private final ExecutorService ploverExecutor = Executors.newSingleThreadExecutor();

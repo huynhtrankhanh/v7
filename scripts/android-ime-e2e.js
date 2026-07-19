@@ -77,6 +77,22 @@ async function androidChord(page, keys) {
   }, keys);
 }
 
+async function applyRequestedImeHeight(page) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const requestedHeight = await page.evaluate(() => window.__androidHeight);
+    const viewport = page.viewport();
+    if (viewport.height === requestedHeight) return requestedHeight;
+    await page.setViewport({ ...viewport, height: requestedHeight });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+  }
+  return page.evaluate(() => window.__androidHeight);
+}
+
 async function main() {
   const { server, requests, url } = await startStaticServer();
   const browser = await puppeteer.launch({
@@ -144,8 +160,10 @@ async function main() {
         },
       };
     });
-    await page.setViewport({ width: 412, height: 300, deviceScaleFactor: 1 });
+    await page.setViewport({ width: 412, height: 160, deviceScaleFactor: 1 });
     await page.goto(`${url}/ime.html`, { waitUntil: "networkidle0" });
+    await page.waitForFunction(() => window.__androidHeight > 0);
+    await applyRequestedImeHeight(page);
 
     const initial = await page.evaluate(() => ({
       stripped: document.body.classList.contains("stripped-display"),
@@ -158,7 +176,10 @@ async function main() {
       initial.dedicatedSurface,
       "Android did not load the dedicated IME UI",
     );
-    assert(initial.height === 300, "Android keyboard height was not requested");
+    assert(
+      initial.height >= 112 && initial.height < 160,
+      `Empty IME did not request a compact content height: ${initial.height}`,
+    );
     assert(
       initial.text === "👋",
       "Android IME did not start with an empty buffer",
@@ -170,7 +191,12 @@ async function main() {
         window.__androidInferenceBodies.length === 1 &&
         window.__androidPreedits.at(-1).text === "alpha beta keep delta omega",
     );
-    await page.waitForFunction(() => window.__androidHeight > 300);
+    await page.waitForFunction(
+      (emptyHeight) => window.__androidHeight > emptyHeight,
+      {},
+      initial.height,
+    );
+    await applyRequestedImeHeight(page);
 
     const bridgeState = await page.evaluate(() => ({
       inferenceBodies: window.__androidInferenceBodies,
@@ -185,6 +211,9 @@ async function main() {
         document.querySelector("#candidate-area").scrollHeight >
         document.querySelector("#candidate-area").clientHeight + 1,
       requestedHeight: window.__androidHeight,
+      candidateColumns: getComputedStyle(
+        document.querySelector("#candidate-area"),
+      ).gridTemplateColumns.split(" ").length,
     }));
     assert(
       bridgeState.inferenceBodies[0].islands.length === 3,
@@ -220,11 +249,22 @@ async function main() {
       "Alternative candidates were not rendered in the IME",
     );
     assert(
-      !bridgeState.candidatesOverflow && bridgeState.requestedHeight > 300,
+      bridgeState.candidateColumns >= 2,
+      `Candidates did not use available horizontal space: ${JSON.stringify(bridgeState)}`,
+    );
+    assert(
+      !bridgeState.candidatesOverflow &&
+        bridgeState.requestedHeight > initial.height,
       `IME did not expand to fit alternatives before enabling scrolling: ${JSON.stringify(bridgeState)}`,
     );
 
     await page.evaluate(() => window.clearPreeditFromAndroid());
+    await page.waitForFunction(
+      (emptyHeight) => window.__androidHeight === emptyHeight,
+      {},
+      initial.height,
+    );
+    await applyRequestedImeHeight(page);
     const cleared = await page.evaluate(() => ({
       preedit: window.__androidPreedits.at(-1),
       text: document.querySelector("#text-display").textContent,
@@ -244,10 +284,133 @@ async function main() {
         !(await page.$("#qwerty-board")),
       "Dedicated IME UI must not render a physical keyboard layout",
     );
+
+    const phrase = [
+      ["w", "c"],
+      ["e", "r", "c", "o"],
+      ["s", "c"],
+      ["r", "f", "c", "l"],
+      ["e", "d", "c"],
+      ["w", "e", "r", "v", "o"],
+    ];
+    await page.setViewport({ ...page.viewport(), width: 280 });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    const narrowEmptyHeight = await applyRequestedImeHeight(page);
+    for (let syllable = 0; syllable < 9; syllable += 1) {
+      await androidChord(page, ["s", "c", "v"]);
+      await page.keyboard.type("123");
+    }
+    await page.waitForFunction(
+      (emptyHeight) => window.__androidHeight > emptyHeight,
+      {},
+      narrowEmptyHeight,
+    );
+    const longBuffer = await page.evaluate(() => ({
+      syllableCount: document.querySelectorAll(".piecemeal-syllable").length,
+      candidatesHidden:
+        getComputedStyle(document.querySelector("#candidate-area")).display ===
+        "none",
+      requestedHeight: window.__androidHeight,
+    }));
+    assert(
+      longBuffer.syllableCount === 9 && longBuffer.candidatesHidden,
+      `Long buffer did not independently expand the IME: ${JSON.stringify(longBuffer)}`,
+    );
+
+    await page.evaluate(() => window.clearPreeditFromAndroid());
+    await page.setViewport({ ...page.viewport(), width: 412 });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    await applyRequestedImeHeight(page);
+
+    for (const keys of phrase) {
+      await androidChord(page, keys);
+    }
+    await page.waitForFunction(
+      () => document.querySelectorAll(".piecemeal-syllable").length === 6,
+    );
+    const piecemealBefore = await page.$$eval(".piecemeal-token", (tokens) =>
+      tokens.map((token) => token.getBoundingClientRect().left),
+    );
+    await androidChord(page, ["w", "s"]); // TK selects a middle target.
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll(".piecemeal-syllable.active").length === 1,
+    );
+    const piecemealAfter = await page.evaluate(() => {
+      const syllables = [...document.querySelectorAll(".piecemeal-syllable")];
+      const flow = document.querySelector(".text-display-flow");
+      return {
+        activeIndex: syllables.findIndex((node) =>
+          node.classList.contains("active"),
+        ),
+        positions: [...document.querySelectorAll(".piecemeal-token")].map(
+          (token) => token.getBoundingClientRect().left,
+        ),
+        interSyllableSpaces: [...flow.childNodes].filter(
+          (node) =>
+            node.nodeType === Node.TEXT_NODE && node.textContent === " ",
+        ).length,
+      };
+    });
+    assert(
+      piecemealAfter.activeIndex === 2,
+      `Piecemeal test did not activate a middle syllable: ${JSON.stringify(piecemealAfter)}`,
+    );
+    assert(
+      piecemealAfter.interSyllableSpaces === 5,
+      `Piecemeal rendering lost natural inter-syllable spaces: ${JSON.stringify(piecemealAfter)}`,
+    );
+    assert(
+      piecemealAfter.positions.every(
+        (left, index) => Math.abs(left - piecemealBefore[index]) < 0.1,
+      ),
+      `Middle piecemeal highlighting changed syllable spacing: ${JSON.stringify(
+        {
+          before: piecemealBefore,
+          after: piecemealAfter.positions,
+        },
+      )}`,
+    );
+
     await page.click("#ime-switch-keyboard");
     assert(
       await page.evaluate(() => window.__androidKeyboardSwitches === 1),
       "IME keyboard button did not invoke the Android input method picker",
+    );
+
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#plover-status").textContent === "Available",
+    );
+    await androidChord(page, ["q"]); // # toggles Stripped Plover.
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("stripped-plover-active") &&
+        window.__androidHeight === 48,
+    );
+    const ploverSurface = await page.evaluate(() => ({
+      label: document.querySelector(".ime-plover-banner").textContent.trim(),
+      banner: getComputedStyle(document.querySelector(".ime-plover-banner"))
+        .display,
+      workbench: getComputedStyle(document.querySelector("#workbench")).display,
+      height: window.__androidHeight,
+    }));
+    assert(
+      ploverSurface.label === "Stripped Plover" &&
+        ploverSurface.banner === "flex" &&
+        ploverSurface.workbench === "none" &&
+        ploverSurface.height === 48,
+      `Active Plover surface was not reduced to a thin status bar: ${JSON.stringify(ploverSurface)}`,
     );
     assert(
       !requests.some((request) => request.startsWith("/infer")),
