@@ -1965,11 +1965,7 @@ function updateDisplay() {
     textArea.style.display = "none";
     const candidatesVisible =
       state.candidates.length > (strippedDisplay.enabled ? 1 : 0);
-    candArea.style.display = candidatesVisible
-      ? document.body.classList.contains("ime-surface")
-        ? "grid"
-        : "flex"
-      : "none";
+    candArea.style.display = candidatesVisible ? "flex" : "none";
 
     // Check if empty (single empty Viet island)
     const isEmpty =

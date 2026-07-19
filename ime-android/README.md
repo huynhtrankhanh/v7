@@ -56,10 +56,10 @@ states stay compact, while longer text and alternatives receive more room.
 
 <img src="docs/ime-empty.png" width="412" alt="Compact empty V7 IME inviting the user to begin a hardware chord">
 
-Alternatives use the available width first, laying out beside one another and
-wrapping onto another row only when needed. Android expands the IME to fit those
-rows; the candidate area becomes vertically scrollable only after the safe
-screen-height cap is reached.
+Each alternative uses only the width its summary needs. Alternatives pack
+beside one another and wrap onto another row only when the remaining width is
+insufficient. Android expands the IME to fit those rows; the candidate area
+becomes vertically scrollable only after the safe screen-height cap is reached.
 
 <img src="docs/ime-candidates.png" width="412" alt="V7 IME showing the reduced composing buffer and three candidate alternatives">
 
