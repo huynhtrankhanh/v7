@@ -357,6 +357,34 @@ async function main() {
     );
 
     await page.evaluate(() => {
+      window.AndroidIme.requestInferenceSync = (body) => {
+        window.__androidInferenceBodies.push(JSON.parse(body));
+        if (window.__androidInferenceError) {
+          window.__androidModelState = "error";
+          window.handleAndroidInferenceState("error");
+          return JSON.stringify({
+            statusCode: 0,
+            responseBody: "",
+            errorMessage: window.__androidInferenceError,
+          });
+        }
+        window.__androidModelState = "ready";
+        window.handleAndroidInferenceState("ready");
+        return JSON.stringify({
+          statusCode: 200,
+          responseBody: JSON.stringify(
+            window.__androidInferenceResponse || {
+              candidates: [
+                ["alpha beta keep delta omega"],
+                ["alpha x keep delta omega"],
+                ["alpha beta keep y omega"],
+                ["alpha x keep y omega"],
+              ],
+            },
+          ),
+          errorMessage: "",
+        });
+      };
       window.__androidInferenceDelay = 200;
       window.__androidInferenceResponse = {
         candidates: [["ready pending result"]],
@@ -369,17 +397,13 @@ async function main() {
       inferenceBodies: window.__androidInferenceBodies.length,
     }));
     assert(
-      readyPendingInference.reducedBuffer === "👋" &&
-        readyPendingInference.preedits === cleared.preeditCount &&
+      readyPendingInference.reducedBuffer.includes("ready pending result") &&
+        readyPendingInference.preedits > cleared.preeditCount &&
         readyPendingInference.inferenceBodies === 2,
-      `Android rendered raw V7 while ready inference was pending: ${JSON.stringify(readyPendingInference)}`,
-    );
-    await page.waitForFunction(() =>
-      document
-        .querySelector("#text-display")
-        .textContent.includes("ready pending result"),
+      `Android did not render synchronous inference without raw V7 flicker: ${JSON.stringify(readyPendingInference)}`,
     );
     await page.evaluate(() => {
+      delete window.AndroidIme.requestInferenceSync;
       window.__androidInferenceResponse = null;
       window.clearPreeditFromAndroid();
     });

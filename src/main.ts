@@ -286,6 +286,7 @@ interface AndroidImeBridge {
   hasPloverConfiguration(): boolean;
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
+  requestInferenceSync?: (body: string, requestId: number) => string;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
@@ -2627,9 +2628,32 @@ function requestAndroidInference(
       return;
     }
 
-    androidInferencePending.set(requestId, { resolve, reject });
-    signal?.addEventListener("abort", abort, { once: true });
     try {
+      if (androidIme.requestInferenceSync) {
+        const response = JSON.parse(
+          androidIme.requestInferenceSync(body, requestId),
+        );
+        if (response.errorMessage) {
+          reject(new Error(String(response.errorMessage)));
+          return;
+        }
+        const statusCode = Number(response.statusCode ?? 0);
+        if (statusCode < 200 || statusCode >= 300) {
+          reject(
+            new Error(
+              `Local inference returned status ${statusCode}${
+                response.responseBody ? `: ${response.responseBody}` : ""
+              }`,
+            ),
+          );
+          return;
+        }
+        resolve(JSON.parse(String(response.responseBody ?? "")));
+        return;
+      }
+
+      androidInferencePending.set(requestId, { resolve, reject });
+      signal?.addEventListener("abort", abort, { once: true });
       androidIme.requestInference(body, requestId);
     } catch (error) {
       androidInferencePending.delete(requestId);

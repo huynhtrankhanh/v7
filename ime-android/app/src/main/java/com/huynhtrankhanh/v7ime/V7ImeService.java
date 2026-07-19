@@ -23,6 +23,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
@@ -484,7 +485,7 @@ public class V7ImeService extends InputMethodService {
         });
     }
 
-    private void requestInference(String requestBody, int requestId) {
+    private InferenceResult runNativeInference(String requestBody, int requestId) {
         latestInferenceRequestId.set(requestId);
         String modelId = getCurrentInferenceModelId();
         if (modelId.isEmpty()) {
@@ -492,39 +493,63 @@ public class V7ImeService extends InputMethodService {
         } else if (!"ready".equals(getInferenceModelState())) {
             publishInferenceModelState("loading", modelId);
         }
+
+        String responseBody = "";
+        String errorMessage = "";
+        try {
+            responseBody = NativeInference.infer(this, requestBody);
+        } catch (Exception | LinkageError error) {
+            errorMessage = error.getMessage() == null
+                    ? error.getClass().getSimpleName()
+                    : error.getMessage();
+            Log.e(LOG_TAG, "Local inference failed", error);
+        }
+
+        if (latestInferenceRequestId.get() == requestId) {
+            inferenceModelError = errorMessage;
+            publishInferenceModelState(
+                    errorMessage.isEmpty()
+                            ? "ready"
+                            : modelId.isEmpty() ? "missing" : "error",
+                    modelId
+            );
+        }
+        return new InferenceResult(
+                errorMessage.isEmpty() ? 200 : 0,
+                responseBody,
+                errorMessage
+        );
+    }
+
+    private void requestInference(String requestBody, int requestId) {
+        latestInferenceRequestId.set(requestId);
         inferenceExecutor.execute(() -> {
             if (latestInferenceRequestId.get() != requestId) {
                 return;
             }
-            String responseBody = "";
-            String errorMessage = "";
-            try {
-                responseBody = NativeInference.infer(this, requestBody);
-            } catch (Exception | LinkageError error) {
-                errorMessage = error.getMessage() == null
-                        ? error.getClass().getSimpleName()
-                        : error.getMessage();
-                Log.e(LOG_TAG, "Local inference failed", error);
-            }
-
-            if (latestInferenceRequestId.get() == requestId) {
-                inferenceModelError = errorMessage;
-                publishInferenceModelState(
-                        errorMessage.isEmpty()
-                                ? "ready"
-                                : modelId.isEmpty() ? "missing" : "error",
-                        modelId
-                );
-            }
+            InferenceResult result = runNativeInference(requestBody, requestId);
             String script = "window.handleAndroidInferenceResponse"
                     + " && window.handleAndroidInferenceResponse("
                     + requestId + ","
-                    + (errorMessage.isEmpty() ? 200 : 0) + ","
-                    + JSONObject.quote(responseBody) + ","
-                    + JSONObject.quote(errorMessage)
+                    + result.statusCode + ","
+                    + JSONObject.quote(result.responseBody) + ","
+                    + JSONObject.quote(result.errorMessage)
                     + ")";
             evaluateJavascript(script);
         });
+    }
+
+    private String requestInferenceSync(String requestBody, int requestId) {
+        InferenceResult result = runNativeInference(requestBody, requestId);
+        JSONObject response = new JSONObject();
+        try {
+            response.put("statusCode", result.statusCode);
+            response.put("responseBody", result.responseBody);
+            response.put("errorMessage", result.errorMessage);
+        } catch (JSONException error) {
+            Log.e(LOG_TAG, "Unable to encode local inference response", error);
+        }
+        return response.toString();
     }
 
     private void warmInferenceModel() {
@@ -653,6 +678,18 @@ public class V7ImeService extends InputMethodService {
         }
     }
 
+    private static class InferenceResult {
+        final int statusCode;
+        final String responseBody;
+        final String errorMessage;
+
+        InferenceResult(int statusCode, String responseBody, String errorMessage) {
+            this.statusCode = statusCode;
+            this.responseBody = responseBody;
+            this.errorMessage = errorMessage;
+        }
+    }
+
     private class AndroidBridge {
         @JavascriptInterface
         public boolean hasPloverConfiguration() {
@@ -739,6 +776,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public void requestInference(String body, int requestId) {
             V7ImeService.this.requestInference(body, requestId);
+        }
+
+        @JavascriptInterface
+        public String requestInferenceSync(String body, int requestId) {
+            return V7ImeService.this.requestInferenceSync(body, requestId);
         }
 
         @JavascriptInterface
