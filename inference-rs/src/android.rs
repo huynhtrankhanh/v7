@@ -1,0 +1,88 @@
+#![cfg(target_os = "android")]
+
+#[path = "main.rs"]
+mod inference;
+
+use inference::EmbeddedInference;
+use jni::objects::{JClass, JString};
+use jni::sys::{jint, jstring};
+use jni::JNIEnv;
+use std::ptr;
+use std::sync::{Mutex, OnceLock};
+
+struct CachedInference {
+    model_id: String,
+    engine: EmbeddedInference,
+}
+
+static INFERENCE: OnceLock<Mutex<Option<CachedInference>>> = OnceLock::new();
+
+struct OwnedFd(jint);
+
+impl Drop for OwnedFd {
+    fn drop(&mut self) {
+        unsafe {
+            libc::close(self.0);
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative(
+    mut env: JNIEnv,
+    _class: JClass,
+    model_fd: jint,
+    model_id: JString,
+    request_body: JString,
+) -> jstring {
+    let result = (|| -> anyhow::Result<String> {
+        if model_fd < 0 {
+            anyhow::bail!("The selected language model could not be opened");
+        }
+        let model_fd = OwnedFd(model_fd);
+        let model_id: String = env.get_string(&model_id)?.into();
+        let request_body: String = env.get_string(&request_body)?.into();
+        let cache = INFERENCE.get_or_init(|| Mutex::new(None));
+        let mut guard = cache
+            .lock()
+            .map_err(|_| anyhow::anyhow!("The inference engine lock was poisoned"))?;
+
+        let needs_load = guard
+            .as_ref()
+            .map(|cached| cached.model_id != model_id)
+            .unwrap_or(true);
+        if needs_load {
+            let model_path = format!("/proc/self/fd/{}", model_fd.0);
+            let engine = EmbeddedInference::new(&model_path).map_err(|error| {
+                anyhow::anyhow!(
+                    "Unable to memory-map the selected lm.binary file. \
+                     Choose a seekable local file in the system picker: {error}"
+                )
+            })?;
+            *guard = Some(CachedInference { model_id, engine });
+        }
+
+        guard
+            .as_ref()
+            .expect("inference cache was initialized")
+            .engine
+            .infer_json(&request_body)
+    })();
+
+    match result {
+        Ok(response) => match env.new_string(response) {
+            Ok(value) => value.into_raw(),
+            Err(error) => {
+                let _ = env.throw_new(
+                    "java/lang/RuntimeException",
+                    format!("Unable to return inference result: {error}"),
+                );
+                ptr::null_mut()
+            }
+        },
+        Err(error) => {
+            let _ = env.throw_new("java/lang/RuntimeException", error.to_string());
+            ptr::null_mut()
+        }
+    }
+}

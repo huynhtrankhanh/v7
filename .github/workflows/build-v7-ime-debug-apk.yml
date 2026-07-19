@@ -9,7 +9,9 @@ permissions:
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
+    env:
+      ANDROID_NDK_VERSION: "27.2.12479018"
     defaults:
       run:
         working-directory: ime-android
@@ -26,6 +28,11 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install Android NDK
+        run: |
+          sdkmanager "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -35,6 +42,14 @@ jobs:
       - name: Install WebUI dependencies
         working-directory: .
         run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

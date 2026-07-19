@@ -86,8 +86,12 @@ async function main() {
     await page.evaluateOnNewDocument(() => {
       window.__androidPreedits = [];
       window.__androidInferenceBodies = [];
+      window.__androidPloverBodies = [];
       window.__androidHeight = 0;
       window.AndroidIme = {
+        hasPloverConfiguration() {
+          return true;
+        },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
@@ -102,6 +106,23 @@ async function main() {
               200,
               JSON.stringify({
                 candidates: [["xin chào"], ["chào bạn"]],
+              }),
+              "",
+            );
+          }, 0);
+        },
+        requestPlover(body, requestId) {
+          const request = JSON.parse(body);
+          window.__androidPloverBodies.push(request);
+          setTimeout(() => {
+            window.handleAndroidPloverResponse(
+              requestId,
+              JSON.stringify({
+                id: request.id,
+                result:
+                  request.method === "list_dictionaries"
+                    ? { dictionaries: [] }
+                    : {},
               }),
               "",
             );
@@ -169,7 +190,11 @@ async function main() {
     );
     assert(
       !requests.some((request) => request.startsWith("/plover")),
-      "Android mode polled the unavailable Plover service",
+      "Android Stripped Plover traffic bypassed the native bridge",
+    );
+    assert(
+      await page.evaluate(() => window.__androidPloverBodies.length > 0),
+      "Android mode did not use the native Stripped Plover bridge",
     );
     console.log("Android IME WebUI bridge interactions passed");
   } finally {

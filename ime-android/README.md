@@ -13,10 +13,13 @@
   rendered text into Android composing text.
 - Hardware key-down and key-up events are captured by the IME and forwarded to
   the WebUI as browser `KeyboardEvent`s. This preserves multi-key steno chords.
-- Inference requests go through the native bridge. Android reads the configured
-  endpoint and optional HTTP Basic credentials, makes the request, and returns
-  the JSON response to the WebUI. This avoids file-origin CORS restrictions and
-  keeps credentials out of WebUI storage.
+- Inference requests go through JNI to the bundled `inference-rs` and KenLM
+  code. No inference request leaves the device.
+- The language model is not bundled. Android retains a Storage Access Framework
+  document grant and passes its seekable file descriptor directly to KenLM,
+  which memory-maps it without copying the model into app-private storage.
+- Stripped Plover uses a separate native TCP bridge and is the only feature
+  that uses server settings.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.
@@ -26,21 +29,30 @@
 Open **V7 IME** from the launcher or tap its settings entry in Android's
 keyboard settings. The native settings activity includes:
 
-- inference server URL (a base URL or complete `/infer` endpoint);
-- optional HTTP Basic username and password;
+- a local `lm.binary` document selected with Android's Storage Access
+  Framework;
+- optional Stripped Plover host and TCP port;
+- an option to save the complete APK build source as `v7-ime-source.zip`;
 - shortcuts to enable V7 IME and open the input-method picker.
 
-An `http://` URL is supported for local development. Prefer HTTPS whenever
-credentials are configured.
+The source ZIP contains this repository plus the exact pinned KenLM checkout.
+It is offered under GPL-3.0-or-later and retains KenLM's LGPL and other
+third-party notices. It intentionally excludes user language models.
 
 ## Build
 
-The Android build invokes the root WebUI build. Install the root JavaScript
-dependencies first and use Gradle 8.9:
+The Android build invokes the root WebUI build, compiles Rust/KenLM for Android,
+and creates the source ZIP asset. Install the root JavaScript dependencies,
+Rust 1.88, `cargo-ndk`, Android NDK 27.2.12479018, and Gradle 8.9:
 
 ```sh
 npm ci
-gradle -p ime-android assembleDebug
+rustup target add \
+  aarch64-linux-android armv7-linux-androideabi \
+  x86_64-linux-android i686-linux-android
+cargo install cargo-ndk --version 4.1.2 --locked
+ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" \
+  gradle -p ime-android assembleDebug
 ```
 
 The APK is written to:

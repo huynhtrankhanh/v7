@@ -1017,6 +1017,30 @@ impl InferRequest {
     }
 }
 
+pub(crate) struct EmbeddedInference {
+    tokenizer: Tokenizer,
+    model: kenlm::Model,
+}
+
+impl EmbeddedInference {
+    pub(crate) fn new(model_path: &str) -> Result<Self> {
+        Ok(Self {
+            tokenizer: Tokenizer::new()?,
+            model: kenlm::Model::new(model_path).map_err(|error| anyhow::anyhow!(error))?,
+        })
+    }
+
+    pub(crate) fn infer_json(&self, request_body: &str) -> Result<String> {
+        let payload: InferRequest = serde_json::from_str(request_body)?;
+        let candidates = if payload.is_empty() {
+            vec![]
+        } else {
+            perform_inference(&payload.islands, &self.tokenizer, &self.model, 100)?
+        };
+        Ok(serde_json::to_string(&InferResponse { candidates })?)
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();

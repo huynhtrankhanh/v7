@@ -279,7 +279,9 @@ let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
 };
 
 interface AndroidImeBridge {
+  hasPloverConfiguration(): boolean;
   requestInference(body: string, requestId: number): void;
+  requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string): void;
   setKeyboardHeight(heightDp: number): void;
 }
@@ -287,6 +289,14 @@ interface AndroidImeBridge {
 const androidIme = window.AndroidIme;
 let androidInferenceRequestId = 1;
 const androidInferencePending = new Map<
+  number,
+  {
+    resolve: (value: unknown) => void;
+    reject: (reason: Error) => void;
+  }
+>();
+let androidPloverRequestId = 1;
+const androidPloverPending = new Map<
   number,
   {
     resolve: (value: unknown) => void;
@@ -469,9 +479,18 @@ function updatePloverStatusUI() {
 
 async function fetchPloverStatus() {
   try {
-    const resp = await fetch("/plover/status");
-    const data = await resp.json();
-    strippedPlover.available = !!data.available;
+    if (androidIme) {
+      if (androidIme.hasPloverConfiguration()) {
+        await requestAndroidPlover("get_starting_stroke_state", {});
+        strippedPlover.available = true;
+      } else {
+        strippedPlover.available = false;
+      }
+    } else {
+      const resp = await fetch("/plover/status");
+      const data = await resp.json();
+      strippedPlover.available = !!data.available;
+    }
     if (!strippedPlover.available) {
       strippedPlover.enabled = false;
       strippedPlover.solo = false;
@@ -495,6 +514,9 @@ function clearPloverStatusTimer() {
 
 function schedulePloverStatusRetry() {
   clearPloverStatusTimer();
+  if (androidIme && !androidIme.hasPloverConfiguration()) {
+    return;
+  }
   ploverStatusTimer = window.setTimeout(() => {
     ensurePloverAvailability().catch((err) =>
       console.error("Plover status retry failed:", err),
@@ -561,6 +583,11 @@ function resetPloverSocket(message) {
 }
 
 function ensurePloverSocket() {
+  if (androidIme) {
+    return Promise.reject(
+      new Error("Android uses its native Stripped Plover bridge"),
+    );
+  }
   if (ploverSocketReady) return ploverSocketReady;
   ploverSocketReady = new Promise((resolve, reject) => {
     ploverSocketReadyReject = reject;
@@ -615,6 +642,9 @@ function ensurePloverSocket() {
 }
 
 async function ploverRpc(method, params) {
+  if (androidIme) {
+    return requestAndroidPlover(method, params);
+  }
   const socket = await ensurePloverSocket();
   if (!socket || socket.readyState !== WebSocket.OPEN) {
     throw new Error("Stripped Plover unavailable");
@@ -2452,13 +2482,11 @@ function setupPloverControls() {
     });
   }
 
-  if (!androidIme) {
-    void ensurePloverAvailability().then(() => {
-      if (!strippedPlover.available) {
-        renderPloverDictionaries();
-      }
-    });
-  }
+  void ensurePloverAvailability().then(() => {
+    if (!strippedPlover.available) {
+      renderPloverDictionaries();
+    }
+  });
 }
 
 renderKeyboardLayout();
@@ -2472,6 +2500,11 @@ declare global {
     handleAndroidInferenceResponse?: (
       requestId: number,
       statusCode: number,
+      responseBody: string,
+      errorMessage: string,
+    ) => void;
+    handleAndroidPloverResponse?: (
+      requestId: number,
       responseBody: string,
       errorMessage: string,
     ) => void;
@@ -2520,6 +2553,29 @@ function requestAndroidInference(
   });
 }
 
+function requestAndroidPlover(
+  method: string,
+  params: unknown,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    if (!androidIme) {
+      reject(new Error("Android IME bridge is unavailable"));
+      return;
+    }
+    const requestId = androidPloverRequestId++;
+    androidPloverPending.set(requestId, { resolve, reject });
+    try {
+      androidIme.requestPlover(
+        JSON.stringify({ id: requestId, method, params }),
+        requestId,
+      );
+    } catch (error) {
+      androidPloverPending.delete(requestId);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+}
+
 window.handleAndroidInferenceResponse = (
   requestId,
   statusCode,
@@ -2537,7 +2593,7 @@ window.handleAndroidInferenceResponse = (
   if (statusCode < 200 || statusCode >= 300) {
     pending.reject(
       new Error(
-        `Inference server returned HTTP ${statusCode}${
+        `Local inference returned status ${statusCode}${
           responseBody ? `: ${responseBody}` : ""
         }`,
       ),
@@ -2547,7 +2603,31 @@ window.handleAndroidInferenceResponse = (
   try {
     pending.resolve(JSON.parse(responseBody));
   } catch {
-    pending.reject(new Error("Inference server returned invalid JSON"));
+    pending.reject(new Error("Local inference returned invalid JSON"));
+  }
+};
+
+window.handleAndroidPloverResponse = (
+  requestId,
+  responseBody,
+  errorMessage,
+) => {
+  const pending = androidPloverPending.get(requestId);
+  if (!pending) return;
+  androidPloverPending.delete(requestId);
+  if (errorMessage) {
+    pending.reject(new Error(errorMessage));
+    return;
+  }
+  try {
+    const response = JSON.parse(responseBody);
+    if (response.error) {
+      pending.reject(new Error(String(response.error)));
+    } else {
+      pending.resolve(response.result);
+    }
+  } catch {
+    pending.reject(new Error("Stripped Plover returned invalid JSON"));
   }
 };
 

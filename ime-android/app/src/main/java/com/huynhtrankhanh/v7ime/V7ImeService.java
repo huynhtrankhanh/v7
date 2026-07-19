@@ -3,7 +3,6 @@ package com.huynhtrankhanh.v7ime;
 import android.annotation.SuppressLint;
 import android.content.pm.ApplicationInfo;
 import android.inputmethodservice.InputMethodService;
-import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
@@ -18,14 +17,6 @@ import android.widget.FrameLayout;
 
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.ExecutorService;
@@ -35,9 +26,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class V7ImeService extends InputMethodService {
     private static final int DEFAULT_KEYBOARD_HEIGHT_DP = 300;
     private static final int MIN_KEYBOARD_HEIGHT_DP = 160;
-    private static final int NETWORK_TIMEOUT_MS = 15_000;
 
     private final ExecutorService inferenceExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService ploverExecutor = Executors.newSingleThreadExecutor();
+    private final StrippedPloverClient ploverClient = new StrippedPloverClient();
     private FrameLayout inputContainer;
     private WebView webView;
     private String preeditText = "";
@@ -130,6 +122,8 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onDestroy() {
         inferenceExecutor.shutdownNow();
+        ploverExecutor.shutdownNow();
+        ploverClient.close();
         if (webView != null) {
             webView.destroy();
             webView = null;
@@ -343,61 +337,20 @@ public class V7ImeService extends InputMethodService {
 
     private void requestInference(String requestBody, int requestId) {
         inferenceExecutor.execute(() -> {
-            int statusCode = 0;
             String responseBody = "";
             String errorMessage = "";
-            HttpURLConnection connection = null;
             try {
-                String endpoint = ImePreferences.getInferenceEndpoint(this);
-                if (endpoint.isEmpty()) {
-                    throw new IOException(
-                            "Configure the inference server URL in V7 IME settings"
-                    );
-                }
-
-                connection = (HttpURLConnection) new URL(endpoint).openConnection();
-                connection.setRequestMethod("POST");
-                connection.setConnectTimeout(NETWORK_TIMEOUT_MS);
-                connection.setReadTimeout(NETWORK_TIMEOUT_MS);
-                connection.setDoOutput(true);
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Accept", "application/json");
-
-                String username = ImePreferences.getUsername(this);
-                String password = ImePreferences.getPassword(this);
-                if (!username.isEmpty() || !password.isEmpty()) {
-                    String credentials = username + ":" + password;
-                    String encoded = Base64.encodeToString(
-                            credentials.getBytes(StandardCharsets.UTF_8),
-                            Base64.NO_WRAP
-                    );
-                    connection.setRequestProperty("Authorization", "Basic " + encoded);
-                }
-
-                byte[] payload = requestBody.getBytes(StandardCharsets.UTF_8);
-                connection.setFixedLengthStreamingMode(payload.length);
-                try (OutputStream output = connection.getOutputStream()) {
-                    output.write(payload);
-                }
-                statusCode = connection.getResponseCode();
-                InputStream stream = statusCode >= 200 && statusCode < 300
-                        ? connection.getInputStream()
-                        : connection.getErrorStream();
-                responseBody = readStream(stream);
+                responseBody = NativeInference.infer(this, requestBody);
             } catch (Exception error) {
                 errorMessage = error.getMessage() == null
                         ? error.getClass().getSimpleName()
                         : error.getMessage();
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
             }
 
             String script = "window.handleAndroidInferenceResponse"
                     + " && window.handleAndroidInferenceResponse("
                     + requestId + ","
-                    + statusCode + ","
+                    + (errorMessage.isEmpty() ? 200 : 0) + ","
                     + JSONObject.quote(responseBody) + ","
                     + JSONObject.quote(errorMessage)
                     + ")";
@@ -405,19 +358,29 @@ public class V7ImeService extends InputMethodService {
         });
     }
 
-    private String readStream(InputStream stream) throws IOException {
-        if (stream == null) {
-            return "";
-        }
-        StringBuilder result = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                result.append(line);
+    private void requestPlover(String requestBody, int requestId) {
+        ploverExecutor.execute(() -> {
+            String responseBody = "";
+            String errorMessage = "";
+            try {
+                responseBody = ploverClient.request(
+                        ImePreferences.getPloverHost(this),
+                        ImePreferences.getPloverPort(this),
+                        requestBody
+                );
+            } catch (Exception error) {
+                errorMessage = error.getMessage() == null
+                        ? error.getClass().getSimpleName()
+                        : error.getMessage();
             }
-        }
-        return result.toString();
+            String script = "window.handleAndroidPloverResponse"
+                    + " && window.handleAndroidPloverResponse("
+                    + requestId + ","
+                    + JSONObject.quote(responseBody) + ","
+                    + JSONObject.quote(errorMessage)
+                    + ")";
+            evaluateJavascript(script);
+        });
     }
 
     private int dpToPx(int dp) {
@@ -446,6 +409,11 @@ public class V7ImeService extends InputMethodService {
     }
 
     private class AndroidBridge {
+        @JavascriptInterface
+        public boolean hasPloverConfiguration() {
+            return !ImePreferences.getPloverHost(V7ImeService.this).isEmpty();
+        }
+
         @JavascriptInterface
         public void setKeyboardHeight(final int heightDp) {
             if (webView == null) {
@@ -479,6 +447,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public void requestInference(String body, int requestId) {
             V7ImeService.this.requestInference(body, requestId);
+        }
+
+        @JavascriptInterface
+        public void requestPlover(String body, int requestId) {
+            V7ImeService.this.requestPlover(body, requestId);
         }
 
         @JavascriptInterface
