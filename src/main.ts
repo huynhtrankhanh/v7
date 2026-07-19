@@ -16,6 +16,7 @@ import {
 } from "./syllableStroke";
 import {
   buildCandidateDiffPlan,
+  type CandidateDiffPlan,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
@@ -283,12 +284,13 @@ interface AndroidImeBridge {
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
   requestPlover(body: string, requestId: number): void;
-  setPreeditText(text: string): void;
+  setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
 }
 
 const androidIme = window.AndroidIme;
 let androidInferenceRequestId = 1;
+let lastRequestedAndroidKeyboardHeight = 300;
 const androidInferencePending = new Map<
   number,
   {
@@ -1840,20 +1842,6 @@ function updateKeyboardLayout() {
     "aria-hidden",
     isKeyboardLayoutVisible ? "false" : "true",
   );
-  const toggle = document.getElementById("ime-layout-toggle");
-  if (toggle) {
-    toggle.setAttribute(
-      "aria-pressed",
-      isKeyboardLayoutVisible ? "true" : "false",
-    );
-    toggle.setAttribute(
-      "aria-label",
-      isKeyboardLayoutVisible
-        ? "Hide physical keyboard layout"
-        : "Show physical keyboard layout",
-    );
-  }
-
   for (const keyEl of layout.querySelectorAll(".qwerty-key")) {
     const key = keyEl.dataset.key || "";
     keyEl.classList.toggle("is-pressed", pressedQwertyKeys.has(key));
@@ -1905,9 +1893,6 @@ function toggleKeyboardLayout() {
 }
 
 function setupImeControls() {
-  const layoutToggle = document.getElementById("ime-layout-toggle");
-  layoutToggle?.addEventListener("click", toggleKeyboardLayout);
-
   const switchKeyboard = document.getElementById("ime-switch-keyboard");
   if (switchKeyboard) {
     if (androidIme) {
@@ -1977,10 +1962,13 @@ function updateDisplay() {
     // Steno Mode: Show div
     display.style.display = "block";
     textArea.style.display = "none";
-    candArea.style.display =
-      state.candidates.length > (strippedDisplay.enabled ? 1 : 0)
-        ? "flex"
-        : "none";
+    const candidatesVisible =
+      state.candidates.length > (strippedDisplay.enabled ? 1 : 0);
+    candArea.style.display = candidatesVisible
+      ? document.body.classList.contains("ime-surface")
+        ? "grid"
+        : "flex"
+      : "none";
 
     // Check if empty (single empty Viet island)
     const isEmpty =
@@ -2127,7 +2115,8 @@ function updateDisplay() {
 
   updateInputPadding(display, textArea, candArea);
   scrollToBottom(isRawMode ? textArea : display);
-  syncAndroidPreedit();
+  syncAndroidKeyboardHeight(candArea);
+  syncAndroidPreedit(candidateDiffPlan);
 }
 
 // --- Input Handling ---
@@ -2662,10 +2651,77 @@ window.handleAndroidPloverResponse = (
   }
 };
 
-function syncAndroidPreedit() {
+function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   if (!androidIme) return;
-  androidIme.setPreeditText(renderVisibleText(state.islands, state.candidates));
+  const grammarSections = (candidateDiffPlan?.sections ?? [])
+    .slice(0, 2)
+    .filter((section) => section.end > section.start)
+    .map((section) => {
+      const suggestions: string[] = [];
+      for (const candidate of candidateDiffPlan?.candidates.slice(1) ?? []) {
+        const alternative = candidate.sections.find(
+          ({ role }) => role === section.role,
+        );
+        if (
+          alternative?.changes &&
+          alternative.text !== section.text &&
+          !suggestions.includes(alternative.text)
+        ) {
+          suggestions.push(alternative.text);
+        }
+      }
+      return {
+        start: section.start,
+        end: section.end,
+        suggestions: suggestions.slice(0, 5),
+      };
+    });
+  androidIme.setPreeditText(
+    renderVisibleText(state.islands, state.candidates),
+    JSON.stringify(grammarSections),
+  );
 }
+
+function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
+  if (!androidIme) return;
+  window.requestAnimationFrame(() => {
+    const candidatesVisible =
+      getComputedStyle(candidateArea).display !== "none";
+    let desiredHeight = 300;
+    if (candidatesVisible) {
+      const workbench = document.getElementById("workbench");
+      const label = document.querySelector<HTMLElement>(
+        ".ime-composition-label",
+      );
+      if (workbench) {
+        const style = getComputedStyle(workbench);
+        const verticalPadding =
+          parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+        desiredHeight = Math.max(
+          300,
+          Math.ceil(
+            verticalPadding +
+              (label?.offsetHeight ?? 0) +
+              6 +
+              136 +
+              candidateArea.scrollHeight,
+          ),
+        );
+      }
+    }
+    if (desiredHeight !== lastRequestedAndroidKeyboardHeight) {
+      lastRequestedAndroidKeyboardHeight = desiredHeight;
+      androidIme.setKeyboardHeight(desiredHeight);
+    }
+  });
+}
+
+window.addEventListener("resize", () => {
+  const candidateArea = document.getElementById("candidate-area");
+  if (candidateArea) {
+    syncAndroidKeyboardHeight(candidateArea);
+  }
+});
 
 window.clearPreeditFromAndroid = () => {
   abortInferenceRequest(true);

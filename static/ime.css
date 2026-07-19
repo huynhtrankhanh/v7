@@ -175,8 +175,7 @@ button {
   width: 17px;
 }
 
-.ime-tool-button:active,
-.ime-tool-button[aria-pressed="true"] {
+.ime-tool-button:active {
   background: var(--ime-panel-raised);
   border-color: var(--ime-line);
   color: var(--ime-text);
@@ -281,20 +280,18 @@ button {
 
 #candidate-area {
   border-top: 1px solid var(--ime-line);
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
   gap: 7px;
+  grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
   margin: 0 -2px;
-  max-height: min(42%, 118px);
+  max-height: calc(100dvh - 118px);
   min-height: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 9px 2px 1px;
-  scrollbar-width: none;
-}
-
-#candidate-area::-webkit-scrollbar {
-  display: none;
+  scrollbar-color: var(--ime-line) transparent;
+  scrollbar-width: thin;
 }
 
 .candidate,
@@ -307,14 +304,15 @@ button {
   color: var(--ime-text);
   cursor: pointer;
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   gap: 6px;
   justify-content: flex-start;
-  max-width: min(17rem, 78vw);
+  max-width: none;
   min-height: 43px;
-  min-width: min(7.5rem, 54vw);
+  min-width: 0;
   overflow-wrap: anywhere;
   padding: 9px 11px;
+  width: 100%;
 }
 
 .candidate:active {
@@ -386,98 +384,6 @@ button {
   position: absolute;
 }
 
-#keyboard-layout {
-  background: var(--ime-bg);
-  display: none;
-  flex-direction: column;
-  gap: 12px;
-  inset: 0 0 0 8.5rem;
-  overflow: auto;
-  padding: 15px max(14px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom)) 16px;
-  position: absolute;
-  z-index: 3;
-}
-
-#keyboard-layout.visible {
-  display: flex;
-}
-
-.ime-layout-heading {
-  align-items: flex-start;
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: space-between;
-}
-
-.ime-layout-heading > div {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.ime-layout-heading strong {
-  font-size: 0.74rem;
-}
-
-#keyboard-pressed-summary {
-  color: var(--ime-muted);
-  font-size: 0.63rem;
-}
-
-.ime-layout-shortcut {
-  border: 1px solid var(--ime-line);
-  border-radius: 5px;
-  color: var(--ime-muted);
-  font-size: 0.59rem;
-  padding: 3px 5px;
-}
-
-.qwerty-board {
-  align-self: stretch;
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 5px;
-  justify-content: center;
-  min-height: 0;
-}
-
-.qwerty-row {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-  min-width: 0;
-}
-
-.qwerty-key {
-  align-items: center;
-  background: var(--ime-panel-raised);
-  border: 1px solid #434943;
-  border-bottom-color: #292d29;
-  border-radius: 6px;
-  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 22%);
-  color: #c9cfc7;
-  display: flex;
-  flex: var(--key-width, 1) 1 0;
-  font-size: clamp(0.45rem, 1.8vw, 0.68rem);
-  font-weight: 700;
-  height: clamp(25px, 10.5dvh, 35px);
-  justify-content: center;
-  line-height: 1;
-  min-width: 0;
-  overflow: hidden;
-  padding-inline: 2px;
-  white-space: nowrap;
-}
-
-.qwerty-key.is-pressed {
-  background: var(--ime-accent);
-  border-color: #a5cf50;
-  box-shadow: inset 0 -2px 0 rgb(75 99 29 / 30%);
-  color: var(--ime-accent-ink);
-}
-
 body.stripped-plover-active {
   --ime-accent: var(--ime-plover);
   --ime-accent-ink: #251a05;
@@ -518,11 +424,6 @@ body.stripped-plover-active .ime-mode-title::after {
   }
 
   #workbench {
-    padding-left: 13px;
-  }
-
-  #keyboard-layout {
-    inset-inline-start: 7.25rem;
     padding-left: 13px;
   }
 }

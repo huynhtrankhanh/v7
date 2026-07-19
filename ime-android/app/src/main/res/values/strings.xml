@@ -16,7 +16,7 @@
     <string name="invalid_plover_port">Enter a port from 1 to 65535</string>
     <string name="save_settings">Save Stripped Plover settings</string>
     <string name="open_source_heading">Open-source licenses and source</string>
-    <string name="open_source_description">The APK includes inference-rs and KenLM. KenLM is LGPL-2.1-or-later; the complete build source archive is offered under GPL-3.0-or-later and retains all third-party notices.</string>
+    <string name="open_source_description">The APK includes inference-rs and KenLM. The exported ZIP aggregate is GPL-3.0-or-later; V7 files remain 0BSD, and KenLM retains its LGPL and other upstream notices.</string>
     <string name="save_source">Save APK source code (.zip)</string>
     <string name="source_saved">APK source code saved</string>
     <string name="source_save_failed">Could not save source code: %1$s</string>

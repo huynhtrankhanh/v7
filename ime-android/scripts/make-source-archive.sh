@@ -28,10 +28,30 @@ users select their own local model through Android's Storage Access Framework.
 - V7 revision: $v7_revision
 - KenLM revision: $kenlm_revision
 
-The combined archive is distributed under GPL-3.0-or-later. Third-party files
-retain their copyright notices and compatible licenses. KenLM's license texts
-are in third_party/kenlm.
+The ZIP aggregate, as a whole, is distributed under GPL-3.0-or-later; see
+AGGREGATE-LICENSE.txt. This does not replace the licenses of its constituent
+files: V7 remains 0BSD, and third-party files retain their own notices and
+licenses. KenLM's license texts are in third_party/kenlm.
 EOF
+
+cat > "$staging/AGGREGATE-LICENSE.txt" <<'EOF'
+V7 IME APK build-source ZIP aggregate
+
+SPDX-License-Identifier: GPL-3.0-or-later
+
+The build-source ZIP aggregate, as a combined collection, may be redistributed
+and/or modified under the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option) any
+later version.
+
+This aggregate license does not replace the licenses attached to constituent
+files. In particular, V7 source files remain available under 0BSD, and KenLM
+retains its upstream licenses and notices.
+
+The GNU General Public License version 3 text follows.
+
+EOF
+cat "$kenlm_root/COPYING.3" >> "$staging/AGGREGATE-LICENSE.txt"
 
 (
   cd "$repo_root"
@@ -41,6 +61,6 @@ EOF
 )
 (
   cd "$staging"
-  zip -qr "$archive" BUILD-SOURCE.md third_party
+  zip -qr "$archive" AGGREGATE-LICENSE.txt BUILD-SOURCE.md third_party
 )
 mv "$archive" "$output"

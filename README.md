@@ -1,9 +1,5 @@
 # V7 Text Prediction Engine
 
-This project is licensed under GPL-3.0-or-later. Android APKs bundle KenLM
-(LGPL-2.1-or-later) and provide an in-app option to save the complete source
-used for the build.
-
 This project implements a high-performance Vietnamese text prediction engine using a specialized "V7" input format. It utilizes a 3-gram language model trained with KenLM to disambiguate and reconstruct Vietnamese sentences from compact encoded strings. A web demo with a stenographic input interface is also included.
 
 ## Project Structure

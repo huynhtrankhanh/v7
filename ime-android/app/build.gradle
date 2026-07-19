@@ -121,3 +121,7 @@ tasks.named("preBuild").configure {
     dependsOn "buildNativeInference"
     dependsOn "buildSourceArchive"
 }
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+}

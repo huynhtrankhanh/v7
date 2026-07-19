@@ -3,6 +3,10 @@ package com.huynhtrankhanh.v7ime;
 import android.annotation.SuppressLint;
 import android.content.pm.ApplicationInfo;
 import android.inputmethodservice.InputMethodService;
+import android.os.Build;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.SuggestionSpan;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
@@ -15,6 +19,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
@@ -33,9 +38,11 @@ public class V7ImeService extends InputMethodService {
     private FrameLayout inputContainer;
     private WebView webView;
     private String preeditText = "";
+    private String preeditGrammarSectionsJson = "[]";
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
     private final AtomicInteger inputGeneration = new AtomicInteger();
     private String lastKeyEventSignature = "";
+    private boolean enterActionDispatched = false;
 
     @Override
     public View onCreateInputView() {
@@ -105,7 +112,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (dispatchPhysicalKeyToWeb("keydown", event)) {
+        if (dispatchHardwareKeyEvent(event)) {
             return true;
         }
         return super.onKeyDown(keyCode, event);
@@ -113,7 +120,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (dispatchPhysicalKeyToWeb("keyup", event)) {
+        if (dispatchHardwareKeyEvent(event)) {
             return true;
         }
         return super.onKeyUp(keyCode, event);
@@ -149,6 +156,68 @@ public class V7ImeService extends InputMethodService {
         WebView.setWebContentsDebuggingEnabled(debuggable);
     }
 
+    private boolean dispatchHardwareKeyEvent(KeyEvent event) {
+        if (isEnterKey(event.getKeyCode())) {
+            return dispatchEnterKey(event);
+        }
+        String action = event.getAction() == KeyEvent.ACTION_UP
+                ? "keyup"
+                : "keydown";
+        return dispatchPhysicalKeyToWeb(action, event);
+    }
+
+    private boolean dispatchEnterKey(KeyEvent event) {
+        String signature = "editor-enter:"
+                + event.getAction() + ":"
+                + event.getKeyCode() + ":"
+                + event.getEventTime();
+        if (signature.equals(lastKeyEventSignature)) {
+            return true;
+        }
+        lastKeyEventSignature = signature;
+
+        InputConnection connection = getCurrentInputConnection();
+        if (connection == null) {
+            return true;
+        }
+
+        if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            EditorInfo editorInfo = getCurrentInputEditorInfo();
+            int editorAction = editorInfo == null
+                    ? 0
+                    : EditorActionResolver.resolve(
+                            editorInfo.imeOptions,
+                            editorInfo.actionId
+                    );
+            if (editorAction != 0) {
+                enterActionDispatched = true;
+                if (event.getRepeatCount() == 0) {
+                    clearPreeditSession();
+                    connection.performEditorAction(editorAction);
+                }
+                return true;
+            }
+            enterActionDispatched = false;
+            connection.sendKeyEvent(event);
+            return true;
+        }
+
+        if (event.getAction() == KeyEvent.ACTION_UP) {
+            if (enterActionDispatched) {
+                enterActionDispatched = false;
+            } else {
+                connection.sendKeyEvent(event);
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private boolean isEnterKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
+
     private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {
         if (webView == null || !isCapturedKey(event.getKeyCode())) {
             return false;
@@ -181,8 +250,6 @@ public class V7ImeService extends InputMethodService {
                 || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
                 || keyCode == KeyEvent.KEYCODE_SEMICOLON
                 || keyCode == KeyEvent.KEYCODE_SPACE
-                || keyCode == KeyEvent.KEYCODE_ENTER
-                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
                 || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
                 || keyCode == KeyEvent.KEYCODE_CTRL_LEFT
@@ -198,9 +265,6 @@ public class V7ImeService extends InputMethodService {
         switch (event.getKeyCode()) {
             case KeyEvent.KEYCODE_SPACE:
                 return " ";
-            case KeyEvent.KEYCODE_ENTER:
-            case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                return "Enter";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
                 return "Shift";
@@ -236,10 +300,6 @@ public class V7ImeService extends InputMethodService {
                 return "Semicolon";
             case KeyEvent.KEYCODE_SPACE:
                 return "Space";
-            case KeyEvent.KEYCODE_ENTER:
-                return "Enter";
-            case KeyEvent.KEYCODE_NUMPAD_ENTER:
-                return "NumpadEnter";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
                 return "ShiftLeft";
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
@@ -285,13 +345,20 @@ public class V7ImeService extends InputMethodService {
         return false;
     }
 
-    private void applyPreeditText(String nextText) {
+    private void applyPreeditText(
+            String nextText,
+            String nextGrammarSectionsJson) {
         String normalized = nextText == null ? "" : nextText;
-        if (normalized.equals(preeditText)) {
+        String normalizedGrammarSections = nextGrammarSectionsJson == null
+                ? "[]"
+                : nextGrammarSectionsJson;
+        if (normalized.equals(preeditText)
+                && normalizedGrammarSections.equals(preeditGrammarSectionsJson)) {
             return;
         }
 
         preeditText = normalized;
+        preeditGrammarSectionsJson = normalizedGrammarSections;
         InputConnection connection = getCurrentInputConnection();
         if (connection == null) {
             pendingPreeditLengths.clear();
@@ -304,14 +371,70 @@ public class V7ImeService extends InputMethodService {
             pendingPreeditLengths.clear();
         } else {
             pendingPreeditLengths.addLast(preeditText.length());
-            connection.setComposingText(preeditText, 1);
+            connection.setComposingText(buildStyledPreedit(), 1);
         }
+    }
+
+    private CharSequence buildStyledPreedit() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            return preeditText;
+        }
+
+        SpannableString styled = new SpannableString(preeditText);
+        try {
+            JSONArray sections = new JSONArray(preeditGrammarSectionsJson);
+            for (int index = 0; index < Math.min(2, sections.length()); index++) {
+                JSONObject section = sections.optJSONObject(index);
+                if (section == null) {
+                    continue;
+                }
+                int start = Math.max(0, section.optInt("start", -1));
+                int end = Math.min(
+                        preeditText.length(),
+                        section.optInt("end", -1)
+                );
+                if (start >= end) {
+                    continue;
+                }
+
+                JSONArray suggestionsJson = section.optJSONArray("suggestions");
+                int suggestionCount = suggestionsJson == null
+                        ? 0
+                        : Math.min(
+                                SuggestionSpan.SUGGESTIONS_MAX_SIZE,
+                                suggestionsJson.length()
+                        );
+                String[] suggestions = new String[suggestionCount];
+                for (int suggestionIndex = 0;
+                        suggestionIndex < suggestionCount;
+                        suggestionIndex++) {
+                    suggestions[suggestionIndex] = suggestionsJson.optString(
+                            suggestionIndex,
+                            ""
+                    );
+                }
+                styled.setSpan(
+                        new SuggestionSpan(
+                                this,
+                                suggestions,
+                                SuggestionSpan.FLAG_GRAMMAR_ERROR
+                        ),
+                        start,
+                        end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+            }
+        } catch (Exception ignored) {
+            return preeditText;
+        }
+        return styled;
     }
 
     private void clearPreeditSession() {
         inputGeneration.incrementAndGet();
         boolean hadPreedit = !preeditText.isEmpty();
         preeditText = "";
+        preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
         if (hadPreedit) {
             InputConnection connection = getCurrentInputConnection();
@@ -398,10 +521,7 @@ public class V7ImeService extends InputMethodService {
                     && event.getAction() != KeyEvent.ACTION_UP) {
                 return super.dispatchKeyEvent(event);
             }
-            String action = event.getAction() == KeyEvent.ACTION_UP
-                    ? "keyup"
-                    : "keydown";
-            if (dispatchPhysicalKeyToWeb(action, event)) {
+            if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
             return super.dispatchKeyEvent(event);
@@ -423,22 +543,39 @@ public class V7ImeService extends InputMethodService {
                 if (inputContainer == null) {
                     return;
                 }
-                inputContainer.getLayoutParams().height = Math.max(
+                int requestedHeightPx = Math.max(
                         dpToPx(MIN_KEYBOARD_HEIGHT_DP),
                         dpToPx(heightDp)
+                );
+                int safeMaximumHeightPx = Math.max(
+                        dpToPx(DEFAULT_KEYBOARD_HEIGHT_DP),
+                        Math.round(
+                                getResources().getDisplayMetrics().heightPixels
+                                        * 0.7f
+                        )
+                );
+                inputContainer.getLayoutParams().height = Math.min(
+                        requestedHeightPx,
+                        safeMaximumHeightPx
                 );
                 inputContainer.requestLayout();
             });
         }
 
         @JavascriptInterface
-        public void setPreeditText(String text) {
+        public void setPreeditText(String text, String grammarSectionsJson) {
             String normalized = text == null ? "" : text;
+            String normalizedGrammarSections = grammarSectionsJson == null
+                    ? "[]"
+                    : grammarSectionsJson;
             int generation = inputGeneration.get();
             if (webView != null) {
                 webView.post(() -> {
                     if (generation == inputGeneration.get()) {
-                        applyPreeditText(normalized);
+                        applyPreeditText(
+                                normalized,
+                                normalizedGrammarSections
+                        );
                     }
                 });
             }

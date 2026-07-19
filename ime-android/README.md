@@ -12,8 +12,9 @@
 - `V7ImeService` hosts that UI in a `WebView`. The WebUI detects
   `window.AndroidIme`, enables stripped display mode, and mirrors its current
   rendered text into Android composing text.
-- Hardware key-down and key-up events are captured by the IME and forwarded to
-  the WebUI as browser `KeyboardEvent`s. This preserves multi-key steno chords.
+- External hardware key-down and key-up events are captured by the IME and
+  forwarded to the WebUI as browser `KeyboardEvent`s. The IME does not render
+  an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
 - The language model is not bundled. Android retains a Storage Access Framework
@@ -24,6 +25,11 @@
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.
+- On Android 12 and later, the two candidate-difference regions are attached to
+  composing text as grammar `SuggestionSpan`s with their alternative phrases.
+- Physical Enter is handled by the service rather than the WebUI: it invokes an
+  editor-provided custom or standard action when present, otherwise it forwards
+  the original Enter key events to the editor.
 
 ## Settings
 
@@ -37,8 +43,23 @@ keyboard settings. The native settings activity includes:
 - shortcuts to enable V7 IME and open the input-method picker.
 
 The source ZIP contains this repository plus the exact pinned KenLM checkout.
-It is offered under GPL-3.0-or-later and retains KenLM's LGPL and other
-third-party notices. It intentionally excludes user language models.
+Only the ZIP aggregate is offered under GPL-3.0-or-later: the V7 files inside
+remain 0BSD, and KenLM retains its LGPL and other upstream notices. The archive
+intentionally excludes user language models.
+
+## IME interface
+
+The IME is a compact companion for an external steno keyboard. It keeps the
+reduced composing buffer and fitted alternatives visible without drawing an
+on-screen key layout. Android increases the IME height when candidates need
+more room; the candidate area scrolls only after the safe screen-height cap is
+reached.
+
+<img src="docs/ime-candidates.png" width="412" alt="V7 IME showing the reduced composing buffer and three candidate alternatives">
+
+Piecemeal mode numbers the editable syllables and highlights the active target:
+
+<img src="docs/ime-piecemeal-edit.png" width="412" alt="V7 IME showing numbered syllables with the final syllable active for piecemeal editing">
 
 ## Build
 
