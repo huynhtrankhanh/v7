@@ -170,6 +170,9 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
+        if (event.isCtrlPressed() || event.isAltPressed() || event.isMetaPressed()) {
+            return false;
+        }
         if (isEnterKey(event.getKeyCode())) {
             return dispatchEnterKey(event);
         }

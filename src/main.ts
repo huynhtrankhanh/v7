@@ -1697,11 +1697,15 @@ async function runInference() {
   const controller = hasAbortController ? new AbortController() : null;
   inferenceAbortController = controller;
 
-  // Reflect the edited buffer immediately. Native model loading and inference
-  // can take noticeable time, and candidates from the previous buffer are no
-  // longer valid while this request is in flight.
+  // Candidates from the previous buffer are no longer valid while this request
+  // is in flight. On Android, hardware-key inference is synchronous once the
+  // model is ready, so avoid flashing raw V7 between the keystroke and the
+  // native result. Raw V7 is still useful while the model is loading or after
+  // an error, because there may be no imminent inference result to render.
   state.candidates = [];
-  updateDisplay();
+  if (!shouldDeferAndroidInferenceRender()) {
+    updateDisplay();
+  }
 
   try {
     // Convert client islands to server format [Fixed, V7, Fixed...]
@@ -1746,6 +1750,14 @@ async function runInference() {
       inferenceAbortController = null;
     }
   }
+}
+
+function shouldDeferAndroidInferenceRender() {
+  return androidIme && inferenceModelState === "ready";
+}
+
+function hasOsPassthroughModifier(event) {
+  return event.ctrlKey || event.altKey || event.metaKey;
 }
 
 function getInferenceCandidates(data: unknown): string[][] {
@@ -2165,6 +2177,11 @@ function updateDisplay() {
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
+  if (hasOsPassthroughModifier(e)) {
+    clearPressedQwertyKeys();
+    return;
+  }
+
   trackQwertyKey(e, true);
 
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -2270,6 +2287,11 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keyup", (e) => {
+  if (hasOsPassthroughModifier(e)) {
+    clearPressedQwertyKeys();
+    return;
+  }
+
   trackQwertyKey(e, false);
 
   if (isRawMode) return; // Don't process steno in raw mode
