@@ -211,9 +211,17 @@ async function main() {
         document.querySelector("#candidate-area").scrollHeight >
         document.querySelector("#candidate-area").clientHeight + 1,
       requestedHeight: window.__androidHeight,
-      candidateColumns: getComputedStyle(
-        document.querySelector("#candidate-area"),
-      ).gridTemplateColumns.split(" ").length,
+      candidateLayout: (() => {
+        const area = document.querySelector("#candidate-area");
+        const rects = [...area.querySelectorAll(".candidate")].map(
+          (candidate) => candidate.getBoundingClientRect(),
+        );
+        return {
+          rows: new Set(rects.map((rect) => Math.round(rect.top))).size,
+          usedWidth: rects.reduce((sum, rect) => sum + rect.width, 0),
+          availableWidth: area.clientWidth,
+        };
+      })(),
     }));
     assert(
       bridgeState.inferenceBodies[0].islands.length === 3,
@@ -249,8 +257,10 @@ async function main() {
       "Alternative candidates were not rendered in the IME",
     );
     assert(
-      bridgeState.candidateColumns >= 2,
-      `Candidates did not use available horizontal space: ${JSON.stringify(bridgeState)}`,
+      bridgeState.candidateLayout.rows === 1 &&
+        bridgeState.candidateLayout.usedWidth <
+          bridgeState.candidateLayout.availableWidth * 0.75,
+      `Candidates were not packed to their content widths: ${JSON.stringify(bridgeState)}`,
     );
     assert(
       !bridgeState.candidatesOverflow &&

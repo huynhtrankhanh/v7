@@ -305,16 +305,17 @@ button {
 }
 
 #candidate-area {
+  align-content: flex-start;
   border-top: 1px solid var(--ime-line);
-  display: grid;
+  display: flex;
   flex: 0 0 auto;
-  gap: 6px;
-  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+  flex-wrap: wrap;
+  gap: 5px;
   max-height: calc(100dvh - 104px);
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 7px 0 0;
+  padding: 6px 0 0;
   scrollbar-color: var(--ime-line) transparent;
   scrollbar-width: thin;
 }
@@ -329,14 +330,15 @@ button {
   color: var(--ime-text);
   cursor: pointer;
   display: flex;
-  gap: 6px;
+  flex: 0 1 auto;
+  gap: 5px;
   justify-content: flex-start;
-  max-width: none;
-  min-height: 40px;
+  max-width: 100%;
+  min-height: 34px;
   min-width: 0;
   overflow-wrap: anywhere;
-  padding: 8px 10px;
-  width: 100%;
+  padding: 6px 8px;
+  width: auto;
 }
 
 .candidate:active {
@@ -355,7 +357,7 @@ button {
 .candidate-text,
 #candidate-area.compact .candidate-text {
   color: var(--ime-text) !important;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-size: 0.8rem !important;
   line-height: 1.32;
   min-width: 0;
