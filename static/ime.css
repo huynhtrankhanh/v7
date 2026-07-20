@@ -488,12 +488,15 @@ body.android-normal-typing .ime-normal-banner {
 }
 
 body.stripped-plover-active .ime-identity,
-body.stripped-plover-active .ime-toolbar-actions,
 body.stripped-plover-active #workbench,
 body.android-normal-typing .ime-identity,
-body.android-normal-typing .ime-toolbar-actions,
 body.android-normal-typing #workbench {
   display: none !important;
+}
+
+body.stripped-plover-active .ime-plover-state,
+body.android-normal-typing .ime-plover-state {
+  display: none;
 }
 
 @media (max-width: 380px) {

@@ -177,8 +177,23 @@ public class DictionaryManagementActivity extends Activity {
             }
             filePathCallback = callback;
             try {
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                        .addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("*/*")
+                        .putExtra(
+                                Intent.EXTRA_MIME_TYPES,
+                                new String[]{
+                                        "application/json",
+                                        "text/x-python",
+                                        "text/plain",
+                                        "application/octet-stream"
+                                }
+                        );
+                if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                }
                 startActivityForResult(
-                        params.createIntent(),
+                        intent,
                         CHOOSE_DICTIONARY_REQUEST
                 );
                 return true;

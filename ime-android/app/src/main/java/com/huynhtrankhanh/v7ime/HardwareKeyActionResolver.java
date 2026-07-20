@@ -15,8 +15,7 @@ final class HardwareKeyActionResolver {
 
     private final Set<Integer> pressedControlKeys = new HashSet<>();
     private final Set<Integer> pressedShiftKeys = new HashSet<>();
-    private final Set<Integer> passedThroughChordKeys = new HashSet<>();
-    private boolean toggleChordActive = false;
+    private boolean toggleChordPending = false;
 
     Action resolve(
             boolean stenoModeEnabled,
@@ -24,7 +23,11 @@ final class HardwareKeyActionResolver {
             int action,
             int repeatCount) {
         if (isControlKey(keyCode) || isShiftKey(keyCode)) {
-            return resolveModeToggleChord(keyCode, action, repeatCount);
+            return resolveModeToggleChord(keyCode, action);
+        }
+
+        if (toggleChordPending && action == KeyEvent.ACTION_DOWN) {
+            toggleChordPending = false;
         }
 
         if (stenoModeEnabled && keyCode == KeyEvent.KEYCODE_LEFT_BRACKET) {
@@ -40,54 +43,40 @@ final class HardwareKeyActionResolver {
     void reset() {
         pressedControlKeys.clear();
         pressedShiftKeys.clear();
-        passedThroughChordKeys.clear();
-        toggleChordActive = false;
+        toggleChordPending = false;
     }
 
     boolean isModeToggleChordActive() {
-        return toggleChordActive;
+        return toggleChordPending;
     }
 
     private Action resolveModeToggleChord(
             int keyCode,
-            int action,
-            int repeatCount) {
+            int action) {
         Set<Integer> pressedKeys = isControlKey(keyCode)
                 ? pressedControlKeys
                 : pressedShiftKeys;
 
         if (action == KeyEvent.ACTION_DOWN) {
             pressedKeys.add(keyCode);
-            if (!toggleChordActive
-                    && repeatCount == 0
-                    && !pressedControlKeys.isEmpty()
+            if (!pressedControlKeys.isEmpty()
                     && !pressedShiftKeys.isEmpty()) {
-                toggleChordActive = true;
-                return Action.TOGGLE_STENO;
+                toggleChordPending = true;
             }
-            if (toggleChordActive) {
-                return Action.CONSUME;
-            }
-            passedThroughChordKeys.add(keyCode);
             return Action.PASS_THROUGH;
         }
 
         if (action == KeyEvent.ACTION_UP) {
             pressedKeys.remove(keyCode);
-            boolean balancePassedDown =
-                    passedThroughChordKeys.remove(keyCode);
-            if (pressedControlKeys.isEmpty() && pressedShiftKeys.isEmpty()) {
-                toggleChordActive = false;
-                passedThroughChordKeys.clear();
+            if (toggleChordPending
+                    && pressedControlKeys.isEmpty()
+                    && pressedShiftKeys.isEmpty()) {
+                toggleChordPending = false;
+                return Action.TOGGLE_STENO;
             }
-            return balancePassedDown
-                    ? Action.PASS_THROUGH
-                    : Action.CONSUME;
         }
 
-        return toggleChordActive
-                ? Action.CONSUME
-                : Action.PASS_THROUGH;
+        return Action.PASS_THROUGH;
     }
 
     private boolean isControlKey(int keyCode) {

@@ -2940,6 +2940,13 @@ window.addEventListener("resize", () => {
 
 window.clearPreeditFromAndroid = () => {
   abortInferenceRequest(true);
+  strippedPlover.requestId += 1;
+  strippedPlover.preeditIndex = null;
+  if (strippedPlover.available) {
+    void ploverRpc("reset_state", {}).catch((error) => {
+      console.error("Failed to reset Stripped Plover preedit state:", error);
+    });
+  }
   buffer.reset();
   state.candidates = [];
   inferenceErrorMessage =

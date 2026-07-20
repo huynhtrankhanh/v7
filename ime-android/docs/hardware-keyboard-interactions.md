@@ -8,8 +8,8 @@ including across editor changes.
 
 | Physical input               | STENO mode                                                       | Normal typing mode              |
 | ---------------------------- | ---------------------------------------------------------------- | ------------------------------- |
-| `Ctrl+Shift` chord           | Toggle to normal typing and finalize the current PREEDIT         | Toggle to STENO                 |
-| Held/repeated chord          | Consume without toggling again                                   | Consume without toggling again  |
+| `Ctrl+Shift` chord           | Toggle on release and finalize the current PREEDIT               | Toggle to STENO on release      |
+| `Ctrl+Shift` plus other key  | Pass through without toggling (for example, selection shortcuts) | Pass through without toggling   |
 | Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Pass through normally           |
 | `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally           |
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Pass both keys through normally |
@@ -18,14 +18,16 @@ including across editor changes.
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
-chord. The first modifier retains a balanced down/up pair if the chord is
-completed; the completing modifier and its repeats are consumed. A latch
-prevents another toggle until both chord modifiers have been released.
+chord. All modifier events pass through as balanced down/up pairs. The mode
+changes only after every participating modifier has been released. Pressing
+any non-modifier while the chord is held cancels the pending mode change, so
+shortcuts such as `Ctrl+Shift+Arrow` retain their ordinary editor behavior.
 
 The `Q+A` physical chord maps to the internal steno stroke `#S`, but Android
 reserves that stroke for the input-method picker. It is intercepted before V7
 decoding or Stripped Plover handling. The toolbar's **Switch** button continues
-to open the same picker.
+to open the same picker, including in the collapsed **Normal typing** and
+**Stripped Plover** status bars.
 
 ## PREEDIT finalization
 
@@ -52,12 +54,11 @@ input-finish lifecycle to finalize it.
 
 Android native key handling runs before WebView dispatch:
 
-1. resolve the native `Ctrl+Shift` mode chord and suppress its completing key;
+1. track the native `Ctrl+Shift` mode chord and toggle only after its release;
 2. while in STENO, resolve and consume `[`;
 3. while in normal typing mode, pass all other events back to the editor;
 4. while in STENO, forward captured steno keys to the WebUI;
 5. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
 
 This ordering keeps the mode-control chord out of steno aggregation while
-preserving balanced events for a modifier that was pressed before the chord
-was completed.
+preserving balanced modifier events and ordinary modified editor shortcuts.

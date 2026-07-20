@@ -254,10 +254,6 @@ public class V7ImeService extends InputMethodService {
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
             return dispatchModeKeyAction(event, hardwareAction);
         }
-        if (hardwareKeyActionResolver.isModeToggleChordActive()
-                && !isModeToggleModifierKey(event.getKeyCode())) {
-            return true;
-        }
         if (event.getAction() == KeyEvent.ACTION_UP
                 && webCapturedHardwareKeys.remove(event.getKeyCode())) {
             return dispatchPhysicalKeyToWeb("keyup", event);
@@ -309,9 +305,11 @@ public class V7ImeService extends InputMethodService {
         lastKeyEventSignature = signature;
 
         if (action == HardwareKeyActionResolver.Action.TOGGLE_STENO) {
+            editorPassedHardwareKeys.remove(event.getKeyCode());
             stenoModeEnabled = !stenoModeEnabled;
             finishCurrentPreedit();
             publishStenoModeState();
+            return false;
         } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
             finishCurrentPreedit();
         }

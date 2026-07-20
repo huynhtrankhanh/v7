@@ -22,7 +22,7 @@ public class HardwareKeyActionResolverTest {
                 )
         );
         assertEquals(
-                HardwareKeyActionResolver.Action.TOGGLE_STENO,
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
                 resolver.resolve(
                         true,
                         KeyEvent.KEYCODE_SHIFT_RIGHT,
@@ -32,18 +32,18 @@ public class HardwareKeyActionResolverTest {
         );
         assertTrue(resolver.isModeToggleChordActive());
         assertEquals(
-                HardwareKeyActionResolver.Action.CONSUME,
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
                 resolver.resolve(
-                        false,
+                        true,
                         KeyEvent.KEYCODE_SHIFT_RIGHT,
                         KeyEvent.ACTION_DOWN,
                         1
                 )
         );
         assertEquals(
-                HardwareKeyActionResolver.Action.CONSUME,
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
                 resolver.resolve(
-                        false,
+                        true,
                         KeyEvent.KEYCODE_SHIFT_RIGHT,
                         KeyEvent.ACTION_UP,
                         0
@@ -51,9 +51,9 @@ public class HardwareKeyActionResolverTest {
         );
         assertTrue(resolver.isModeToggleChordActive());
         assertEquals(
-                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                HardwareKeyActionResolver.Action.TOGGLE_STENO,
                 resolver.resolve(
-                        false,
+                        true,
                         KeyEvent.KEYCODE_CTRL_LEFT,
                         KeyEvent.ACTION_UP,
                         0
@@ -75,7 +75,7 @@ public class HardwareKeyActionResolverTest {
                 )
         );
         assertEquals(
-                HardwareKeyActionResolver.Action.TOGGLE_STENO,
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
                 resolver.resolve(
                         false,
                         KeyEvent.KEYCODE_CTRL_RIGHT,
@@ -84,11 +84,34 @@ public class HardwareKeyActionResolverTest {
                 )
         );
         assertEquals(
-                HardwareKeyActionResolver.Action.CONSUME,
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
                 resolver.resolve(
-                        true,
+                        false,
                         KeyEvent.KEYCODE_CTRL_RIGHT,
                         KeyEvent.ACTION_UP,
+                        0
+                )
+        );
+        assertEquals(
+                HardwareKeyActionResolver.Action.TOGGLE_STENO,
+                resolver.resolve(
+                        false,
+                        KeyEvent.KEYCODE_SHIFT_LEFT,
+                        KeyEvent.ACTION_UP,
+                        0
+                )
+        );
+    }
+
+    @Test
+    public void modifiedArrowCancelsPendingToggleAndPassesThrough() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        assertEquals(
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_CTRL_LEFT,
+                        KeyEvent.ACTION_DOWN,
                         0
                 )
         );
@@ -97,6 +120,35 @@ public class HardwareKeyActionResolverTest {
                 resolver.resolve(
                         true,
                         KeyEvent.KEYCODE_SHIFT_LEFT,
+                        KeyEvent.ACTION_DOWN,
+                        0
+                )
+        );
+        assertTrue(resolver.isModeToggleChordActive());
+        assertEquals(
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_DPAD_LEFT,
+                        KeyEvent.ACTION_DOWN,
+                        0
+                )
+        );
+        assertFalse(resolver.isModeToggleChordActive());
+        assertEquals(
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_SHIFT_LEFT,
+                        KeyEvent.ACTION_UP,
+                        0
+                )
+        );
+        assertEquals(
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_CTRL_LEFT,
                         KeyEvent.ACTION_UP,
                         0
                 )

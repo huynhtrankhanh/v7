@@ -286,6 +286,9 @@ async function main() {
       ploverBanner: getComputedStyle(
         document.querySelector(".ime-plover-banner"),
       ).display,
+      switchButton: getComputedStyle(
+        document.querySelector("#ime-switch-keyboard"),
+      ).display,
       workbench: getComputedStyle(document.querySelector("#workbench")).display,
       height: window.__androidHeight,
     }));
@@ -293,9 +296,15 @@ async function main() {
       normalTypingSurface.label === "Normal typing" &&
         normalTypingSurface.banner === "flex" &&
         normalTypingSurface.ploverBanner === "none" &&
+        normalTypingSurface.switchButton === "flex" &&
         normalTypingSurface.workbench === "none" &&
         normalTypingSurface.height === 48,
       `Android normal typing did not use a labeled thin bar: ${JSON.stringify(normalTypingSurface)}`,
+    );
+    await page.click("#ime-switch-keyboard");
+    assert(
+      await page.evaluate(() => window.__androidKeyboardSwitches === 1),
+      "Normal typing bar switch did not invoke the input method picker",
     );
     await page.evaluate(() => window.handleAndroidStenoModeChanged(true));
     await page.waitForFunction(
@@ -424,7 +433,17 @@ async function main() {
       `IME did not expand to fit alternatives before enabling scrolling: ${JSON.stringify(bridgeState)}`,
     );
 
+    const ploverRequestsBeforeClear = await page.evaluate(
+      () => window.__androidPloverBodies.length,
+    );
     await page.evaluate(() => window.clearPreeditFromAndroid());
+    await page.waitForFunction(
+      (requestCount) =>
+        window.__androidPloverBodies.length > requestCount &&
+        window.__androidPloverBodies.at(-1).method === "reset_state",
+      {},
+      ploverRequestsBeforeClear,
+    );
     await page.waitForFunction(
       (emptyHeight) => window.__androidHeight === emptyHeight,
       {},
@@ -704,13 +723,13 @@ async function main() {
 
     await androidChord(page, ["q", "a"]);
     assert(
-      await page.evaluate(() => window.__androidKeyboardSwitches === 1),
+      await page.evaluate(() => window.__androidKeyboardSwitches === 2),
       "Q+A did not invoke the Android input method picker",
     );
 
     await page.click("#ime-switch-keyboard");
     assert(
-      await page.evaluate(() => window.__androidKeyboardSwitches === 2),
+      await page.evaluate(() => window.__androidKeyboardSwitches === 3),
       "IME keyboard button did not invoke the Android input method picker",
     );
 
@@ -728,15 +747,24 @@ async function main() {
       label: document.querySelector(".ime-plover-banner").textContent.trim(),
       banner: getComputedStyle(document.querySelector(".ime-plover-banner"))
         .display,
+      switchButton: getComputedStyle(
+        document.querySelector("#ime-switch-keyboard"),
+      ).display,
       workbench: getComputedStyle(document.querySelector("#workbench")).display,
       height: window.__androidHeight,
     }));
     assert(
       ploverSurface.label === "Stripped Plover" &&
         ploverSurface.banner === "flex" &&
+        ploverSurface.switchButton === "flex" &&
         ploverSurface.workbench === "none" &&
         ploverSurface.height === 48,
       `Active Plover surface was not reduced to a thin status bar: ${JSON.stringify(ploverSurface)}`,
+    );
+    await page.click("#ime-switch-keyboard");
+    assert(
+      await page.evaluate(() => window.__androidKeyboardSwitches === 4),
+      "Stripped Plover bar switch did not invoke the input method picker",
     );
     assert(
       !requests.some((request) => request.startsWith("/infer")),
