@@ -31,6 +31,8 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,6 +45,10 @@ public class V7ImeService extends InputMethodService {
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
     private final KeyboardVisibilityController keyboardVisibilityController =
             new KeyboardVisibilityController();
+    private final HardwareKeyActionResolver hardwareKeyActionResolver =
+            new HardwareKeyActionResolver();
+    private final Set<Integer> webCapturedHardwareKeys = new HashSet<>();
+    private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout inputContainer;
     private WebView webView;
@@ -100,6 +106,9 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
         clearPreeditSession();
+        hardwareKeyActionResolver.reset();
+        webCapturedHardwareKeys.clear();
+        editorPassedHardwareKeys.clear();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
     }
@@ -107,6 +116,9 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onFinishInput() {
         clearPreeditSession();
+        hardwareKeyActionResolver.reset();
+        webCapturedHardwareKeys.clear();
+        editorPassedHardwareKeys.clear();
         keyboardVisibilityController.finishInput();
         super.onFinishInput();
     }
@@ -233,7 +245,7 @@ public class V7ImeService extends InputMethodService {
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         HardwareKeyActionResolver.Action hardwareAction =
-                HardwareKeyActionResolver.resolve(
+                hardwareKeyActionResolver.resolve(
                         stenoModeEnabled,
                         event.getKeyCode(),
                         event.getAction(),
@@ -242,10 +254,33 @@ public class V7ImeService extends InputMethodService {
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
             return dispatchModeKeyAction(event, hardwareAction);
         }
-        if (!stenoModeEnabled) {
+        if (hardwareKeyActionResolver.isModeToggleChordActive()
+                && !isModeToggleModifierKey(event.getKeyCode())) {
+            return true;
+        }
+        if (event.getAction() == KeyEvent.ACTION_UP
+                && webCapturedHardwareKeys.remove(event.getKeyCode())) {
+            return dispatchPhysicalKeyToWeb("keyup", event);
+        }
+        if (event.getAction() == KeyEvent.ACTION_UP
+                && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if (event.isCtrlPressed() || event.isAltPressed() || event.isMetaPressed()) {
+        if (!stenoModeEnabled) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && isModifierKey(event.getKeyCode())) {
+                editorPassedHardwareKeys.add(event.getKeyCode());
+            }
+            return false;
+        }
+        if (isOsPassthroughModifierKey(event.getKeyCode())
+                || event.isCtrlPressed()
+                || event.isAltPressed()
+                || event.isMetaPressed()) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && isModifierKey(event.getKeyCode())) {
+                editorPassedHardwareKeys.add(event.getKeyCode());
+            }
             return false;
         }
         if (isEnterKey(event.getKeyCode())) {
@@ -254,7 +289,11 @@ public class V7ImeService extends InputMethodService {
         String action = event.getAction() == KeyEvent.ACTION_UP
                 ? "keyup"
                 : "keydown";
-        return dispatchPhysicalKeyToWeb(action, event);
+        boolean captured = dispatchPhysicalKeyToWeb(action, event);
+        if (captured && event.getAction() == KeyEvent.ACTION_DOWN) {
+            webCapturedHardwareKeys.add(event.getKeyCode());
+        }
+        return captured;
     }
 
     private boolean dispatchModeKeyAction(
@@ -329,6 +368,30 @@ public class V7ImeService extends InputMethodService {
     private boolean isEnterKey(int keyCode) {
         return keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
+
+    private boolean isModifierKey(int keyCode) {
+        return isModeToggleModifierKey(keyCode)
+                || keyCode == KeyEvent.KEYCODE_ALT_LEFT
+                || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
+                || keyCode == KeyEvent.KEYCODE_META_LEFT
+                || keyCode == KeyEvent.KEYCODE_META_RIGHT;
+    }
+
+    private boolean isModeToggleModifierKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_CTRL_LEFT
+                || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT
+                || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
+                || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT;
+    }
+
+    private boolean isOsPassthroughModifierKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_CTRL_LEFT
+                || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT
+                || keyCode == KeyEvent.KEYCODE_ALT_LEFT
+                || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
+                || keyCode == KeyEvent.KEYCODE_META_LEFT
+                || keyCode == KeyEvent.KEYCODE_META_RIGHT;
     }
 
     private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {

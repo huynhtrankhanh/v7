@@ -9,10 +9,44 @@
 
 body.dictionary-management-page {
   background: #f8fafc;
+  margin: 0;
+  overflow: hidden;
 }
 
 body.dictionary-management-page #inference-shell {
   display: none;
+}
+
+body.dictionary-management-page #plover-dictionary-dialog {
+  border-radius: 0;
+  box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh;
+  inset: 0;
+  margin: 0;
+  max-height: none;
+  max-width: none;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+body.dictionary-management-page .plover-dialog-content {
+  box-sizing: border-box;
+  height: 100%;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.dictionary-management-page #plover-dictionary-list,
+body.dictionary-management-page #plover-entry-results,
+body.dictionary-management-page #plover-lookup-results {
+  max-height: none;
+  overflow: visible;
 }
 
 #plover-dictionary-dialog::backdrop {

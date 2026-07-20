@@ -32,9 +32,11 @@
 - Physical Enter is handled by the service rather than the WebUI: it invokes an
   editor-provided custom or standard action when present, otherwise it forwards
   the original Enter key events to the editor.
-- A tap on either physical Meta key switches between STENO capture and ordinary
-  hardware-keyboard typing. Meta is consumed by the IME, including its key-up
-  event, so Android's default assistant handler does not receive it.
+- The physical Ctrl+Shift chord switches between STENO capture and ordinary
+  hardware-keyboard typing. The chord toggles once per press cycle while solo
+  Ctrl and Shift retain their ordinary behavior.
+- Normal typing uses a labeled 48 dp status bar, matching the compact active
+  Stripped Plover treatment instead of leaving the composition UI visible.
 - While STENO capture is active, the physical Q+A chord opens Android's input
   method picker. The `[` key commits the current PREEDIT and starts a clean
   composing session; it does not delete the committed text.

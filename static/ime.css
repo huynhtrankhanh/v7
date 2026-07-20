@@ -66,14 +66,16 @@ button {
     max(10px, env(safe-area-inset-left));
 }
 
-.ime-plover-banner {
+.ime-plover-banner,
+.ime-normal-banner {
   align-items: center;
   display: none;
   gap: 9px;
   justify-content: center;
 }
 
-.ime-plover-banner strong {
+.ime-plover-banner strong,
+.ime-normal-banner strong {
   font-size: 0.82rem;
   letter-spacing: 0.02em;
 }
@@ -82,6 +84,14 @@ button {
   background: var(--ime-plover);
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgb(245 189 79 / 14%);
+  height: 7px;
+  width: 7px;
+}
+
+.ime-normal-pulse {
+  background: var(--ime-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(201 245 111 / 14%);
   height: 7px;
   width: 7px;
 }
@@ -455,11 +465,13 @@ button {
   text-align: center;
 }
 
-body.stripped-plover-active {
+body.stripped-plover-active,
+body.android-normal-typing {
   background: #17140e;
 }
 
-body.stripped-plover-active .ime-toolbar {
+body.stripped-plover-active .ime-toolbar,
+body.android-normal-typing .ime-toolbar {
   border: 0;
   flex: 1 1 auto;
   justify-content: center;
@@ -471,9 +483,16 @@ body.stripped-plover-active .ime-plover-banner {
   display: flex;
 }
 
+body.android-normal-typing .ime-normal-banner {
+  display: flex;
+}
+
 body.stripped-plover-active .ime-identity,
 body.stripped-plover-active .ime-toolbar-actions,
-body.stripped-plover-active #workbench {
+body.stripped-plover-active #workbench,
+body.android-normal-typing .ime-identity,
+body.android-normal-typing .ime-toolbar-actions,
+body.android-normal-typing #workbench {
   display: none !important;
 }
 

@@ -2025,7 +2025,9 @@ function updateDisplay() {
   }
   document.body.classList.toggle(
     "stripped-plover-active",
-    strippedDisplay.enabled && strippedPlover.enabled,
+    strippedDisplay.enabled &&
+      androidStenoModeEnabled &&
+      strippedPlover.enabled,
   );
   if (inferenceError) {
     inferenceError.hidden = inferenceErrorMessage === "";
@@ -2630,8 +2632,8 @@ function setupPloverControls() {
       "dictionary-management-page",
       "plover-dictionary-open",
     );
-    if (typeof dictionaryDialog.showModal === "function") {
-      dictionaryDialog.showModal();
+    if (typeof dictionaryDialog.show === "function") {
+      dictionaryDialog.show();
     } else {
       dictionaryDialog.setAttribute("open", "");
     }
@@ -2870,7 +2872,10 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
 function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   if (!androidIme) return;
   window.requestAnimationFrame(() => {
-    if (document.body.classList.contains("stripped-plover-active")) {
+    if (
+      document.body.classList.contains("stripped-plover-active") ||
+      document.body.classList.contains("android-normal-typing")
+    ) {
       if (lastRequestedAndroidKeyboardHeight !== 48) {
         lastRequestedAndroidKeyboardHeight = 48;
         androidIme.setKeyboardHeight(48);

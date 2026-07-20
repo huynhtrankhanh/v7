@@ -53,6 +53,16 @@ surface:
 All file access goes through system document pickers; no broad filesystem
 permission is requested.
 
+## Scrolling
+
+The Settings-hosted dictionary manager uses the shared dialog markup as a
+full-viewport, non-modal page. Its content area is the single primary vertical
+scroll container; dictionary lists and lookup results expand into that page
+instead of creating competing nested scrollers. This keeps touch scrolling
+reliable in Android WebView when a panel exceeds the available height. The
+ordinary browser UI still uses the bounded modal dialog and its compact inner
+result regions.
+
 The runtime WebView, Node compatibility audit, native SQLite bridge, and
 source-bundle licensing boundary are documented in
 [Bundled Stripped Plover runtime](bundled-stripped-plover.md).

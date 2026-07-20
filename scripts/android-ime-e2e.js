@@ -274,16 +274,35 @@ async function main() {
     );
 
     await page.evaluate(() => window.handleAndroidStenoModeChanged(false));
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("android-normal-typing") &&
+        window.__androidHeight === 48,
+    );
+    const normalTypingSurface = await page.evaluate(() => ({
+      label: document.querySelector(".ime-normal-banner").textContent.trim(),
+      banner: getComputedStyle(document.querySelector(".ime-normal-banner"))
+        .display,
+      ploverBanner: getComputedStyle(
+        document.querySelector(".ime-plover-banner"),
+      ).display,
+      workbench: getComputedStyle(document.querySelector("#workbench")).display,
+      height: window.__androidHeight,
+    }));
     assert(
-      await page.evaluate(
-        () =>
-          document.body.classList.contains("android-normal-typing") &&
-          document.querySelector(".ime-mode-title").textContent ===
-            "Normal typing",
-      ),
-      "Android normal-typing mode was not reflected in the IME surface",
+      normalTypingSurface.label === "Normal typing" &&
+        normalTypingSurface.banner === "flex" &&
+        normalTypingSurface.ploverBanner === "none" &&
+        normalTypingSurface.workbench === "none" &&
+        normalTypingSurface.height === 48,
+      `Android normal typing did not use a labeled thin bar: ${JSON.stringify(normalTypingSurface)}`,
     );
     await page.evaluate(() => window.handleAndroidStenoModeChanged(true));
+    await page.waitForFunction(
+      () =>
+        !document.body.classList.contains("android-normal-typing") &&
+        window.__androidHeight > 48,
+    );
     const preeditsBeforeModifiedKey = await page.evaluate(
       () => window.__androidPreedits.length,
     );
@@ -759,6 +778,39 @@ async function main() {
         managementSurface.tabs === 3 &&
         managementSurface.dictionary === "main.json",
       `Android settings did not host the shared dictionary UI: ${JSON.stringify(managementSurface)}`,
+    );
+
+    const dictionaryScroll = await page.evaluate(async () => {
+      const dialog = document.querySelector("#plover-dictionary-dialog");
+      const content = document.querySelector(".plover-dialog-content");
+      if (!dialog || !content) return null;
+      const before = content.scrollTop;
+      content.scrollTop = content.scrollHeight;
+      await new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)),
+      );
+      const result = {
+        before,
+        after: content.scrollTop,
+        clientHeight: content.clientHeight,
+        scrollHeight: content.scrollHeight,
+        dialogOverflow: getComputedStyle(dialog).overflow,
+        contentOverflowY: getComputedStyle(content).overflowY,
+        dictionaryListOverflow: getComputedStyle(
+          document.querySelector("#plover-dictionary-list"),
+        ).overflowY,
+      };
+      content.scrollTop = 0;
+      return result;
+    });
+    assert(
+      dictionaryScroll &&
+        dictionaryScroll.scrollHeight > dictionaryScroll.clientHeight &&
+        dictionaryScroll.after > dictionaryScroll.before &&
+        dictionaryScroll.dialogOverflow === "hidden" &&
+        dictionaryScroll.contentOverflowY === "auto" &&
+        dictionaryScroll.dictionaryListOverflow === "visible",
+      `Android dictionary surface did not expose one working page scroller: ${JSON.stringify(dictionaryScroll)}`,
     );
 
     await page.click("#plover-tab-entries");
