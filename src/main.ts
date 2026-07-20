@@ -1211,6 +1211,34 @@ async function runDictionaryAction(dict, index, action, control) {
   }
 }
 
+function openDictionaryEntries(dict) {
+  const identifier = dict.identifier;
+  if (!identifier) return;
+
+  const searchSelect = document.getElementById(
+    "plover-entry-search-dict",
+  ) as HTMLSelectElement | null;
+  const editSelect = document.getElementById(
+    "plover-entry-dict",
+  ) as HTMLSelectElement | null;
+  const strokeSearch = document.getElementById(
+    "plover-entry-search-stroke",
+  ) as HTMLInputElement | null;
+  const outputSearch = document.getElementById(
+    "plover-entry-search-output",
+  ) as HTMLInputElement | null;
+
+  if (searchSelect) searchSelect.value = identifier;
+  if (editSelect) editSelect.value = identifier;
+  if (strokeSearch) strokeSearch.value = "";
+  if (outputSearch) outputSearch.value = "";
+  updateEntryControls();
+
+  document.getElementById("plover-tab-entries")?.click();
+  const content = document.querySelector<HTMLElement>(".plover-dialog-content");
+  if (content) content.scrollTop = 0;
+}
+
 function renderPloverDictionaries() {
   const listEl = document.getElementById("plover-dictionary-list");
   if (!listEl) return;
@@ -1263,6 +1291,15 @@ function renderPloverDictionaries() {
     row.appendChild(info);
     const actions = document.createElement("div");
     actions.className = "plover-dictionary-actions";
+    const entriesButton = document.createElement("button");
+    entriesButton.type = "button";
+    entriesButton.className = "plover-dictionary-entries";
+    entriesButton.textContent = dict.readonly
+      ? "View entries"
+      : "View / edit entries";
+    entriesButton.addEventListener("click", () => {
+      openDictionaryEntries(dict);
+    });
     const actionSelect = document.createElement("select");
     actionSelect.setAttribute("aria-label", `Actions for ${dict.identifier}`);
     actionSelect.appendChild(createDictionaryActionOption("", "Actions"));
@@ -1295,6 +1332,7 @@ function renderPloverDictionaries() {
       if (!action) return;
       void runDictionaryAction(dict, index, action, actionSelect);
     });
+    actions.appendChild(entriesButton);
     actions.appendChild(actionSelect);
     row.appendChild(actions);
     listEl.appendChild(row);
