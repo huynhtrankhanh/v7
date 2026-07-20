@@ -14,6 +14,7 @@
     "test:zoom": "npm run build && node scripts/text-zoom-e2e.js",
     "test:stripped-display": "npm run build && node scripts/stripped-display-e2e.js",
     "test:android-ime": "npm run build && node scripts/android-ime-e2e.js",
+    "test:android-stripped-plover": "node scripts/android-stripped-plover-e2e.js",
     "test": "npm run test:unit"
   },
   "dependencies": {
@@ -22,14 +23,22 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/node": "^22.13.1",
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.12",
+    "events": "^3.3.0",
     "fast-check": "^3.21.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "node-fetch": "^2.7.0",
+    "path-browserify": "^1.0.1",
     "prettier": "3.9.5",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
     "ts-jest": "^29.3.4",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3",
+    "util": "^0.12.5",
     "vite": "^6.1.0"
   }
 }

@@ -15,6 +15,9 @@ android {
     sourceSets {
         main {
             assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
+            assets.srcDir layout.buildDirectory.dir(
+                    "generated/strippedPloverWeb"
+            )
             assets.srcDir layout.buildDirectory.dir("generated/sourceArchive")
             jniLibs.srcDir layout.buildDirectory.dir("generated/nativeJniLibs")
         }
@@ -23,7 +26,14 @@ android {
 
 def webRoot = rootProject.file("..")
 def generatedWebAssets = layout.buildDirectory.dir("generated/v7WebUi")
+def generatedStrippedPloverAssets = layout.buildDirectory.dir(
+        "generated/strippedPloverWeb"
+)
 def kenlmRoot = layout.buildDirectory.dir("kenlm")
+def strippedPloverRoot = layout.buildDirectory.dir("stripped-plover")
+def strippedPloverTypecheck = layout.buildDirectory.dir(
+        "stripped-plover-android-typecheck"
+)
 def generatedNativeLibraries = layout.buildDirectory.dir("generated/nativeJniLibs")
 def cargoTargetDirectory = layout.buildDirectory.dir("rust-target")
 def generatedSourceArchive = layout.buildDirectory.file(
@@ -74,6 +84,54 @@ tasks.register("prepareKenlm", Exec) {
     outputs.dir kenlmRoot
 }
 
+tasks.register("prepareStrippedPlover", Exec) {
+    commandLine(
+            rootProject.file("scripts/prepare-stripped-plover.sh"),
+            strippedPloverRoot.get().asFile,
+            rootProject.file("STRIPPED_PLOVER_REVISION")
+    )
+    inputs.files(
+            rootProject.file("STRIPPED_PLOVER_REVISION"),
+            rootProject.file("scripts/prepare-stripped-plover.sh")
+    )
+    outputs.dir strippedPloverRoot
+}
+
+tasks.register("installStrippedPloverBuildDependencies", Exec) {
+    dependsOn "prepareStrippedPlover"
+    workingDir strippedPloverRoot
+    commandLine "npm", "ci", "--ignore-scripts"
+    inputs.files(
+            strippedPloverRoot.map { it.file("package.json") },
+            strippedPloverRoot.map { it.file("package-lock.json") }
+    )
+    outputs.dir strippedPloverRoot.map { it.dir("node_modules") }
+}
+
+tasks.register("buildStrippedPloverWeb", Exec) {
+    dependsOn "installStrippedPloverBuildDependencies"
+    workingDir webRoot
+    commandLine(
+            rootProject.file("scripts/build-stripped-plover-web.mjs"),
+            strippedPloverRoot.get().asFile,
+            rootProject.file("stripped-plover-web"),
+            generatedStrippedPloverAssets.get().asFile,
+            strippedPloverTypecheck.get().asFile
+    )
+    inputs.files(
+            fileTree(strippedPloverRoot) {
+                exclude ".git/**"
+                exclude "node_modules/**"
+                exclude "dist/**"
+                exclude "**/*.test.ts"
+            },
+            fileTree(rootProject.file("stripped-plover-web")),
+            rootProject.file("scripts/build-stripped-plover-web.mjs"),
+            rootProject.file("STRIPPED_PLOVER_REVISION")
+    )
+    outputs.dir generatedStrippedPloverAssets
+}
+
 tasks.register("buildNativeInference", Exec) {
     dependsOn "prepareKenlm"
     commandLine(
@@ -99,10 +157,12 @@ tasks.register("buildNativeInference", Exec) {
 
 tasks.register("buildSourceArchive", Exec) {
     dependsOn "prepareKenlm"
+    dependsOn "prepareStrippedPlover"
     commandLine(
             rootProject.file("scripts/make-source-archive.sh"),
             webRoot,
             kenlmRoot.get().asFile,
+            strippedPloverRoot.get().asFile,
             generatedSourceArchive.get().asFile
     )
     inputs.files(
@@ -116,17 +176,27 @@ tasks.register("buildSourceArchive", Exec) {
                 exclude "lm.binary"
                 exclude "kenlm/**"
             },
+            fileTree(strippedPloverRoot) {
+                exclude ".git/**"
+                exclude "node_modules/**"
+                exclude "dist/**"
+            },
             rootProject.file("KENLM_REVISION")
     )
     outputs.file generatedSourceArchive
+    // BUILD-SOURCE.md records the current Git revision and dirty state, which
+    // are not fully represented by the source file snapshots.
+    outputs.upToDateWhen { false }
 }
 
 tasks.named("preBuild").configure {
     dependsOn "syncWebUi"
+    dependsOn "buildStrippedPloverWeb"
     dependsOn "buildNativeInference"
     dependsOn "buildSourceArchive"
 }
 
 dependencies {
+    implementation "androidx.webkit:webkit:1.15.0"
     testImplementation "junit:junit:4.13.2"
 }

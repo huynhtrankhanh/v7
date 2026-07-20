@@ -20,8 +20,10 @@
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
-- Stripped Plover uses a separate native TCP bridge and is the only feature
-  that uses server settings.
+- Stripped Plover is bundled as a local browser runtime in a process-wide,
+  non-visual WebView separate from both the IME interface and dictionary
+  manager. Its persistence bridge uses Android's private native SQLite
+  database; no Node runtime or external server is required.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.
@@ -55,7 +57,6 @@ keyboard settings. The native settings activity includes:
 
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
-- optional Stripped Plover host and TCP port;
 - a full-screen Stripped Plover dictionary manager opened from settings,
   reusing the browser UI without nesting editable fields inside the IME;
 - an option to save the complete APK build source as `v7-ime-source.zip`;
@@ -65,10 +66,16 @@ See [Stripped Plover dictionary management on Android](docs/dictionary-managemen
 for the shared WebUI architecture, the deliberately narrow native bridge, and
 the import/export file flow.
 
-The source ZIP contains this repository plus the exact pinned KenLM checkout.
-Only the ZIP aggregate is offered under GPL-3.0-or-later: the V7 files inside
-remain 0BSD, and KenLM retains its LGPL and other upstream notices. The archive
-intentionally excludes user language models.
+See [Bundled Stripped Plover runtime](docs/bundled-stripped-plover.md) for the
+pinned external-source build, separate engine WebView, typechecked Node
+compatibility surface, native SQLite implementation, and artifact licensing
+boundary.
+
+The source ZIP contains this repository plus the exact pinned KenLM and
+Stripped Plover checkouts. Only the generated ZIP aggregate is offered under
+GPL-3.0-or-later: this does not relicense V7 intellectual property, and the V7
+files inside remain 0BSD. Third-party files retain their upstream notices and
+licenses. The archive intentionally excludes user language models.
 
 ## IME interface
 
@@ -99,9 +106,10 @@ While Stripped Plover is active, the composition interface collapses to a
 
 ## Build
 
-The Android build invokes the root WebUI build, compiles Rust/KenLM for Android,
-and creates the source ZIP asset. Install the root JavaScript dependencies,
-Rust 1.88, `cargo-ndk`, Android NDK 27.2.12479018, and Gradle 8.9:
+The Android build invokes the root WebUI build, fetches and browser-bundles the
+pinned Stripped Plover revision, compiles Rust/KenLM for Android, and creates
+the source ZIP asset. Install the root JavaScript dependencies, Rust 1.88,
+`cargo-ndk`, Android NDK 27.2.12479018, and Gradle 8.9:
 
 ```sh
 npm ci

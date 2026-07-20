@@ -41,8 +41,6 @@ public class V7ImeService extends InputMethodService {
     private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
-    private final ExecutorService ploverExecutor = Executors.newSingleThreadExecutor();
-    private final StrippedPloverClient ploverClient = new StrippedPloverClient();
     private final KeyboardVisibilityController keyboardVisibilityController =
             new KeyboardVisibilityController();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -188,8 +186,6 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
-        ploverExecutor.shutdownNow();
-        ploverClient.close();
         if (webView != null) {
             webView.destroy();
             webView = null;
@@ -751,28 +747,18 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void requestPlover(String requestBody, int requestId) {
-        ploverExecutor.execute(() -> {
-            String responseBody = "";
-            String errorMessage = "";
-            try {
-                responseBody = ploverClient.request(
-                        ImePreferences.getPloverHost(this),
-                        ImePreferences.getPloverPort(this),
-                        requestBody
-                );
-            } catch (Exception error) {
-                errorMessage = error.getMessage() == null
-                        ? error.getClass().getSimpleName()
-                        : error.getMessage();
-            }
-            String script = "window.handleAndroidPloverResponse"
-                    + " && window.handleAndroidPloverResponse("
-                    + requestId + ","
-                    + JSONObject.quote(responseBody) + ","
-                    + JSONObject.quote(errorMessage)
-                    + ")";
-            evaluateJavascript(script);
-        });
+        BundledStrippedPloverRuntime.get(this).request(
+                requestBody,
+                (responseBody, errorMessage) -> {
+                    String script = "window.handleAndroidPloverResponse"
+                            + " && window.handleAndroidPloverResponse("
+                            + requestId + ","
+                            + JSONObject.quote(responseBody) + ","
+                            + JSONObject.quote(errorMessage)
+                            + ")";
+                    evaluateJavascript(script);
+                }
+        );
     }
 
     private int dpToPx(int dp) {
@@ -815,7 +801,7 @@ public class V7ImeService extends InputMethodService {
     private class AndroidBridge {
         @JavascriptInterface
         public boolean hasPloverConfiguration() {
-            return !ImePreferences.getPloverHost(V7ImeService.this).isEmpty();
+            return true;
         }
 
         @JavascriptInterface

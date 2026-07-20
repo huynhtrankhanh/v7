@@ -14,9 +14,8 @@ soft-keyboard behavior unreliable.
 To manage dictionaries:
 
 1. open the V7 IME launcher/settings screen;
-2. configure and save the Stripped Plover host and port;
-3. tap **Manage Stripped Plover dictionaries**;
-4. use the full-screen management activity.
+2. tap **Manage Stripped Plover dictionaries**;
+3. use the full-screen management activity.
 
 The activity loads the dedicated `static/dictionary.html` page. That page has
 no inference, PREEDIT, keyboard-mode, or input-method controls. Conversely, the
@@ -31,12 +30,12 @@ forms, validation, search/edit state, and file import. Its
 
 The separate `AndroidDictionary` bridge is intentionally small:
 
-- `requestPlover` carries RPC over the configured raw TCP connection, which a
-  WebView cannot open directly;
+- `requestPlover` carries RPC to the bundled process-wide Stripped Plover
+  runtime WebView;
 - `saveDictionaryFile` opens Android's Storage Access Framework destination
   picker for exported UTF-8 JSON or Python;
 - `close` finishes the management activity;
-- `hasPloverConfiguration` avoids connection retries when no host is saved.
+- `hasPloverConfiguration` reports the always-present bundled runtime.
 
 It does not expose inference, composing text, keyboard height, steno mode, or
 input-method switching.
@@ -53,3 +52,7 @@ surface:
 
 All file access goes through system document pickers; no broad filesystem
 permission is requested.
+
+The runtime WebView, Node compatibility audit, native SQLite bridge, and
+source-bundle licensing boundary are documented in
+[Bundled Stripped Plover runtime](bundled-stripped-plover.md).

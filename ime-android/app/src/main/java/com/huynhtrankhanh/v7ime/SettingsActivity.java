@@ -10,7 +10,6 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -23,8 +22,6 @@ public class SettingsActivity extends Activity {
     private static final int CHOOSE_MODEL_REQUEST = 1;
     private static final int SAVE_SOURCE_REQUEST = 2;
 
-    private EditText ploverHost;
-    private EditText ploverPort;
     private TextView modelStatus;
 
     @Override
@@ -33,22 +30,16 @@ public class SettingsActivity extends Activity {
         setContentView(R.layout.activity_settings);
         setTitle(R.string.settings_title);
 
-        ploverHost = findViewById(R.id.plover_host);
-        ploverPort = findViewById(R.id.plover_port);
         modelStatus = findViewById(R.id.model_status);
         Button chooseModel = findViewById(R.id.choose_model);
-        Button save = findViewById(R.id.save_settings);
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         Button saveSource = findViewById(R.id.save_source);
         Button enable = findViewById(R.id.enable_keyboard);
         Button choose = findViewById(R.id.choose_keyboard);
 
-        ploverHost.setText(ImePreferences.getPloverHost(this));
-        ploverPort.setText(String.valueOf(ImePreferences.getPloverPort(this)));
         updateModelStatus();
 
         chooseModel.setOnClickListener(view -> chooseModel());
-        save.setOnClickListener(view -> saveSettings());
         manageDictionaries.setOnClickListener(view -> startActivity(
                 new Intent(this, DictionaryManagementActivity.class)
         ));
@@ -107,29 +98,6 @@ public class SettingsActivity extends Activity {
         } else if (requestCode == SAVE_SOURCE_REQUEST) {
             saveSourceArchive(uri);
         }
-    }
-
-    private void saveSettings() {
-        String host = ploverHost.getText().toString().trim();
-        String portText = ploverPort.getText().toString().trim();
-        int port;
-        try {
-            port = Integer.parseInt(portText);
-        } catch (NumberFormatException error) {
-            port = -1;
-        }
-        if (port < 1 || port > 65535) {
-            ploverPort.setError(getString(R.string.invalid_plover_port));
-            ploverPort.requestFocus();
-            return;
-        }
-        if (host.contains("://") || host.contains("/") || host.contains(" ")) {
-            ploverHost.setError(getString(R.string.invalid_plover_host));
-            ploverHost.requestFocus();
-            return;
-        }
-        ImePreferences.savePlover(this, host, port);
-        Toast.makeText(this, R.string.settings_saved, Toast.LENGTH_SHORT).show();
     }
 
     private void updateModelStatus() {

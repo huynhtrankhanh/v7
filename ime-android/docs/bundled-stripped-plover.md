@@ -1,0 +1,119 @@
+# Bundled Stripped Plover runtime
+
+The Android APK includes Stripped Plover and runs it locally. It does not
+require Node.js, a TCP service, or a configured host.
+
+## Source acquisition and artifacts
+
+Stripped Plover is pinned by `STRIPPED_PLOVER_REVISION`. The Gradle build
+checks out that exact revision into `app/build/stripped-plover`, an ignored
+generated directory. Its source is therefore not vendored into the V7 source
+tree.
+
+The checkout feeds two distinct artifacts:
+
+- the APK receives a browser bundle, WebAssembly files, Python standard-library
+  archives, and worker scripts under generated Android assets;
+- `v7-ime-source.zip` receives the pristine pinned checkout at
+  `third_party/stripped-plover`, including its upstream license and build
+  metadata.
+
+The archive records the V7, KenLM, and Stripped Plover revisions in
+`BUILD-SOURCE.md`.
+
+## Runtime separation
+
+There are three different WebViews with disjoint jobs:
+
+| WebView | Owner | Native surface |
+| --- | --- | --- |
+| IME interface | `V7ImeService` | composing text, inference, height, key mode, and Stripped Plover RPC client |
+| Dictionary manager | `DictionaryManagementActivity` | Stripped Plover RPC client plus Android document import/export |
+| Stripped Plover engine | process-wide `BundledStrippedPloverRuntime` | runtime completion callbacks and native SQLite only |
+
+The engine WebView is a process-wide, non-visual WebView. Neither interface
+WebView contains the engine, and the engine WebView has no IME or dictionary
+editing bridge. Both interface clients submit the existing JSON RPC protocol
+to the same serialized runtime queue, so translation and dictionary editing
+share one engine and database.
+
+The runtime loads app assets through
+`https://appassets.androidplatform.net`, not `file://`. Responses carry
+same-origin isolation headers so browser `Worker`, `SharedArrayBuffer`, Web
+Crypto, `fetch`, and WebAssembly capabilities remain available. Python
+dictionaries use Stripped Plover's vendored browser build of `python-wasm`;
+they do not gain filesystem or process access through an Android bridge.
+
+## Node compatibility audit
+
+Every Android build copies the pinned production TypeScript graph to an
+ignored typecheck directory. The build:
+
+1. walks imports reachable from `src/engine.ts`, excluding the CLI/STDIO entry;
+2. uses the TypeScript compiler in strict, no-emit mode against the Android
+   compatibility types;
+3. asserts the exact direct Node surface currently used by that graph; and
+4. fails with an instruction to audit and extend the polyfills if upstream
+   adds another Node module or global.
+
+At the pinned revision, the direct engine surface is:
+
+- `node:sqlite`: `DatabaseSync`, `prepare`, `exec`, and statement
+  `all`/`get`/`iterate`/`run`;
+- `node:crypto`: `randomBytes`;
+- `Buffer.alloc` and `writeBigUInt64LE`; and
+- `process.platform`.
+
+The STDIO entry's `node:readline`, `process.argv`, stdin, stdout, and exit APIs
+are intentionally absent. Android supplies a small browser RPC entry instead.
+Web Crypto implements secure random bytes. Maintained browser packages provide
+the Buffer/process and Node-core compatibility required inside the upstream
+browser WebAssembly dependencies.
+
+## Native SQLite
+
+`AndroidStrippedPloverSqlite` is the only persistence bridge. The JavaScript
+`DatabaseSync` compatibility class delegates synchronously to the app-private
+`android.database.sqlite.SQLiteDatabase` and exposes no Stripped Plover RPC or
+IME methods.
+
+Android framework SQLite does not consistently include the upstream
+FTS5 `trigram` tokenizer. The compatibility layer therefore:
+
+- keeps the authoritative `dictionaries` and `entries` tables, constraints,
+  indexes, and transactions in native SQLite;
+- omits only the derived `entries_fts` table and its triggers; and
+- rewrites the one FTS-backed substring query to an escaped,
+  case-insensitive `LIKE` query against `entries`.
+
+Other enumeration, lookup, prefix search, mutation, priority, and transaction
+queries execute unchanged. Host-side tests cover SQL-script splitting,
+multi-statement trigger boundaries, FTS setup filtering, parameter escaping,
+and query rewriting.
+
+## Licensing boundary
+
+Fetching Stripped Plover does not alter the V7 repository license or relicense
+V7 intellectual property. V7 source files remain 0BSD. Stripped Plover and all
+other third-party files retain their own upstream licenses.
+
+Only the generated `v7-ime-source.zip` aggregate is offered under
+GPL-3.0-or-later for distribution of the complete APK build source. Its
+`AGGREGATE-LICENSE.txt` states that this aggregate license does not replace the
+licenses of constituent files. Stripped Plover's own GPL-2.0-or-later text is
+included unchanged inside its source directory.
+
+## Verification
+
+`npm run test:android-stripped-plover` serves the generated runtime with the
+same isolation headers, injects a narrow test SQLite bridge, and verifies that
+the real bundled engine initializes its schema and answers a dictionary-state
+RPC. The Gradle unit suite tests the native compatibility policy. An APK build
+then verifies asset merging and inclusion of the generated source ZIP.
+
+Platform references:
+
+- [WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)
+  documents serving APK assets through a web-compatible HTTPS origin.
+- [SQLite on Android](https://developer.android.com/training/data-storage/sqlite)
+  documents the framework database API used for persistence.

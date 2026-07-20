@@ -27,10 +27,8 @@ public class DictionaryManagementActivity extends Activity {
     private static final int CHOOSE_DICTIONARY_REQUEST = 1;
     private static final int SAVE_DICTIONARY_REQUEST = 2;
 
-    private final ExecutorService ploverExecutor =
+    private final ExecutorService ioExecutor =
             Executors.newSingleThreadExecutor();
-    private final StrippedPloverClient ploverClient =
-            new StrippedPloverClient();
     private WebView webView;
     private ValueCallback<Uri[]> filePathCallback;
     private String pendingSaveContent = "";
@@ -59,8 +57,7 @@ public class DictionaryManagementActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        ploverExecutor.shutdownNow();
-        ploverClient.close();
+        ioExecutor.shutdownNow();
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
             filePathCallback = null;
@@ -97,28 +94,18 @@ public class DictionaryManagementActivity extends Activity {
     }
 
     private void requestPlover(String requestBody, int requestId) {
-        ploverExecutor.execute(() -> {
-            String responseBody = "";
-            String errorMessage = "";
-            try {
-                responseBody = ploverClient.request(
-                        ImePreferences.getPloverHost(this),
-                        ImePreferences.getPloverPort(this),
-                        requestBody
-                );
-            } catch (Exception error) {
-                errorMessage = error.getMessage() == null
-                        ? error.getClass().getSimpleName()
-                        : error.getMessage();
-            }
-            String script = "window.handleAndroidPloverResponse"
-                    + " && window.handleAndroidPloverResponse("
-                    + requestId + ","
-                    + JSONObject.quote(responseBody) + ","
-                    + JSONObject.quote(errorMessage)
-                    + ")";
-            evaluateJavascript(script);
-        });
+        BundledStrippedPloverRuntime.get(this).request(
+                requestBody,
+                (responseBody, errorMessage) -> {
+                    String script = "window.handleAndroidPloverResponse"
+                            + " && window.handleAndroidPloverResponse("
+                            + requestId + ","
+                            + JSONObject.quote(responseBody) + ","
+                            + JSONObject.quote(errorMessage)
+                            + ")";
+                    evaluateJavascript(script);
+                }
+        );
     }
 
     private void chooseDictionaryDestination(
@@ -143,7 +130,7 @@ public class DictionaryManagementActivity extends Activity {
     }
 
     private void writeDictionary(Uri destination, String content) {
-        ploverExecutor.execute(() -> {
+        ioExecutor.execute(() -> {
             String errorMessage = "";
             try (OutputStream output =
                          getContentResolver().openOutputStream(destination)) {
@@ -206,9 +193,7 @@ public class DictionaryManagementActivity extends Activity {
     private class DictionaryAndroidBridge {
         @JavascriptInterface
         public boolean hasPloverConfiguration() {
-            return !ImePreferences.getPloverHost(
-                    DictionaryManagementActivity.this
-            ).isEmpty();
+            return true;
         }
 
         @JavascriptInterface
