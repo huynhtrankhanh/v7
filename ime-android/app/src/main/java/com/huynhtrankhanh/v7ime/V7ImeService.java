@@ -1,10 +1,13 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.annotation.SuppressLint;
+import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.inputmethodservice.InputMethodService;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.SuggestionSpan;
@@ -40,6 +43,9 @@ public class V7ImeService extends InputMethodService {
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
     private final ExecutorService ploverExecutor = Executors.newSingleThreadExecutor();
     private final StrippedPloverClient ploverClient = new StrippedPloverClient();
+    private final KeyboardVisibilityController keyboardVisibilityController =
+            new KeyboardVisibilityController();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout inputContainer;
     private WebView webView;
     private boolean inferenceWarmupScheduled = false;
@@ -59,7 +65,16 @@ public class V7ImeService extends InputMethodService {
     private boolean stenoModeEnabled = true;
 
     @Override
+    public void onCreate() {
+        super.onCreate();
+        rememberKeyboardConfiguration(getResources().getConfiguration());
+    }
+
+    @Override
     public View onCreateInputView() {
+        if (webView != null) {
+            webView.destroy();
+        }
         inputContainer = new FrameLayout(this);
         webView = new ImeWebView();
         inputContainer.addView(webView, new FrameLayout.LayoutParams(
@@ -79,15 +94,42 @@ public class V7ImeService extends InputMethodService {
     }
 
     @Override
+    public boolean onShowInputRequested(int flags, boolean configChange) {
+        boolean platformDecision = super.onShowInputRequested(flags, configChange);
+        return platformDecision || keyboardVisibilityController.shouldAllowInputView();
+    }
+
+    @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
         clearPreeditSession();
+        keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
     }
 
     @Override
     public void onFinishInput() {
         clearPreeditSession();
+        keyboardVisibilityController.finishInput();
         super.onFinishInput();
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        boolean recoverInputView = keyboardVisibilityController.onConfigurationChanged(
+                newConfig.keyboard,
+                newConfig.keyboardHidden,
+                newConfig.hardKeyboardHidden
+        );
+        super.onConfigurationChanged(newConfig);
+        if (!recoverInputView) {
+            return;
+        }
+
+        long recoveryGeneration = keyboardVisibilityController.beginRecovery();
+        if (recoveryGeneration == KeyboardVisibilityController.NO_RECOVERY) {
+            return;
+        }
+        mainHandler.post(() -> restoreInputView(recoveryGeneration));
     }
 
     @Override
@@ -143,6 +185,8 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        keyboardVisibilityController.finishInput();
+        mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
         ploverExecutor.shutdownNow();
         ploverClient.close();
@@ -151,6 +195,26 @@ public class V7ImeService extends InputMethodService {
             webView = null;
         }
         super.onDestroy();
+    }
+
+    private void rememberKeyboardConfiguration(Configuration configuration) {
+        keyboardVisibilityController.initializeConfiguration(
+                configuration.keyboard,
+                configuration.keyboardHidden,
+                configuration.hardKeyboardHidden
+        );
+    }
+
+    private void restoreInputView(long recoveryGeneration) {
+        if (!keyboardVisibilityController.shouldRunRecovery(recoveryGeneration)) {
+            return;
+        }
+        updateInputViewShown();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            requestShowSelf(InputMethodManager.SHOW_IMPLICIT);
+        } else {
+            showWindow(true);
+        }
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})

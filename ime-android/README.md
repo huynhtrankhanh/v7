@@ -36,10 +36,17 @@
 - While STENO capture is active, the physical Q+A chord opens Android's input
   method picker. The `[` key commits the current PREEDIT and starts a clean
   composing session; it does not delete the committed text.
+- Connecting or disconnecting a physical keyboard restores the V7 input view
+  when an editor is still active. A generation guard prevents a delayed restore
+  from showing the IME over an editor that has already closed or changed.
 
 See [Android hardware-keyboard interactions](docs/hardware-keyboard-interactions.md)
 for the complete mode table, PREEDIT semantics, and native/WebUI event-routing
 order.
+
+See [Virtual-keyboard visibility with an external keyboard](docs/keyboard-visibility.md)
+for the attach/detach recovery policy, lifecycle safeguards, and verification
+matrix.
 
 ## Settings
 
