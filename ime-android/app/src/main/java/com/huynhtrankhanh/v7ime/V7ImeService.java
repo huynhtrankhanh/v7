@@ -171,7 +171,10 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
-        if (event.isCtrlPressed() || event.isAltPressed() || event.isMetaPressed()) {
+        if (event.isCtrlPressed() || event.isAltPressed()) {
+            return false;
+        }
+        if (event.isMetaPressed() && !isMetaKey(event.getKeyCode())) {
             return false;
         }
         if (isEnterKey(event.getKeyCode())) {
@@ -230,6 +233,11 @@ public class V7ImeService extends InputMethodService {
         return true;
     }
 
+    private boolean isMetaKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_META_LEFT
+                || keyCode == KeyEvent.KEYCODE_META_RIGHT;
+    }
+
     private boolean isEnterKey(int keyCode) {
         return keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
@@ -266,6 +274,8 @@ public class V7ImeService extends InputMethodService {
         return (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
                 || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
                 || keyCode == KeyEvent.KEYCODE_SEMICOLON
+                || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET
+                || keyCode == KeyEvent.KEYCODE_DEL
                 || keyCode == KeyEvent.KEYCODE_SPACE
                 || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
@@ -294,6 +304,8 @@ public class V7ImeService extends InputMethodService {
             case KeyEvent.KEYCODE_META_LEFT:
             case KeyEvent.KEYCODE_META_RIGHT:
                 return "Meta";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_ESCAPE:
                 return "Escape";
             default:
@@ -315,8 +327,12 @@ public class V7ImeService extends InputMethodService {
         switch (keyCode) {
             case KeyEvent.KEYCODE_SEMICOLON:
                 return "Semicolon";
+            case KeyEvent.KEYCODE_LEFT_BRACKET:
+                return "BracketLeft";
             case KeyEvent.KEYCODE_SPACE:
                 return "Space";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
                 return "ShiftLeft";
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
