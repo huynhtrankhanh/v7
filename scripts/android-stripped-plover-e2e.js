@@ -19,13 +19,52 @@ function contentType(filename) {
   return "application/octet-stream";
 }
 
+async function requestRuntime(page, requestId, method, params = {}) {
+  await page.evaluate(
+    ({ requestId, method, params }) => {
+      window.StrippedPloverAndroidRuntime.request(
+        requestId,
+        JSON.stringify({ id: requestId, method, params }),
+      );
+    },
+    { requestId, method, params },
+  );
+  await page.waitForFunction(
+    (expectedRequestId) =>
+      window.__runtimeResults.some(
+        (result) => result.requestId === expectedRequestId,
+      ),
+    { timeout: 120_000 },
+    requestId,
+  );
+  const bridgeResult = await page.evaluate((expectedRequestId) => {
+    const index = window.__runtimeResults.findIndex(
+      (candidate) => candidate.requestId === expectedRequestId,
+    );
+    return window.__runtimeResults.splice(index, 1)[0];
+  }, requestId);
+  if (bridgeResult.error) {
+    throw new Error(`bundled runtime returned an error: ${bridgeResult.error}`);
+  }
+  const response = JSON.parse(bridgeResult.response);
+  if (response.error) {
+    throw new Error(
+      `Stripped Plover RPC ${method} failed: ${response.error.message}`,
+    );
+  }
+  return response.result;
+}
+
 async function main() {
   const server = http.createServer((request, response) => {
     const requestPath = decodeURIComponent(
       new URL(request.url, "http://127.0.0.1").pathname,
     );
+    const assetPath = requestPath.startsWith("/assets/")
+      ? requestPath.slice("/assets".length)
+      : requestPath;
     const filename = assetRoots
-      .map((root) => path.resolve(root, `.${requestPath}`))
+      .map((root) => path.resolve(root, `.${assetPath}`))
       .find(
         (candidate, index) =>
           candidate.startsWith(`${assetRoots[index]}${path.sep}`) &&
@@ -33,6 +72,11 @@ async function main() {
           !fs.statSync(candidate).isDirectory(),
       );
     if (!filename) {
+      if (requestPath === "/favicon.ico") {
+        response.writeHead(204).end();
+        return;
+      }
+      console.error("Runtime asset not found:", requestPath);
       response.writeHead(404).end();
       return;
     }
@@ -53,8 +97,29 @@ async function main() {
   });
   try {
     const page = await browser.newPage();
+    page.on("console", (message) => {
+      if (message.type() === "error" || message.type() === "warning") {
+        console.error(`Runtime console ${message.type()}:`, message.text());
+      }
+    });
     page.on("pageerror", (error) => {
       console.error("Runtime page error:", error.message);
+    });
+    page.on("requestfailed", (request) => {
+      console.error(
+        "Runtime request failed:",
+        request.url(),
+        request.failure()?.errorText,
+      );
+    });
+    page.on("workercreated", async (worker) => {
+      worker.client.on("Runtime.exceptionThrown", ({ exceptionDetails }) => {
+        console.error(
+          "Runtime worker error:",
+          exceptionDetails.exception?.description ?? exceptionDetails.text,
+        );
+      });
+      await worker.client.send("Runtime.enable");
     });
     await page.evaluateOnNewDocument(() => {
       window.__runtimeResults = [];
@@ -83,9 +148,12 @@ async function main() {
         },
       };
     });
-    await page.goto(`http://127.0.0.1:${port}/stripped-plover-runtime.html`, {
-      waitUntil: "load",
-    });
+    await page.goto(
+      `http://127.0.0.1:${port}/assets/stripped-plover-runtime.html`,
+      {
+        waitUntil: "load",
+      },
+    );
     await page.waitForFunction(
       () =>
         window.__runtimeReady === true ||
@@ -102,33 +170,48 @@ async function main() {
     if (!isolated) {
       throw new Error("runtime page is not cross-origin isolated");
     }
-    await page.evaluate(() => {
-      window.StrippedPloverAndroidRuntime.request(
-        7,
-        JSON.stringify({
-          id: "dictionary-state",
-          method: "get_dictionary_state",
-          params: {},
-        }),
-      );
+    const parsed = await requestRuntime(page, 7, "get_dictionary_state");
+    if (!parsed || !Array.isArray(parsed.dictionaries)) {
+      throw new Error(`unexpected dictionary state: ${JSON.stringify(parsed)}`);
+    }
+
+    const pythonCode = `
+LONGEST_KEY = 1
+
+DICTIONARY = {
+    ('TEFT',): 'browser-python-works',
+}
+
+def lookup(key):
+    if key in DICTIONARY:
+        return DICTIONARY[key]
+    raise KeyError(key)
+`;
+    const imported = await requestRuntime(page, 8, "import_dictionary", {
+      name: "browser-python-test",
+      type: "python",
+      pythonCode,
     });
-    await page.waitForFunction(() =>
-      window.__runtimeResults.some((result) => result.requestId === 7),
-    );
-    const result = await page.evaluate(() =>
-      window.__runtimeResults.find((candidate) => candidate.requestId === 7),
-    );
-    if (result.error) {
-      throw new Error(`bundled runtime returned an error: ${result.error}`);
+    if (imported.type !== "python" || imported.entries !== 1) {
+      throw new Error(
+        `unexpected Python dictionary import: ${JSON.stringify(imported)}`,
+      );
     }
-    const parsed = JSON.parse(result.response);
+    const translation = await requestRuntime(page, 9, "translate", {
+      stroke: "TEFT",
+    });
     if (
-      parsed.id !== "dictionary-state" ||
-      !parsed.result ||
-      !Array.isArray(parsed.result.dictionaries)
+      !Array.isArray(translation.output) ||
+      !translation.output.some(
+        (element) =>
+          element.type === "preedit" && element.text === "browser-python-works",
+      )
     ) {
-      throw new Error(`unexpected runtime response: ${result.response}`);
+      throw new Error(
+        `Python dictionary did not translate: ${JSON.stringify(translation)}`,
+      );
     }
+
     const initializedSchema = await page.evaluate(() =>
       window.__sqliteExec.some((sql) =>
         sql.includes("CREATE TABLE IF NOT EXISTS dictionaries"),

@@ -228,11 +228,13 @@ const sharedBuildOptions = {
     ".xz": "file",
   },
   assetNames: "stripped-plover-assets/[name]-[hash]",
+  publicPath: "/assets/",
   define: {
     __dirname: '"/"',
     __filename: '"/stripped-plover-runtime.js"',
     "process.env.NODE_ENV": '"production"',
   },
+  inject: [path.join(adapterSource, "runtime-globals.ts")],
   plugins: [compatibilityPlugin],
 };
 

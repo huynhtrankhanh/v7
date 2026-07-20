@@ -112,9 +112,12 @@ inside its source directory.
 
 `npm run test:android-stripped-plover` serves the generated runtime with the
 same isolation headers, injects a narrow test SQLite bridge, and verifies that
-the real bundled engine initializes its schema and answers a dictionary-state
-RPC. The Gradle unit suite tests the native compatibility policy. An APK build
-then verifies asset merging and inclusion of the generated source ZIP.
+the real bundled engine initializes its schema, answers a dictionary-state RPC,
+and imports and translates with a Python dictionary in Puppeteer. The test
+serves the bundle under Android's `/assets/` URL layout so worker, WebAssembly,
+and Python archive paths are exercised as deployed. The Gradle unit suite tests
+the native compatibility policy. An APK build then verifies asset merging and
+inclusion of the generated source ZIP.
 
 Platform references:
 
