@@ -1416,11 +1416,6 @@ function isStaleInference(controller) {
 }
 
 async function handleChord(stroke) {
-  if (androidIme && (stroke === "#S-" || stroke === "#S")) {
-    androidIme.changeInputMethod();
-    return;
-  }
-
   if (stroke === "#") {
     await togglePloverMode();
     return;
@@ -1433,7 +1428,19 @@ async function handleChord(stroke) {
 
   // 1. Escape Hatch: #S
   if (!strippedDisplay.enabled && (stroke === "#S-" || stroke === "#S")) {
-    enterRawTypingMode();
+    if (state.candidates.length > 0) {
+      selectCandidate(0); // Select top candidate
+    }
+    piecemealCursorIndex = null;
+    isRawMode = true;
+    buffer.clearHistory();
+    updateDisplay();
+    const textArea = document.getElementById("text-input");
+    if (textArea) {
+      textArea.focus();
+      textArea.selectionStart = textArea.value.length;
+      textArea.selectionEnd = textArea.value.length;
+    }
     return;
   }
 
@@ -1751,9 +1758,7 @@ function shouldDeferAndroidInferenceRender() {
 }
 
 function hasOsPassthroughModifier(event) {
-  return (
-    event.ctrlKey || event.altKey || (event.metaKey && event.key !== "Meta")
-  );
+  return event.ctrlKey || event.altKey || event.metaKey;
 }
 
 function getInferenceCandidates(data: unknown): string[][] {
@@ -2168,110 +2173,11 @@ function updateDisplay() {
   syncAndroidPreedit(candidateDiffPlan);
 }
 
-function commitRawTextAndEnterStenoMode() {
-  const textArea = document.getElementById(
-    "text-input",
-  ) as HTMLTextAreaElement | null;
-  const newText =
-    textArea?.value ?? renderVisibleText(state.islands, state.candidates);
-  buffer.setIslands([createIsland("vietnamese", newText)]);
-  state.candidates = [];
-  piecemealCursorIndex = null;
-  buffer.clearHistory();
-  isRawMode = false;
-  updateDisplay();
-}
-
-function enterRawTypingMode() {
-  if (state.candidates.length > 0) {
-    selectCandidate(0);
-  }
-  piecemealCursorIndex = null;
-  isRawMode = true;
-  buffer.clearHistory();
-  updateDisplay();
-  const textArea = document.getElementById(
-    "text-input",
-  ) as HTMLTextAreaElement | null;
-  if (textArea) {
-    textArea.focus();
-    textArea.selectionStart = textArea.value.length;
-    textArea.selectionEnd = textArea.value.length;
-  }
-}
-
-function clearAndroidPreeditBuffer() {
-  abortInferenceRequest(true);
-  buffer.reset();
-  state.candidates = [];
-  inferenceErrorMessage =
-    androidIme && inferenceModelState === "error"
-      ? androidIme.getInferenceModelError()
-      : "";
-  piecemealCursorIndex = null;
-  isRawMode = false;
-  updateDisplay();
-}
-
-function handleRawAndroidKeyDown(event) {
-  const textArea = document.getElementById(
-    "text-input",
-  ) as HTMLTextAreaElement | null;
-  if (
-    !textArea ||
-    event.repeat ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.metaKey
-  ) {
-    return false;
-  }
-  let text = "";
-  const start = textArea.selectionStart ?? textArea.value.length;
-  const end = textArea.selectionEnd ?? start;
-  if (event.key === "Backspace") {
-    if (start === 0 && end === 0) {
-      return true;
-    }
-    const deleteStart = start === end ? Math.max(0, start - 1) : start;
-    textArea.value =
-      textArea.value.slice(0, deleteStart) + textArea.value.slice(end);
-    textArea.selectionStart = deleteStart;
-    textArea.selectionEnd = deleteStart;
-    return true;
-  }
-  if (event.key.length === 1) {
-    text = event.key;
-  } else if (event.key === "Enter") {
-    text = "\n";
-  } else {
-    return false;
-  }
-  textArea.value =
-    textArea.value.slice(0, start) + text + textArea.value.slice(end);
-  const cursor = start + text.length;
-  textArea.selectionStart = cursor;
-  textArea.selectionEnd = cursor;
-  return true;
-}
-
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
-  if (androidIme && e.key === "Meta") {
-    if (!e.repeat) {
-      if (isRawMode) {
-        commitRawTextAndEnterStenoMode();
-      } else {
-        enterRawTypingMode();
-      }
-    }
-    e.preventDefault();
-    return;
-  }
-
   if (hasOsPassthroughModifier(e)) {
     clearPressedQwertyKeys();
     return;
@@ -2312,21 +2218,21 @@ document.addEventListener("keydown", (e) => {
 
   if (isRawMode) {
     if (e.key === "Escape") {
-      commitRawTextAndEnterStenoMode();
+      // Exit Raw Mode
+      const textArea = document.getElementById("text-input");
+      const newText = textArea.value;
+
+      // Update state
+      buffer.setIslands([createIsland("vietnamese", newText)]);
+      state.candidates = [];
+      piecemealCursorIndex = null;
+      buffer.clearHistory();
+      isRawMode = false;
+
+      updateDisplay();
       e.preventDefault();
-      return;
-    }
-    if (androidIme && handleRawAndroidKeyDown(e)) {
-      e.preventDefault();
-      return;
     }
     return; // Let other keys pass to textarea
-  }
-
-  if (androidIme && e.key === "[") {
-    clearAndroidPreeditBuffer();
-    e.preventDefault();
-    return;
   }
 
   if (e.repeat) return;
@@ -2946,7 +2852,16 @@ window.addEventListener("resize", () => {
 });
 
 window.clearPreeditFromAndroid = () => {
-  clearAndroidPreeditBuffer();
+  abortInferenceRequest(true);
+  buffer.reset();
+  state.candidates = [];
+  inferenceErrorMessage =
+    androidIme && inferenceModelState === "error"
+      ? androidIme.getInferenceModelError()
+      : "";
+  piecemealCursorIndex = null;
+  isRawMode = false;
+  updateDisplay();
 };
 
 window.handleAndroidKeyEvent = (
