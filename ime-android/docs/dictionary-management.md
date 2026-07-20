@@ -51,7 +51,10 @@ surface:
 - stroke lookup and reverse translation lookup.
 
 All file access goes through system document pickers; no broad filesystem
-permission is requested.
+permission is requested. The Android import picker intentionally does not
+filter by MIME type because document providers report Python and JSON files
+under inconsistent types. The shared web form identifies the supported
+`.py` and `.json` formats instead.
 
 ## Scrolling
 

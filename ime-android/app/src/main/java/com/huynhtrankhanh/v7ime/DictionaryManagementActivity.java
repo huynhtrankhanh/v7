@@ -177,18 +177,14 @@ public class DictionaryManagementActivity extends Activity {
             }
             filePathCallback = callback;
             try {
+                // Document providers do not agree on MIME types for .py and
+                // .json files. Filtering on an exact MIME allow-list hides
+                // valid dictionaries from some Android file pickers, so let
+                // the user choose any openable document. The web UI still
+                // advertises and processes only dictionary formats.
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("*/*")
-                        .putExtra(
-                                Intent.EXTRA_MIME_TYPES,
-                                new String[]{
-                                        "application/json",
-                                        "text/x-python",
-                                        "text/plain",
-                                        "application/octet-stream"
-                                }
-                        );
+                        .setType("*/*");
                 if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 }
