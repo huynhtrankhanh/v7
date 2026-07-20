@@ -25,8 +25,10 @@ normal IME page does not mount the dictionary dialog.
 
 The management WebView uses standard web capabilities for dialog rendering,
 forms, validation, search/edit state, and file import. Its
-`<input type="file">` uses WebView's standard file-chooser callback and
-`File.text()` reads the selected JSON or Python file.
+`<input type="file">` uses WebView's standard file-chooser callback. The
+selected filename or MIME type chooses JSON versus Python import semantics,
+and the file is read with `File.text()` or a `FileReader` fallback for older
+WebViews.
 
 The separate `AndroidDictionary` bridge is intentionally small:
 

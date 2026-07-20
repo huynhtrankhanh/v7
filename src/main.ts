@@ -924,6 +924,47 @@ function getDictionaryFilename(dict, extension) {
   return extension ? `${safeBase}.${extension}` : safeBase;
 }
 
+function inferDictionaryImportType(
+  file: File | null | undefined,
+): "json" | "python" | null {
+  if (!file) return null;
+  const filename = file.name.toLowerCase();
+  if (filename.endsWith(".py")) return "python";
+  if (filename.endsWith(".json")) return "json";
+
+  const mimeType = file.type.toLowerCase().split(";", 1)[0].trim();
+  if (
+    mimeType === "application/x-python" ||
+    mimeType === "application/python" ||
+    mimeType === "text/x-python" ||
+    mimeType === "text/python"
+  ) {
+    return "python";
+  }
+  if (
+    mimeType === "application/json" ||
+    mimeType === "application/x-json" ||
+    mimeType === "text/json"
+  ) {
+    return "json";
+  }
+  return null;
+}
+
+function readDictionaryFile(file: File): Promise<string> {
+  if (typeof file.text === "function") {
+    return file.text();
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
+    reader.addEventListener("error", () =>
+      reject(reader.error || new Error("Unable to read the dictionary file.")),
+    );
+    reader.readAsText(file);
+  });
+}
+
 function downloadDictionaryFile(filename, content, mimeType) {
   if (androidDictionary) {
     androidDictionary.saveDictionaryFile(filename, content, mimeType);
@@ -2366,6 +2407,12 @@ function setupPloverControls() {
   const refreshButton = document.getElementById("plover-refresh");
   const endSoloButton = document.getElementById("plover-end-solo");
   const uploadButton = document.getElementById("plover-dict-upload");
+  const dictionaryFileInput = document.getElementById(
+    "plover-dict-file",
+  ) as HTMLInputElement | null;
+  const dictionaryTypeSelect = document.getElementById(
+    "plover-dict-type",
+  ) as HTMLSelectElement | null;
   const entrySearchButton = document.getElementById("plover-entry-search");
   const entryPrevButton = document.getElementById("plover-entry-prev");
   const entryNextButton = document.getElementById("plover-entry-next");
@@ -2464,26 +2511,37 @@ function setupPloverControls() {
       void endSoloDictionaries(endSoloButton);
     });
   }
+  if (dictionaryFileInput && dictionaryTypeSelect) {
+    dictionaryFileInput.addEventListener("change", () => {
+      const inferredType = inferDictionaryImportType(
+        dictionaryFileInput.files?.[0],
+      );
+      if (inferredType) {
+        dictionaryTypeSelect.value = inferredType;
+      }
+    });
+  }
   if (uploadButton) {
     uploadButton.addEventListener("click", async () => {
       if (!strippedPlover.available) {
         setPloverMessage("Stripped Plover is unavailable.");
         return;
       }
-      const fileInput = document.getElementById("plover-dict-file");
       const nameInput = document.getElementById("plover-dict-name");
-      const typeSelect = document.getElementById("plover-dict-type");
       const mergeToggle = document.getElementById("plover-dict-merge");
-      const file = fileInput?.files?.[0];
+      const file = dictionaryFileInput?.files?.[0];
       if (!file) {
         setPloverMessage("Select a dictionary file to upload.");
         return;
       }
       const name = (nameInput?.value || "").trim() || file.name;
-      const type = typeSelect?.value || "json";
+      const type =
+        inferDictionaryImportType(file) ||
+        dictionaryTypeSelect?.value ||
+        "json";
       setButtonLoading(uploadButton, true, "Uploading...");
       try {
-        const content = await file.text();
+        const content = await readDictionaryFile(file);
         if (type === "json") {
           const data = JSON.parse(content);
           await ploverRpc("import_dictionary", {
