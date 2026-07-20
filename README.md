@@ -1,3 +1,7 @@
+# :warning: Known Bugs in Android Port
+* File picker in dictionary management doesn't let the user select Python files
+* Internal Stripped Plover state isn't reset when preedit is reset
+
 # V7 Text Prediction Engine
 
 This project implements a high-performance Vietnamese text prediction engine using a specialized "V7" input format. It utilizes a 3-gram language model trained with KenLM to disambiguate and reconstruct Vietnamese sentences from compact encoded strings. A web demo with a stenographic input interface is also included.
