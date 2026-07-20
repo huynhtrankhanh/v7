@@ -85,6 +85,7 @@ public class V7ImeService extends InputMethodService {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
+        BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         configureWebView(webView);
         webView.loadUrl("file:///android_asset/ime.html");
         warmInferenceModel();
@@ -105,6 +106,9 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
+        if (inputContainer != null) {
+            BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
+        }
         clearPreeditSession();
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
@@ -198,6 +202,10 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
+        if (inputContainer != null) {
+            BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
+            inputContainer = null;
+        }
         if (webView != null) {
             webView.destroy();
             webView = null;

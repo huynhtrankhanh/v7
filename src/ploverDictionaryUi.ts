@@ -30,6 +30,14 @@ const PLOVER_DICTIONARY_DIALOG_HTML = `
         >
           Lookup
         </button>
+        <button
+          id="plover-tab-diagnostics"
+          class="plover-tab"
+          type="button"
+          data-panel="plover-panel-diagnostics"
+        >
+          Diagnostics
+        </button>
       </div>
       <div id="plover-panel-dictionaries" class="plover-panel active">
         <div class="plover-section">
@@ -151,6 +159,23 @@ const PLOVER_DICTIONARY_DIALOG_HTML = `
           </div>
           <div id="plover-lookup-results"></div>
           <div id="plover-lookup-message"></div>
+        </div>
+      </div>
+      <div id="plover-panel-diagnostics" class="plover-panel">
+        <div class="plover-section">
+          <span class="plover-section-title">Upload history</span>
+          <p class="plover-muted">
+            Includes device and WebView versions plus timing phases from both
+            Android WebViews. Dictionary contents are not recorded.
+          </p>
+          <div class="plover-row">
+            <button id="plover-diagnostics-refresh" type="button">
+              Refresh
+            </button>
+            <button id="plover-diagnostics-copy" type="button">Copy</button>
+            <button id="plover-diagnostics-clear" type="button">Clear</button>
+          </div>
+          <pre id="plover-diagnostics-output">Open this tab to load diagnostics.</pre>
         </div>
       </div>
       <div id="plover-message"></div>

@@ -2,9 +2,13 @@ package com.huynhtrankhanh.v7ime;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -12,6 +16,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import org.json.JSONObject;
@@ -30,6 +35,7 @@ public class DictionaryManagementActivity extends Activity {
     private final ExecutorService ioExecutor =
             Executors.newSingleThreadExecutor();
     private WebView webView;
+    private FrameLayout rootView;
     private ValueCallback<Uri[]> filePathCallback;
     private String pendingSaveContent = "";
 
@@ -39,8 +45,13 @@ public class DictionaryManagementActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle(R.string.manage_dictionaries);
 
+        rootView = new FrameLayout(this);
         webView = new WebView(this);
-        setContentView(webView);
+        rootView.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+        ));
+        setContentView(rootView);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -52,11 +63,16 @@ public class DictionaryManagementActivity extends Activity {
                 new DictionaryAndroidBridge(),
                 "AndroidDictionary"
         );
+        BundledStrippedPloverRuntime.get(this).attachTo(rootView);
         webView.loadUrl("file:///android_asset/dictionary.html?dictionary-management=1");
     }
 
     @Override
     protected void onDestroy() {
+        if (rootView != null) {
+            BundledStrippedPloverRuntime.get(this).detachFrom(rootView);
+            rootView = null;
+        }
         ioExecutor.shutdownNow();
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
@@ -94,9 +110,37 @@ public class DictionaryManagementActivity extends Activity {
     }
 
     private void requestPlover(String requestBody, int requestId) {
+        long startedAtMs = SystemClock.elapsedRealtime();
+        String method = "unknown";
+        try {
+            method = new JSONObject(requestBody).optString(
+                    "method",
+                    "unknown"
+            );
+        } catch (Exception ignored) {
+            method = "invalid-json";
+        }
+        String requestMethod = method;
+        logDiagnostic(
+                "request=" + requestId
+                        + " method=" + requestMethod
+                        + " phase=management-dispatch bytes="
+                        + (requestBody == null ? 0 : requestBody.length())
+        );
         BundledStrippedPloverRuntime.get(this).request(
                 requestBody,
                 (responseBody, errorMessage) -> {
+                    logDiagnostic(
+                            "request=" + requestId
+                                    + " method=" + requestMethod
+                                    + " phase=management-complete elapsedMs="
+                                    + (SystemClock.elapsedRealtime() - startedAtMs)
+                                    + " error="
+                                    + (errorMessage == null
+                                            || errorMessage.isEmpty()
+                                            ? "none"
+                                            : errorMessage)
+                    );
                     String script = "window.handleAndroidPloverResponse"
                             + " && window.handleAndroidPloverResponse("
                             + requestId + ","
@@ -166,6 +210,11 @@ public class DictionaryManagementActivity extends Activity {
         });
     }
 
+    private void logDiagnostic(String message) {
+        Log.i(LOG_TAG, message);
+        PloverDiagnostics.record(this, "manager", message);
+    }
+
     private class DictionaryWebChromeClient extends WebChromeClient {
         @Override
         public boolean onShowFileChooser(
@@ -227,6 +276,42 @@ public class DictionaryManagementActivity extends Activity {
                     content,
                     mimeType
             ));
+        }
+
+        @JavascriptInterface
+        public String getDiagnostics() {
+            return PloverDiagnostics.export(DictionaryManagementActivity.this);
+        }
+
+        @JavascriptInterface
+        public void clearDiagnostics() {
+            PloverDiagnostics.clear(DictionaryManagementActivity.this);
+        }
+
+        @JavascriptInterface
+        public void copyDiagnostics() {
+            String diagnostics =
+                    PloverDiagnostics.export(DictionaryManagementActivity.this);
+            runOnUiThread(() -> {
+                ClipboardManager clipboard = (ClipboardManager)
+                        getSystemService(Context.CLIPBOARD_SERVICE);
+                clipboard.setPrimaryClip(
+                        ClipData.newPlainText(
+                                "V7 Stripped Plover diagnostics",
+                                diagnostics
+                        )
+                );
+                Toast.makeText(
+                        DictionaryManagementActivity.this,
+                        R.string.dictionary_diagnostics_copied,
+                        Toast.LENGTH_SHORT
+                ).show();
+            });
+        }
+
+        @JavascriptInterface
+        public void recordDiagnostic(String message) {
+            logDiagnostic(message == null ? "" : message);
         }
     }
 }

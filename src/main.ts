@@ -298,6 +298,10 @@ interface AndroidDictionaryBridge {
   hasPloverConfiguration(): boolean;
   requestPlover(body: string, requestId: number): void;
   saveDictionaryFile(filename: string, content: string, mimeType: string): void;
+  getDiagnostics(): string;
+  clearDiagnostics(): void;
+  copyDiagnostics(): void;
+  recordDiagnostic(message: string): void;
   close(): void;
 }
 
@@ -322,11 +326,13 @@ const androidInferencePending = new Map<
   }
 >();
 let androidPloverRequestId = 1;
+const ANDROID_PLOVER_REQUEST_TIMEOUT_MS = 180_000;
 const androidPloverPending = new Map<
   number,
   {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
+    timeoutId: ReturnType<typeof setTimeout>;
   }
 >();
 
@@ -963,6 +969,31 @@ function readDictionaryFile(file: File): Promise<string> {
     );
     reader.readAsText(file);
   });
+}
+
+function refreshPloverDiagnostics() {
+  const output = document.getElementById("plover-diagnostics-output");
+  if (!output) return;
+  if (!androidDictionary) {
+    output.textContent =
+      "Historical diagnostics are available in the Android dictionary manager.";
+    return;
+  }
+  try {
+    output.textContent = androidDictionary.getDiagnostics();
+  } catch (error) {
+    output.textContent = `Unable to load diagnostics: ${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  }
+}
+
+function recordPloverDiagnostic(message: string) {
+  try {
+    androidDictionary?.recordDiagnostic(message);
+  } catch {
+    // Diagnostics must never interfere with dictionary operations.
+  }
 }
 
 function downloadDictionaryFile(filename, content, mimeType) {
@@ -2413,6 +2444,15 @@ function setupPloverControls() {
   const dictionaryTypeSelect = document.getElementById(
     "plover-dict-type",
   ) as HTMLSelectElement | null;
+  const diagnosticsRefreshButton = document.getElementById(
+    "plover-diagnostics-refresh",
+  );
+  const diagnosticsCopyButton = document.getElementById(
+    "plover-diagnostics-copy",
+  );
+  const diagnosticsClearButton = document.getElementById(
+    "plover-diagnostics-clear",
+  );
   const entrySearchButton = document.getElementById("plover-entry-search");
   const entryPrevButton = document.getElementById("plover-entry-prev");
   const entryNextButton = document.getElementById("plover-entry-next");
@@ -2439,6 +2479,8 @@ function setupPloverControls() {
       }
       if (panelId === "plover-panel-entries") {
         void runEntrySearch({ page: ploverEntrySearchPage });
+      } else if (panelId === "plover-panel-diagnostics") {
+        refreshPloverDiagnostics();
       }
     });
   }
@@ -2519,6 +2561,32 @@ function setupPloverControls() {
       if (inferredType) {
         dictionaryTypeSelect.value = inferredType;
       }
+      const file = dictionaryFileInput.files?.[0];
+      if (file) {
+        recordPloverDiagnostic(
+          `upload phase=file-selected type=${inferredType || "unknown"} bytes=${file.size}`,
+        );
+      }
+    });
+  }
+  if (diagnosticsRefreshButton) {
+    diagnosticsRefreshButton.addEventListener("click", () => {
+      refreshPloverDiagnostics();
+    });
+  }
+  if (diagnosticsCopyButton) {
+    diagnosticsCopyButton.disabled = !androidDictionary;
+    diagnosticsCopyButton.addEventListener("click", () => {
+      androidDictionary?.copyDiagnostics();
+    });
+  }
+  if (diagnosticsClearButton) {
+    diagnosticsClearButton.disabled = !androidDictionary;
+    diagnosticsClearButton.addEventListener("click", () => {
+      if (!androidDictionary) return;
+      if (!window.confirm("Clear the stored diagnostics history?")) return;
+      androidDictionary.clearDiagnostics();
+      refreshPloverDiagnostics();
     });
   }
   if (uploadButton) {
@@ -2540,8 +2608,15 @@ function setupPloverControls() {
         dictionaryTypeSelect?.value ||
         "json";
       setButtonLoading(uploadButton, true, "Uploading...");
+      const uploadStartedAt = performance.now();
+      recordPloverDiagnostic(
+        `upload phase=read-start type=${type} bytes=${file.size}`,
+      );
       try {
         const content = await readDictionaryFile(file);
+        recordPloverDiagnostic(
+          `upload phase=read-complete type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)}`,
+        );
         if (type === "json") {
           const data = JSON.parse(content);
           await ploverRpc("import_dictionary", {
@@ -2560,9 +2635,17 @@ function setupPloverControls() {
         await refreshPloverDictionaries({ force: true });
         await runEntrySearch({ page: 1 });
         setPloverMessage("");
+        recordPloverDiagnostic(
+          `upload phase=ui-complete type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)}`,
+        );
       } catch (e) {
         console.log(e);
         setPloverMessage(e.message || "Failed to upload dictionary.");
+        recordPloverDiagnostic(
+          `upload phase=ui-error type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)} error=${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
       } finally {
         setButtonLoading(uploadButton, false, "");
       }
@@ -2808,7 +2891,16 @@ function requestAndroidPlover(
       return;
     }
     const requestId = androidPloverRequestId++;
-    androidPloverPending.set(requestId, { resolve, reject });
+    const timeoutId = window.setTimeout(() => {
+      if (!androidPloverPending.delete(requestId)) return;
+      const message =
+        "Stripped Plover timed out after 180 seconds. Open Diagnostics for the last completed phase.";
+      recordPloverDiagnostic(
+        `request=${requestId} phase=management-timeout error=${message}`,
+      );
+      reject(new Error(message));
+    }, ANDROID_PLOVER_REQUEST_TIMEOUT_MS);
+    androidPloverPending.set(requestId, { resolve, reject, timeoutId });
     try {
       androidPloverBridge.requestPlover(
         JSON.stringify({ id: requestId, method, params }),
@@ -2816,6 +2908,7 @@ function requestAndroidPlover(
       );
     } catch (error) {
       androidPloverPending.delete(requestId);
+      window.clearTimeout(timeoutId);
       reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
@@ -2874,6 +2967,7 @@ window.handleAndroidPloverResponse = (
   const pending = androidPloverPending.get(requestId);
   if (!pending) return;
   androidPloverPending.delete(requestId);
+  window.clearTimeout(pending.timeoutId);
   if (errorMessage) {
     pending.reject(new Error(errorMessage));
     return;

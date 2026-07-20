@@ -21,6 +21,7 @@ interface Engine {
 interface NativeRuntimeBridge {
   onReady(): void;
   onResponse(requestId: number, response: string, error: string): void;
+  onDiagnostic(requestId: number, phase: string, detail: string): void;
 }
 
 declare const AndroidStrippedPloverRuntime: NativeRuntimeBridge;
@@ -48,12 +49,34 @@ function report(
 }
 
 function request(requestId: number, body: string): void {
+  AndroidStrippedPloverRuntime.onDiagnostic(
+    requestId,
+    "runtime-queued",
+    `bytes=${body.length}`,
+  );
   requestTail = requestTail.then(async () => {
+    const startedAt = performance.now();
     try {
       const engine = await enginePromise;
       const parsed = JSON.parse(body) as ProtocolRequest;
-      report(requestId, await engine.handleRequest(parsed), null);
+      AndroidStrippedPloverRuntime.onDiagnostic(
+        requestId,
+        "runtime-start",
+        `method=${parsed.method}`,
+      );
+      const response = await engine.handleRequest(parsed);
+      AndroidStrippedPloverRuntime.onDiagnostic(
+        requestId,
+        "runtime-complete",
+        `method=${parsed.method} elapsedMs=${Math.round(performance.now() - startedAt)}`,
+      );
+      report(requestId, response, null);
     } catch (error) {
+      AndroidStrippedPloverRuntime.onDiagnostic(
+        requestId,
+        "runtime-error",
+        error instanceof Error ? error.message : String(error),
+      );
       report(requestId, null, error);
     }
   });

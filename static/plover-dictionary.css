@@ -145,6 +145,23 @@ body.dictionary-management-page #plover-lookup-results {
   display: flex;
 }
 
+#plover-diagnostics-output {
+  background: #111827;
+  border-radius: 8px;
+  color: #e5e7eb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  margin: 0;
+  max-height: min(58vh, 520px);
+  max-height: min(58dvh, 520px);
+  overflow: auto;
+  padding: 12px;
+  user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .plover-row {
   align-items: center;
   display: flex;

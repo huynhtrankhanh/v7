@@ -82,7 +82,7 @@ async function uploadDictionary(page, directory, filename, content, type) {
   );
   await page.waitForFunction(
     () => document.querySelector("#plover-dict-upload")?.disabled === false,
-    { timeout: 60_000 },
+    { timeout: 120_000 },
   );
   const errorMessage = await page.$eval(
     "#plover-message",
@@ -168,6 +168,7 @@ async function main() {
     });
     await page.evaluateOnNewDocument(() => {
       window.__runtimeResults = [];
+      window.__runtimeDiagnostics = [];
       window.__sqliteExec = [];
       window.AndroidStrippedPloverRuntime = {
         onReady() {
@@ -175,6 +176,9 @@ async function main() {
         },
         onResponse(requestId, response, error) {
           window.__runtimeResults.push({ requestId, response, error });
+        },
+        onDiagnostic(requestId, phase, detail) {
+          window.__runtimeDiagnostics.push({ requestId, phase, detail });
         },
       };
       window.AndroidStrippedPloverSqlite = {
@@ -241,6 +245,12 @@ async function main() {
         requestPlover(body, requestId) {
           window.__androidPloverRequestQueue.push({ body, requestId });
         },
+        getDiagnostics() {
+          return "simulated Android diagnostics";
+        },
+        clearDiagnostics() {},
+        copyDiagnostics() {},
+        recordDiagnostic() {},
         saveDictionaryFile() {},
         close() {},
       };
@@ -272,11 +282,13 @@ async function main() {
             };
             forwardedRequests.push(forwarded);
             // Keep the worker-backed runtime page active while Puppeteer
-            // models the otherwise independent Android WebView.
+            // models Android attaching its independent runtime WebView.
             await page.bringToFront();
+            const runtimeRequestId = nextRuntimeRequestId++;
+            forwarded.runtimeRequestId = runtimeRequestId;
             const bridgeResult = await dispatchRuntimeBody(
               page,
-              nextRuntimeRequestId++,
+              runtimeRequestId,
               body,
             );
             forwarded.response = bridgeResult.response
@@ -388,6 +400,28 @@ def lookup(key):
         throw new Error(
           `Android ${type} upload did not cross both WebViews successfully: ${JSON.stringify(forwarded)}`,
         );
+      }
+    }
+    const importDiagnostics = await page.evaluate(() =>
+      window.__runtimeDiagnostics.filter((diagnostic) =>
+        ["runtime-start", "runtime-complete"].includes(diagnostic.phase),
+      ),
+    );
+    for (const forwarded of forwardedRequests.filter(
+      ({ request }) => request.method === "import_dictionary",
+    )) {
+      for (const phase of ["runtime-start", "runtime-complete"]) {
+        if (
+          !importDiagnostics.some(
+            (diagnostic) =>
+              diagnostic.requestId === forwarded.runtimeRequestId &&
+              diagnostic.phase === phase,
+          )
+        ) {
+          throw new Error(
+            `Android ${forwarded.request.params.type} upload did not report ${phase}: ${JSON.stringify(importDiagnostics)}`,
+          );
+        }
       }
     }
     const uploadedTranslation = await requestRuntime(

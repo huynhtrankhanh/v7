@@ -71,3 +71,25 @@ result regions.
 The runtime WebView, Node compatibility audit, native SQLite bridge, and
 source-bundle licensing boundary are documented in
 [Bundled Stripped Plover runtime](bundled-stripped-plover.md).
+
+## Upload diagnostics
+
+The **Diagnostics** tab in the Android dictionary manager retains the most
+recent 64 KiB of timestamped request history across app restarts. It includes
+the Android, app, and WebView versions and has **Copy**, **Clear**, and
+**Refresh** controls. Dictionary source and entry contents are not recorded.
+
+Android also mirrors each event to the system log when developer access is
+available:
+
+```sh
+adb logcat -s V7Dictionary:I V7PloverRuntime:I
+```
+
+For a healthy import, the request advances through `file-selected`,
+`read-start`, `read-complete`, `management-dispatch`, `queued`, `dispatch`,
+`runtime-queued`, `runtime-start`, `runtime-complete`, `complete`,
+`management-complete`, and `ui-complete`. The elapsed times identify whether a
+delay is reading the selected document, crossing the native bridge, inside
+Python dictionary initialization, or returning the result to the management
+page.
