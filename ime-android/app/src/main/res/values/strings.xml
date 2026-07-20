@@ -11,9 +11,9 @@
     <string name="plover_heading">Bundled Stripped Plover</string>
     <string name="plover_description">Stripped Plover runs locally in a dedicated background WebView. Its dictionaries are stored in the app\'s private Android SQLite database.</string>
     <string name="open_source_heading">Open-source licenses and source</string>
-    <string name="open_source_description">The APK includes inference-rs, KenLM, and Stripped Plover. Only the exported source ZIP aggregate is offered as GPL-3.0-or-later; that does not relicense V7 files, which remain 0BSD. Third-party files retain their upstream licenses.</string>
-    <string name="save_source">Save APK source code (.zip)</string>
-    <string name="source_saved">APK source code saved</string>
+    <string name="open_source_description">This bundled Android distribution, including the APK and Stripped Plover runtime, is conveyed as a combined work under GPL-3.0-or-later. Its complete Corresponding Source is bundled inside the APK as v7-ime-source.zip and can be saved below. Original V7 source files remain separately available under 0BSD. Stripped Plover and other third-party components retain their respective license notices.</string>
+    <string name="save_source">Save Corresponding Source (.zip)</string>
+    <string name="source_saved">Corresponding Source saved</string>
     <string name="source_save_failed">Could not save source code: %1$s</string>
     <string name="enable_keyboard">Enable V7 IME</string>
     <string name="choose_keyboard">Choose input method</string>

@@ -97,11 +97,16 @@ Fetching Stripped Plover does not alter the V7 repository license or relicense
 V7 intellectual property. V7 source files remain 0BSD. Stripped Plover and all
 other third-party files retain their own upstream licenses.
 
-Only the generated `v7-ime-source.zip` aggregate is offered under
-GPL-3.0-or-later for distribution of the complete APK build source. Its
-`AGGREGATE-LICENSE.txt` states that this aggregate license does not replace the
-licenses of constituent files. Stripped Plover's own GPL-2.0-or-later text is
-included unchanged inside its source directory.
+The bundled Android distribution, including the APK and Stripped Plover
+runtime, is conveyed as a combined work under GPL-3.0-or-later. The generated
+`v7-ime-source.zip` is the complete Corresponding Source for that APK and is
+bundled as an Android asset. Settings exports the exact bundled archive.
+
+The archive's `ANDROID-DISTRIBUTION-LICENSE.txt` documents this
+distribution-level GPL boundary. It does not replace the licenses of
+constituent source files: original V7 files remain separately available under
+0BSD, and Stripped Plover's own GPL-2.0-or-later text is included unchanged
+inside its source directory.
 
 ## Verification
 

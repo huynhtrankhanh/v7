@@ -59,7 +59,8 @@ keyboard settings. The native settings activity includes:
   Framework;
 - a full-screen Stripped Plover dictionary manager opened from settings,
   reusing the browser UI without nesting editable fields inside the IME;
-- an option to save the complete APK build source as `v7-ime-source.zip`;
+- an option to save the APK's complete Corresponding Source as
+  `v7-ime-source.zip`;
 - shortcuts to enable V7 IME and open the input-method picker.
 
 See [Stripped Plover dictionary management on Android](docs/dictionary-management.md)
@@ -71,11 +72,17 @@ pinned external-source build, separate engine WebView, typechecked Node
 compatibility surface, native SQLite implementation, and artifact licensing
 boundary.
 
-The source ZIP contains this repository plus the exact pinned KenLM and
-Stripped Plover checkouts. Only the generated ZIP aggregate is offered under
-GPL-3.0-or-later: this does not relicense V7 intellectual property, and the V7
-files inside remain 0BSD. Third-party files retain their upstream notices and
-licenses. The archive intentionally excludes user language models.
+The bundled Android distribution, including the APK and its Stripped Plover
+runtime, is conveyed as a combined work under GPL-3.0-or-later. The APK bundles
+its complete Corresponding Source as `v7-ime-source.zip`; Settings can save
+that exact asset without network access. The archive contains this repository
+plus the exact pinned KenLM and Stripped Plover checkouts, and intentionally
+excludes user language models.
+
+Original V7 source files remain separately available under 0BSD. The
+distribution-level GPL notice does not replace their 0BSD license, transfer
+their copyright, or replace the respective notices on Stripped Plover, KenLM,
+and other third-party components.
 
 ## IME interface
 

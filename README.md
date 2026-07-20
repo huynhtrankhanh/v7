@@ -283,7 +283,17 @@ These syllables can *only* carry Sắc or Nặng tones. V7 separates them to imp
 
 ## License
 
-This project is licensed under the [0BSD License](LICENSE).
+Original V7 source files in this repository are licensed under the
+[0BSD License](LICENSE).
+
+The bundled Android distribution is a combined work that includes Stripped
+Plover. The APK is conveyed under GPL-3.0-or-later and contains its complete
+Corresponding Source as `v7-ime-source.zip`, exportable from **V7 IME
+settings → Save Corresponding Source**. This distribution-level GPL notice
+does not replace the 0BSD license on original V7 source files. Stripped Plover
+and other third-party components retain their respective copyright and license
+notices. See [V7 IME for Android](ime-android/README.md) for the Android
+distribution and source details.
 
 ## Acknowledgments
 

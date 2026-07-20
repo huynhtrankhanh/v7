@@ -36,34 +36,41 @@ select their own local model through Android's Storage Access Framework.
 - KenLM revision: $kenlm_revision
 - Stripped Plover revision: $stripped_plover_revision
 
-The ZIP aggregate, as a whole, is distributed under GPL-3.0-or-later; see
-AGGREGATE-LICENSE.txt. This does not replace the licenses of its constituent
-files and does not relicense V7 intellectual property: V7 remains 0BSD.
-Third-party files retain their own notices and licenses. KenLM's license texts
-are in third_party/kenlm, and Stripped Plover's GPL-2.0-or-later text is in
-third_party/stripped-plover/LICENSE.txt.
+This archive is the complete Corresponding Source for the bundled V7 IME
+Android distribution. The APK, including its bundled Stripped Plover runtime,
+is conveyed as a combined work under GPL-3.0-or-later; see
+ANDROID-DISTRIBUTION-LICENSE.txt.
+
+This distribution-level GPL notice does not replace the licenses of
+constituent source files. Original V7 files remain separately available under
+0BSD. Third-party files retain their own notices and licenses. KenLM's license
+texts are in third_party/kenlm, and Stripped Plover's GPL-2.0-or-later text is
+in third_party/stripped-plover/LICENSE.txt.
 EOF
 
-cat > "$staging/AGGREGATE-LICENSE.txt" <<'EOF'
-V7 IME APK build-source ZIP aggregate
+cat > "$staging/ANDROID-DISTRIBUTION-LICENSE.txt" <<'EOF'
+V7 IME bundled Android distribution
 
 SPDX-License-Identifier: GPL-3.0-or-later
 
-The build-source ZIP aggregate, as a combined collection, may be redistributed
-and/or modified under the GNU General Public License as published by the Free
-Software Foundation, either version 3 of the License, or (at your option) any
-later version.
+The bundled Android distribution, including the V7 IME APK and its bundled
+Stripped Plover runtime, is conveyed as a combined work under the GNU General
+Public License as published by the Free Software Foundation, either version 3
+of the License, or (at your option) any later version.
 
-This aggregate license applies only to the generated build-source ZIP as an
-aggregate. It does not replace the licenses attached to constituent files and
-does not relicense V7 intellectual property. In particular, V7 source files
-remain available under 0BSD, KenLM retains its upstream licenses and notices,
-and Stripped Plover retains GPL-2.0-or-later.
+This v7-ime-source.zip archive is the complete Corresponding Source for that
+APK. It is bundled inside the APK and can be exported from V7 IME settings.
+
+This distribution-level GPL notice does not replace the licenses attached to
+constituent source files. Original V7 source files remain separately available
+under 0BSD. KenLM retains its upstream licenses and notices, and Stripped
+Plover retains GPL-2.0-or-later.
 
 The GNU General Public License version 3 text follows.
 
 EOF
-cat "$kenlm_root/COPYING.3" >> "$staging/AGGREGATE-LICENSE.txt"
+cat "$kenlm_root/COPYING.3" >> \
+  "$staging/ANDROID-DISTRIBUTION-LICENSE.txt"
 
 (
   cd "$repo_root"
@@ -73,6 +80,7 @@ cat "$kenlm_root/COPYING.3" >> "$staging/AGGREGATE-LICENSE.txt"
 )
 (
   cd "$staging"
-  zip -qr "$archive" AGGREGATE-LICENSE.txt BUILD-SOURCE.md third_party
+  zip -qr "$archive" \
+    ANDROID-DISTRIBUTION-LICENSE.txt BUILD-SOURCE.md third_party
 )
 mv "$archive" "$output"
