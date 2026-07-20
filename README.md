@@ -1,6 +1,7 @@
 # :warning: Known Bugs in Android Port
 * File picker in dictionary management doesn't let the user select Python files
 * Internal Stripped Plover state isn't reset when preedit is reset
+* Ctrl+Shift inhibits selecting with arrow keys, this is partly because the keyboard mode change immediately triggers on key down. This can be mitigated by only triggerring the mode change when all keys are released.
 
 # V7 Text Prediction Engine
 
