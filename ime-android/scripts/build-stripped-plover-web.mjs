@@ -26,6 +26,9 @@ const output = path.resolve(outputArgument);
 const typecheckWork = path.resolve(typecheckArgument);
 const stagedSource = path.join(typecheckWork, "src");
 const upstreamEngine = path.join(upstream, "src", "engine.ts");
+const pythonServiceWorkerAsset =
+  "/assets/stripped-plover-python-service-worker.js";
+const pythonServiceWorkerPrefix = "/assets/python-wasm-sw/";
 const require = createRequire(import.meta.url);
 const browserCoreModules = new Map([
   ["assert", require.resolve("assert/")],
@@ -56,12 +59,7 @@ const stagedPythonDictionary = path.join(
 );
 fs.writeFileSync(
   stagedPythonDictionary,
-  fs
-    .readFileSync(stagedPythonDictionary, "utf8")
-    .replace(
-      "../../vendor/python-wasm/dist/node.js",
-      "@v7/python-wasm-browser",
-    ),
+  transformPythonDictionary(fs.readFileSync(stagedPythonDictionary, "utf8")),
 );
 
 const stagedEngine = path.join(stagedSource, "engine.ts");
@@ -171,9 +169,8 @@ const compatibilityPlugin = {
         filter: /python-dictionary\.ts$/,
       },
       async (args) => ({
-        contents: (await fs.promises.readFile(args.path, "utf8")).replace(
-          "../../vendor/python-wasm/dist/node.js",
-          "@v7/python-wasm-browser",
+        contents: transformPythonDictionary(
+          await fs.promises.readFile(args.path, "utf8"),
         ),
         loader: "ts",
         resolveDir: path.dirname(args.path),
@@ -181,13 +178,86 @@ const compatibilityPlugin = {
     );
     buildContext.onLoad(
       {
-        filter:
-          /vendor\/@cowasm\/kernel\/dist\/wasm\/(import-browser|io-using-service-worker)\.js$/,
+        filter: /vendor\/python-wasm\/dist\/browser\.js$/,
       },
       async (args) => ({
-        contents: (await fs.promises.readFile(args.path, "utf8")).replaceAll(
-          "import.meta.url",
-          "globalThis.location.href",
+        contents: transformPythonWasmBrowser(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter: /vendor\/@cowasm\/kernel\/dist\/wasm\/import-browser\.js$/,
+      },
+      async (args) => ({
+        contents: transformKernelImportBrowser(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter:
+          /vendor\/@cowasm\/kernel\/dist\/wasm\/io-using-service-worker\.js$/,
+      },
+      async (args) => ({
+        contents: transformMainServiceWorkerIO(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter:
+          /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/io-using-service-worker\.js$/,
+      },
+      async (args) => ({
+        contents: replaceServiceWorkerPrefix(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter:
+          /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/service-worker\.js$/,
+      },
+      async (args) => ({
+        contents: transformPythonServiceWorker(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter: /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/browser\.js$/,
+      },
+      async (args) => ({
+        contents: transformKernelWorkerBrowser(
+          await fs.promises.readFile(args.path, "utf8"),
+        ),
+        loader: "js",
+        resolveDir: path.dirname(args.path),
+      }),
+    );
+    buildContext.onLoad(
+      {
+        filter: /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/init\.js$/,
+      },
+      async (args) => ({
+        contents: transformKernelWorkerInit(
+          await fs.promises.readFile(args.path, "utf8"),
         ),
         loader: "js",
         resolveDir: path.dirname(args.path),
@@ -211,6 +281,296 @@ const compatibilityPlugin = {
     );
   },
 };
+
+function transformPythonDictionary(source) {
+  return assertTransforms(
+    source
+      .replace(
+        "../../vendor/python-wasm/dist/node.js",
+        "@v7/python-wasm-browser",
+      )
+      .replace(
+        "  private async initializePython(pythonCode: string): Promise<void> {\n    // Use python-wasm",
+        `  private async initializePython(pythonCode: string): Promise<void> {
+    const report = (phase: string, detail = '') => {
+      const callback = (globalThis as any).__v7PloverDiagnostic;
+      if (typeof callback === 'function') callback(phase, detail);
+    };
+    report('python-dictionary-initialize-start', \`bytes=\${pythonCode.length}\`);
+    // Use python-wasm`,
+      )
+      .replace(
+        `    const py: PythonRuntime = await asyncPython({
+      fs: 'everything',
+    });`,
+        `    report('python-wasm-create-start');
+    const py: PythonRuntime = await asyncPython({
+      fs: 'everything',
+    });
+    report('python-wasm-create-complete');`,
+      )
+      .replace(
+        "    // Execute the Python code directly\n    await py.exec(pythonCode);",
+        `    // Execute the Python code directly
+    report('python-source-exec-start');
+    await py.exec(pythonCode);
+    report('python-source-exec-complete');`,
+      )
+      .replace(
+        "    // Add safe lookup helper function\n    await py.exec(`",
+        `    // Add safe lookup helper function
+    report('python-helper-install-start');
+    await py.exec(\``,
+      )
+      .replace(
+        "`);\n\n    // Validate LONGEST_KEY exists and is valid",
+        `\`);
+    report('python-helper-install-complete');
+
+    // Validate LONGEST_KEY exists and is valid
+    report('python-metadata-validation-start');`,
+      )
+      .replace(
+        "    const hasDict = await py.repr(\"'DICTIONARY' in dir()\");",
+        `    report('python-metadata-validation-complete');
+    const hasDict = await py.repr("'DICTIONARY' in dir()");`,
+      )
+      .replace(
+        "    if (hasDict.trim() === 'True') {\n      try {",
+        `    if (hasDict.trim() === 'True') {
+      try {
+        report('python-entry-enumeration-start');`,
+      )
+      .replace(
+        "          this._length = this._entries.length;",
+        `          this._length = this._entries.length;
+          report('python-entry-enumeration-complete', \`entries=\${this._length}\`);`,
+      )
+      .replace(
+        "    // Keep the Python runtime alive for lookups\n    this._py = py;",
+        `    // Keep the Python runtime alive for lookups
+    this._py = py;
+    report(
+      'python-dictionary-initialize-complete',
+      \`entries=\${this._length} longestKey=\${this._longestKey}\`,
+    );`,
+      )
+      .replace(
+        "    try {\n      // Build Python tuple from stroke array",
+        `    try {
+      const diagnostic = (globalThis as any).__v7PloverDiagnostic;
+      if (typeof diagnostic === 'function') {
+        diagnostic('python-lookup-start', \`strokes=\${strokeTuple.length}\`);
+      }
+      // Build Python tuple from stroke array`,
+      )
+      .replace(
+        "      const result = await this._py.repr(`__safe_lookup(${tupleStr})`);",
+        `      const result = await this._py.repr(\`__safe_lookup(\${tupleStr})\`);
+      if (typeof diagnostic === 'function') {
+        diagnostic('python-lookup-complete');
+      }`,
+      ),
+    [
+      "python-dictionary-initialize-start",
+      "python-wasm-create-complete",
+      "python-source-exec-complete",
+      "python-entry-enumeration-start",
+      "python-dictionary-initialize-complete",
+      "python-lookup-complete",
+    ],
+    "Python dictionary diagnostics",
+  );
+}
+
+function transformPythonWasmBrowser(source) {
+  return assertTransforms(
+    source
+      .replace(
+        'const log = (0, debug_1.default)("python-wasm");',
+        `const log = (0, debug_1.default)("python-wasm");
+const report = (phase, detail = "") => {
+    const callback = globalThis.__v7PloverDiagnostic;
+    if (typeof callback === "function") callback(phase, detail);
+};`,
+      )
+      .replace(
+        '    log("creating async CoWasm kernel...");',
+        `    report("python-kernel-create-start");
+    log("creating async CoWasm kernel...");`,
+      )
+      .replace(
+        '    log("done");\n    log("fetching ", PYTHONEXECUTABLE);',
+        `    log("done");
+    report("python-kernel-create-complete");
+    report("python-assets-load-start");
+    log("fetching ", PYTHONEXECUTABLE);`,
+      )
+      .replace(
+        '    ]);\n    log("initializing python");',
+        `    ]);
+    report("python-assets-load-complete");
+    report("python-interpreter-init-start");
+    log("initializing python");`,
+      )
+      .replace(
+        '    log("done");\n    return python;',
+        `    log("done");
+    report("python-interpreter-init-complete");
+    return python;`,
+      ),
+    [
+      "python-kernel-create-start",
+      "python-assets-load-complete",
+      "python-interpreter-init-complete",
+    ],
+    "python-wasm diagnostics",
+  );
+}
+
+function transformKernelImportBrowser(source) {
+  return assertTransforms(
+    source.replaceAll("import.meta.url", "globalThis.location.href").replace(
+      '            if (message?.event == "service-worker-broken") {',
+      `            if (message?.event == "diagnostic") {
+                const callback = globalThis.__v7PloverDiagnostic;
+                if (typeof callback === "function") {
+                    callback(message.phase, message.detail ?? "");
+                }
+                return;
+            }
+            if (message?.event == "service-worker-broken") {`,
+    ),
+    ['message?.event == "diagnostic"', "__v7PloverDiagnostic"],
+    "kernel main-thread diagnostics",
+  );
+}
+
+function transformMainServiceWorkerIO(source) {
+  return assertTransforms(
+    replaceServiceWorkerPrefix(source)
+      .replaceAll("import.meta.url", "globalThis.location.href")
+      .replace(
+        '"./worker/service-worker.js"',
+        JSON.stringify(pythonServiceWorkerAsset),
+      ),
+    [pythonServiceWorkerAsset, pythonServiceWorkerPrefix],
+    "python service-worker URL",
+  );
+}
+
+function replaceServiceWorkerPrefix(source) {
+  return source.replaceAll("/python-wasm-sw/", pythonServiceWorkerPrefix);
+}
+
+function transformPythonServiceWorker(source) {
+  return assertTransforms(
+    replaceServiceWorkerPrefix(source)
+      .replace(
+        `self.addEventListener("install", (e) => {
+    log("install  - python-wasm service worker, version: ", VERSION, e);
+});`,
+        `self.addEventListener("install", (e) => {
+    log("install  - python-wasm service worker, version: ", VERSION, e);
+    e.waitUntil(self.skipWaiting());
+});`,
+      )
+      .replace(
+        `self.addEventListener("activate", (e) => {
+    log("activate - python-wasm service worker, version: ", VERSION, e);
+});`,
+        `self.addEventListener("activate", (e) => {
+    log("activate - python-wasm service worker, version: ", VERSION, e);
+    e.waitUntil(self.clients.claim());
+});`,
+      ),
+    [pythonServiceWorkerPrefix, "self.skipWaiting()", "self.clients.claim()"],
+    "python service-worker activation",
+  );
+}
+
+function transformKernelWorkerBrowser(source) {
+  return assertTransforms(
+    source
+      .replace(
+        'const log = (0, debug_1.default)("wasm:worker:browser");',
+        `const log = (0, debug_1.default)("wasm:worker:browser");
+const report = (phase, detail = "") => {
+    self.postMessage({ event: "diagnostic", phase, detail });
+};`,
+      )
+      .replace(
+        '    log("wasmImportBrowser");',
+        `    report("python-worker-filesystem-start", \`entries=\${options.fs?.length ?? 0}\`);
+    log("wasmImportBrowser");`,
+      )
+      .replace(
+        "    const fs = (0, wasi_js_1.createFileSystem)(fsSpec);",
+        `    const fs = (0, wasi_js_1.createFileSystem)(fsSpec);
+    report("python-worker-filesystem-ready", \`entries=\${fsSpec.length}\`);`,
+      )
+      .replace(
+        "    const wasm = await (0, import_1.default)({",
+        `    report("python-worker-wasm-import-start");
+    const wasm = await (0, import_1.default)({`,
+      )
+      .replace(
+        "    return wasm;\n}",
+        `    report("python-worker-wasm-import-complete");
+    return wasm;
+}`,
+      )
+      .replace(
+        '    log("initializing worker");',
+        `    report(
+        "python-worker-environment",
+        \`crossOriginIsolated=\${crossOriginIsolated} io=\${crossOriginIsolated ? "atomics" : "service-worker"}\`,
+    );
+    log("initializing worker");`,
+      ),
+    [
+      "python-worker-environment",
+      "python-worker-filesystem-ready",
+      "python-worker-wasm-import-complete",
+    ],
+    "kernel worker diagnostics",
+  );
+}
+
+function transformKernelWorkerInit(source) {
+  return assertTransforms(
+    source
+      .replace(
+        "                const ioHandler = new IOHandler(message.options, () => {",
+        `                parent.postMessage({
+                    event: "diagnostic",
+                    phase: "python-worker-init-start",
+                    detail: "",
+                });
+                const ioHandler = new IOHandler(message.options, () => {`,
+      )
+      .replace(
+        "                wasm = await wasmImport(message.name, opts);",
+        `                wasm = await wasmImport(message.name, opts);
+                parent.postMessage({
+                    event: "diagnostic",
+                    phase: "python-worker-init-complete",
+                    detail: "",
+                });`,
+      ),
+    ["python-worker-init-start", "python-worker-init-complete"],
+    "kernel worker initialization diagnostics",
+  );
+}
+
+function assertTransforms(source, markers, description) {
+  for (const marker of markers) {
+    if (!source.includes(marker)) {
+      throw new Error(`Unable to apply ${description}: missing ${marker}`);
+    }
+  }
+  return source;
+}
 
 const sharedBuildOptions = {
   bundle: true,
@@ -259,7 +619,7 @@ await build({
       "worker",
       "browser.js",
     ),
-    "worker/service-worker": path.join(
+    "stripped-plover-python-service-worker": path.join(
       upstream,
       "vendor",
       "@cowasm",

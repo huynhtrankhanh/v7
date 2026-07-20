@@ -44,6 +44,25 @@ Crypto, `fetch`, and WebAssembly capabilities remain available. Python
 dictionaries use Stripped Plover's vendored browser build of `python-wasm`;
 they do not gain filesystem or process access through an Android bridge.
 
+Some WebView/device combinations do not expose a cross-origin-isolated
+environment even when those headers are present. The bundled runtime therefore
+also supports python-wasm's service-worker I/O mode. Its worker is emitted at
+the root of the `/assets/` scope, takes control before the engine reports
+itself ready, and handles I/O under `/assets/python-wasm-sw/`. This startup
+handshake avoids both an out-of-scope request and the runtime-page reload that
+would otherwise abandon an in-flight dictionary import. Android's process-wide
+service-worker request client uses the same `WebViewAssetLoader`, so the worker
+script continues to resolve from the APK rather than falling through to the
+network. Startup also removes the narrower, broken worker registration left by
+older app builds.
+
+Historical diagnostics record the selected I/O mode, service-worker
+registration/activation, CPython worker and filesystem initialization,
+WebAssembly loading, interpreter startup, source execution, dictionary entry
+enumeration, lookups, and five-second pending heartbeats. Unexpected runtime
+navigations also fail active requests immediately instead of leaving them to
+time out without an explanation.
+
 ## Node compatibility audit
 
 Every Android build copies the pinned production TypeScript graph to an
@@ -110,12 +129,15 @@ inside its source directory.
 
 ## Verification
 
-`npm run test:android-stripped-plover` serves the generated runtime with the
-same isolation headers, injects a narrow test SQLite bridge, and verifies that
-the real bundled engine initializes its schema, answers a dictionary-state RPC,
-and imports and translates with a Python dictionary in Puppeteer. The test
-serves the bundle under Android's `/assets/` URL layout so worker, WebAssembly,
-and Python archive paths are exercised as deployed. The Gradle unit suite tests
+`npm run test:android-stripped-plover` serves the generated runtime, injects a
+narrow test SQLite bridge, and verifies that the real bundled engine initializes
+its schema, answers a dictionary-state RPC, and imports and translates with a
+roughly 43 KB Python dictionary in Puppeteer. It runs once with cross-origin
+isolation and once without it, exercising both atomics and service-worker I/O.
+The test uses two independently puppeteered pages and Android's `/assets/` URL
+layout, so the management/runtime WebView boundary and deployed worker,
+WebAssembly, Python archive, and service-worker paths are covered. It also
+asserts the Python initialization phase history. The Gradle unit suite tests
 the native compatibility policy. An APK build then verifies asset merging and
 inclusion of the generated source ZIP.
 

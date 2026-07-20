@@ -2,6 +2,7 @@ package com.huynhtrankhanh.v7ime;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -21,8 +22,11 @@ import android.webkit.WebView;
 import android.widget.FrameLayout;
 
 import androidx.annotation.Nullable;
+import androidx.webkit.ServiceWorkerClientCompat;
+import androidx.webkit.ServiceWorkerControllerCompat;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
+import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
 
@@ -129,6 +133,7 @@ final class BundledStrippedPloverRuntime {
                         new WebViewAssetLoader.AssetsPathHandler(context)
                 )
                 .build();
+        configureServiceWorkerAssetLoading(assetLoader);
         runtimeWebView = new WebView(context);
         WebSettings settings = runtimeWebView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -157,6 +162,35 @@ final class BundledStrippedPloverRuntime {
                 "AndroidStrippedPloverSqlite"
         );
         runtimeWebView.loadUrl(RUNTIME_URL);
+    }
+
+    private void configureServiceWorkerAssetLoading(
+            WebViewAssetLoader assetLoader) {
+        if (!WebViewFeature.isFeatureSupported(
+                WebViewFeature.SERVICE_WORKER_BASIC_USAGE
+        ) || !WebViewFeature.isFeatureSupported(
+                WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST
+        )) {
+            log("service worker asset interception supported=false");
+            return;
+        }
+        ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(
+                new ServiceWorkerClientCompat() {
+                    @Override
+                    public WebResourceResponse shouldInterceptRequest(
+                            WebResourceRequest request) {
+                        if (!"GET".equals(request.getMethod())) {
+                            return null;
+                        }
+                        return withIsolationHeaders(
+                                assetLoader.shouldInterceptRequest(
+                                        request.getUrl()
+                                )
+                        );
+                    }
+                }
+        );
+        log("service worker asset interception supported=true");
     }
 
     private void enqueueOrDispatch(int requestId, String body) {
@@ -215,6 +249,31 @@ final class BundledStrippedPloverRuntime {
                 complete(request.id, "", startupError);
             }
             pendingRequests.clear();
+        });
+    }
+
+    private void runtimeNavigationStarted(String url) {
+        mainHandler.post(() -> {
+            boolean wasReady = ready;
+            ready = false;
+            log(
+                    "runtime navigation started ready=" + wasReady
+                            + " url=" + url
+            );
+            if (!wasReady) {
+                return;
+            }
+            List<Integer> interrupted;
+            synchronized (callbacks) {
+                interrupted = new ArrayList<>(callbacks.keySet());
+            }
+            for (int requestId : interrupted) {
+                complete(
+                        requestId,
+                        "",
+                        "Stripped Plover runtime restarted during a request"
+                );
+            }
         });
     }
 
@@ -319,7 +378,7 @@ final class BundledStrippedPloverRuntime {
                 String detail) {
             synchronized (callbacks) {
                 PendingCallback pending = callbacks.get(requestId);
-                if (pending != null) {
+                if (pending != null && !"runtime-pending".equals(phase)) {
                     pending.lastPhase = phase;
                 }
             }
@@ -331,11 +390,24 @@ final class BundledStrippedPloverRuntime {
         }
     }
 
-    private static class RuntimeWebViewClient extends WebViewClientCompat {
+    private class RuntimeWebViewClient extends WebViewClientCompat {
         private final WebViewAssetLoader assetLoader;
 
         RuntimeWebViewClient(WebViewAssetLoader assetLoader) {
             this.assetLoader = assetLoader;
+        }
+
+        @Override
+        public void onPageStarted(
+                WebView view,
+                String url,
+                Bitmap favicon) {
+            runtimeNavigationStarted(url);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            log("runtime navigation finished url=" + url);
         }
 
         @Override

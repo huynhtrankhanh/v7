@@ -22,20 +22,34 @@ function contentType(filename) {
 }
 
 async function dispatchRuntimeBody(page, requestId, body) {
+  await page.bringToFront();
   await page.evaluate(
     ({ requestId, body }) => {
       window.StrippedPloverAndroidRuntime.request(requestId, body);
     },
     { requestId, body },
   );
-  await page.waitForFunction(
-    (expectedRequestId) =>
-      window.__runtimeResults.some(
-        (result) => result.requestId === expectedRequestId,
-      ),
-    { timeout: 120_000 },
-    requestId,
-  );
+  try {
+    await page.waitForFunction(
+      (expectedRequestId) =>
+        window.__runtimeResults.some(
+          (result) => result.requestId === expectedRequestId,
+        ),
+      { timeout: 120_000 },
+      requestId,
+    );
+  } catch (error) {
+    const diagnostics = await page.evaluate((expectedRequestId) => {
+      return window.__runtimeDiagnostics.filter(
+        (diagnostic) =>
+          diagnostic.requestId === 0 ||
+          diagnostic.requestId === expectedRequestId,
+      );
+    }, requestId);
+    throw new Error(
+      `runtime request ${requestId} timed out: ${error.message}; diagnostics=${JSON.stringify(diagnostics)}`,
+    );
+  }
   return page.evaluate((expectedRequestId) => {
     const index = window.__runtimeResults.findIndex(
       (candidate) => candidate.requestId === expectedRequestId,
@@ -96,10 +110,11 @@ async function uploadDictionary(page, directory, filename, content, type) {
 }
 
 async function main() {
+  const emulateNonIsolatedWebView =
+    process.env.V7_TEST_NON_ISOLATED_WEBVIEW === "1";
   const server = http.createServer((request, response) => {
-    const requestPath = decodeURIComponent(
-      new URL(request.url, "http://127.0.0.1").pathname,
-    );
+    const requestUrl = new URL(request.url, "http://127.0.0.1");
+    const requestPath = decodeURIComponent(requestUrl.pathname);
     const assetPath = requestPath.startsWith("/assets/")
       ? requestPath.slice("/assets".length)
       : requestPath;
@@ -120,12 +135,18 @@ async function main() {
       response.writeHead(404).end();
       return;
     }
-    response.writeHead(200, {
+    const headers = {
       "Content-Type": contentType(filename),
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
       "Cross-Origin-Resource-Policy": "same-origin",
-    });
+    };
+    if (!(
+      emulateNonIsolatedWebView &&
+      requestPath.endsWith("/stripped-plover-runtime.html")
+    )) {
+      headers["Cross-Origin-Opener-Policy"] = "same-origin";
+      headers["Cross-Origin-Embedder-Policy"] = "require-corp";
+    }
+    response.writeHead(200, headers);
     fs.createReadStream(filename).pipe(response);
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -201,7 +222,9 @@ async function main() {
       };
     });
     await page.goto(
-      `http://127.0.0.1:${port}/assets/stripped-plover-runtime.html`,
+      `http://127.0.0.1:${port}/assets/stripped-plover-runtime.html${
+        emulateNonIsolatedWebView ? "?non-isolated-webview=1" : ""
+      }`,
       {
         waitUntil: "load",
       },
@@ -219,8 +242,10 @@ async function main() {
     }
 
     const isolated = await page.evaluate(() => crossOriginIsolated);
-    if (!isolated) {
-      throw new Error("runtime page is not cross-origin isolated");
+    if (isolated === emulateNonIsolatedWebView) {
+      throw new Error(
+        `runtime page isolation did not match the test mode: ${isolated}`,
+      );
     }
     const parsed = await requestRuntime(page, 7, "get_dictionary_state");
     if (!parsed || !Array.isArray(parsed.dictionaries)) {
@@ -342,24 +367,39 @@ async function main() {
     const uploadDirectory = fs.mkdtempSync(
       path.join(os.tmpdir(), "v7-android-dictionary-upload-"),
     );
-    try {
-      try {
-        await uploadDictionary(
-          managementPage,
-          uploadDirectory,
-          "android-upload.py",
-          `
+    const pythonEntries = [
+      "    ('TEFT',): 'python-upload-works',",
+      ...Array.from(
+        { length: 900 },
+        (_, index) =>
+          `    ('T-${index}',): 'python-upload-regression-${index}',`,
+      ),
+    ];
+    const pythonDictionary = `
 LONGEST_KEY = 1
 
 DICTIONARY = {
-    ('TEFT',): 'python-upload-works',
+${pythonEntries.join("\n")}
 }
 
 def lookup(key):
     if key in DICTIONARY:
         return DICTIONARY[key]
     raise KeyError(key)
-`,
+`;
+    const pythonDictionaryBytes = Buffer.byteLength(pythonDictionary, "utf8");
+    if (pythonDictionaryBytes < 40_000 || pythonDictionaryBytes > 60_000) {
+      throw new Error(
+        `Python upload regression fixture has unexpected size: ${pythonDictionaryBytes}`,
+      );
+    }
+    try {
+      try {
+        await uploadDictionary(
+          managementPage,
+          uploadDirectory,
+          "android-upload.py",
+          pythonDictionary,
           "python",
         );
       } catch (error) {
@@ -402,11 +442,38 @@ def lookup(key):
         );
       }
     }
-    const importDiagnostics = await page.evaluate(() =>
-      window.__runtimeDiagnostics.filter((diagnostic) =>
-        ["runtime-start", "runtime-complete"].includes(diagnostic.phase),
-      ),
+    const importDiagnostics = await page.evaluate(
+      () => window.__runtimeDiagnostics,
     );
+    const startupDiagnostics = importDiagnostics.filter(
+      ({ requestId }) => requestId === 0,
+    );
+    const expectedIoMode = emulateNonIsolatedWebView
+      ? "mode=service-worker"
+      : "mode=atomics";
+    if (
+      !startupDiagnostics.some(
+        ({ phase, detail }) =>
+          phase === "runtime-io-ready" && detail.includes(expectedIoMode),
+      )
+    ) {
+      throw new Error(
+        `Runtime did not report ${expectedIoMode}: ${JSON.stringify(startupDiagnostics)}`,
+      );
+    }
+    if (
+      emulateNonIsolatedWebView &&
+      ![
+        "runtime-service-worker-register-start",
+        "runtime-service-worker-activated",
+      ].every((phase) =>
+        startupDiagnostics.some((diagnostic) => diagnostic.phase === phase),
+      )
+    ) {
+      throw new Error(
+        `Runtime service-worker startup was not fully diagnosed: ${JSON.stringify(startupDiagnostics)}`,
+      );
+    }
     for (const forwarded of forwardedRequests.filter(
       ({ request }) => request.method === "import_dictionary",
     )) {
@@ -422,6 +489,32 @@ def lookup(key):
             `Android ${forwarded.request.params.type} upload did not report ${phase}: ${JSON.stringify(importDiagnostics)}`,
           );
         }
+      }
+    }
+    const pythonImport = forwardedRequests.find(
+      ({ request }) =>
+        request.method === "import_dictionary" &&
+        request.params?.type === "python",
+    );
+    const pythonDiagnostics = importDiagnostics.filter(
+      ({ requestId }) => requestId === pythonImport?.runtimeRequestId,
+    );
+    for (const phase of [
+      "python-dictionary-initialize-start",
+      "python-kernel-create-start",
+      "python-worker-environment",
+      "python-worker-wasm-import-start",
+      "python-worker-wasm-import-complete",
+      "python-interpreter-init-complete",
+      "python-source-exec-start",
+      "python-source-exec-complete",
+      "python-entry-enumeration-complete",
+      "python-dictionary-initialize-complete",
+    ]) {
+      if (!pythonDiagnostics.some((diagnostic) => diagnostic.phase === phase)) {
+        throw new Error(
+          `Android Python upload did not report ${phase}: ${JSON.stringify(pythonDiagnostics)}`,
+        );
       }
     }
     const uploadedTranslation = await requestRuntime(
