@@ -49,8 +49,14 @@ keyboard settings. The native settings activity includes:
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
 - optional Stripped Plover host and TCP port;
+- a full-screen Stripped Plover dictionary manager opened from settings,
+  reusing the browser UI without nesting editable fields inside the IME;
 - an option to save the complete APK build source as `v7-ime-source.zip`;
 - shortcuts to enable V7 IME and open the input-method picker.
+
+See [Stripped Plover dictionary management on Android](docs/dictionary-management.md)
+for the shared WebUI architecture, the deliberately narrow native bridge, and
+the import/export file flow.
 
 The source ZIP contains this repository plus the exact pinned KenLM checkout.
 Only the ZIP aggregate is offered under GPL-3.0-or-later: the V7 files inside

@@ -31,6 +31,7 @@ import {
   selectCandidateIslands,
   stripVisibleTextSegments,
 } from "./webCore";
+import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 
 // Maps for V7 Decoding
 const consonantIntMap = {};
@@ -293,7 +294,19 @@ interface AndroidImeBridge {
   setKeyboardHeight(heightDp: number): void;
 }
 
+interface AndroidDictionaryBridge {
+  hasPloverConfiguration(): boolean;
+  requestPlover(body: string, requestId: number): void;
+  saveDictionaryFile(filename: string, content: string, mimeType: string): void;
+  close(): void;
+}
+
 const androidIme = window.AndroidIme;
+const androidDictionary = window.AndroidDictionary;
+const androidPloverBridge = androidDictionary ?? androidIme;
+const isDictionaryManagementPage = new URLSearchParams(
+  window.location.search,
+).has("dictionary-management");
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 if (androidIme) {
@@ -475,25 +488,26 @@ function updatePloverSoloUI() {
 function updatePloverStatusUI() {
   const statusEl = document.getElementById("plover-status");
   const dictionaryButton = document.getElementById("plover-dictionary-open");
-  if (!statusEl) return;
-  if (strippedPlover.available) {
-    statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
-    statusEl.classList.remove("unavailable");
-    statusEl.classList.add("available");
-    if (dictionaryButton) dictionaryButton.disabled = false;
-  } else {
-    statusEl.textContent = "Unavailable";
-    statusEl.classList.remove("available");
-    statusEl.classList.add("unavailable");
-    if (dictionaryButton) dictionaryButton.disabled = true;
+  if (statusEl) {
+    if (strippedPlover.available) {
+      statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
+      statusEl.classList.remove("unavailable");
+      statusEl.classList.add("available");
+      if (dictionaryButton) dictionaryButton.disabled = false;
+    } else {
+      statusEl.textContent = "Unavailable";
+      statusEl.classList.remove("available");
+      statusEl.classList.add("unavailable");
+      if (dictionaryButton) dictionaryButton.disabled = true;
+    }
   }
   updatePloverSoloUI();
 }
 
 async function fetchPloverStatus() {
   try {
-    if (androidIme) {
-      if (androidIme.hasPloverConfiguration()) {
+    if (androidPloverBridge) {
+      if (androidPloverBridge.hasPloverConfiguration()) {
         await requestAndroidPlover("get_starting_stroke_state", {});
         strippedPlover.available = true;
       } else {
@@ -527,7 +541,7 @@ function clearPloverStatusTimer() {
 
 function schedulePloverStatusRetry() {
   clearPloverStatusTimer();
-  if (androidIme && !androidIme.hasPloverConfiguration()) {
+  if (androidPloverBridge && !androidPloverBridge.hasPloverConfiguration()) {
     return;
   }
   ploverStatusTimer = window.setTimeout(() => {
@@ -596,7 +610,7 @@ function resetPloverSocket(message) {
 }
 
 function ensurePloverSocket() {
-  if (androidIme) {
+  if (androidPloverBridge) {
     return Promise.reject(
       new Error("Android uses its native Stripped Plover bridge"),
     );
@@ -655,7 +669,7 @@ function ensurePloverSocket() {
 }
 
 async function ploverRpc(method, params) {
-  if (androidIme) {
+  if (androidPloverBridge) {
     return requestAndroidPlover(method, params);
   }
   const socket = await ensurePloverSocket();
@@ -911,6 +925,10 @@ function getDictionaryFilename(dict, extension) {
 }
 
 function downloadDictionaryFile(filename, content, mimeType) {
+  if (androidDictionary) {
+    androidDictionary.saveDictionaryFile(filename, content, mimeType);
+    return;
+  }
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -2378,6 +2396,7 @@ function setupPloverControls() {
 
   if (dictionaryOpenButton && dictionaryDialog) {
     dictionaryOpenButton.addEventListener("click", () => {
+      document.body.classList.add("plover-dictionary-open");
       if (typeof dictionaryDialog.showModal === "function") {
         dictionaryDialog.showModal();
       } else {
@@ -2390,11 +2409,17 @@ function setupPloverControls() {
   }
   if (dictionaryCloseButton && dictionaryDialog) {
     dictionaryCloseButton.addEventListener("click", () => {
+      if (isDictionaryManagementPage && androidDictionary) {
+        androidDictionary.close();
+        return;
+      }
       if (typeof dictionaryDialog.close === "function") {
         dictionaryDialog.close();
       } else {
         dictionaryDialog.removeAttribute("open");
       }
+      document.body.classList.remove("plover-dictionary-open");
+      updateDisplay();
     });
   }
   if (dictionaryDialog) {
@@ -2405,7 +2430,17 @@ function setupPloverControls() {
         } else {
           dictionaryDialog.removeAttribute("open");
         }
+        document.body.classList.remove("plover-dictionary-open");
+        updateDisplay();
       }
+    });
+    dictionaryDialog.addEventListener("cancel", () => {
+      if (isDictionaryManagementPage && androidDictionary) {
+        androidDictionary.close();
+        return;
+      }
+      document.body.classList.remove("plover-dictionary-open");
+      updateDisplay();
     });
   }
   if (refreshButton) {
@@ -2589,16 +2624,37 @@ function setupPloverControls() {
       renderPloverDictionaries();
     }
   });
+
+  if (isDictionaryManagementPage && dictionaryDialog) {
+    document.body.classList.add(
+      "dictionary-management-page",
+      "plover-dictionary-open",
+    );
+    if (typeof dictionaryDialog.showModal === "function") {
+      dictionaryDialog.showModal();
+    } else {
+      dictionaryDialog.setAttribute("open", "");
+    }
+  }
 }
 
-renderKeyboardLayout();
-updateKeyboardLayout();
-setupImeControls();
-setupPloverControls();
+if (isDictionaryManagementPage) {
+  mountPloverDictionaryUi();
+  setupPloverControls();
+} else {
+  if (document.getElementById("plover-dictionary-open")) {
+    mountPloverDictionaryUi();
+  }
+  renderKeyboardLayout();
+  updateKeyboardLayout();
+  setupImeControls();
+  setupPloverControls();
+}
 
 declare global {
   interface Window {
     AndroidIme?: AndroidImeBridge;
+    AndroidDictionary?: AndroidDictionaryBridge;
     clearPreeditFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
@@ -2687,14 +2743,14 @@ function requestAndroidPlover(
   params: unknown,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    if (!androidIme) {
-      reject(new Error("Android IME bridge is unavailable"));
+    if (!androidPloverBridge) {
+      reject(new Error("Android Plover bridge is unavailable"));
       return;
     }
     const requestId = androidPloverRequestId++;
     androidPloverPending.set(requestId, { resolve, reject });
     try {
-      androidIme.requestPlover(
+      androidPloverBridge.requestPlover(
         JSON.stringify({ id: requestId, method, params }),
         requestId,
       );
@@ -2924,9 +2980,10 @@ window.setStrippedDisplay = (options = {}) => {
   updateDisplay();
 };
 
-if (androidIme) {
-  window.setStrippedDisplay();
-  updateInferenceStatusUI();
+if (!isDictionaryManagementPage) {
+  if (androidIme) {
+    window.setStrippedDisplay();
+    updateInferenceStatusUI();
+  }
+  updateDisplay();
 }
-
-updateDisplay();

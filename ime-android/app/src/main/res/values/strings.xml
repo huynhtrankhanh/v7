@@ -23,4 +23,7 @@
     <string name="enable_keyboard">Enable V7 IME</string>
     <string name="choose_keyboard">Choose input method</string>
     <string name="settings_saved">Stripped Plover settings saved</string>
+    <string name="manage_dictionaries">Manage Stripped Plover dictionaries</string>
+    <string name="dictionary_saved">Dictionary saved</string>
+    <string name="dictionary_save_failed">Could not save dictionary: %1$s</string>
 </resources>

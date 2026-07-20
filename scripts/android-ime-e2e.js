@@ -172,14 +172,48 @@ async function main() {
           const request = JSON.parse(body);
           window.__androidPloverBodies.push(request);
           setTimeout(() => {
+            const results = {
+              get_dictionary_state: {
+                solo: false,
+                dictionaries: [
+                  {
+                    identifier: "main.json",
+                    enabled: true,
+                    readonly: false,
+                    entries: 2,
+                  },
+                ],
+              },
+              enumerate_entries: {
+                page: 1,
+                total: 1,
+                has_more: false,
+                entries: [
+                  {
+                    dictionary: "main.json",
+                    stroke: "TEFT",
+                    translation: "test",
+                  },
+                ],
+              },
+              search_entries: {
+                page: 1,
+                total: 1,
+                has_more: false,
+                entries: [
+                  {
+                    dictionary: "main.json",
+                    stroke: "TEFT",
+                    translation: "test",
+                  },
+                ],
+              },
+            };
             window.handleAndroidPloverResponse(
               requestId,
               JSON.stringify({
                 id: request.id,
-                result:
-                  request.method === "list_dictionaries"
-                    ? { dictionaries: [] }
-                    : {},
+                result: results[request.method] || {},
               }),
               "",
             );
@@ -189,6 +223,19 @@ async function main() {
           window.__androidKeyboardSwitches += 1;
         },
       };
+      if (
+        new URL(window.location.href).searchParams.has("dictionary-management")
+      ) {
+        const imeBridge = window.AndroidIme;
+        window.AndroidDictionary = {
+          hasPloverConfiguration: () => imeBridge.hasPloverConfiguration(),
+          requestPlover: (body, requestId) =>
+            imeBridge.requestPlover(body, requestId),
+          saveDictionaryFile() {},
+          close() {},
+        };
+        delete window.AndroidIme;
+      }
     });
     await page.setViewport({ width: 412, height: 160, deviceScaleFactor: 1 });
     await page.goto(`${url}/ime.html`, { waitUntil: "networkidle0" });
@@ -203,6 +250,12 @@ async function main() {
       inferenceStatus: document.querySelector("#inference-status").textContent,
     }));
     assert(initial.stripped, "Android bridge did not enable stripped mode");
+    assert(
+      await page.evaluate(
+        () => document.querySelector("#plover-dictionary-dialog") === null,
+      ),
+      "Dictionary editing UI was mounted inside the IME input view",
+    );
     assert(
       initial.dedicatedSurface,
       "Android did not load the dedicated IME UI",
@@ -677,6 +730,55 @@ async function main() {
     assert(
       await page.evaluate(() => window.__androidPloverBodies.length > 0),
       "Android mode did not use the native Stripped Plover bridge",
+    );
+
+    await page.goto(`${url}/dictionary.html?dictionary-management=1`, {
+      waitUntil: "networkidle0",
+    });
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#plover-dictionary-dialog")?.open &&
+        document.querySelector(".plover-dictionary-name")?.textContent ===
+          "main.json",
+    );
+    const managementSurface = await page.evaluate(() => ({
+      managementPage: document.body.classList.contains(
+        "dictionary-management-page",
+      ),
+      hasInferenceSurface: document.querySelector("#inference-shell") !== null,
+      hasImeBridge: "AndroidIme" in window,
+      hasDictionaryBridge: "AndroidDictionary" in window,
+      tabs: document.querySelectorAll(".plover-tab").length,
+      dictionary: document.querySelector(".plover-dictionary-name").textContent,
+    }));
+    assert(
+      managementSurface.managementPage &&
+        !managementSurface.hasInferenceSurface &&
+        !managementSurface.hasImeBridge &&
+        managementSurface.hasDictionaryBridge &&
+        managementSurface.tabs === 3 &&
+        managementSurface.dictionary === "main.json",
+      `Android settings did not host the shared dictionary UI: ${JSON.stringify(managementSurface)}`,
+    );
+
+    await page.click("#plover-tab-entries");
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".plover-entry-result span")?.textContent ===
+        "TEFT",
+    );
+    await page.select("#plover-entry-dict", "main.json");
+    await page.type("#plover-entry-stroke", "T*");
+    await page.type("#plover-entry-translation", "entry");
+    await page.click("#plover-entry-add");
+    await page.waitForFunction(() =>
+      window.__androidPloverBodies.some(
+        (request) =>
+          request.method === "add_entry" &&
+          request.params.name === "main.json" &&
+          request.params.stroke === "T*" &&
+          request.params.translation === "entry",
+      ),
     );
     console.log("Android IME WebUI bridge interactions passed");
   } finally {

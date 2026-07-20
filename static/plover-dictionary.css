@@ -1,0 +1,300 @@
+#plover-dictionary-dialog {
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 20%);
+  max-width: 980px;
+  padding: 0;
+  width: min(94vw, 980px);
+}
+
+body.dictionary-management-page {
+  background: #f8fafc;
+}
+
+body.dictionary-management-page #inference-shell {
+  display: none;
+}
+
+#plover-dictionary-dialog::backdrop {
+  background: rgb(15 23 42 / 50%);
+}
+
+#plover-dictionary-dialog button {
+  background: #fff;
+  border: 1px solid #8fa0b5;
+  border-radius: 6px;
+  color: #111827;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1.25;
+  padding: 6px 12px;
+  white-space: normal;
+}
+
+#plover-dictionary-dialog button:hover {
+  background: #e9edf4;
+}
+
+#plover-dictionary-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+#plover-dictionary-dialog input,
+#plover-dictionary-dialog select {
+  background: #fff;
+  border: 1px solid #9caec4;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #111827;
+  font: inherit;
+  min-height: 32px;
+  padding: 5px 8px;
+}
+
+#plover-dictionary-dialog summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.plover-dialog-content {
+  background: #f8fafc;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(86vh, 760px);
+  max-height: min(86dvh, 760px);
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.plover-dialog-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.plover-dialog-header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.plover-tabs {
+  border-bottom: 1px solid #d8dee8;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.plover-tab {
+  background: transparent;
+}
+
+#plover-dictionary-dialog .plover-tab.active {
+  background: #1f2937;
+  border-color: #1f2937;
+  color: #fff;
+}
+
+.plover-panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.plover-panel.active {
+  display: flex;
+}
+
+.plover-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plover-row > * {
+  min-width: 0;
+}
+
+#plover-dictionary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(42vh, 360px);
+  max-height: min(42dvh, 360px);
+  min-height: 0;
+  overflow: auto;
+}
+
+.plover-dictionary-item {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #b8c5d6;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
+  padding: 12px;
+}
+
+.plover-dictionary-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plover-dictionary-title {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.plover-dictionary-name {
+  color: #0f172a;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plover-badge {
+  background: #eef2f7;
+  border: 1px solid #94a3b8;
+  border-radius: 999px;
+  color: #1f2937;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 1px 6px;
+}
+
+.plover-badge.enabled {
+  background: #d1fae5;
+  border-color: #34d399;
+  color: #065f46;
+}
+
+.plover-badge.disabled {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #7f1d1d;
+}
+
+.plover-dictionary-meta {
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.plover-dictionary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.plover-dictionary-actions select {
+  min-width: 150px;
+}
+
+.plover-section {
+  background: #fff;
+  border: 1px solid #b8c5d6;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+}
+
+.plover-section-title {
+  font-weight: 600;
+}
+
+.plover-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plover-grid > * {
+  min-width: 0;
+}
+
+.plover-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.plover-span-all {
+  grid-column: 1 / -1;
+}
+
+.plover-entry-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#plover-entry-results,
+#plover-lookup-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.plover-entry-result {
+  background: #fff;
+  border: 1px solid #b8c5d6;
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 8px;
+  grid-template-columns:
+    minmax(120px, 0.45fr) minmax(0, 1fr)
+    minmax(120px, 0.55fr);
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.plover-entry-result:hover {
+  background: #f1f5f9;
+}
+
+.plover-entry-result span {
+  overflow-wrap: anywhere;
+}
+
+.plover-entry-result .muted,
+.plover-muted {
+  color: #475569;
+}
+
+#plover-message,
+#plover-entry-message,
+#plover-lookup-message {
+  color: #991b1b;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 720px) {
+  .plover-dictionary-item,
+  .plover-entry-result {
+    grid-template-columns: 1fr;
+  }
+
+  .plover-dictionary-actions {
+    justify-content: flex-start;
+  }
+
+  .plover-grid,
+  .plover-grid.three {
+    grid-template-columns: 1fr;
+  }
+}

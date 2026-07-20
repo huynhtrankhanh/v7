@@ -38,6 +38,7 @@ public class SettingsActivity extends Activity {
         modelStatus = findViewById(R.id.model_status);
         Button chooseModel = findViewById(R.id.choose_model);
         Button save = findViewById(R.id.save_settings);
+        Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         Button saveSource = findViewById(R.id.save_source);
         Button enable = findViewById(R.id.enable_keyboard);
         Button choose = findViewById(R.id.choose_keyboard);
@@ -48,6 +49,9 @@ public class SettingsActivity extends Activity {
 
         chooseModel.setOnClickListener(view -> chooseModel());
         save.setOnClickListener(view -> saveSettings());
+        manageDictionaries.setOnClickListener(view -> startActivity(
+                new Intent(this, DictionaryManagementActivity.class)
+        ));
         saveSource.setOnClickListener(view -> chooseSourceDestination());
         enable.setOnClickListener(view -> startActivity(
                 new Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
