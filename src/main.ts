@@ -284,6 +284,7 @@ interface AndroidImeBridge {
   getInferenceModelError(): string;
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
+  isStenoModeEnabled?(): boolean;
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
   requestInferenceSync?: (body: string, requestId: number) => string;
@@ -294,6 +295,7 @@ interface AndroidImeBridge {
 
 const androidIme = window.AndroidIme;
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
+let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
@@ -1416,6 +1418,13 @@ function isStaleInference(controller) {
 }
 
 async function handleChord(stroke) {
+  // On Android, Q+A on the physical QWERTY keyboard serializes to #S.
+  // It is reserved for choosing another IME and is not a V7/Plover stroke.
+  if (androidIme && (stroke === "#S-" || stroke === "#S")) {
+    androidIme.changeInputMethod();
+    return;
+  }
+
   if (stroke === "#") {
     await togglePloverMode();
     return;
@@ -1986,6 +1995,16 @@ function updateDisplay() {
       : null;
 
   document.body.classList.toggle("stripped-display", strippedDisplay.enabled);
+  document.body.classList.toggle(
+    "android-normal-typing",
+    strippedDisplay.enabled && !androidStenoModeEnabled,
+  );
+  const modeTitle = document.querySelector<HTMLElement>(".ime-mode-title");
+  if (modeTitle && strippedDisplay.enabled) {
+    modeTitle.textContent = androidStenoModeEnabled
+      ? "Compose"
+      : "Normal typing";
+  }
   document.body.classList.toggle(
     "stripped-plover-active",
     strippedDisplay.enabled && strippedPlover.enabled,
@@ -2594,6 +2613,7 @@ declare global {
       responseBody: string,
       errorMessage: string,
     ) => void;
+    handleAndroidStenoModeChanged?: (enabled: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -2752,6 +2772,12 @@ window.handleAndroidPloverResponse = (
   } catch {
     pending.reject(new Error("Stripped Plover returned invalid JSON"));
   }
+};
+
+window.handleAndroidStenoModeChanged = (enabled) => {
+  androidStenoModeEnabled = enabled;
+  clearPressedQwertyKeys();
+  updateDisplay();
 };
 
 function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {

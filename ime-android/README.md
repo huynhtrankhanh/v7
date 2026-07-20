@@ -30,6 +30,16 @@
 - Physical Enter is handled by the service rather than the WebUI: it invokes an
   editor-provided custom or standard action when present, otherwise it forwards
   the original Enter key events to the editor.
+- A tap on either physical Meta key switches between STENO capture and ordinary
+  hardware-keyboard typing. Meta is consumed by the IME, including its key-up
+  event, so Android's default assistant handler does not receive it.
+- While STENO capture is active, the physical Q+A chord opens Android's input
+  method picker. The `[` key commits the current PREEDIT and starts a clean
+  composing session; it does not delete the committed text.
+
+See [Android hardware-keyboard interactions](docs/hardware-keyboard-interactions.md)
+for the complete mode table, PREEDIT semantics, and native/WebUI event-routing
+order.
 
 ## Settings
 

@@ -56,6 +56,7 @@ public class V7ImeService extends InputMethodService {
     private static volatile String inferenceModelError = "";
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
+    private boolean stenoModeEnabled = true;
 
     @Override
     public View onCreateInputView() {
@@ -171,6 +172,19 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
+        HardwareKeyActionResolver.Action hardwareAction =
+                HardwareKeyActionResolver.resolve(
+                        stenoModeEnabled,
+                        event.getKeyCode(),
+                        event.getAction(),
+                        event.getRepeatCount()
+                );
+        if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
+            return dispatchModeKeyAction(event, hardwareAction);
+        }
+        if (!stenoModeEnabled) {
+            return false;
+        }
         if (event.isCtrlPressed() || event.isAltPressed() || event.isMetaPressed()) {
             return false;
         }
@@ -181,6 +195,28 @@ public class V7ImeService extends InputMethodService {
                 ? "keyup"
                 : "keydown";
         return dispatchPhysicalKeyToWeb(action, event);
+    }
+
+    private boolean dispatchModeKeyAction(
+            KeyEvent event,
+            HardwareKeyActionResolver.Action action) {
+        String signature = "mode-key:"
+                + event.getAction() + ":"
+                + event.getKeyCode() + ":"
+                + event.getEventTime();
+        if (signature.equals(lastKeyEventSignature)) {
+            return true;
+        }
+        lastKeyEventSignature = signature;
+
+        if (action == HardwareKeyActionResolver.Action.TOGGLE_STENO) {
+            stenoModeEnabled = !stenoModeEnabled;
+            finishCurrentPreedit();
+            publishStenoModeState();
+        } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
+            finishCurrentPreedit();
+        }
+        return true;
     }
 
     private boolean dispatchEnterKey(KeyEvent event) {
@@ -457,6 +493,16 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void clearPreeditSession() {
+        finishCurrentPreedit();
+    }
+
+    /**
+     * Commits the editor's current composing text, then clears only V7's
+     * in-memory/WebUI session. Calling finishComposingText (instead of
+     * setComposingText with an empty value) deliberately preserves the text
+     * that the user already sees in the editor.
+     */
+    private void finishCurrentPreedit() {
         inputGeneration.incrementAndGet();
         latestInferenceRequestId.set(-1);
         boolean hadPreedit = !preeditText.isEmpty();
@@ -471,6 +517,15 @@ public class V7ImeService extends InputMethodService {
         }
         evaluateJavascript(
                 "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid()"
+        );
+    }
+
+    private void publishStenoModeState() {
+        evaluateJavascript(
+                "window.handleAndroidStenoModeChanged"
+                        + " && window.handleAndroidStenoModeChanged("
+                        + stenoModeEnabled
+                        + ")"
         );
     }
 
@@ -674,6 +729,9 @@ public class V7ImeService extends InputMethodService {
             if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
+            if (!stenoModeEnabled) {
+                return false;
+            }
             return super.dispatchKeyEvent(event);
         }
     }
@@ -704,6 +762,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public String getInferenceModelError() {
             return V7ImeService.this.getInferenceModelError();
+        }
+
+        @JavascriptInterface
+        public boolean isStenoModeEnabled() {
+            return stenoModeEnabled;
         }
 
         @JavascriptInterface

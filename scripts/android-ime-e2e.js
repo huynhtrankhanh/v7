@@ -121,6 +121,9 @@ async function main() {
         hasPloverConfiguration() {
           return true;
         },
+        isStenoModeEnabled() {
+          return true;
+        },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
@@ -217,6 +220,21 @@ async function main() {
       `Android IME did not expose initial model readiness: ${JSON.stringify(initial)}`,
     );
 
+    await page.evaluate(() => window.handleAndroidStenoModeChanged(false));
+    assert(
+      await page.evaluate(
+        () =>
+          document.body.classList.contains("android-normal-typing") &&
+          document.querySelector(".ime-mode-title").textContent ===
+            "Normal typing",
+      ),
+      "Android normal-typing mode was not reflected in the IME surface",
+    );
+    await page.evaluate(() => window.handleAndroidStenoModeChanged(true));
+    const preeditsBeforeModifiedKey = await page.evaluate(
+      () => window.__androidPreedits.length,
+    );
+
     await page.evaluate(() => {
       window.handleAndroidKeyEvent(
         "keydown",
@@ -246,7 +264,7 @@ async function main() {
     }));
     assert(
       modifiedKeyState.inferenceBodies === 0 &&
-        modifiedKeyState.preedits === 0 &&
+        modifiedKeyState.preedits === preeditsBeforeModifiedKey &&
         modifiedKeyState.text === "👋",
       `Modified hardware keys leaked into V7 handling: ${JSON.stringify(modifiedKeyState)}`,
     );
@@ -393,11 +411,13 @@ async function main() {
     await androidChord(page, ["c", " ", "m"]);
     const readyPendingInference = await page.evaluate(() => ({
       reducedBuffer: document.querySelector("#text-display").textContent,
+      preedit: window.__androidPreedits.at(-1).text,
       preedits: window.__androidPreedits.length,
       inferenceBodies: window.__androidInferenceBodies.length,
     }));
     assert(
-      readyPendingInference.reducedBuffer.includes("ready pending result") &&
+      readyPendingInference.preedit === "ready pending result" &&
+        !readyPendingInference.reducedBuffer.includes("[") &&
         readyPendingInference.preedits > cleared.preeditCount &&
         readyPendingInference.inferenceBodies === 2,
       `Android did not render synchronous inference without raw V7 flicker: ${JSON.stringify(readyPendingInference)}`,
@@ -610,9 +630,15 @@ async function main() {
       )}`,
     );
 
-    await page.click("#ime-switch-keyboard");
+    await androidChord(page, ["q", "a"]);
     assert(
       await page.evaluate(() => window.__androidKeyboardSwitches === 1),
+      "Q+A did not invoke the Android input method picker",
+    );
+
+    await page.click("#ime-switch-keyboard");
+    assert(
+      await page.evaluate(() => window.__androidKeyboardSwitches === 2),
       "IME keyboard button did not invoke the Android input method picker",
     );
 
