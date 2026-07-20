@@ -48,6 +48,7 @@ Android uses the same controller and Stripped Plover RPC methods as the browser
 surface:
 
 - refresh, enable/disable, reprioritize, solo, rename, and remove dictionaries;
+- open a dictionary's entries directly from its dictionary card;
 - import and export JSON or Python dictionaries;
 - enumerate, search, add, update, and remove entries;
 - stroke lookup and reverse translation lookup.

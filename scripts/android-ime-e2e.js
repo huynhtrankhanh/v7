@@ -211,6 +211,14 @@ async function main() {
                   },
                 ],
               },
+              lookup: {
+                stroke: "TEFT",
+                translation: "test",
+              },
+              reverse_lookup: {
+                translation: "test",
+                strokes: ["TEFT"],
+              },
             };
             window.handleAndroidPloverResponse(
               requestId,
@@ -808,6 +816,14 @@ async function main() {
       hasDictionaryBridge: "AndroidDictionary" in window,
       tabs: document.querySelectorAll(".plover-tab").length,
       dictionary: document.querySelector(".plover-dictionary-name").textContent,
+      hasEntryBrowser: document.querySelector("#plover-entry-results") !== null,
+      hasEntryEditor:
+        document.querySelector("#plover-entry-add") !== null &&
+        document.querySelector("#plover-entry-update") !== null &&
+        document.querySelector("#plover-entry-remove") !== null,
+      hasLookup:
+        document.querySelector("#plover-lookup-stroke-run") !== null &&
+        document.querySelector("#plover-lookup-translation-run") !== null,
     }));
     assert(
       managementSurface.managementPage &&
@@ -815,7 +831,10 @@ async function main() {
         !managementSurface.hasImeBridge &&
         managementSurface.hasDictionaryBridge &&
         managementSurface.tabs === 4 &&
-        managementSurface.dictionary === "main.json",
+        managementSurface.dictionary === "main.json" &&
+        managementSurface.hasEntryBrowser &&
+        managementSurface.hasEntryEditor &&
+        managementSurface.hasLookup,
       `Android settings did not host the shared dictionary UI: ${JSON.stringify(managementSurface)}`,
     );
 
@@ -877,13 +896,62 @@ async function main() {
       `Android dictionary surface did not expose one working page scroller: ${JSON.stringify(dictionaryScroll)}`,
     );
 
-    await page.click("#plover-tab-entries");
+    await page.click(".plover-dictionary-entries");
     await page.waitForFunction(
       () =>
+        document
+          .querySelector("#plover-panel-entries")
+          ?.classList.contains("active") &&
+        document.querySelector("#plover-entry-search-dict")?.value ===
+          "main.json" &&
+        document.querySelector("#plover-entry-dict")?.value === "main.json" &&
         document.querySelector(".plover-entry-result span")?.textContent ===
-        "TEFT",
+          "TEFT",
     );
-    await page.select("#plover-entry-dict", "main.json");
+    assert(
+      await page.evaluate(() =>
+        window.__androidPloverBodies.some(
+          (request) =>
+            request.method === "enumerate_entries" &&
+            request.params.dictionary === "main.json",
+        ),
+      ),
+      "Dictionary entry shortcut did not browse the selected dictionary",
+    );
+    await page.type("#plover-entry-search-stroke", "TE");
+    await page.click("#plover-entry-search");
+    await page.waitForFunction(
+      () =>
+        window.__androidPloverBodies.some(
+          (request) =>
+            request.method === "search_entries" &&
+            request.params.dictionary === "main.json" &&
+            request.params.stroke === "TE" &&
+            request.params.match === "substring",
+        ) &&
+        !document.querySelector("#plover-entry-search")?.disabled &&
+        document.querySelector(".plover-entry-result span")?.textContent ===
+          "TEFT",
+    );
+    await page.click(".plover-entry-result");
+    const selectedEntry = await page.evaluate(() => ({
+      dictionary: document.querySelector("#plover-entry-dict")?.value,
+      stroke: document.querySelector("#plover-entry-stroke")?.value,
+      translation: document.querySelector("#plover-entry-translation")?.value,
+    }));
+    assert(
+      JSON.stringify(selectedEntry) ===
+        JSON.stringify({
+          dictionary: "main.json",
+          stroke: "TEFT",
+          translation: "test",
+        }),
+      `Selecting an Android dictionary entry did not load the editor: ${JSON.stringify(selectedEntry)}`,
+    );
+    await page.evaluate(() => {
+      document.querySelector("#plover-entry-stroke").value = "";
+      document.querySelector("#plover-entry-translation").value = "";
+    });
     await page.type("#plover-entry-stroke", "T*");
     await page.type("#plover-entry-translation", "entry");
     await page.click("#plover-entry-add");
@@ -894,6 +962,46 @@ async function main() {
           request.params.name === "main.json" &&
           request.params.stroke === "T*" &&
           request.params.translation === "entry",
+      ),
+    );
+    await page.evaluate(() => {
+      document.querySelector("#plover-entry-translation").value = "updated";
+    });
+    await page.click("#plover-entry-update");
+    await page.waitForFunction(() =>
+      window.__androidPloverBodies.some(
+        (request) =>
+          request.method === "update_entry" &&
+          request.params.name === "main.json" &&
+          request.params.stroke === "T*" &&
+          request.params.translation === "updated",
+      ),
+    );
+    await page.click("#plover-entry-remove");
+    await page.waitForFunction(() =>
+      window.__androidPloverBodies.some(
+        (request) =>
+          request.method === "remove_entry" &&
+          request.params.name === "main.json" &&
+          request.params.stroke === "T*",
+      ),
+    );
+
+    await page.click("#plover-tab-lookup");
+    await page.type("#plover-lookup-stroke", "TEFT");
+    await page.click("#plover-lookup-stroke-run");
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#plover-lookup-results")?.textContent ===
+        "TEFTtestactive dictionaries",
+    );
+    await page.type("#plover-lookup-translation", "test");
+    await page.click("#plover-lookup-translation-run");
+    await page.waitForFunction(() =>
+      window.__androidPloverBodies.some(
+        (request) =>
+          request.method === "reverse_lookup" &&
+          request.params.translation === "test",
       ),
     );
     console.log("Android IME WebUI bridge interactions passed");
