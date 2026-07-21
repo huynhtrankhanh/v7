@@ -115,6 +115,14 @@ async function uploadDictionary(page, directory, filename, content, type) {
   if (backgroundFailure) {
     throw new Error(backgroundFailure);
   }
+  const progress = await page.$eval("#plover-import-progress", (element) =>
+    Number(element.value),
+  );
+  if (progress !== 100) {
+    throw new Error(
+      `Android import progress did not finish at 100%: ${progress}`,
+    );
+  }
 }
 
 async function main() {
@@ -256,6 +264,91 @@ async function main() {
       throw new Error(`unexpected dictionary state: ${JSON.stringify(parsed)}`);
     }
 
+    // Exercise the same consumeNamedData contract used by AndroidX
+    // JavaScriptSandbox. This is intentionally a separate, DOM-free import
+    // bundle rather than the WebView engine runtime.
+    const sandboxPage = await browser.newPage();
+    await sandboxPage.evaluate(() => {
+      window.__sandboxNamedData = new Map();
+      window.android = {
+        async consumeNamedDataAsArrayBuffer(name) {
+          const value = window.__sandboxNamedData.get(name);
+          if (!value) throw new Error(`Missing named data: ${name}`);
+          window.__sandboxNamedData.delete(name);
+          return value;
+        },
+      };
+    });
+    await sandboxPage.addScriptTag({
+      content: fs.readFileSync(
+        path.join(assetRoots[0], "stripped-plover-import-sandbox.js"),
+        "utf8",
+      ),
+    });
+    const sandboxJson = await sandboxPage.evaluate(async () => {
+      const source = new TextEncoder().encode(
+        JSON.stringify({ TEFT: "sandbox-json 한국어", "S/T": "two strokes" }),
+      );
+      window.__sandboxNamedData.set("json-source", source.buffer);
+      const metadata = JSON.parse(
+        await window.V7DictionaryImportSandbox.initialize(
+          "json-source",
+          "json",
+        ),
+      );
+      const chunk = JSON.parse(window.V7DictionaryImportSandbox.nextChunk(200));
+      return { metadata, chunk };
+    });
+    if (
+      sandboxJson.metadata.total !== 2 ||
+      !sandboxJson.chunk.done ||
+      sandboxJson.chunk.processed !== 2 ||
+      !sandboxJson.chunk.entries.some(
+        ([stroke, translation]) =>
+          stroke === "TEFT" && translation === "sandbox-json 한국어",
+      )
+    ) {
+      throw new Error(
+        `sandbox import planner did not parse/normalize JSON: ${JSON.stringify(sandboxJson)}`,
+      );
+    }
+    const rejectsMalformedUtf8 = await sandboxPage.evaluate(async () => {
+      window.__sandboxNamedData.set(
+        "invalid-source",
+        new Uint8Array([0xc0, 0xaf]).buffer,
+      );
+      try {
+        await window.V7DictionaryImportSandbox.initialize(
+          "invalid-source",
+          "json",
+        );
+        return false;
+      } catch (error) {
+        return String(error).includes("not valid UTF-8");
+      }
+    });
+    if (!rejectsMalformedUtf8) {
+      throw new Error("sandbox import planner accepted malformed UTF-8");
+    }
+    const sandboxPython = await sandboxPage.evaluate(async () => {
+      const source = new TextEncoder().encode(
+        "LONGEST_KEY = 1\ndef lookup(key):\n    raise KeyError(key)\n",
+      );
+      window.__sandboxNamedData.set("python-source", source.buffer);
+      return JSON.parse(
+        await window.V7DictionaryImportSandbox.initialize(
+          "python-source",
+          "python",
+        ),
+      );
+    });
+    if (sandboxPython.type !== "python" || sandboxPython.total !== -1) {
+      throw new Error(
+        `sandbox import planner did not accept Python source: ${JSON.stringify(sandboxPython)}`,
+      );
+    }
+    await sandboxPage.close();
+
     const managementPage = await browser.newPage();
     const forwardedRequests = [];
     let nextRuntimeRequestId = 100;
@@ -270,6 +363,7 @@ async function main() {
       window.__dictionaryImportStates = {};
       window.__latestDictionaryImport = "";
       window.__backgroundRequestId = 10_000;
+      window.__selectedImportCalls = 0;
       window.AndroidDictionary = {
         hasPloverConfiguration() {
           return true;
@@ -285,6 +379,10 @@ async function main() {
             name,
             status: "queued",
             message: "Waiting to start",
+            phase: "Queued",
+            current: 0,
+            total: -1,
+            percent: 0,
           };
           window.__androidPloverRequestQueue.push({
             body: JSON.stringify({
@@ -295,6 +393,44 @@ async function main() {
             requestId: window.__backgroundRequestId++,
             backgroundTaskId: id,
           });
+          return JSON.stringify({ id, error: "" });
+        },
+        enqueueSelectedDictionaryImport(name, type, merge) {
+          window.__selectedImportCalls += 1;
+          const file = document.querySelector("#plover-dict-file")?.files?.[0];
+          if (!file) {
+            return JSON.stringify({ id: "", error: "No selected file" });
+          }
+          const id = `background-${window.__backgroundRequestId++}`;
+          window.__latestDictionaryImport = id;
+          window.__dictionaryImportStates[id] = {
+            id,
+            name,
+            status: "queued",
+            message: "Waiting to start",
+            phase: "Queued",
+            current: 0,
+            total: -1,
+            percent: 0,
+          };
+          const reader = new FileReader();
+          reader.addEventListener("load", () => {
+            window.__androidPloverRequestQueue.push({
+              body: JSON.stringify({
+                id,
+                method: "import_dictionary_source",
+                params: {
+                  name,
+                  type,
+                  source: String(reader.result ?? ""),
+                  merge,
+                },
+              }),
+              requestId: window.__backgroundRequestId++,
+              backgroundTaskId: id,
+            });
+          });
+          reader.readAsText(file);
           return JSON.stringify({ id, error: "" });
         },
         getDictionaryImportState(taskId) {
@@ -331,6 +467,9 @@ async function main() {
                 window.__dictionaryImportStates[taskId].status = "running";
                 window.__dictionaryImportStates[taskId].message =
                   "Loading in the Stripped Plover sandbox";
+                window.__dictionaryImportStates[taskId].phase =
+                  "Starting Android JavaScript sandbox";
+                window.__dictionaryImportStates[taskId].percent = 18;
               }, backgroundTaskId);
             }
             const forwarded = {
@@ -369,6 +508,10 @@ async function main() {
                     message: failed
                       ? bridgeResult.error || response.error.message
                       : `Imported ${response?.result?.entries ?? 0} entries`,
+                    phase: failed ? "Failed" : "Complete",
+                    current: response?.result?.entries ?? 0,
+                    total: response?.result?.entries ?? 0,
+                    percent: failed ? 18 : 100,
                   };
                 } else {
                   window.handleAndroidPloverResponse(
@@ -494,6 +637,14 @@ def lookup(key):
           `Android ${type} upload did not cross both WebViews successfully: ${JSON.stringify(forwarded)}`,
         );
       }
+    }
+    const selectedImportCalls = await managementPage.evaluate(
+      () => window.__selectedImportCalls,
+    );
+    if (selectedImportCalls !== 2) {
+      throw new Error(
+        `Android uploads crossed the JavaScript bridge as source strings: ${selectedImportCalls}`,
+      );
     }
     const uploadedTranslation = await requestRuntime(
       page,

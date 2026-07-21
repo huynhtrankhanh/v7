@@ -23,13 +23,13 @@ The archive records the V7, KenLM, and Stripped Plover revisions in
 
 ## Runtime separation
 
-There are three different WebViews with disjoint jobs:
+The interactive/runtime surfaces and background importer have disjoint jobs:
 
-| WebView | Owner | Native surface |
+| Surface | Owner | Native surface |
 | --- | --- | --- |
 | IME interface | `V7ImeService` | composing text, inference, height, key mode, and Stripped Plover RPC client |
 | Dictionary manager | `DictionaryManagementActivity` | Stripped Plover RPC client plus Android document import/export |
-| Import worker | `DictionaryImportWorker` | durable foreground work plus RPC into the shared engine |
+| Import worker | `DictionaryImportWorker` | durable foreground work plus an AndroidX `JavaScriptSandbox` isolate and native SQLite transaction |
 | Stripped Plover engine | process-wide `BundledStrippedPloverRuntime` | runtime completion callbacks and native SQLite only |
 
 The engine WebView is a process-wide, non-visual WebView. Neither interface
@@ -39,10 +39,30 @@ to the same serialized runtime queue, so translation and dictionary editing
 share one engine and database.
 
 Dictionary imports use that separation to outlive the management screen. A
-WorkManager foreground task owns the loading notification and staged source,
-while the actual source parsing and upstream import run inside the same
-sandboxed engine WebView used for translation. The worker never evaluates
-dictionary code itself and never exposes Android APIs to dictionary source.
+WorkManager foreground task owns the loading notification and staged source.
+It pauses the WebView engine, creates AndroidX JavaScriptEngine's official
+out-of-process `JavaScriptSandbox`, and passes the source with
+`provideNamedData`. A generated bundle uses the pinned Stripped Plover stroke
+implementation to parse, validate, normalize, and drain JSON entries in
+bounded chunks. Native code applies those chunks in one SQLite transaction,
+then restarts the engine so no client retains a stale dictionary cache.
+The source reaches staging through Android's document URI, not a JavaScript
+bridge string, so large imports do not depend on WebView/Binder transaction
+limits.
+
+This distinction matters: an unattached WebView is not a durable background
+JavaScript host. Android may throttle its renderer and workers when the
+settings activity closes. `JavaScriptSandbox` is explicitly designed for
+non-interactive evaluation from a Service or WorkManager task and runs in a
+separate process without a DOM or Android JavaScript interface.
+
+Python dictionaries cross the same sandbox transfer and are stored as
+read-only source in the native transaction. They are not executed in the
+AndroidX isolate. Stripped Plover's CPython/Wasm runtime needs browser Worker
+and service-worker I/O, which `JavaScriptIsolate` intentionally does not
+provide. After the transaction, the normal isolated engine WebView starts and
+CPython/Wasm validates and executes the stored source. Arbitrary Python never
+receives an Android bridge or runs in the WorkManager process.
 
 The runtime loads app assets through
 `https://appassets.androidplatform.net`, not `file://`. Responses carry
@@ -65,6 +85,23 @@ older app builds.
 
 Unexpected runtime navigations fail active requests immediately instead of
 leaving them to time out.
+
+## Import progress and failure semantics
+
+The worker publishes the same structured state to WorkManager, a determinate
+foreground notification, and the dictionary manager's reconnectable state
+record. State includes `phase`, `current`, `total`, and `percent`. JSON progress
+counts entry chunks. Python progress reports source validation, persistence,
+and engine restart phases because a dynamic Python dictionary need not expose
+an enumerable entry count. A failure rolls back the SQLite transaction,
+records the terminal error, resumes the engine, and deletes the staged source.
+
+While the worker owns the database, the IME changes its runtime label to
+**Stripped Plover (PAUSED)** and uses the error-state color. Both the WebUI and
+the native RPC boundary discard translation strokes during that interval, so
+an event racing with the pause cannot be queued and replayed against the
+restarted engine. Normal translation resumes only after the transaction has
+finished and the runtime has been released.
 
 ## Node compatibility audit
 
@@ -121,6 +158,16 @@ Fetching Stripped Plover does not alter the V7 repository license or relicense
 V7 intellectual property. V7 source files remain 0BSD. Stripped Plover and all
 other third-party files retain their own upstream licenses.
 
+The shared V7 dictionary UI, CSS, Android bridge, WorkManager orchestration,
+and progress protocol are independently written interoperability code; they do
+not copy Stripped Plover implementation. The Android build imports the pinned
+upstream `stroke.ts` only into the generated
+`stripped-plover-import-sandbox.js` artifact. That generated artifact stays on
+the Stripped Plover/GPL side of the source archive together with the existing
+engine runtime. This records the concrete source boundary without claiming
+that interoperability alone determines whether a particular distribution is a
+combined work.
+
 The bundled Android distribution, including the APK and Stripped Plover
 runtime, is conveyed as a combined work under GPL-3.0-or-later. The generated
 `v7-ime-source.zip` is the complete Corresponding Source for that APK and is
@@ -134,10 +181,12 @@ inside its source directory.
 
 ## Verification
 
-`npm run test:android-stripped-plover` serves the generated runtime, injects a
+`npm run test:android-stripped-plover` serves the generated runtime and import
+sandbox bundle, injects a
 narrow test SQLite bridge, and verifies that the real bundled engine initializes
 its schema, answers a dictionary-state RPC, and imports and translates with a
-roughly 43 KB Python dictionary in Puppeteer. It runs once with cross-origin
+roughly 43 KB Python dictionary in Puppeteer. It also exercises the AndroidX
+named-data contract and chunked JSON normalization. The runtime test runs once with cross-origin
 isolation and once without it, exercising both atomics and service-worker I/O.
 The test uses two independently puppeteered pages and Android's `/assets/` URL
 layout, so the management/runtime WebView boundary and deployed worker,
@@ -150,5 +199,8 @@ Platform references:
 
 - [WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader)
   documents serving APK assets through a web-compatible HTTPS origin.
+- [JavaScriptEngine](https://developer.android.com/develop/ui/views/layout/webapps/jsengine)
+  documents out-of-process evaluation from WorkManager and large named-data
+  transfer.
 - [SQLite on Android](https://developer.android.com/training/data-storage/sqlite)
   documents the framework database API used for persistence.

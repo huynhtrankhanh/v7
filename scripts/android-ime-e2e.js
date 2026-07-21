@@ -109,6 +109,7 @@ async function main() {
       window.__androidInferenceResponse = null;
       window.__androidModelState = "loading";
       window.__androidPloverBodies = [];
+      window.__androidPloverPaused = false;
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
@@ -123,6 +124,9 @@ async function main() {
         },
         isStenoModeEnabled() {
           return true;
+        },
+        isPloverPaused() {
+          return window.__androidPloverPaused;
         },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
@@ -769,6 +773,37 @@ async function main() {
         ploverSurface.height === 48,
       `Active Plover surface was not reduced to a thin status bar: ${JSON.stringify(ploverSurface)}`,
     );
+    const requestsBeforePause = await page.evaluate(
+      () => window.__androidPloverBodies.length,
+    );
+    await page.evaluate(() => {
+      window.__androidPloverPaused = true;
+      window.handleAndroidPloverPaused(true);
+    });
+    await androidChord(page, ["t"]);
+    const pausedPlover = await page.evaluate(() => ({
+      label: document.querySelector(".ime-plover-banner").textContent.trim(),
+      status: document.querySelector("#plover-status").textContent,
+      requests: window.__androidPloverBodies.length,
+      pausedClass: document.body.classList.contains("stripped-plover-paused"),
+    }));
+    assert(
+      pausedPlover.label === "Stripped Plover (PAUSED)" &&
+        pausedPlover.status === "PAUSED" &&
+        pausedPlover.requests === requestsBeforePause &&
+        pausedPlover.pausedClass,
+      `Paused Stripped Plover was not visible or ignored its stroke: ${JSON.stringify(pausedPlover)}`,
+    );
+    await page.evaluate(() => {
+      window.__androidPloverPaused = false;
+      window.handleAndroidPloverPaused(false);
+    });
+    await androidChord(page, ["t"]);
+    await page.waitForFunction(
+      (requestCount) => window.__androidPloverBodies.length > requestCount,
+      {},
+      requestsBeforePause,
+    );
     await page.click("#ime-switch-keyboard");
     assert(
       await page.evaluate(() => window.__androidKeyboardSwitches === 4),
@@ -829,6 +864,53 @@ async function main() {
         managementSurface.hasLookup,
       `Android settings did not host the shared dictionary UI: ${JSON.stringify(managementSurface)}`,
     );
+
+    // Android applies the user's font scale inside WebView. Exercise a large
+    // scale explicitly: tab labels used to be squeezed under their text and
+    // looked as if they overlapped the adjacent tab.
+    await page.addStyleTag({ content: "html { font-size: 150%; }" });
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    );
+    const scaledLayout = await page.evaluate(() => {
+      const tabs = [...document.querySelectorAll(".plover-tab")];
+      const content = document.querySelector(".plover-dialog-content");
+      const header = document.querySelector(".plover-dialog-header");
+      const intersects = (left, right) => {
+        const a = left.getBoundingClientRect();
+        const b = right.getBoundingClientRect();
+        return (
+          Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 &&
+          Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1
+        );
+      };
+      return {
+        clippedTabs: tabs
+          .filter((tab) => tab.scrollWidth > tab.clientWidth + 1)
+          .map((tab) => tab.textContent.trim()),
+        headerOverlap: intersects(header.children[0], header.children[1]),
+        horizontalPageOverflow: content.scrollWidth > content.clientWidth + 1,
+      };
+    });
+    assert(
+      scaledLayout.clippedTabs.length === 0 &&
+        !scaledLayout.headerOverlap &&
+        !scaledLayout.horizontalPageOverflow,
+      `Android font scaling caused dictionary controls to overlap or clip: ${JSON.stringify(scaledLayout)}`,
+    );
+    if (process.env.V7_SCREENSHOT_DIR) {
+      fs.mkdirSync(process.env.V7_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({
+        path: path.join(
+          process.env.V7_SCREENSHOT_DIR,
+          "android-dictionary-management.png",
+        ),
+      });
+    }
+    await page.addStyleTag({ content: "html { font-size: 100%; }" });
 
     const dictionaryScroll = await page.evaluate(async () => {
       const dialog = document.querySelector("#plover-dictionary-dialog");

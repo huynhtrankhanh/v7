@@ -49,6 +49,10 @@ final class BundledStrippedPloverRuntime {
         void onReady(String error);
     }
 
+    interface StateListener {
+        void onPausedChanged(boolean paused);
+    }
+
     static synchronized BundledStrippedPloverRuntime get(Context context) {
         if (instance == null) {
             instance = new BundledStrippedPloverRuntime(
@@ -63,11 +67,12 @@ final class BundledStrippedPloverRuntime {
     private final AtomicInteger nextRequestId = new AtomicInteger(1);
     private final Map<Integer, PendingCallback> callbacks = new HashMap<>();
     private final List<PendingRequest> pendingRequests = new ArrayList<>();
+    private final List<StateListener> stateListeners = new ArrayList<>();
     private WebView runtimeWebView;
     private FrameLayout attachedHost;
     private NativeStrippedPloverSqlite sqlite;
     private boolean ready;
-    private boolean dataTransferInProgress;
+    private volatile boolean dataTransferInProgress;
     private String startupError = "";
 
     private BundledStrippedPloverRuntime(Context context) {
@@ -82,10 +87,37 @@ final class BundledStrippedPloverRuntime {
                 timeout
         );
         synchronized (callbacks) {
+            if (dataTransferInProgress) {
+                mainHandler.post(() -> rejectPausedRequest(body, callback));
+                return;
+            }
             callbacks.put(requestId, pending);
         }
         mainHandler.postDelayed(timeout, REQUEST_TIMEOUT_MS);
         mainHandler.post(() -> enqueueOrDispatch(requestId, body));
+    }
+
+    boolean isPaused() {
+        return dataTransferInProgress;
+    }
+
+    void addStateListener(StateListener listener) {
+        mainHandler.post(() -> {
+            if (!stateListeners.contains(listener)) {
+                stateListeners.add(listener);
+            }
+            listener.onPausedChanged(dataTransferInProgress);
+        });
+    }
+
+    void removeStateListener(StateListener listener) {
+        mainHandler.post(() -> stateListeners.remove(listener));
+    }
+
+    private void publishPausedState() {
+        for (StateListener listener : new ArrayList<>(stateListeners)) {
+            listener.onPausedChanged(dataTransferInProgress);
+        }
     }
 
     void attachTo(FrameLayout host) {
@@ -138,29 +170,91 @@ final class BundledStrippedPloverRuntime {
                 );
                 return;
             }
-            dataTransferInProgress = true;
-            ready = false;
-            startupError = "";
-            if (runtimeWebView != null) {
-                ViewParent parent = runtimeWebView.getParent();
-                if (parent instanceof ViewGroup) {
-                    ((ViewGroup) parent).removeView(runtimeWebView);
-                }
-                runtimeWebView.destroy();
-                runtimeWebView = null;
+            if (!beginDataTransfer(callback)) {
+                callback.onReady(
+                        "Wait for the current Stripped Plover operation to finish"
+                );
             }
-            if (sqlite != null) {
-                sqlite.close();
-                sqlite = null;
-            }
-            callback.onReady("");
         });
+    }
+
+    void pauseForDictionaryImport(DataTransferCallback callback) {
+        long deadline = android.os.SystemClock.uptimeMillis() + REQUEST_TIMEOUT_MS;
+        mainHandler.post(() -> waitToPauseForDictionaryImport(deadline, callback));
+    }
+
+    private void waitToPauseForDictionaryImport(
+            long deadline,
+            DataTransferCallback callback) {
+        synchronized (callbacks) {
+            if (!callbacks.isEmpty()) {
+                if (android.os.SystemClock.uptimeMillis() >= deadline) {
+                    callback.onReady(
+                            "Timed out waiting for Stripped Plover to become idle"
+                    );
+                } else {
+                    mainHandler.postDelayed(
+                            () -> waitToPauseForDictionaryImport(deadline, callback),
+                            100L
+                    );
+                }
+                return;
+            }
+        }
+        if (runtimeWebView != null && !ready && startupError.isEmpty()) {
+            if (android.os.SystemClock.uptimeMillis() >= deadline) {
+                callback.onReady(
+                        "Timed out waiting for Stripped Plover to finish starting"
+                );
+            } else {
+                mainHandler.postDelayed(
+                        () -> waitToPauseForDictionaryImport(deadline, callback),
+                        100L
+                );
+            }
+            return;
+        }
+        if (!beginDataTransfer(callback)) {
+            mainHandler.postDelayed(
+                    () -> waitToPauseForDictionaryImport(deadline, callback),
+                    100L
+            );
+        }
+    }
+
+    private boolean beginDataTransfer(DataTransferCallback callback) {
+        synchronized (callbacks) {
+            if (!callbacks.isEmpty()) {
+                return false;
+            }
+            // Holding the same monitor as request() makes the transition
+            // atomic: no request can appear after the idle check and then be
+            // buffered for replay after the database handoff.
+            dataTransferInProgress = true;
+        }
+        publishPausedState();
+        ready = false;
+        startupError = "";
+        if (runtimeWebView != null) {
+            ViewParent parent = runtimeWebView.getParent();
+            if (parent instanceof ViewGroup) {
+                ((ViewGroup) parent).removeView(runtimeWebView);
+            }
+            runtimeWebView.destroy();
+            runtimeWebView = null;
+        }
+        if (sqlite != null) {
+            sqlite.close();
+            sqlite = null;
+        }
+        callback.onReady("");
+        return true;
     }
 
     void resumeAfterDataTransfer() {
         mainHandler.post(() -> {
             dataTransferInProgress = false;
-            ensureRuntime();
+            publishPausedState();
             if (attachedHost != null) {
                 attachTo(attachedHost);
             }
@@ -239,7 +333,7 @@ final class BundledStrippedPloverRuntime {
 
     private void enqueueOrDispatch(int requestId, String body) {
         if (dataTransferInProgress) {
-            pendingRequests.add(new PendingRequest(requestId, body));
+            completePausedRequest(requestId, body);
             return;
         }
         ensureRuntime();
@@ -250,6 +344,39 @@ final class BundledStrippedPloverRuntime {
         } else {
             pendingRequests.add(new PendingRequest(requestId, body));
         }
+    }
+
+    private void completePausedRequest(int requestId, String body) {
+        PendingCallback pending;
+        synchronized (callbacks) {
+            pending = callbacks.remove(requestId);
+        }
+        if (pending == null) {
+            return;
+        }
+        mainHandler.removeCallbacks(pending.timeout);
+        rejectPausedRequest(body, pending.callback);
+    }
+
+    private void rejectPausedRequest(String body, Callback callback) {
+        try {
+            JSONObject request = new JSONObject(body);
+            if ("translate".equals(request.optString("method"))) {
+                JSONObject result = new JSONObject()
+                        .put("output", new org.json.JSONArray());
+                callback.onResult(
+                        new JSONObject()
+                                .put("id", request.opt("id"))
+                                .put("result", result)
+                                .toString(),
+                        ""
+                );
+                return;
+            }
+        } catch (Exception ignored) {
+            // A malformed/non-translation request receives the pause error.
+        }
+        callback.onResult("", "Stripped Plover is paused");
     }
 
     private void dispatch(int requestId, String body) {

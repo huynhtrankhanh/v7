@@ -24,11 +24,12 @@ normal IME page does not mount the dictionary dialog.
 ## Web and native responsibilities
 
 The management WebView uses standard web capabilities for dialog rendering,
-forms, validation, search/edit state, and file import. Its
-`<input type="file">` uses WebView's standard file-chooser callback. The
-selected filename or MIME type chooses JSON versus Python import semantics,
-and the file is read with `File.text()` or a `FileReader` fallback for older
-WebViews.
+forms, validation, and search/edit state. Its `<input type="file">` uses
+WebView's standard file-chooser callback, and the selected filename or MIME
+type chooses JSON versus Python import semantics. On Android, native code
+retains the selected document URI and streams it directly into private staging;
+dictionary contents never cross `@JavascriptInterface` as a large string. The
+browser-only UI still uses `File.text()` or a `FileReader` fallback.
 
 The separate `AndroidDictionary` bridge is intentionally small:
 
@@ -36,8 +37,8 @@ The separate `AndroidDictionary` bridge is intentionally small:
   runtime WebView;
 - `saveDictionaryFile` opens Android's Storage Access Framework destination
   picker for exported UTF-8 JSON or Python;
-- `enqueueDictionaryImport` stages selected source and schedules a durable
-  background import;
+- `enqueueSelectedDictionaryImport` stages the natively selected document and schedules a durable,
+  sandboxed background import;
 - `getDictionaryImportState` lets a newly opened manager resume the latest
   job's progress display;
 - `close` finishes the management activity;
@@ -66,22 +67,35 @@ under inconsistent types. The shared web form identifies the supported
 ## Background imports
 
 Android imports do not depend on `DictionaryManagementActivity` remaining
-open. After the WebUI reads the selected document, the native bridge writes it
-to a private staging file and appends a one-time WorkManager job. WorkManager
-keeps the import alive if the manager closes and displays an indeterminate
+open. After the WebUI submits the import metadata, the native bridge streams
+the selected document to a private staging file and appends a one-time
+WorkManager job. WorkManager
+keeps the import alive if the manager closes and displays a determinate
 **Importing dictionary** foreground notification while it runs.
 
-The worker sends an `import_dictionary_source` request to the process-wide
-Stripped Plover runtime. Source parsing, Python/Wasm validation, stroke
-normalization, and the upstream `import_dictionary` operation therefore run in
-the dedicated sandboxed JavaScript runtime, not in the activity WebView or on
-Android's main thread. The worker only owns staging, durable scheduling,
-notification state, and the final protocol result. Imports are serialized and
-the staging file is removed on every terminal path.
+The worker pauses the translation runtime and passes source into AndroidX
+JavaScriptEngine's out-of-process `JavaScriptSandbox`. The generated import
+bundle uses the pinned Stripped Plover normalizer and drains JSON entries in
+bounded chunks into one native SQLite transaction. The runtime restarts after
+commit, so closing the activity cannot detach or throttle the import engine and
+live clients cannot retain a stale dictionary cache.
+
+The IME visibly reports **Stripped Plover (PAUSED)** for the full database
+handoff. Plover-bound strokes are ignored while paused, with guards on both
+the WebUI and native RPC sides, rather than being buffered and translated
+after the import.
+
+Python source is persisted as a read-only dictionary and then loaded by the
+regular Stripped Plover CPython/Wasm sandbox. AndroidX `JavaScriptIsolate` has no
+browser Worker or service-worker APIs, so it cannot safely impersonate that
+runtime. It is used for durable source transfer and import planning, never as a
+less-capable replacement Python host. Imports are serialized and the staging
+file is removed on every terminal path.
 
 The manager polls a small native state record while visible. It shows queued,
-running, successful, or failed state inline and refreshes dictionaries after
-success. Reopening the manager reconnects to the latest import state.
+running, successful, or failed state inline, including the phase, entry counts
+where available, and percentage. Reopening reconnects to the latest import
+state and refreshes dictionaries after success.
 
 ## Scrolling
 

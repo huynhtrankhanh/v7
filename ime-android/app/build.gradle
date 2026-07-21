@@ -6,7 +6,7 @@ android {
 
     defaultConfig {
         applicationId "com.huynhtrankhanh.v7ime"
-        minSdk 23
+        minSdk 26
         targetSdk 35
         versionCode 1
         versionName "1.0.0"
@@ -197,6 +197,7 @@ tasks.named("preBuild").configure {
 }
 
 dependencies {
+    implementation "androidx.javascriptengine:javascriptengine:1.1.0"
     implementation "androidx.webkit:webkit:1.15.0"
     implementation "androidx.work:work-runtime:2.11.2"
     testImplementation "junit:junit:4.13.2"

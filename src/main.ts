@@ -285,6 +285,7 @@ interface AndroidImeBridge {
   getInferenceModelError(): string;
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
+  isPloverPaused?(): boolean;
   isStenoModeEnabled?(): boolean;
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
@@ -304,6 +305,11 @@ interface AndroidDictionaryBridge {
     source: string,
     merge: boolean,
   ): string;
+  enqueueSelectedDictionaryImport?(
+    name: string,
+    type: string,
+    merge: boolean,
+  ): string;
   getDictionaryImportState?(taskId: string): string;
   close(): void;
 }
@@ -316,6 +322,7 @@ const isDictionaryManagementPage = new URLSearchParams(
 ).has("dictionary-management");
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
+let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
@@ -500,18 +507,34 @@ function updatePloverStatusUI() {
   const statusEl = document.getElementById("plover-status");
   const dictionaryButton = document.getElementById("plover-dictionary-open");
   if (statusEl) {
-    if (strippedPlover.available) {
+    if (androidPloverPaused) {
+      statusEl.textContent = "PAUSED";
+      statusEl.classList.remove("unavailable");
+      statusEl.classList.add("available", "paused");
+      if (dictionaryButton) dictionaryButton.disabled = true;
+    } else if (strippedPlover.available) {
       statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
       statusEl.classList.remove("unavailable");
+      statusEl.classList.remove("paused");
       statusEl.classList.add("available");
       if (dictionaryButton) dictionaryButton.disabled = false;
     } else {
       statusEl.textContent = "Unavailable";
       statusEl.classList.remove("available");
+      statusEl.classList.remove("paused");
       statusEl.classList.add("unavailable");
       if (dictionaryButton) dictionaryButton.disabled = true;
     }
   }
+  const banner = document.querySelector<HTMLElement>(
+    ".ime-plover-banner strong",
+  );
+  if (banner) {
+    banner.textContent = androidPloverPaused
+      ? "Stripped Plover (PAUSED)"
+      : "Stripped Plover";
+  }
+  document.body.classList.toggle("stripped-plover-paused", androidPloverPaused);
   updatePloverSoloUI();
 }
 
@@ -788,7 +811,7 @@ function applyPloverOutput(
 }
 
 async function handlePloverStroke(stroke, { oneShot }) {
-  if (!strippedPlover.available) return;
+  if (!strippedPlover.available || androidPloverPaused) return;
   const currentRequest = ++strippedPlover.requestId;
   try {
     const result = await ploverRpc("translate", { stroke });
@@ -809,7 +832,7 @@ async function handlePloverStroke(stroke, { oneShot }) {
 }
 
 async function togglePloverMode() {
-  if (!strippedPlover.available) return;
+  if (!strippedPlover.available || androidPloverPaused) return;
   strippedPlover.enabled = !strippedPlover.enabled;
   setPloverMessage("");
   if (!strippedPlover.enabled) {
@@ -981,6 +1004,10 @@ interface AndroidDictionaryImportState {
   name: string;
   status: "queued" | "running" | "succeeded" | "failed";
   message: string;
+  phase?: string;
+  current?: number;
+  total?: number;
+  percent?: number;
 }
 
 function renderAndroidDictionaryImportState(
@@ -992,17 +1019,31 @@ function renderAndroidDictionaryImportState(
   status.className = `plover-import-status ${
     state.status === "queued" ? "running" : state.status
   }`;
+  const copy = status.querySelector<HTMLElement>(".plover-import-status-copy");
+  const progress = status.querySelector<HTMLProgressElement>(
+    "#plover-import-progress",
+  );
   const prefix =
     state.status === "succeeded"
       ? "Imported"
       : state.status === "failed"
         ? "Import failed"
         : "Importing";
-  status.textContent = `${prefix} ${state.name}. ${state.message}${
+  const text = `${prefix} ${state.name}. ${state.message}${
     state.status === "queued" || state.status === "running"
-      ? " You can close this screen; the notification will show progress."
+      ? " You can close this screen; import will continue in the background."
       : ""
   }`;
+  if (copy) copy.textContent = text;
+  if (progress) {
+    const percent = Math.max(0, Math.min(100, state.percent ?? 0));
+    progress.value = percent;
+    progress.hidden = state.status === "failed";
+    progress.setAttribute(
+      "aria-valuetext",
+      `${percent}% · ${state.phase || prefix}`,
+    );
+  }
 }
 
 function pollAndroidDictionaryImport(taskId = androidDictionaryImportTaskId) {
@@ -1040,10 +1081,15 @@ function enqueueAndroidDictionaryImport(
   content: string,
   merge: boolean,
 ): boolean {
-  if (!androidDictionary?.enqueueDictionaryImport) return false;
-  const result = JSON.parse(
-    androidDictionary.enqueueDictionaryImport(name, type, content, merge),
-  ) as { id?: string; error?: string };
+  const enqueue = androidDictionary?.enqueueSelectedDictionaryImport
+    ? () =>
+        androidDictionary.enqueueSelectedDictionaryImport!(name, type, merge)
+    : androidDictionary?.enqueueDictionaryImport
+      ? () =>
+          androidDictionary.enqueueDictionaryImport!(name, type, content, merge)
+      : null;
+  if (!enqueue) return false;
+  const result = JSON.parse(enqueue()) as { id?: string; error?: string };
   if (result.error || !result.id) {
     throw new Error(
       result.error || "Could not schedule the dictionary import.",
@@ -2670,7 +2716,9 @@ function setupPloverControls() {
         "json";
       setButtonLoading(uploadButton, true, "Uploading...");
       try {
-        const content = await readDictionaryFile(file);
+        const selectedImport =
+          androidDictionary?.enqueueSelectedDictionaryImport;
+        const content = selectedImport ? "" : await readDictionaryFile(file);
         if (
           enqueueAndroidDictionaryImport(
             name,
@@ -2873,6 +2921,7 @@ declare global {
       responseBody: string,
       errorMessage: string,
     ) => void;
+    handleAndroidPloverPaused?: (paused: boolean) => void;
     handleAndroidStenoModeChanged?: (enabled: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
@@ -3038,6 +3087,12 @@ window.handleAndroidPloverResponse = (
   } catch {
     pending.reject(new Error("Stripped Plover returned invalid JSON"));
   }
+};
+
+window.handleAndroidPloverPaused = (paused) => {
+  androidPloverPaused = paused;
+  updatePloverStatusUI();
+  updateDisplay();
 };
 
 window.handleAndroidStenoModeChanged = (enabled) => {

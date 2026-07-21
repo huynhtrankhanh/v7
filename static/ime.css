@@ -186,9 +186,20 @@ button {
   color: var(--ime-plover);
 }
 
+#plover-status.paused {
+  color: var(--ime-danger);
+  font-weight: 800;
+}
+
 .ime-plover-state:has(#plover-status.available) .ime-status-dot {
   background: var(--ime-plover);
   box-shadow: 0 0 0 3px rgb(245 189 79 / 12%);
+}
+
+body.stripped-plover-paused .ime-plover-pulse,
+body.stripped-plover-paused .ime-status-dot {
+  background: var(--ime-danger);
+  box-shadow: 0 0 0 4px rgb(255 142 130 / 14%);
 }
 
 .ime-tool-button {

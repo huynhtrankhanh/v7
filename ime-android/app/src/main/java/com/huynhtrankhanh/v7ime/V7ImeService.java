@@ -67,11 +67,21 @@ public class V7ImeService extends InputMethodService {
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
+    private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
+            paused -> evaluateJavascript(
+                    "window.handleAndroidPloverPaused"
+                            + " && window.handleAndroidPloverPaused("
+                            + paused
+                            + ")"
+            );
 
     @Override
     public void onCreate() {
         super.onCreate();
         rememberKeyboardConfiguration(getResources().getConfiguration());
+        BundledStrippedPloverRuntime.get(this).addStateListener(
+                ploverStateListener
+        );
     }
 
     @Override
@@ -202,6 +212,9 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
+        BundledStrippedPloverRuntime.get(this).removeStateListener(
+                ploverStateListener
+        );
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
             inputContainer = null;
@@ -816,7 +829,28 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void requestPlover(String requestBody, int requestId) {
-        BundledStrippedPloverRuntime.get(this).request(
+        BundledStrippedPloverRuntime runtime = BundledStrippedPloverRuntime.get(this);
+        if (runtime.isPaused()) {
+            try {
+                JSONObject request = new JSONObject(requestBody);
+                JSONObject result = new JSONObject();
+                if ("translate".equals(request.optString("method"))) {
+                    result.put("output", new JSONArray());
+                }
+                JSONObject response = new JSONObject()
+                        .put("id", request.opt("id"))
+                        .put("result", result);
+                String script = "window.handleAndroidPloverResponse"
+                        + " && window.handleAndroidPloverResponse("
+                        + requestId + ","
+                        + JSONObject.quote(response.toString()) + ",\"\")";
+                evaluateJavascript(script);
+            } catch (JSONException error) {
+                Log.e(LOG_TAG, "Unable to ignore paused Plover request", error);
+            }
+            return;
+        }
+        runtime.request(
                 requestBody,
                 (responseBody, errorMessage) -> {
                     String script = "window.handleAndroidPloverResponse"
@@ -871,6 +905,13 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public boolean hasPloverConfiguration() {
             return true;
+        }
+
+        @JavascriptInterface
+        public boolean isPloverPaused() {
+            return BundledStrippedPloverRuntime.get(
+                    V7ImeService.this
+            ).isPaused();
         }
 
         @JavascriptInterface

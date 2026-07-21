@@ -1,6 +1,7 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.content.Context;
+import android.net.Uri;
 
 import androidx.work.Data;
 import androidx.work.ExistingWorkPolicy;
@@ -10,9 +11,11 @@ import androidx.work.WorkManager;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
@@ -37,6 +40,47 @@ final class DictionaryImportManager {
             String type,
             String source,
             boolean merge) throws IOException {
+        byte[] bytes = source.getBytes(StandardCharsets.UTF_8);
+        return enqueue(
+                context,
+                name,
+                type,
+                merge,
+                () -> new ByteArrayInputStream(bytes)
+        );
+    }
+
+    static String enqueueSelectedDocument(
+            Context context,
+            String name,
+            String type,
+            Uri source,
+            boolean merge) throws IOException {
+        if (source == null) {
+            throw new IOException("Select a dictionary file first");
+        }
+        return enqueue(
+                context,
+                name,
+                type,
+                merge,
+                () -> {
+                    InputStream input = context.getContentResolver()
+                            .openInputStream(source);
+                    if (input == null) {
+                        throw new IOException("Selected dictionary is unavailable");
+                    }
+                    return input;
+                }
+        );
+    }
+
+    private static String enqueue(
+            Context context,
+            String name,
+            String type,
+            boolean merge,
+            SourceOpener sourceOpener) throws IOException {
         Context application = context.getApplicationContext();
         String taskId = UUID.randomUUID().toString();
         File directory = new File(application.getFilesDir(), "dictionary-imports");
@@ -44,8 +88,13 @@ final class DictionaryImportManager {
             throw new IOException("Could not create the import staging directory");
         }
         File sourceFile = new File(directory, taskId + ".source");
-        try (FileOutputStream output = new FileOutputStream(sourceFile, false)) {
-            output.write(source.getBytes(StandardCharsets.UTF_8));
+        try (InputStream input = sourceOpener.open();
+             FileOutputStream output = new FileOutputStream(sourceFile, false)) {
+            byte[] buffer = new byte[64 * 1024];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
         }
 
         updateState(application, taskId, name, "queued", "Waiting to start");
@@ -95,12 +144,29 @@ final class DictionaryImportManager {
             String name,
             String status,
             String message) {
+        updateState(context, taskId, name, status, message, message, 0, -1, 0);
+    }
+
+    static void updateState(
+            Context context,
+            String taskId,
+            String name,
+            String status,
+            String message,
+            String phase,
+            int current,
+            int total,
+            int percent) {
         try {
             String state = new JSONObject()
                     .put("id", taskId)
                     .put("name", name)
                     .put("status", status)
                     .put("message", message == null ? "" : message)
+                    .put("phase", phase == null ? "" : phase)
+                    .put("current", current)
+                    .put("total", total)
+                    .put("percent", Math.max(0, Math.min(100, percent)))
                     .toString();
             preferences(context).edit()
                     .putString(LATEST_TASK, taskId)
@@ -123,5 +189,9 @@ final class DictionaryImportManager {
                 PREFERENCES,
                 Context.MODE_PRIVATE
         );
+    }
+
+    private interface SourceOpener {
+        InputStream open() throws IOException;
     }
 }

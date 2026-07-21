@@ -9,7 +9,7 @@
     <string name="model_permission_failed">Android could not retain access to that file. Choose it from a local Storage Access Framework provider.</string>
     <string name="model_status_with_size">%1$s (%2$s)</string>
     <string name="plover_heading">Bundled Stripped Plover</string>
-    <string name="plover_description">Stripped Plover runs locally in a dedicated background WebView. Its dictionaries are stored in the app\'s private Android SQLite database.</string>
+    <string name="plover_description">Stripped Plover runs locally in an isolated WebView. Durable imports use Android\'s out-of-process JavaScript sandbox and the app\'s private SQLite database.</string>
     <string name="open_source_heading">Open-source licenses and source</string>
     <string name="open_source_description">This bundled Android distribution, including the APK and Stripped Plover runtime, is conveyed as a combined work under GPL-3.0-or-later. Its complete Corresponding Source is bundled inside the APK as v7-ime-source.zip and can be saved below. Original V7 source files remain separately available under 0BSD. Stripped Plover and other third-party components retain their respective license notices.</string>
     <string name="save_source">Save Corresponding Source (.zip)</string>

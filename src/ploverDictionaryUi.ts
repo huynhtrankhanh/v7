@@ -85,7 +85,15 @@ const PLOVER_DICTIONARY_DIALOG_HTML = `
             role="status"
             aria-live="polite"
             hidden
-          ></div>
+          >
+            <div class="plover-import-status-copy"></div>
+            <progress
+              id="plover-import-progress"
+              max="100"
+              value="0"
+              aria-label="Dictionary import progress"
+            ></progress>
+          </div>
         </details>
       </div>
       <div id="plover-panel-entries" class="plover-panel">

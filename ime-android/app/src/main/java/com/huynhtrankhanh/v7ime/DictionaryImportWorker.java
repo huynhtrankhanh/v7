@@ -9,24 +9,22 @@ import android.os.Build;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.NotificationCompat;
+import androidx.work.Data;
 import androidx.work.ForegroundInfo;
 import androidx.work.Worker;
 import androidx.work.WorkerParameters;
-
-import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class DictionaryImportWorker extends Worker {
     private static final String CHANNEL_ID = "dictionary-imports";
-    private static final long IMPORT_TIMEOUT_MINUTES = 4;
+    private static final long RUNTIME_PAUSE_TIMEOUT_MINUTES = 3;
 
     public DictionaryImportWorker(
             @NonNull Context context,
@@ -41,71 +39,82 @@ public class DictionaryImportWorker extends Worker {
         String name = value(DictionaryImportManager.INPUT_NAME);
         String type = value(DictionaryImportManager.INPUT_TYPE);
         File sourceFile = new File(value(DictionaryImportManager.INPUT_SOURCE_PATH));
+        BundledStrippedPloverRuntime runtime = BundledStrippedPloverRuntime.get(
+                getApplicationContext()
+        );
+        boolean runtimePaused = false;
         try {
-            setForegroundAsync(createForegroundInfo(name)).get();
-            DictionaryImportManager.updateState(
-                    getApplicationContext(),
-                    taskId,
-                    name,
-                    "running",
-                    "Loading in the Stripped Plover sandbox"
-            );
-            String source = readSource(sourceFile);
-            JSONObject params = new JSONObject()
-                    .put("name", name)
-                    .put("type", type)
-                    .put(
-                            "merge",
-                            getInputData().getBoolean(
-                                    DictionaryImportManager.INPUT_MERGE,
-                                    false
-                            )
-                    )
-                    .put("source", source);
-            JSONObject request = new JSONObject()
-                    .put("id", taskId)
-                    .put("method", "import_dictionary_source")
-                    .put("params", params);
-
+            reportProgress(taskId, name, "Preparing import", 0, -1, 2);
+            byte[] source = readSource(sourceFile);
+            reportProgress(taskId, name, "Waiting for Stripped Plover", 0, -1, 5);
             CountDownLatch completion = new CountDownLatch(1);
-            AtomicReference<String> response = new AtomicReference<>("");
-            AtomicReference<String> runtimeError = new AtomicReference<>("");
-            BundledStrippedPloverRuntime.get(getApplicationContext()).request(
-                    request.toString(),
-                    (body, error) -> {
-                        response.set(body);
-                        runtimeError.set(error);
+            AtomicReference<String> pauseError = new AtomicReference<>("");
+            runtime.pauseForDictionaryImport(
+                    error -> {
+                        pauseError.set(error);
                         completion.countDown();
                     }
             );
-            if (!completion.await(IMPORT_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
-                throw new IllegalStateException("Dictionary import timed out");
-            }
-            if (!runtimeError.get().isEmpty()) {
-                throw new IllegalStateException(runtimeError.get());
-            }
-            JSONObject envelope = new JSONObject(response.get());
-            JSONObject protocolError = envelope.optJSONObject("error");
-            if (protocolError != null) {
+            if (!completion.await(
+                    RUNTIME_PAUSE_TIMEOUT_MINUTES,
+                    TimeUnit.MINUTES
+            )) {
                 throw new IllegalStateException(
-                        protocolError.optString("message", "Dictionary import failed")
+                        "Timed out waiting to pause Stripped Plover"
                 );
             }
-            JSONObject result = envelope.optJSONObject("result");
-            if (result == null || !"ok".equals(result.optString("status"))) {
-                throw new IllegalStateException("Stripped Plover rejected the import");
+            if (!pauseError.get().isEmpty()) {
+                throw new IllegalStateException(pauseError.get());
             }
-            int entries = result.optInt("entries", -1);
-            String message = entries < 0
-                    ? "Import complete"
-                    : "Imported " + entries + " entries";
+            runtimePaused = true;
+
+            SandboxedDictionaryImporter.ImportResult imported =
+                    SandboxedDictionaryImporter.importSource(
+                            getApplicationContext(),
+                            name,
+                            type,
+                            source,
+                            getInputData().getBoolean(
+                                    DictionaryImportManager.INPUT_MERGE,
+                                    false
+                            ),
+                            (phase, current, total, percent) -> reportProgress(
+                                    taskId,
+                                    name,
+                                    phase,
+                                    current,
+                                    total,
+                                    percent
+                            )
+                    );
+            reportProgress(
+                    taskId,
+                    name,
+                    "Restarting Stripped Plover",
+                    imported.entries < 0 ? 0 : imported.entries,
+                    imported.entries,
+                    96
+            );
+            runtime.resumeAfterDataTransfer();
+            runtimePaused = false;
+            String message = imported.python
+                    ? "Installed Python source for CPython/Wasm"
+                    : "Imported " + imported.entries + " entries";
             DictionaryImportManager.updateState(
                     getApplicationContext(),
                     taskId,
                     name,
                     "succeeded",
-                    message
+                    message,
+                    "Complete",
+                    imported.entries < 0 ? 1 : imported.entries,
+                    imported.entries < 0 ? 1 : imported.entries,
+                    100
             );
+            setProgressAsync(new Data.Builder()
+                    .putInt("percent", 100)
+                    .putString("phase", "Complete")
+                    .build()).get();
             return Result.success();
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
@@ -117,6 +126,9 @@ public class DictionaryImportWorker extends Worker {
                     DictionaryImportManager.messageFor(error)
             );
         } finally {
+            if (runtimePaused) {
+                runtime.resumeAfterDataTransfer();
+            }
             AppDataTransfer.deleteQuietly(sourceFile);
         }
     }
@@ -132,7 +144,40 @@ public class DictionaryImportWorker extends Worker {
         return Result.failure();
     }
 
-    private ForegroundInfo createForegroundInfo(String name) {
+    private void reportProgress(
+            String taskId,
+            String name,
+            String phase,
+            int current,
+            int total,
+            int percent) throws Exception {
+        String detail = total >= 0
+                ? phase + " (" + current + " / " + total + ")"
+                : phase;
+        DictionaryImportManager.updateState(
+                getApplicationContext(),
+                taskId,
+                name,
+                "running",
+                detail,
+                phase,
+                current,
+                total,
+                percent
+        );
+        setProgressAsync(new Data.Builder()
+                .putInt("percent", percent)
+                .putString("phase", phase)
+                .putInt("current", current)
+                .putInt("total", total)
+                .build()).get();
+        setForegroundAsync(createForegroundInfo(name, phase, percent)).get();
+    }
+
+    private ForegroundInfo createForegroundInfo(
+            String name,
+            String phase,
+            int percent) {
         Context context = getApplicationContext();
         NotificationManager manager = (NotificationManager)
                 context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -154,14 +199,11 @@ public class DictionaryImportWorker extends Worker {
                         )
                 )
                 .setContentText(
-                        context.getString(
-                                R.string.dictionary_import_notification_text,
-                                name
-                        )
+                        name + " · " + phase
                 )
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setProgress(0, 0, true)
+                .setProgress(100, percent, false)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
         int notificationId = 2000 + Math.abs(getId().hashCode() % 10000);
@@ -172,7 +214,7 @@ public class DictionaryImportWorker extends Worker {
         );
     }
 
-    private static String readSource(File sourceFile) throws IOException {
+    private static byte[] readSource(File sourceFile) throws IOException {
         try (FileInputStream input = new FileInputStream(sourceFile);
              ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             byte[] buffer = new byte[64 * 1024];
@@ -180,7 +222,7 @@ public class DictionaryImportWorker extends Worker {
             while ((count = input.read(buffer)) != -1) {
                 output.write(buffer, 0, count);
             }
-            return new String(output.toByteArray(), StandardCharsets.UTF_8);
+            return output.toByteArray();
         }
     }
 

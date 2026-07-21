@@ -38,6 +38,7 @@ public class DictionaryManagementActivity extends Activity {
     private FrameLayout rootView;
     private ValueCallback<Uri[]> filePathCallback;
     private String pendingSaveContent = "";
+    private Uri selectedDictionaryUri;
 
     @Override
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -91,13 +92,26 @@ public class DictionaryManagementActivity extends Activity {
         if (requestCode == CHOOSE_DICTIONARY_REQUEST) {
             ValueCallback<Uri[]> callback = filePathCallback;
             filePathCallback = null;
+            Uri[] selected = WebChromeClient.FileChooserParams.parseResult(
+                    resultCode,
+                    data
+            );
+            selectedDictionaryUri = selected != null && selected.length > 0
+                    ? selected[0]
+                    : null;
+            if (selectedDictionaryUri != null && data != null) {
+                try {
+                    getContentResolver().takePersistableUriPermission(
+                            selectedDictionaryUri,
+                            data.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    );
+                } catch (SecurityException ignored) {
+                    // The private staging copy is made while the transient
+                    // grant is still valid; not all providers persist grants.
+                }
+            }
             if (callback != null) {
-                callback.onReceiveValue(
-                        WebChromeClient.FileChooserParams.parseResult(
-                                resultCode,
-                                data
-                        )
-                );
+                callback.onReceiveValue(selected);
             }
         } else if (requestCode == SAVE_DICTIONARY_REQUEST) {
             if (resultCode == RESULT_OK
@@ -211,7 +225,11 @@ public class DictionaryManagementActivity extends Activity {
                 // advertises and processes only dictionary formats.
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                         .addCategory(Intent.CATEGORY_OPENABLE)
-                        .setType("*/*");
+                        .setType("*/*")
+                        .addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                        );
                 if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
                     intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
                 }
@@ -257,20 +275,20 @@ public class DictionaryManagementActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String enqueueDictionaryImport(
+        public String enqueueSelectedDictionaryImport(
                 String name,
                 String type,
-                String source,
                 boolean merge) {
             requestImportNotificationPermission();
             try {
-                String taskId = DictionaryImportManager.enqueue(
+                String taskId = DictionaryImportManager.enqueueSelectedDocument(
                         DictionaryManagementActivity.this,
                         name == null ? "" : name,
                         type == null ? "" : type,
-                        source == null ? "" : source,
+                        selectedDictionaryUri,
                         merge
                 );
+                selectedDictionaryUri = null;
                 return new JSONObject()
                         .put("id", taskId)
                         .put("error", "")

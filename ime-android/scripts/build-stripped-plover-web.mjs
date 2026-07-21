@@ -152,6 +152,9 @@ const compatibilityPlugin = {
     buildContext.onResolve({ filter: /^@stripped-plover\/engine$/ }, () => ({
       path: upstreamEngine,
     }));
+    buildContext.onResolve({ filter: /^@stripped-plover\/stroke$/ }, () => ({
+      path: path.join(upstream, "src", "stroke.ts"),
+    }));
     buildContext.onResolve({ filter: /^node:sqlite$/ }, () => ({
       path: path.join(adapterSource, "node-sqlite.ts"),
     }));
@@ -373,6 +376,22 @@ await build({
     "stripped-plover-runtime": path.join(adapterSource, "runtime-entry.ts"),
   },
   format: "iife",
+});
+
+await build({
+  bundle: true,
+  platform: "browser",
+  target: ["chrome100"],
+  entryPoints: {
+    "stripped-plover-import-sandbox": path.join(
+      adapterSource,
+      "import-sandbox-entry.ts",
+    ),
+  },
+  format: "iife",
+  minify: true,
+  outdir: output,
+  plugins: [compatibilityPlugin],
 });
 
 await build({

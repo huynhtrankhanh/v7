@@ -3,6 +3,10 @@
 `ime-android` packages the V7 WebUI as an Android input method with application ID
 `com.huynhtrankhanh.v7ime`.
 
+The IME requires Android 8.0 (API 26) or newer. API 26 is the minimum supported
+by AndroidX JavaScriptEngine, which owns durable out-of-process dictionary
+imports.
+
 ## Architecture
 
 - Android uses the dedicated `static/ime.html` and `static/ime.css` interface,
@@ -62,9 +66,9 @@ keyboard settings. The native settings activity includes:
 - a full-screen Stripped Plover dictionary manager opened from settings,
   reusing a phone-friendly browser UI without nesting editable fields inside
   the IME;
-- durable background dictionary imports with an indeterminate loading
-  notification while the sandboxed Stripped Plover runtime validates and
-  installs the source;
+- durable background dictionary imports in AndroidX's out-of-process
+  JavaScript sandbox, with entry counts, phases, and a determinate loading
+  notification while native SQLite installs the source transactionally;
 - export and import controls for the complete app-private Stripped Plover
   SQLite database;
 - an option to save the APK's complete Corresponding Source as
@@ -80,9 +84,9 @@ file format, replacement safeguards, and the data that is intentionally not
 part of an export.
 
 See [Bundled Stripped Plover runtime](docs/bundled-stripped-plover.md) for the
-pinned external-source build, separate engine WebView, typechecked Node
-compatibility surface, native SQLite implementation, and artifact licensing
-boundary.
+pinned external-source build, separate engine WebView, background JavaScript
+sandbox, typechecked Node compatibility surface, native SQLite implementation,
+and artifact licensing boundary.
 
 The bundled Android distribution, including the APK and its Stripped Plover
 runtime, is conveyed as a combined work under GPL-3.0-or-later. The APK bundles
