@@ -108,10 +108,12 @@ ordinary browser UI still uses the bounded modal dialog and its compact inner
 result regions.
 
 At phone widths, the full-screen manager also keeps its header and three tabs
-sticky, honors display-cutout safe areas, uses 44 dp-equivalent touch targets,
-shows persistent labels above every field, and collapses search/edit forms to
-a single column. Dictionary actions remain a compact two-column row so long
-names and status badges do not force horizontal scrolling.
+sticky, uses the Activity's existing top system-bar inset without applying it
+a second time, preserves side and bottom display-cutout safe areas, uses 44
+dp-equivalent touch targets, shows persistent labels above every field, and
+collapses search/edit forms to a single column. Dictionary actions remain a
+compact two-column row so long names and status badges do not force horizontal
+scrolling.
 
 The runtime WebView, Node compatibility audit, native SQLite bridge, and
 source-bundle licensing boundary are documented in
