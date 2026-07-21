@@ -22,26 +22,32 @@ fn main() {
         .flag("-std=c++11")
         .flag("-O3")
         .define("KENLM_MAX_ORDER", "6")
+        .cargo_metadata(false)
         .compile("wrapper");
-
-    // Link KenLM libraries
+    let wrapper_archive = PathBuf::from(env::var("OUT_DIR").unwrap()).join("libwrapper.a");
+    // This package also has an Android-only library target, so Cargo applies
+    // rustc-link-lib directives to that library rather than the host binary.
+    // Pass the host archives to the binary explicitly and keep their order:
+    // Rust objects -> wrapper -> KenLM -> utility/system dependencies.
+    println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--start-group");
     println!(
-        "cargo:rustc-link-search=native={}",
-        kenlm_build_lib.display()
+        "cargo:rustc-link-arg-bin=inference-rs={}",
+        wrapper_archive.display()
     );
-    println!("cargo:rustc-link-lib=static=kenlm");
-    println!("cargo:rustc-link-lib=static=kenlm_util");
+    println!(
+        "cargo:rustc-link-arg-bin=inference-rs={}",
+        kenlm_build_lib.join("libkenlm.a").display()
+    );
+    println!(
+        "cargo:rustc-link-arg-bin=inference-rs={}",
+        kenlm_build_lib.join("libkenlm_util.a").display()
+    );
+    println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--end-group");
+    for library in ["stdc++", "pthread", "z", "bz2", "lzma", "dl"] {
+        println!("cargo:rustc-link-arg-bin=inference-rs=-l{library}");
+    }
 
-    // Link system libraries
-    // Note: order matters for static linking sometimes, but here we use dylib for system ones
-    println!("cargo:rustc-link-lib=dylib=stdc++");
-    println!("cargo:rustc-link-lib=dylib=pthread");
-    println!("cargo:rustc-link-lib=dylib=z");
-    println!("cargo:rustc-link-lib=dylib=bz2");
-    println!("cargo:rustc-link-lib=dylib=lzma");
-    println!("cargo:rustc-link-lib=dylib=dl");
-
-    // Re-run if these change
+    // Re-run if wrapper sources change.
     println!("cargo:rerun-if-changed=cpp/wrapper.cc");
     println!("cargo:rerun-if-changed=cpp/wrapper.h");
 }

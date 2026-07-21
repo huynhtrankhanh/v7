@@ -76,6 +76,10 @@ async function assertLegible(page, label) {
           width: rect.width,
           height: rect.height,
           fontSize: parseFloat(style.fontSize),
+          clientWidth: el.clientWidth,
+          scrollWidth: el.scrollWidth,
+          clientHeight: el.clientHeight,
+          scrollHeight: el.scrollHeight,
           clipped:
             el.scrollWidth > el.clientWidth + 1 ||
             el.scrollHeight > el.clientHeight + 1,

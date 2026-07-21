@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 use libc::{c_char, c_float, c_uint, c_void};
-use std::ffi::{CStr, CString};
+#[cfg(target_os = "android")]
+use std::ffi::CStr;
+use std::ffi::CString;
 
 mod ffi {
     use super::*;

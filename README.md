@@ -171,6 +171,20 @@ cd inference-rs && cargo build --release && cd ..
 npm ci && npm run build
 ```
 
+### Full-stack test
+
+With the local KenLM build above and the Stripped Plover service running, the
+full browser/inference/dictionary integration test is:
+
+```bash
+docker compose up -d stripped-plover
+npm run test:e2e
+```
+
+If KenLM was built somewhere other than `./kenlm`, set `KENLM_ROOT` to its
+source directory; that directory must contain `build/lib/libkenlm.a` and
+`build/lib/libkenlm_util.a`.
+
 ## Running Inference
 
 ### Command-Line Mode

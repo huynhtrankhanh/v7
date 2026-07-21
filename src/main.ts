@@ -2385,14 +2385,8 @@ function updateDisplay() {
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
-  if (hasOsPassthroughModifier(e)) {
-    clearPressedQwertyKeys();
-    return;
-  }
-
-  trackQwertyKey(e, true);
-
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    clearPressedQwertyKeys();
     if (!e.repeat) {
       toggleKeyboardLayout();
     }
@@ -2402,6 +2396,7 @@ document.addEventListener("keydown", (e) => {
 
   // Global Shortcuts
   if (e.ctrlKey && e.key === "c") {
+    clearPressedQwertyKeys();
     // Copy entire buffer if nothing selected
     if (
       (!strippedDisplay.enabled || strippedDisplay.copyAllowed) &&
@@ -2418,6 +2413,13 @@ document.addEventListener("keydown", (e) => {
     }
     return; // Allow default processing
   }
+
+  if (hasOsPassthroughModifier(e)) {
+    clearPressedQwertyKeys();
+    return;
+  }
+
+  trackQwertyKey(e, true);
 
   if (isDictionaryTextInputFocused(e.target)) {
     return; // Allow normal typing in dictionary text boxes

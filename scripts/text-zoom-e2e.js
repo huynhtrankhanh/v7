@@ -125,7 +125,10 @@ async function assertScrollable(page, selector, label) {
       after: el.scrollTop,
       clientHeight: el.clientHeight,
       scrollHeight: el.scrollHeight,
+      display: getComputedStyle(el).display,
       overflowY: getComputedStyle(el).overflowY,
+      childCount: el.children.length,
+      bodyClasses: document.body.className,
     };
   });
 
@@ -164,6 +167,10 @@ async function exerciseMainWebUi(baseUrl, browser) {
     );
 
     candidates.classList.add("horizontal");
+    // updateDisplay intentionally hides this panel when application state has
+    // no candidates. This synthetic layout fixture supplies its own rows, so
+    // make the corresponding visible state explicit as well.
+    candidates.style.display = "flex";
     candidates.replaceChildren();
     for (let i = 0; i < 12; i += 1) {
       const row = document.createElement("div");
