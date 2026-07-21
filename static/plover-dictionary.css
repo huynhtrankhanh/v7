@@ -61,6 +61,7 @@ body.dictionary-management-page #plover-lookup-results {
   cursor: pointer;
   font-size: 0.85rem;
   line-height: 1.25;
+  overflow-wrap: anywhere;
   padding: 6px 12px;
   white-space: normal;
 }
@@ -108,8 +109,10 @@ body.dictionary-management-page #plover-lookup-results {
 .plover-dialog-nav {
   background: #f8fafc;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
   z-index: 2;
 }
 
@@ -132,11 +135,14 @@ body.dictionary-management-page #plover-lookup-results {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
   padding-bottom: 8px;
 }
 
 .plover-tab {
   background: transparent;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 #plover-dictionary-dialog .plover-tab.active {
@@ -261,6 +267,8 @@ body.dictionary-management-page #plover-lookup-results {
 
 .plover-section-title {
   font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .plover-field {
@@ -456,12 +464,10 @@ body.dictionary-management-page #plover-lookup-results {
   .plover-tabs {
     border-bottom: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(max-content, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     max-width: 100%;
-    overflow-x: auto;
-    overscroll-behavior-x: contain;
+    overflow: visible;
     padding-bottom: 0;
-    scrollbar-width: thin;
   }
 
   #plover-dictionary-dialog button,
@@ -523,5 +529,21 @@ body.dictionary-management-page #plover-lookup-results {
   .plover-panel,
   .plover-section {
     gap: 10px;
+  }
+}
+
+@media (max-width: 400px) {
+  .plover-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .plover-tabs .plover-tab:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .plover-section-heading .plover-section-title,
+  .plover-section-heading .plover-badge {
+    grid-column: 1 / -1;
+    justify-self: start;
   }
 }

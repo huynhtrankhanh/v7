@@ -2612,6 +2612,10 @@ function setupPloverControls() {
       for (const panel of document.querySelectorAll(".plover-panel")) {
         panel.classList.toggle("active", panel.id === panelId);
       }
+      const content = dictionaryDialog?.querySelector<HTMLElement>(
+        ".plover-dialog-content",
+      );
+      if (content) content.scrollTop = 0;
       if (panelId === "plover-panel-entries") {
         void runEntrySearch({ page: ploverEntrySearchPage });
       }

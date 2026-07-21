@@ -14,6 +14,7 @@
     "test:zoom": "npm run build && node scripts/text-zoom-e2e.js",
     "test:stripped-display": "npm run build && node scripts/stripped-display-e2e.js",
     "test:android-ime": "npm run build && node scripts/android-ime-e2e.js",
+    "test:dictionary-layout": "npm run build && node scripts/dictionary-layout-e2e.js",
     "test:android-stripped-plover": "npm run build && node scripts/android-stripped-plover-e2e.js && V7_TEST_NON_ISOLATED_WEBVIEW=1 node scripts/android-stripped-plover-e2e.js",
     "test": "npm run test:unit"
   },
