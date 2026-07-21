@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Locale;
 
 final class NativeStrippedPloverSqlite {
-    private static final String DATABASE_NAME = "stripped-plover.sqlite";
+    static final String DATABASE_NAME = "stripped-plover.sqlite";
 
     private final Context context;
     private SQLiteDatabase database;
@@ -30,6 +30,18 @@ final class NativeStrippedPloverSqlite {
     @JavascriptInterface
     public synchronized void open(String ignoredNodePath) {
         getDatabase();
+    }
+
+    synchronized void close() {
+        if (database == null) {
+            return;
+        }
+        if (transactionActive) {
+            database.endTransaction();
+            transactionActive = false;
+        }
+        database.close();
+        database = null;
     }
 
     @JavascriptInterface

@@ -109,9 +109,6 @@ async function main() {
       window.__androidInferenceResponse = null;
       window.__androidModelState = "loading";
       window.__androidPloverBodies = [];
-      window.__androidDiagnostics =
-        "V7 Stripped Plover diagnostics\nhistorical upload event";
-      window.__androidDiagnosticsCopies = 0;
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
@@ -242,14 +239,6 @@ async function main() {
           hasPloverConfiguration: () => imeBridge.hasPloverConfiguration(),
           requestPlover: (body, requestId) =>
             imeBridge.requestPlover(body, requestId),
-          getDiagnostics: () => window.__androidDiagnostics,
-          clearDiagnostics: () => {
-            window.__androidDiagnostics = "(no events recorded)";
-          },
-          copyDiagnostics: () => {
-            window.__androidDiagnosticsCopies += 1;
-          },
-          recordDiagnostic() {},
           saveDictionaryFile() {},
           close() {},
         };
@@ -798,6 +787,9 @@ async function main() {
       "Android mode did not use the native Stripped Plover bridge",
     );
 
+    // The dictionary manager opens in a full Settings activity rather than the
+    // compact IME-height viewport used by the preceding keyboard assertions.
+    await page.setViewport({ width: 412, height: 400, deviceScaleFactor: 1 });
     await page.goto(`${url}/dictionary.html?dictionary-management=1`, {
       waitUntil: "networkidle0",
     });
@@ -830,38 +822,13 @@ async function main() {
         !managementSurface.hasInferenceSurface &&
         !managementSurface.hasImeBridge &&
         managementSurface.hasDictionaryBridge &&
-        managementSurface.tabs === 4 &&
+        managementSurface.tabs === 3 &&
         managementSurface.dictionary === "main.json" &&
         managementSurface.hasEntryBrowser &&
         managementSurface.hasEntryEditor &&
         managementSurface.hasLookup,
       `Android settings did not host the shared dictionary UI: ${JSON.stringify(managementSurface)}`,
     );
-
-    await page.click("#plover-tab-diagnostics");
-    await page.waitForFunction(() =>
-      document
-        .querySelector("#plover-diagnostics-output")
-        ?.textContent?.includes("historical upload event"),
-    );
-    await page.click("#plover-diagnostics-copy");
-    assert(
-      (await page.evaluate(() => window.__androidDiagnosticsCopies)) === 1,
-      "Android diagnostics copy did not use the native bridge",
-    );
-    await page.evaluate(() => {
-      window.confirm = () => true;
-    });
-    await page.click("#plover-diagnostics-clear");
-    assert(
-      await page.evaluate(
-        () =>
-          document.querySelector("#plover-diagnostics-output")?.textContent ===
-          "(no events recorded)",
-      ),
-      "Android diagnostics history did not clear",
-    );
-    await page.click("#plover-tab-dictionaries");
 
     const dictionaryScroll = await page.evaluate(async () => {
       const dialog = document.querySelector("#plover-dictionary-dialog");

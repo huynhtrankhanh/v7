@@ -79,7 +79,7 @@ for (const filename of productionFiles) {
 
 assertSet(
   nodeApis,
-  new Set(["node:crypto", "node:sqlite"]),
+  new Set(["node:crypto", "node:fs", "node:sqlite"]),
   "production Node module imports",
 );
 assertSet(
@@ -114,6 +114,7 @@ const program = ts.createProgram({
     ...productionFiles,
     path.join(adapterSource, "node-sqlite.ts"),
     path.join(adapterSource, "node-crypto.ts"),
+    path.join(adapterSource, "node-fs.ts"),
     typeDeclarations,
   ],
   options: {
@@ -128,6 +129,7 @@ const program = ts.createProgram({
     paths: {
       "node:sqlite": [path.join(adapterSource, "node-sqlite.ts")],
       "node:crypto": [path.join(adapterSource, "node-crypto.ts")],
+      "node:fs": [path.join(adapterSource, "node-fs.ts")],
     },
   },
 });
@@ -156,6 +158,9 @@ const compatibilityPlugin = {
     buildContext.onResolve({ filter: /^node:crypto$/ }, () => ({
       path: path.join(adapterSource, "node-crypto.ts"),
     }));
+    buildContext.onResolve({ filter: /^node:fs$/ }, () => ({
+      path: path.join(adapterSource, "node-fs.ts"),
+    }));
     buildContext.onResolve(
       { filter: /^(assert|buffer|events|path|process|stream|util)$/ },
       (args) => ({ path: browserCoreModules.get(args.path) }),
@@ -178,13 +183,13 @@ const compatibilityPlugin = {
     );
     buildContext.onLoad(
       {
-        filter: /vendor\/python-wasm\/dist\/browser\.js$/,
+        filter: /system\/index\.ts$/,
       },
       async (args) => ({
-        contents: transformPythonWasmBrowser(
+        contents: transformSystemAssets(
           await fs.promises.readFile(args.path, "utf8"),
         ),
-        loader: "js",
+        loader: "ts",
         resolveDir: path.dirname(args.path),
       }),
     );
@@ -241,30 +246,6 @@ const compatibilityPlugin = {
     );
     buildContext.onLoad(
       {
-        filter: /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/browser\.js$/,
-      },
-      async (args) => ({
-        contents: transformKernelWorkerBrowser(
-          await fs.promises.readFile(args.path, "utf8"),
-        ),
-        loader: "js",
-        resolveDir: path.dirname(args.path),
-      }),
-    );
-    buildContext.onLoad(
-      {
-        filter: /vendor\/@cowasm\/kernel\/dist\/wasm\/worker\/init\.js$/,
-      },
-      async (args) => ({
-        contents: transformKernelWorkerInit(
-          await fs.promises.readFile(args.path, "utf8"),
-        ),
-        loader: "js",
-        resolveDir: path.dirname(args.path),
-      }),
-    );
-    buildContext.onLoad(
-      {
         filter: /^python-wasm-browser$/,
         namespace: "v7-compatibility",
       },
@@ -284,166 +265,28 @@ const compatibilityPlugin = {
 
 function transformPythonDictionary(source) {
   return assertTransforms(
-    source
-      .replace(
-        "../../vendor/python-wasm/dist/node.js",
-        "@v7/python-wasm-browser",
-      )
-      .replace(
-        "  private async initializePython(pythonCode: string): Promise<void> {\n    // Use python-wasm",
-        `  private async initializePython(pythonCode: string): Promise<void> {
-    const report = (phase: string, detail = '') => {
-      const callback = (globalThis as any).__v7PloverDiagnostic;
-      if (typeof callback === 'function') callback(phase, detail);
-    };
-    report('python-dictionary-initialize-start', \`bytes=\${pythonCode.length}\`);
-    // Use python-wasm`,
-      )
-      .replace(
-        `    const py: PythonRuntime = await asyncPython({
-      fs: 'everything',
-    });`,
-        `    report('python-wasm-create-start');
-    const py: PythonRuntime = await asyncPython({
-      fs: 'everything',
-    });
-    report('python-wasm-create-complete');`,
-      )
-      .replace(
-        "    // Execute the Python code directly\n    await py.exec(pythonCode);",
-        `    // Execute the Python code directly
-    report('python-source-exec-start');
-    await py.exec(pythonCode);
-    report('python-source-exec-complete');`,
-      )
-      .replace(
-        "    // Add safe lookup helper function\n    await py.exec(`",
-        `    // Add safe lookup helper function
-    report('python-helper-install-start');
-    await py.exec(\``,
-      )
-      .replace(
-        "`);\n\n    // Validate LONGEST_KEY exists and is valid",
-        `\`);
-    report('python-helper-install-complete');
-
-    // Validate LONGEST_KEY exists and is valid
-    report('python-metadata-validation-start');`,
-      )
-      .replace(
-        "    const hasDict = await py.repr(\"'DICTIONARY' in dir()\");",
-        `    report('python-metadata-validation-complete');
-    const hasDict = await py.repr("'DICTIONARY' in dir()");`,
-      )
-      .replace(
-        "    if (hasDict.trim() === 'True') {\n      try {",
-        `    if (hasDict.trim() === 'True') {
-      try {
-        report('python-entry-enumeration-start');`,
-      )
-      .replace(
-        "          this._length = this._entries.length;",
-        `          this._length = this._entries.length;
-          report('python-entry-enumeration-complete', \`entries=\${this._length}\`);`,
-      )
-      .replace(
-        "    // Keep the Python runtime alive for lookups\n    this._py = py;",
-        `    // Keep the Python runtime alive for lookups
-    this._py = py;
-    report(
-      'python-dictionary-initialize-complete',
-      \`entries=\${this._length} longestKey=\${this._longestKey}\`,
-    );`,
-      )
-      .replace(
-        "    try {\n      // Build Python tuple from stroke array",
-        `    try {
-      const diagnostic = (globalThis as any).__v7PloverDiagnostic;
-      if (typeof diagnostic === 'function') {
-        diagnostic('python-lookup-start', \`strokes=\${strokeTuple.length}\`);
-      }
-      // Build Python tuple from stroke array`,
-      )
-      .replace(
-        "      const result = await this._py.repr(`__safe_lookup(${tupleStr})`);",
-        `      const result = await this._py.repr(\`__safe_lookup(\${tupleStr})\`);
-      if (typeof diagnostic === 'function') {
-        diagnostic('python-lookup-complete');
-      }`,
-      ),
-    [
-      "python-dictionary-initialize-start",
-      "python-wasm-create-complete",
-      "python-source-exec-complete",
-      "python-entry-enumeration-start",
-      "python-dictionary-initialize-complete",
-      "python-lookup-complete",
-    ],
-    "Python dictionary diagnostics",
+    source.replace(
+      "../../vendor/python-wasm/dist/node.js",
+      "@v7/python-wasm-browser",
+    ),
+    ["@v7/python-wasm-browser"],
+    "Python browser runtime import",
   );
 }
 
-function transformPythonWasmBrowser(source) {
+function transformSystemAssets(source) {
   return assertTransforms(
-    source
-      .replace(
-        'const log = (0, debug_1.default)("python-wasm");',
-        `const log = (0, debug_1.default)("python-wasm");
-const report = (phase, detail = "") => {
-    const callback = globalThis.__v7PloverDiagnostic;
-    if (typeof callback === "function") callback(phase, detail);
-};`,
-      )
-      .replace(
-        '    log("creating async CoWasm kernel...");',
-        `    report("python-kernel-create-start");
-    log("creating async CoWasm kernel...");`,
-      )
-      .replace(
-        '    log("done");\n    log("fetching ", PYTHONEXECUTABLE);',
-        `    log("done");
-    report("python-kernel-create-complete");
-    report("python-assets-load-start");
-    log("fetching ", PYTHONEXECUTABLE);`,
-      )
-      .replace(
-        '    ]);\n    log("initializing python");',
-        `    ]);
-    report("python-assets-load-complete");
-    report("python-interpreter-init-start");
-    log("initializing python");`,
-      )
-      .replace(
-        '    log("done");\n    return python;',
-        `    log("done");
-    report("python-interpreter-init-complete");
-    return python;`,
-      ),
-    [
-      "python-kernel-create-start",
-      "python-assets-load-complete",
-      "python-interpreter-init-complete",
-    ],
-    "python-wasm diagnostics",
+    source.replace(
+      "new URL(`./assets/${filename}`, import.meta.url)",
+      "new URL(`/assets/stripped-plover-assets/${filename}`, globalThis.location.href)",
+    ),
+    ["/assets/stripped-plover-assets/${filename}"],
+    "system asset URL",
   );
 }
 
 function transformKernelImportBrowser(source) {
-  return assertTransforms(
-    source.replaceAll("import.meta.url", "globalThis.location.href").replace(
-      '            if (message?.event == "service-worker-broken") {',
-      `            if (message?.event == "diagnostic") {
-                const callback = globalThis.__v7PloverDiagnostic;
-                if (typeof callback === "function") {
-                    callback(message.phase, message.detail ?? "");
-                }
-                return;
-            }
-            if (message?.event == "service-worker-broken") {`,
-    ),
-    ['message?.event == "diagnostic"', "__v7PloverDiagnostic"],
-    "kernel main-thread diagnostics",
-  );
+  return source.replaceAll("import.meta.url", "globalThis.location.href");
 }
 
 function transformMainServiceWorkerIO(source) {
@@ -486,80 +329,6 @@ function transformPythonServiceWorker(source) {
       ),
     [pythonServiceWorkerPrefix, "self.skipWaiting()", "self.clients.claim()"],
     "python service-worker activation",
-  );
-}
-
-function transformKernelWorkerBrowser(source) {
-  return assertTransforms(
-    source
-      .replace(
-        'const log = (0, debug_1.default)("wasm:worker:browser");',
-        `const log = (0, debug_1.default)("wasm:worker:browser");
-const report = (phase, detail = "") => {
-    self.postMessage({ event: "diagnostic", phase, detail });
-};`,
-      )
-      .replace(
-        '    log("wasmImportBrowser");',
-        `    report("python-worker-filesystem-start", \`entries=\${options.fs?.length ?? 0}\`);
-    log("wasmImportBrowser");`,
-      )
-      .replace(
-        "    const fs = (0, wasi_js_1.createFileSystem)(fsSpec);",
-        `    const fs = (0, wasi_js_1.createFileSystem)(fsSpec);
-    report("python-worker-filesystem-ready", \`entries=\${fsSpec.length}\`);`,
-      )
-      .replace(
-        "    const wasm = await (0, import_1.default)({",
-        `    report("python-worker-wasm-import-start");
-    const wasm = await (0, import_1.default)({`,
-      )
-      .replace(
-        "    return wasm;\n}",
-        `    report("python-worker-wasm-import-complete");
-    return wasm;
-}`,
-      )
-      .replace(
-        '    log("initializing worker");',
-        `    report(
-        "python-worker-environment",
-        \`crossOriginIsolated=\${crossOriginIsolated} io=\${crossOriginIsolated ? "atomics" : "service-worker"}\`,
-    );
-    log("initializing worker");`,
-      ),
-    [
-      "python-worker-environment",
-      "python-worker-filesystem-ready",
-      "python-worker-wasm-import-complete",
-    ],
-    "kernel worker diagnostics",
-  );
-}
-
-function transformKernelWorkerInit(source) {
-  return assertTransforms(
-    source
-      .replace(
-        "                const ioHandler = new IOHandler(message.options, () => {",
-        `                parent.postMessage({
-                    event: "diagnostic",
-                    phase: "python-worker-init-start",
-                    detail: "",
-                });
-                const ioHandler = new IOHandler(message.options, () => {`,
-      )
-      .replace(
-        "                wasm = await wasmImport(message.name, opts);",
-        `                wasm = await wasmImport(message.name, opts);
-                parent.postMessage({
-                    event: "diagnostic",
-                    phase: "python-worker-init-complete",
-                    detail: "",
-                });`,
-      ),
-    ["python-worker-init-start", "python-worker-init-complete"],
-    "kernel worker initialization diagnostics",
   );
 }
 
@@ -632,6 +401,12 @@ await build({
   },
   format: "iife",
 });
+
+fs.cpSync(
+  path.join(upstream, "src", "system", "assets"),
+  path.join(output, "stripped-plover-assets"),
+  { recursive: true, force: true },
+);
 
 fs.copyFileSync(
   path.join(adapterSource, "runtime.html"),

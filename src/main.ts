@@ -298,10 +298,13 @@ interface AndroidDictionaryBridge {
   hasPloverConfiguration(): boolean;
   requestPlover(body: string, requestId: number): void;
   saveDictionaryFile(filename: string, content: string, mimeType: string): void;
-  getDiagnostics(): string;
-  clearDiagnostics(): void;
-  copyDiagnostics(): void;
-  recordDiagnostic(message: string): void;
+  enqueueDictionaryImport?(
+    name: string,
+    type: string,
+    source: string,
+    merge: boolean,
+  ): string;
+  getDictionaryImportState?(taskId: string): string;
   close(): void;
 }
 
@@ -371,6 +374,8 @@ const PLOVER_ENTRY_PAGE_SIZE = 25;
 const PLOVER_STATUS_RETRY_MS = 2000;
 let ploverStatusTimer: ReturnType<typeof setTimeout> | null = null;
 let ploverStatusCheckInFlight = false;
+let androidDictionaryImportTaskId = "";
+let androidDictionaryImportTimer: ReturnType<typeof setTimeout> | null = null;
 
 function isDictionaryTextInputFocused(target = document.activeElement) {
   if (!target) return false;
@@ -971,29 +976,82 @@ function readDictionaryFile(file: File): Promise<string> {
   });
 }
 
-function refreshPloverDiagnostics() {
-  const output = document.getElementById("plover-diagnostics-output");
-  if (!output) return;
-  if (!androidDictionary) {
-    output.textContent =
-      "Historical diagnostics are available in the Android dictionary manager.";
-    return;
+interface AndroidDictionaryImportState {
+  id: string;
+  name: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  message: string;
+}
+
+function renderAndroidDictionaryImportState(
+  state: AndroidDictionaryImportState,
+): void {
+  const status = document.getElementById("plover-import-status");
+  if (!status) return;
+  status.hidden = false;
+  status.className = `plover-import-status ${
+    state.status === "queued" ? "running" : state.status
+  }`;
+  const prefix =
+    state.status === "succeeded"
+      ? "Imported"
+      : state.status === "failed"
+        ? "Import failed"
+        : "Importing";
+  status.textContent = `${prefix} ${state.name}. ${state.message}${
+    state.status === "queued" || state.status === "running"
+      ? " You can close this screen; the notification will show progress."
+      : ""
+  }`;
+}
+
+function pollAndroidDictionaryImport(taskId = androidDictionaryImportTaskId) {
+  if (!androidDictionary?.getDictionaryImportState) return;
+  if (androidDictionaryImportTimer) {
+    window.clearTimeout(androidDictionaryImportTimer);
+    androidDictionaryImportTimer = null;
   }
   try {
-    output.textContent = androidDictionary.getDiagnostics();
+    const raw = androidDictionary.getDictionaryImportState(taskId);
+    if (!raw) return;
+    const state = JSON.parse(raw) as AndroidDictionaryImportState;
+    androidDictionaryImportTaskId = state.id;
+    renderAndroidDictionaryImportState(state);
+    if (state.status === "queued" || state.status === "running") {
+      androidDictionaryImportTimer = window.setTimeout(
+        () => pollAndroidDictionaryImport(state.id),
+        1000,
+      );
+    } else if (state.status === "succeeded") {
+      void refreshPloverDictionaries({ force: true }).then(() =>
+        runEntrySearch({ page: 1 }),
+      );
+    }
   } catch (error) {
-    output.textContent = `Unable to load diagnostics: ${
-      error instanceof Error ? error.message : String(error)
-    }`;
+    setPloverMessage(
+      error instanceof Error ? error.message : "Could not read import status.",
+    );
   }
 }
 
-function recordPloverDiagnostic(message: string) {
-  try {
-    androidDictionary?.recordDiagnostic(message);
-  } catch {
-    // Diagnostics must never interfere with dictionary operations.
+function enqueueAndroidDictionaryImport(
+  name: string,
+  type: string,
+  content: string,
+  merge: boolean,
+): boolean {
+  if (!androidDictionary?.enqueueDictionaryImport) return false;
+  const result = JSON.parse(
+    androidDictionary.enqueueDictionaryImport(name, type, content, merge),
+  ) as { id?: string; error?: string };
+  if (result.error || !result.id) {
+    throw new Error(
+      result.error || "Could not schedule the dictionary import.",
+    );
   }
+  androidDictionaryImportTaskId = result.id;
+  pollAndroidDictionaryImport(result.id);
+  return true;
 }
 
 function downloadDictionaryFile(filename, content, mimeType) {
@@ -2482,15 +2540,6 @@ function setupPloverControls() {
   const dictionaryTypeSelect = document.getElementById(
     "plover-dict-type",
   ) as HTMLSelectElement | null;
-  const diagnosticsRefreshButton = document.getElementById(
-    "plover-diagnostics-refresh",
-  );
-  const diagnosticsCopyButton = document.getElementById(
-    "plover-diagnostics-copy",
-  );
-  const diagnosticsClearButton = document.getElementById(
-    "plover-diagnostics-clear",
-  );
   const entrySearchButton = document.getElementById("plover-entry-search");
   const entryPrevButton = document.getElementById("plover-entry-prev");
   const entryNextButton = document.getElementById("plover-entry-next");
@@ -2517,8 +2566,6 @@ function setupPloverControls() {
       }
       if (panelId === "plover-panel-entries") {
         void runEntrySearch({ page: ploverEntrySearchPage });
-      } else if (panelId === "plover-panel-diagnostics") {
-        refreshPloverDiagnostics();
       }
     });
   }
@@ -2599,32 +2646,6 @@ function setupPloverControls() {
       if (inferredType) {
         dictionaryTypeSelect.value = inferredType;
       }
-      const file = dictionaryFileInput.files?.[0];
-      if (file) {
-        recordPloverDiagnostic(
-          `upload phase=file-selected type=${inferredType || "unknown"} bytes=${file.size}`,
-        );
-      }
-    });
-  }
-  if (diagnosticsRefreshButton) {
-    diagnosticsRefreshButton.addEventListener("click", () => {
-      refreshPloverDiagnostics();
-    });
-  }
-  if (diagnosticsCopyButton) {
-    diagnosticsCopyButton.disabled = !androidDictionary;
-    diagnosticsCopyButton.addEventListener("click", () => {
-      androidDictionary?.copyDiagnostics();
-    });
-  }
-  if (diagnosticsClearButton) {
-    diagnosticsClearButton.disabled = !androidDictionary;
-    diagnosticsClearButton.addEventListener("click", () => {
-      if (!androidDictionary) return;
-      if (!window.confirm("Clear the stored diagnostics history?")) return;
-      androidDictionary.clearDiagnostics();
-      refreshPloverDiagnostics();
     });
   }
   if (uploadButton) {
@@ -2646,15 +2667,20 @@ function setupPloverControls() {
         dictionaryTypeSelect?.value ||
         "json";
       setButtonLoading(uploadButton, true, "Uploading...");
-      const uploadStartedAt = performance.now();
-      recordPloverDiagnostic(
-        `upload phase=read-start type=${type} bytes=${file.size}`,
-      );
       try {
         const content = await readDictionaryFile(file);
-        recordPloverDiagnostic(
-          `upload phase=read-complete type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)}`,
-        );
+        if (
+          enqueueAndroidDictionaryImport(
+            name,
+            type,
+            content,
+            !!mergeToggle?.checked,
+          )
+        ) {
+          if (dictionaryFileInput) dictionaryFileInput.value = "";
+          setPloverMessage("");
+          return;
+        }
         if (type === "json") {
           const data = JSON.parse(content);
           await ploverRpc("import_dictionary", {
@@ -2673,21 +2699,16 @@ function setupPloverControls() {
         await refreshPloverDictionaries({ force: true });
         await runEntrySearch({ page: 1 });
         setPloverMessage("");
-        recordPloverDiagnostic(
-          `upload phase=ui-complete type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)}`,
-        );
       } catch (e) {
         console.log(e);
         setPloverMessage(e.message || "Failed to upload dictionary.");
-        recordPloverDiagnostic(
-          `upload phase=ui-error type=${type} elapsedMs=${Math.round(performance.now() - uploadStartedAt)} error=${
-            e instanceof Error ? e.message : String(e)
-          }`,
-        );
       } finally {
         setButtonLoading(uploadButton, false, "");
       }
     });
+  }
+  if (isDictionaryManagementPage) {
+    pollAndroidDictionaryImport("");
   }
   if (entrySearchButton) {
     entrySearchButton.addEventListener("click", () => {
@@ -2931,12 +2952,7 @@ function requestAndroidPlover(
     const requestId = androidPloverRequestId++;
     const timeoutId = window.setTimeout(() => {
       if (!androidPloverPending.delete(requestId)) return;
-      const message =
-        "Stripped Plover timed out after 180 seconds. Open Diagnostics for the last completed phase.";
-      recordPloverDiagnostic(
-        `request=${requestId} phase=management-timeout error=${message}`,
-      );
-      reject(new Error(message));
+      reject(new Error("Stripped Plover timed out after 180 seconds."));
     }, ANDROID_PLOVER_REQUEST_TIMEOUT_MS);
     androidPloverPending.set(requestId, { resolve, reject, timeoutId });
     try {

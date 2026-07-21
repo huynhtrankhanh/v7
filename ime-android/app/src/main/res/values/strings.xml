@@ -18,7 +18,21 @@
     <string name="enable_keyboard">Enable V7 IME</string>
     <string name="choose_keyboard">Choose input method</string>
     <string name="manage_dictionaries">Manage Stripped Plover dictionaries</string>
+    <string name="app_data_heading">App data</string>
+    <string name="app_data_description">Export or restore the complete Stripped Plover SQLite database, including every dictionary, entry, enabled state, and priority. The externally selected language model is not copied.</string>
+    <string name="export_app_data">Export all app data</string>
+    <string name="import_app_data">Import all app data</string>
+    <string name="import_app_data_title">Replace all app data?</string>
+    <string name="import_app_data_warning">Importing replaces every current Stripped Plover dictionary, entry, enabled state, and priority. This cannot be undone unless you export the current data first.</string>
+    <string name="app_data_exported">All app data exported</string>
+    <string name="app_data_imported">All app data imported</string>
+    <string name="app_data_export_failed">Could not export app data: %1$s</string>
+    <string name="app_data_import_failed">Could not import app data: %1$s</string>
+    <string name="replace_app_data">Replace data</string>
+    <string name="cancel">Cancel</string>
     <string name="dictionary_saved">Dictionary saved</string>
     <string name="dictionary_save_failed">Could not save dictionary: %1$s</string>
-    <string name="dictionary_diagnostics_copied">Diagnostics copied</string>
+    <string name="dictionary_import_channel">Dictionary imports</string>
+    <string name="dictionary_import_notification_title">Importing dictionary</string>
+    <string name="dictionary_import_notification_text">Loading %1$s in Stripped Plover…</string>
 </resources>

@@ -29,6 +29,7 @@ There are three different WebViews with disjoint jobs:
 | --- | --- | --- |
 | IME interface | `V7ImeService` | composing text, inference, height, key mode, and Stripped Plover RPC client |
 | Dictionary manager | `DictionaryManagementActivity` | Stripped Plover RPC client plus Android document import/export |
+| Import worker | `DictionaryImportWorker` | durable foreground work plus RPC into the shared engine |
 | Stripped Plover engine | process-wide `BundledStrippedPloverRuntime` | runtime completion callbacks and native SQLite only |
 
 The engine WebView is a process-wide, non-visual WebView. Neither interface
@@ -36,6 +37,12 @@ WebView contains the engine, and the engine WebView has no IME or dictionary
 editing bridge. Both interface clients submit the existing JSON RPC protocol
 to the same serialized runtime queue, so translation and dictionary editing
 share one engine and database.
+
+Dictionary imports use that separation to outlive the management screen. A
+WorkManager foreground task owns the loading notification and staged source,
+while the actual source parsing and upstream import run inside the same
+sandboxed engine WebView used for translation. The worker never evaluates
+dictionary code itself and never exposes Android APIs to dictionary source.
 
 The runtime loads app assets through
 `https://appassets.androidplatform.net`, not `file://`. Responses carry
@@ -56,12 +63,8 @@ script continues to resolve from the APK rather than falling through to the
 network. Startup also removes the narrower, broken worker registration left by
 older app builds.
 
-Historical diagnostics record the selected I/O mode, service-worker
-registration/activation, CPython worker and filesystem initialization,
-WebAssembly loading, interpreter startup, source execution, dictionary entry
-enumeration, lookups, and five-second pending heartbeats. Unexpected runtime
-navigations also fail active requests immediately instead of leaving them to
-time out without an explanation.
+Unexpected runtime navigations fail active requests immediately instead of
+leaving them to time out.
 
 ## Node compatibility audit
 
@@ -80,6 +83,8 @@ At the pinned revision, the direct engine surface is:
 - `node:sqlite`: `DatabaseSync`, `prepare`, `exec`, and statement
   `all`/`get`/`iterate`/`run`;
 - `node:crypto`: `randomBytes`;
+- `node:fs`: read-only `readFileSync` access to the bundled orthography word
+  list;
 - `Buffer.alloc` and `writeBigUInt64LE`; and
 - `process.platform`.
 
@@ -136,10 +141,10 @@ roughly 43 KB Python dictionary in Puppeteer. It runs once with cross-origin
 isolation and once without it, exercising both atomics and service-worker I/O.
 The test uses two independently puppeteered pages and Android's `/assets/` URL
 layout, so the management/runtime WebView boundary and deployed worker,
-WebAssembly, Python archive, and service-worker paths are covered. It also
-asserts the Python initialization phase history. The Gradle unit suite tests
-the native compatibility policy. An APK build then verifies asset merging and
-inclusion of the generated source ZIP.
+WebAssembly, Python archive, and service-worker paths are covered. The Gradle
+unit suite tests the native compatibility and database-transfer policies. An
+APK build then verifies asset merging and inclusion of the generated source
+ZIP.
 
 Platform references:
 

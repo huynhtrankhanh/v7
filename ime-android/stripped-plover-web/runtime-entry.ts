@@ -21,7 +21,6 @@ interface Engine {
 interface NativeRuntimeBridge {
   onReady(): void;
   onResponse(requestId: number, response: string, error: string): void;
-  onDiagnostic(requestId: number, phase: string, detail: string): void;
 }
 
 declare const AndroidStrippedPloverRuntime: NativeRuntimeBridge;
@@ -29,15 +28,10 @@ declare const AndroidStrippedPloverRuntime: NativeRuntimeBridge;
 const PYTHON_SERVICE_WORKER_URL =
   "/assets/stripped-plover-python-service-worker.js";
 const PYTHON_SERVICE_WORKER_SCOPE = "/assets/";
-const PENDING_DIAGNOSTIC_INTERVAL_MS = 5_000;
 const SERVICE_WORKER_STARTUP_TIMEOUT_MS = 15_000;
 
 let requestTail: Promise<void> = Promise.resolve();
 let enginePromise: Promise<Engine>;
-
-function diagnostic(requestId: number, phase: string, detail = ""): void {
-  AndroidStrippedPloverRuntime.onDiagnostic(requestId, phase, detail);
-}
 
 function waitForServiceWorkerActivation(
   registration: ServiceWorkerRegistration,
@@ -113,18 +107,7 @@ function withTimeout<T>(
 }
 
 async function preparePythonRuntime(): Promise<void> {
-  diagnostic(
-    0,
-    "runtime-environment",
-    [
-      `crossOriginIsolated=${crossOriginIsolated}`,
-      `sharedArrayBuffer=${typeof SharedArrayBuffer !== "undefined"}`,
-      `serviceWorker=${"serviceWorker" in navigator}`,
-      `controller=${navigator.serviceWorker?.controller?.scriptURL ?? "none"}`,
-    ].join(" "),
-  );
   if (crossOriginIsolated) {
-    diagnostic(0, "runtime-io-ready", "mode=atomics");
     return;
   }
   if (!("serviceWorker" in navigator)) {
@@ -144,19 +127,9 @@ async function preparePythonRuntime(): Promise<void> {
         "/assets/worker/service-worker.js",
       )
     ) {
-      const removed = await registration.unregister();
-      diagnostic(
-        0,
-        "runtime-service-worker-legacy-removed",
-        `scope=${registration.scope} removed=${removed}`,
-      );
+      await registration.unregister();
     }
   }
-  diagnostic(
-    0,
-    "runtime-service-worker-register-start",
-    `url=${PYTHON_SERVICE_WORKER_URL} scope=${PYTHON_SERVICE_WORKER_SCOPE}`,
-  );
   const registration = await withTimeout(
     navigator.serviceWorker.register(PYTHON_SERVICE_WORKER_URL, {
       scope: PYTHON_SERVICE_WORKER_SCOPE,
@@ -164,26 +137,15 @@ async function preparePythonRuntime(): Promise<void> {
     SERVICE_WORKER_STARTUP_TIMEOUT_MS,
     "Python service worker registration timed out",
   );
-  diagnostic(
-    0,
-    "runtime-service-worker-registered",
-    `active=${registration.active?.state ?? "none"} installing=${registration.installing?.state ?? "none"} waiting=${registration.waiting?.state ?? "none"}`,
-  );
   await withTimeout(
     waitForServiceWorkerActivation(registration),
     SERVICE_WORKER_STARTUP_TIMEOUT_MS,
     "Python service worker activation timed out",
   );
-  diagnostic(0, "runtime-service-worker-activated");
   await withTimeout(
     waitForServiceWorkerControl(),
     SERVICE_WORKER_STARTUP_TIMEOUT_MS,
     "Python service worker did not take control of the runtime",
-  );
-  diagnostic(
-    0,
-    "runtime-io-ready",
-    `mode=service-worker controller=${navigator.serviceWorker.controller?.scriptURL ?? "none"}`,
   );
 }
 
@@ -207,56 +169,48 @@ function report(
   );
 }
 
+function expandDictionaryImport(request: ProtocolRequest): ProtocolRequest {
+  if (request.method !== "import_dictionary_source") return request;
+  const params = request.params ?? {};
+  const name = params.name;
+  const type = params.type;
+  const source = params.source;
+  const merge = params.merge;
+  if (typeof name !== "string" || !name) {
+    throw new Error("Dictionary name is required");
+  }
+  if (type !== "json" && type !== "python") {
+    throw new Error('Dictionary type must be "json" or "python"');
+  }
+  if (typeof source !== "string" || !source) {
+    throw new Error("Dictionary source is empty");
+  }
+  return {
+    ...request,
+    method: "import_dictionary",
+    params:
+      type === "json"
+        ? { name, type, merge: !!merge, data: JSON.parse(source) }
+        : { name, type, merge: false, pythonCode: source },
+  };
+}
+
 function request(requestId: number, body: string): void {
-  AndroidStrippedPloverRuntime.onDiagnostic(
-    requestId,
-    "runtime-queued",
-    `bytes=${body.length}`,
-  );
   requestTail = requestTail.then(async () => {
-    const startedAt = performance.now();
-    let activePhase = "runtime-start";
-    const previousDiagnostic = globalThis.__v7PloverDiagnostic;
-    const pendingDiagnostic = window.setInterval(() => {
-      diagnostic(
-        requestId,
-        "runtime-pending",
-        `elapsedMs=${Math.round(performance.now() - startedAt)} activePhase=${activePhase}`,
-      );
-    }, PENDING_DIAGNOSTIC_INTERVAL_MS);
     try {
       const engine = await enginePromise;
-      const parsed = JSON.parse(body) as ProtocolRequest;
-      diagnostic(requestId, "runtime-start", `method=${parsed.method}`);
-      globalThis.__v7PloverDiagnostic = (phase, detail = "") => {
-        activePhase = phase;
-        diagnostic(requestId, phase, detail);
-      };
-      const response = await engine.handleRequest(parsed);
-      diagnostic(
-        requestId,
-        "runtime-complete",
-        `method=${parsed.method} elapsedMs=${Math.round(performance.now() - startedAt)}`,
+      const parsed = expandDictionaryImport(
+        JSON.parse(body) as ProtocolRequest,
       );
+      const response = await engine.handleRequest(parsed);
       report(requestId, response, null);
     } catch (error) {
-      diagnostic(
-        requestId,
-        "runtime-error",
-        error instanceof Error ? error.message : String(error),
-      );
       report(requestId, null, error);
-    } finally {
-      window.clearInterval(pendingDiagnostic);
-      globalThis.__v7PloverDiagnostic = previousDiagnostic;
     }
   });
 }
 
 declare global {
-  var __v7PloverDiagnostic:
-    ((phase: string, detail?: string) => void) | undefined;
-
   interface Window {
     StrippedPloverAndroidRuntime: {
       request(requestId: number, body: string): void;

@@ -60,7 +60,13 @@ keyboard settings. The native settings activity includes:
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
 - a full-screen Stripped Plover dictionary manager opened from settings,
-  reusing the browser UI without nesting editable fields inside the IME;
+  reusing a phone-friendly browser UI without nesting editable fields inside
+  the IME;
+- durable background dictionary imports with an indeterminate loading
+  notification while the sandboxed Stripped Plover runtime validates and
+  installs the source;
+- export and import controls for the complete app-private Stripped Plover
+  SQLite database;
 - an option to save the APK's complete Corresponding Source as
   `v7-ime-source.zip`;
 - shortcuts to enable V7 IME and open the input-method picker.
@@ -68,6 +74,10 @@ keyboard settings. The native settings activity includes:
 See [Stripped Plover dictionary management on Android](docs/dictionary-management.md)
 for the shared WebUI architecture, the deliberately narrow native bridge, and
 the import/export file flow.
+
+See [App-data import and export](docs/app-data-transfer.md) for the database
+file format, replacement safeguards, and the data that is intentionally not
+part of an export.
 
 See [Bundled Stripped Plover runtime](docs/bundled-stripped-plover.md) for the
 pinned external-source build, separate engine WebView, typechecked Node

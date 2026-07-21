@@ -36,6 +36,10 @@ The separate `AndroidDictionary` bridge is intentionally small:
   runtime WebView;
 - `saveDictionaryFile` opens Android's Storage Access Framework destination
   picker for exported UTF-8 JSON or Python;
+- `enqueueDictionaryImport` stages selected source and schedules a durable
+  background import;
+- `getDictionaryImportState` lets a newly opened manager resume the latest
+  job's progress display;
 - `close` finishes the management activity;
 - `hasPloverConfiguration` reports the always-present bundled runtime.
 
@@ -59,6 +63,26 @@ filter by MIME type because document providers report Python and JSON files
 under inconsistent types. The shared web form identifies the supported
 `.py` and `.json` formats instead.
 
+## Background imports
+
+Android imports do not depend on `DictionaryManagementActivity` remaining
+open. After the WebUI reads the selected document, the native bridge writes it
+to a private staging file and appends a one-time WorkManager job. WorkManager
+keeps the import alive if the manager closes and displays an indeterminate
+**Importing dictionary** foreground notification while it runs.
+
+The worker sends an `import_dictionary_source` request to the process-wide
+Stripped Plover runtime. Source parsing, Python/Wasm validation, stroke
+normalization, and the upstream `import_dictionary` operation therefore run in
+the dedicated sandboxed JavaScript runtime, not in the activity WebView or on
+Android's main thread. The worker only owns staging, durable scheduling,
+notification state, and the final protocol result. Imports are serialized and
+the staging file is removed on every terminal path.
+
+The manager polls a small native state record while visible. It shows queued,
+running, successful, or failed state inline and refreshes dictionaries after
+success. Reopening the manager reconnects to the latest import state.
+
 ## Scrolling
 
 The Settings-hosted dictionary manager uses the shared dialog markup as a
@@ -69,28 +93,12 @@ reliable in Android WebView when a panel exceeds the available height. The
 ordinary browser UI still uses the bounded modal dialog and its compact inner
 result regions.
 
+At phone widths, the full-screen manager also keeps its header and three tabs
+sticky, honors display-cutout safe areas, uses 44 dp-equivalent touch targets,
+shows persistent labels above every field, and collapses search/edit forms to
+a single column. Dictionary actions remain a compact two-column row so long
+names and status badges do not force horizontal scrolling.
+
 The runtime WebView, Node compatibility audit, native SQLite bridge, and
 source-bundle licensing boundary are documented in
 [Bundled Stripped Plover runtime](bundled-stripped-plover.md).
-
-## Upload diagnostics
-
-The **Diagnostics** tab in the Android dictionary manager retains the most
-recent 64 KiB of timestamped request history across app restarts. It includes
-the Android, app, and WebView versions and has **Copy**, **Clear**, and
-**Refresh** controls. Dictionary source and entry contents are not recorded.
-
-Android also mirrors each event to the system log when developer access is
-available:
-
-```sh
-adb logcat -s V7Dictionary:I V7PloverRuntime:I
-```
-
-For a healthy import, the request advances through `file-selected`,
-`read-start`, `read-complete`, `management-dispatch`, `queued`, `dispatch`,
-`runtime-queued`, `runtime-start`, `runtime-complete`, `complete`,
-`management-complete`, and `ui-complete`. The elapsed times identify whether a
-delay is reading the selected document, crossing the native bridge, inside
-Python dictionary initialization, or returning the result to the management
-page.

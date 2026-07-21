@@ -39,16 +39,7 @@ async function dispatchRuntimeBody(page, requestId, body) {
       requestId,
     );
   } catch (error) {
-    const diagnostics = await page.evaluate((expectedRequestId) => {
-      return window.__runtimeDiagnostics.filter(
-        (diagnostic) =>
-          diagnostic.requestId === 0 ||
-          diagnostic.requestId === expectedRequestId,
-      );
-    }, requestId);
-    throw new Error(
-      `runtime request ${requestId} timed out: ${error.message}; diagnostics=${JSON.stringify(diagnostics)}`,
-    );
+    throw new Error(`runtime request ${requestId} timed out: ${error.message}`);
   }
   return page.evaluate((expectedRequestId) => {
     const index = window.__runtimeResults.findIndex(
@@ -92,9 +83,6 @@ async function uploadDictionary(page, directory, filename, content, type) {
   );
   await page.click("#plover-dict-upload");
   await page.waitForFunction(
-    () => document.querySelector("#plover-dict-upload")?.disabled === true,
-  );
-  await page.waitForFunction(
     () => document.querySelector("#plover-dict-upload")?.disabled === false,
     { timeout: 120_000 },
   );
@@ -106,6 +94,26 @@ async function uploadDictionary(page, directory, filename, content, type) {
     throw new Error(
       `Android ${type} dictionary upload failed: ${errorMessage}`,
     );
+  }
+  await page.waitForFunction(
+    (expectedName) => {
+      const status = document.querySelector("#plover-import-status");
+      return (
+        status?.textContent?.includes(expectedName) &&
+        (status.classList.contains("succeeded") ||
+          status.classList.contains("failed"))
+      );
+    },
+    { timeout: 120_000 },
+    filename,
+  );
+  const backgroundFailure = await page.$eval(
+    "#plover-import-status",
+    (element) =>
+      element.classList.contains("failed") ? element.textContent : "",
+  );
+  if (backgroundFailure) {
+    throw new Error(backgroundFailure);
   }
 }
 
@@ -189,7 +197,6 @@ async function main() {
     });
     await page.evaluateOnNewDocument(() => {
       window.__runtimeResults = [];
-      window.__runtimeDiagnostics = [];
       window.__sqliteExec = [];
       window.AndroidStrippedPloverRuntime = {
         onReady() {
@@ -197,9 +204,6 @@ async function main() {
         },
         onResponse(requestId, response, error) {
           window.__runtimeResults.push({ requestId, response, error });
-        },
-        onDiagnostic(requestId, phase, detail) {
-          window.__runtimeDiagnostics.push({ requestId, phase, detail });
         },
       };
       window.AndroidStrippedPloverSqlite = {
@@ -263,6 +267,9 @@ async function main() {
       });
       window.__androidPloverRequestQueue = [];
       window.__completedAndroidPloverMethods = [];
+      window.__dictionaryImportStates = {};
+      window.__latestDictionaryImport = "";
+      window.__backgroundRequestId = 10_000;
       window.AndroidDictionary = {
         hasPloverConfiguration() {
           return true;
@@ -270,12 +277,32 @@ async function main() {
         requestPlover(body, requestId) {
           window.__androidPloverRequestQueue.push({ body, requestId });
         },
-        getDiagnostics() {
-          return "simulated Android diagnostics";
+        enqueueDictionaryImport(name, type, source, merge) {
+          const id = `background-${window.__backgroundRequestId++}`;
+          window.__latestDictionaryImport = id;
+          window.__dictionaryImportStates[id] = {
+            id,
+            name,
+            status: "queued",
+            message: "Waiting to start",
+          };
+          window.__androidPloverRequestQueue.push({
+            body: JSON.stringify({
+              id,
+              method: "import_dictionary_source",
+              params: { name, type, source, merge },
+            }),
+            requestId: window.__backgroundRequestId++,
+            backgroundTaskId: id,
+          });
+          return JSON.stringify({ id, error: "" });
         },
-        clearDiagnostics() {},
-        copyDiagnostics() {},
-        recordDiagnostic() {},
+        getDictionaryImportState(taskId) {
+          const id = taskId || window.__latestDictionaryImport;
+          return id && window.__dictionaryImportStates[id]
+            ? JSON.stringify(window.__dictionaryImportStates[id])
+            : "";
+        },
         saveDictionaryFile() {},
         close() {},
       };
@@ -297,8 +324,15 @@ async function main() {
             await new Promise((resolve) => setTimeout(resolve, 10));
             continue;
           }
-          for (const { body, requestId } of queued) {
+          for (const { body, requestId, backgroundTaskId } of queued) {
             const request = JSON.parse(body);
+            if (backgroundTaskId) {
+              await managementPage.evaluate((taskId) => {
+                window.__dictionaryImportStates[taskId].status = "running";
+                window.__dictionaryImportStates[taskId].message =
+                  "Loading in the Stripped Plover sandbox";
+              }, backgroundTaskId);
+            }
             const forwarded = {
               request,
               response: null,
@@ -323,15 +357,34 @@ async function main() {
             forwarded.pending = false;
             await managementPage.bringToFront();
             await managementPage.evaluate(
-              ({ requestId, bridgeResult, method }) => {
-                window.handleAndroidPloverResponse(
-                  requestId,
-                  bridgeResult.response,
-                  bridgeResult.error,
-                );
+              ({ requestId, bridgeResult, method, backgroundTaskId }) => {
+                if (backgroundTaskId) {
+                  const response = bridgeResult.response
+                    ? JSON.parse(bridgeResult.response)
+                    : null;
+                  const failed = bridgeResult.error || response?.error;
+                  window.__dictionaryImportStates[backgroundTaskId] = {
+                    ...window.__dictionaryImportStates[backgroundTaskId],
+                    status: failed ? "failed" : "succeeded",
+                    message: failed
+                      ? bridgeResult.error || response.error.message
+                      : `Imported ${response?.result?.entries ?? 0} entries`,
+                  };
+                } else {
+                  window.handleAndroidPloverResponse(
+                    requestId,
+                    bridgeResult.response,
+                    bridgeResult.error,
+                  );
+                }
                 window.__completedAndroidPloverMethods.push(method);
               },
-              { requestId, bridgeResult, method: request.method },
+              {
+                requestId,
+                bridgeResult,
+                method: request.method,
+                backgroundTaskId,
+              },
             );
           }
         }
@@ -427,7 +480,7 @@ def lookup(key):
     ]) {
       const forwarded = forwardedRequests.find(
         ({ request }) =>
-          request.method === "import_dictionary" &&
+          request.method === "import_dictionary_source" &&
           request.params?.name === name,
       );
       if (
@@ -439,81 +492,6 @@ def lookup(key):
       ) {
         throw new Error(
           `Android ${type} upload did not cross both WebViews successfully: ${JSON.stringify(forwarded)}`,
-        );
-      }
-    }
-    const importDiagnostics = await page.evaluate(
-      () => window.__runtimeDiagnostics,
-    );
-    const startupDiagnostics = importDiagnostics.filter(
-      ({ requestId }) => requestId === 0,
-    );
-    const expectedIoMode = emulateNonIsolatedWebView
-      ? "mode=service-worker"
-      : "mode=atomics";
-    if (
-      !startupDiagnostics.some(
-        ({ phase, detail }) =>
-          phase === "runtime-io-ready" && detail.includes(expectedIoMode),
-      )
-    ) {
-      throw new Error(
-        `Runtime did not report ${expectedIoMode}: ${JSON.stringify(startupDiagnostics)}`,
-      );
-    }
-    if (
-      emulateNonIsolatedWebView &&
-      ![
-        "runtime-service-worker-register-start",
-        "runtime-service-worker-activated",
-      ].every((phase) =>
-        startupDiagnostics.some((diagnostic) => diagnostic.phase === phase),
-      )
-    ) {
-      throw new Error(
-        `Runtime service-worker startup was not fully diagnosed: ${JSON.stringify(startupDiagnostics)}`,
-      );
-    }
-    for (const forwarded of forwardedRequests.filter(
-      ({ request }) => request.method === "import_dictionary",
-    )) {
-      for (const phase of ["runtime-start", "runtime-complete"]) {
-        if (
-          !importDiagnostics.some(
-            (diagnostic) =>
-              diagnostic.requestId === forwarded.runtimeRequestId &&
-              diagnostic.phase === phase,
-          )
-        ) {
-          throw new Error(
-            `Android ${forwarded.request.params.type} upload did not report ${phase}: ${JSON.stringify(importDiagnostics)}`,
-          );
-        }
-      }
-    }
-    const pythonImport = forwardedRequests.find(
-      ({ request }) =>
-        request.method === "import_dictionary" &&
-        request.params?.type === "python",
-    );
-    const pythonDiagnostics = importDiagnostics.filter(
-      ({ requestId }) => requestId === pythonImport?.runtimeRequestId,
-    );
-    for (const phase of [
-      "python-dictionary-initialize-start",
-      "python-kernel-create-start",
-      "python-worker-environment",
-      "python-worker-wasm-import-start",
-      "python-worker-wasm-import-complete",
-      "python-interpreter-init-complete",
-      "python-source-exec-start",
-      "python-source-exec-complete",
-      "python-entry-enumeration-complete",
-      "python-dictionary-initialize-complete",
-    ]) {
-      if (!pythonDiagnostics.some((diagnostic) => diagnostic.phase === phase)) {
-        throw new Error(
-          `Android Python upload did not report ${phase}: ${JSON.stringify(pythonDiagnostics)}`,
         );
       }
     }

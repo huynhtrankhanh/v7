@@ -1,14 +1,13 @@
 package com.huynhtrankhanh.v7ime;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
-import android.os.SystemClock;
+import android.content.pm.PackageManager;
 import android.util.Log;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
@@ -31,6 +30,7 @@ public class DictionaryManagementActivity extends Activity {
     private static final String LOG_TAG = "V7Dictionary";
     private static final int CHOOSE_DICTIONARY_REQUEST = 1;
     private static final int SAVE_DICTIONARY_REQUEST = 2;
+    private static final int NOTIFICATION_PERMISSION_REQUEST = 3;
 
     private final ExecutorService ioExecutor =
             Executors.newSingleThreadExecutor();
@@ -110,37 +110,9 @@ public class DictionaryManagementActivity extends Activity {
     }
 
     private void requestPlover(String requestBody, int requestId) {
-        long startedAtMs = SystemClock.elapsedRealtime();
-        String method = "unknown";
-        try {
-            method = new JSONObject(requestBody).optString(
-                    "method",
-                    "unknown"
-            );
-        } catch (Exception ignored) {
-            method = "invalid-json";
-        }
-        String requestMethod = method;
-        logDiagnostic(
-                "request=" + requestId
-                        + " method=" + requestMethod
-                        + " phase=management-dispatch bytes="
-                        + (requestBody == null ? 0 : requestBody.length())
-        );
         BundledStrippedPloverRuntime.get(this).request(
                 requestBody,
                 (responseBody, errorMessage) -> {
-                    logDiagnostic(
-                            "request=" + requestId
-                                    + " method=" + requestMethod
-                                    + " phase=management-complete elapsedMs="
-                                    + (SystemClock.elapsedRealtime() - startedAtMs)
-                                    + " error="
-                                    + (errorMessage == null
-                                            || errorMessage.isEmpty()
-                                            ? "none"
-                                            : errorMessage)
-                    );
                     String script = "window.handleAndroidPloverResponse"
                             + " && window.handleAndroidPloverResponse("
                             + requestId + ","
@@ -210,9 +182,15 @@ public class DictionaryManagementActivity extends Activity {
         });
     }
 
-    private void logDiagnostic(String message) {
-        Log.i(LOG_TAG, message);
-        PloverDiagnostics.record(this, "manager", message);
+    private void requestImportNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread(() -> requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                    NOTIFICATION_PERMISSION_REQUEST
+            ));
+        }
     }
 
     private class DictionaryWebChromeClient extends WebChromeClient {
@@ -279,39 +257,43 @@ public class DictionaryManagementActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String getDiagnostics() {
-            return PloverDiagnostics.export(DictionaryManagementActivity.this);
-        }
-
-        @JavascriptInterface
-        public void clearDiagnostics() {
-            PloverDiagnostics.clear(DictionaryManagementActivity.this);
-        }
-
-        @JavascriptInterface
-        public void copyDiagnostics() {
-            String diagnostics =
-                    PloverDiagnostics.export(DictionaryManagementActivity.this);
-            runOnUiThread(() -> {
-                ClipboardManager clipboard = (ClipboardManager)
-                        getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(
-                        ClipData.newPlainText(
-                                "V7 Stripped Plover diagnostics",
-                                diagnostics
-                        )
-                );
-                Toast.makeText(
+        public String enqueueDictionaryImport(
+                String name,
+                String type,
+                String source,
+                boolean merge) {
+            requestImportNotificationPermission();
+            try {
+                String taskId = DictionaryImportManager.enqueue(
                         DictionaryManagementActivity.this,
-                        R.string.dictionary_diagnostics_copied,
-                        Toast.LENGTH_SHORT
-                ).show();
-            });
+                        name == null ? "" : name,
+                        type == null ? "" : type,
+                        source == null ? "" : source,
+                        merge
+                );
+                return new JSONObject()
+                        .put("id", taskId)
+                        .put("error", "")
+                        .toString();
+            } catch (Exception error) {
+                try {
+                    return new JSONObject()
+                            .put("id", "")
+                            .put("error", DictionaryImportManager.messageFor(error))
+                            .toString();
+                } catch (Exception impossible) {
+                    return "{\"id\":\"\",\"error\":\"Import could not be scheduled\"}";
+                }
+            }
         }
 
         @JavascriptInterface
-        public void recordDiagnostic(String message) {
-            logDiagnostic(message == null ? "" : message);
+        public String getDictionaryImportState(String taskId) {
+            return DictionaryImportManager.getState(
+                    DictionaryManagementActivity.this,
+                    taskId == null ? "" : taskId
+            );
         }
+
     }
 }

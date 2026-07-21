@@ -8,8 +8,6 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
-import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -37,7 +35,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 final class BundledStrippedPloverRuntime {
-    private static final String LOG_TAG = "V7PloverRuntime";
     private static final long REQUEST_TIMEOUT_MS = 175_000L;
     private static final String RUNTIME_URL =
             "https://appassets.androidplatform.net/assets/"
@@ -46,6 +43,10 @@ final class BundledStrippedPloverRuntime {
 
     interface Callback {
         void onResult(String response, String error);
+    }
+
+    interface DataTransferCallback {
+        void onReady(String error);
     }
 
     static synchronized BundledStrippedPloverRuntime get(Context context) {
@@ -63,7 +64,10 @@ final class BundledStrippedPloverRuntime {
     private final Map<Integer, PendingCallback> callbacks = new HashMap<>();
     private final List<PendingRequest> pendingRequests = new ArrayList<>();
     private WebView runtimeWebView;
+    private FrameLayout attachedHost;
+    private NativeStrippedPloverSqlite sqlite;
     private boolean ready;
+    private boolean dataTransferInProgress;
     private String startupError = "";
 
     private BundledStrippedPloverRuntime(Context context) {
@@ -75,24 +79,19 @@ final class BundledStrippedPloverRuntime {
         Runnable timeout = () -> timeout(requestId);
         PendingCallback pending = new PendingCallback(
                 callback,
-                describeRequest(body),
-                SystemClock.elapsedRealtime(),
                 timeout
         );
         synchronized (callbacks) {
             callbacks.put(requestId, pending);
         }
-        log(
-                "request=" + requestId
-                        + " method=" + pending.method
-                        + " phase=queued bytes="
-                        + (body == null ? 0 : body.length())
-        );
         mainHandler.postDelayed(timeout, REQUEST_TIMEOUT_MS);
         mainHandler.post(() -> enqueueOrDispatch(requestId, body));
     }
 
     void attachTo(FrameLayout host) {
+        if (dataTransferInProgress) {
+            return;
+        }
         ensureRuntime();
         if (runtimeWebView == null || runtimeWebView.getParent() == host) {
             return;
@@ -111,15 +110,61 @@ final class BundledStrippedPloverRuntime {
         runtimeWebView.onResume();
         runtimeWebView.resumeTimers();
         host.addView(runtimeWebView, layoutParams);
-        log("runtime WebView attached to " + host.getClass().getSimpleName());
+        attachedHost = host;
     }
 
     void detachFrom(FrameLayout host) {
         if (runtimeWebView != null && runtimeWebView.getParent() == host) {
             host.removeView(runtimeWebView);
-            log("runtime WebView detached from "
-                    + host.getClass().getSimpleName());
         }
+        if (attachedHost == host) {
+            attachedHost = null;
+        }
+    }
+
+    void pauseForDataTransfer(DataTransferCallback callback) {
+        mainHandler.post(() -> {
+            synchronized (callbacks) {
+                if (!callbacks.isEmpty()) {
+                    callback.onReady(
+                            "Wait for the current Stripped Plover operation to finish"
+                    );
+                    return;
+                }
+            }
+            if (runtimeWebView != null && !ready && startupError.isEmpty()) {
+                callback.onReady(
+                        "Wait for Stripped Plover to finish starting"
+                );
+                return;
+            }
+            dataTransferInProgress = true;
+            ready = false;
+            startupError = "";
+            if (runtimeWebView != null) {
+                ViewParent parent = runtimeWebView.getParent();
+                if (parent instanceof ViewGroup) {
+                    ((ViewGroup) parent).removeView(runtimeWebView);
+                }
+                runtimeWebView.destroy();
+                runtimeWebView = null;
+            }
+            if (sqlite != null) {
+                sqlite.close();
+                sqlite = null;
+            }
+            callback.onReady("");
+        });
+    }
+
+    void resumeAfterDataTransfer() {
+        mainHandler.post(() -> {
+            dataTransferInProgress = false;
+            ensureRuntime();
+            if (attachedHost != null) {
+                attachTo(attachedHost);
+            }
+        });
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -157,8 +202,9 @@ final class BundledStrippedPloverRuntime {
                 new RuntimeBridge(),
                 "AndroidStrippedPloverRuntime"
         );
+        sqlite = new NativeStrippedPloverSqlite(context);
         runtimeWebView.addJavascriptInterface(
-                new NativeStrippedPloverSqlite(context),
+                sqlite,
                 "AndroidStrippedPloverSqlite"
         );
         runtimeWebView.loadUrl(RUNTIME_URL);
@@ -171,7 +217,6 @@ final class BundledStrippedPloverRuntime {
         ) || !WebViewFeature.isFeatureSupported(
                 WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST
         )) {
-            log("service worker asset interception supported=false");
             return;
         }
         ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(
@@ -190,10 +235,13 @@ final class BundledStrippedPloverRuntime {
                     }
                 }
         );
-        log("service worker asset interception supported=true");
     }
 
     private void enqueueOrDispatch(int requestId, String body) {
+        if (dataTransferInProgress) {
+            pendingRequests.add(new PendingRequest(requestId, body));
+            return;
+        }
         ensureRuntime();
         if (!startupError.isEmpty()) {
             complete(requestId, "", startupError);
@@ -209,18 +257,6 @@ final class BundledStrippedPloverRuntime {
             complete(requestId, "", "Stripped Plover runtime is unavailable");
             return;
         }
-        PendingCallback pending;
-        synchronized (callbacks) {
-            pending = callbacks.get(requestId);
-        }
-        if (pending != null) {
-            pending.lastPhase = "dispatch";
-        }
-        log(
-                "request=" + requestId
-                        + " method=" + (pending == null ? "unknown" : pending.method)
-                        + " phase=dispatch"
-        );
         runtimeWebView.evaluateJavascript(
                 "window.StrippedPloverAndroidRuntime.request("
                         + requestId + ","
@@ -232,6 +268,9 @@ final class BundledStrippedPloverRuntime {
 
     private void markReady() {
         mainHandler.post(() -> {
+            if (dataTransferInProgress) {
+                return;
+            }
             ready = true;
             for (PendingRequest request : pendingRequests) {
                 dispatch(request.id, request.body);
@@ -242,6 +281,9 @@ final class BundledStrippedPloverRuntime {
 
     private void failStartup(String error) {
         mainHandler.post(() -> {
+            if (dataTransferInProgress) {
+                return;
+            }
             startupError = error == null || error.isEmpty()
                     ? "Stripped Plover runtime failed to start"
                     : error;
@@ -252,14 +294,10 @@ final class BundledStrippedPloverRuntime {
         });
     }
 
-    private void runtimeNavigationStarted(String url) {
+    private void runtimeNavigationStarted() {
         mainHandler.post(() -> {
             boolean wasReady = ready;
             ready = false;
-            log(
-                    "runtime navigation started ready=" + wasReady
-                            + " url=" + url
-            );
             if (!wasReady) {
                 return;
             }
@@ -284,30 +322,10 @@ final class BundledStrippedPloverRuntime {
         }
         if (pending != null) {
             mainHandler.removeCallbacks(pending.timeout);
-            long elapsed = SystemClock.elapsedRealtime() - pending.startedAtMs;
-            log(
-                    "request=" + requestId
-                            + " method=" + pending.method
-                            + " phase=complete elapsedMs=" + elapsed
-                            + " error=" + (error == null || error.isEmpty()
-                                    ? "none"
-                                    : error)
-            );
             pending.callback.onResult(
                     response == null ? "" : response,
                     error == null ? "" : error
             );
-        }
-    }
-
-    private static String describeRequest(String body) {
-        if (body == null || body.isEmpty()) {
-            return "unknown";
-        }
-        try {
-            return new JSONObject(body).optString("method", "unknown");
-        } catch (Exception ignored) {
-            return "invalid-json";
         }
     }
 
@@ -327,14 +345,8 @@ final class BundledStrippedPloverRuntime {
         complete(
                 requestId,
                 "",
-                "Stripped Plover timed out after 175 seconds at phase "
-                        + pending.lastPhase
+                "Stripped Plover timed out after 175 seconds"
         );
-    }
-
-    private void log(String message) {
-        Log.i(LOG_TAG, message);
-        PloverDiagnostics.record(context, "runtime", message);
     }
 
     private static WebResourceResponse withIsolationHeaders(
@@ -371,23 +383,6 @@ final class BundledStrippedPloverRuntime {
             }
         }
 
-        @JavascriptInterface
-        public void onDiagnostic(
-                int requestId,
-                String phase,
-                String detail) {
-            synchronized (callbacks) {
-                PendingCallback pending = callbacks.get(requestId);
-                if (pending != null && !"runtime-pending".equals(phase)) {
-                    pending.lastPhase = phase;
-                }
-            }
-            log(
-                    "request=" + requestId
-                            + " phase=" + phase
-                            + " detail=" + detail
-            );
-        }
     }
 
     private class RuntimeWebViewClient extends WebViewClientCompat {
@@ -402,12 +397,7 @@ final class BundledStrippedPloverRuntime {
                 WebView view,
                 String url,
                 Bitmap favicon) {
-            runtimeNavigationStarted(url);
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            log("runtime navigation finished url=" + url);
+            runtimeNavigationStarted();
         }
 
         @Override
@@ -442,19 +432,12 @@ final class BundledStrippedPloverRuntime {
 
     private static class PendingCallback {
         final Callback callback;
-        final String method;
-        final long startedAtMs;
         final Runnable timeout;
-        volatile String lastPhase = "queued";
 
         PendingCallback(
                 Callback callback,
-                String method,
-                long startedAtMs,
                 Runnable timeout) {
             this.callback = callback;
-            this.method = method;
-            this.startedAtMs = startedAtMs;
             this.timeout = timeout;
         }
     }

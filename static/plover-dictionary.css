@@ -104,6 +104,14 @@ body.dictionary-management-page #plover-lookup-results {
   padding: 16px;
 }
 
+.plover-dialog-nav {
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 2;
+}
+
 .plover-dialog-header {
   align-items: center;
   display: flex;
@@ -143,23 +151,6 @@ body.dictionary-management-page #plover-lookup-results {
 
 .plover-panel.active {
   display: flex;
-}
-
-#plover-diagnostics-output {
-  background: #111827;
-  border-radius: 8px;
-  color: #e5e7eb;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.75rem;
-  line-height: 1.45;
-  margin: 0;
-  max-height: min(58vh, 520px);
-  max-height: min(58dvh, 520px);
-  overflow: auto;
-  padding: 12px;
-  user-select: text;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .plover-row {
@@ -267,6 +258,89 @@ body.dictionary-management-page #plover-lookup-results {
   font-weight: 600;
 }
 
+.plover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.plover-field > span {
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.plover-field > input,
+.plover-field > select {
+  width: 100%;
+}
+
+.plover-checkbox {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.plover-checkbox input {
+  flex: 0 0 auto;
+  min-height: 18px;
+  width: 18px;
+}
+
+.plover-import-status {
+  align-items: flex-start;
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  color: #1e3a8a;
+  display: flex;
+  gap: 9px;
+  line-height: 1.4;
+  padding: 10px;
+}
+
+.plover-import-status[hidden] {
+  display: none;
+}
+
+.plover-import-status.running::before {
+  animation: plover-spin 0.8s linear infinite;
+  border: 2px solid #93c5fd;
+  border-radius: 50%;
+  border-top-color: #1d4ed8;
+  content: "";
+  flex: 0 0 auto;
+  height: 14px;
+  margin-top: 2px;
+  width: 14px;
+}
+
+.plover-import-status.succeeded {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.plover-import-status.failed {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+@keyframes plover-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plover-import-status.running::before {
+    animation: none;
+  }
+}
+
 .plover-grid {
   display: grid;
   gap: 8px;
@@ -335,17 +409,95 @@ body.dictionary-management-page #plover-lookup-results {
 }
 
 @media (max-width: 720px) {
+  body.dictionary-management-page .plover-dialog-content {
+    gap: 10px;
+    padding: max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(12px, env(safe-area-inset-left));
+  }
+
+  body.dictionary-management-page .plover-dialog-nav {
+    border-bottom: 1px solid #d8dee8;
+    margin: calc(-1 * max(12px, env(safe-area-inset-top)))
+      calc(-1 * max(12px, env(safe-area-inset-right))) 0
+      calc(-1 * max(12px, env(safe-area-inset-left)));
+    padding: max(12px, env(safe-area-inset-top))
+      max(12px, env(safe-area-inset-right)) 8px
+      max(12px, env(safe-area-inset-left));
+    position: sticky;
+    top: 0;
+  }
+
+  .plover-dialog-header h2 {
+    font-size: 1.05rem;
+  }
+
+  .plover-tabs {
+    border-bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    padding-bottom: 0;
+  }
+
+  #plover-dictionary-dialog button,
+  #plover-dictionary-dialog input,
+  #plover-dictionary-dialog select,
+  #plover-dictionary-dialog summary {
+    min-height: 44px;
+  }
+
+  #plover-dictionary-dialog input,
+  #plover-dictionary-dialog select {
+    font-size: 16px;
+  }
+
+  #plover-dictionary-dialog summary {
+    align-items: center;
+    display: flex;
+  }
+
+  .plover-section-heading {
+    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .plover-section-heading .plover-badge {
+    justify-self: end;
+  }
+
+  .plover-section-heading button {
+    width: 100%;
+  }
+
   .plover-dictionary-item,
   .plover-entry-result {
     grid-template-columns: 1fr;
   }
 
   .plover-dictionary-actions {
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .plover-dictionary-actions select {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .plover-entry-buttons {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .plover-grid,
   .plover-grid.three {
     grid-template-columns: 1fr;
+  }
+
+  .plover-panel,
+  .plover-section {
+    gap: 10px;
   }
 }
