@@ -435,19 +435,16 @@ body.dictionary-management-page #plover-lookup-results {
 @media (max-width: 720px) {
   body.dictionary-management-page .plover-dialog-content {
     gap: 10px;
-    padding: max(12px, env(safe-area-inset-top))
-      max(12px, env(safe-area-inset-right))
+    padding: 12px max(12px, env(safe-area-inset-right))
       max(16px, env(safe-area-inset-bottom))
       max(12px, env(safe-area-inset-left));
   }
 
   body.dictionary-management-page .plover-dialog-nav {
     border-bottom: 1px solid #d8dee8;
-    margin: calc(-1 * max(12px, env(safe-area-inset-top)))
-      calc(-1 * max(12px, env(safe-area-inset-right))) 0
+    margin: -12px calc(-1 * max(12px, env(safe-area-inset-right))) 0
       calc(-1 * max(12px, env(safe-area-inset-left)));
-    padding: max(12px, env(safe-area-inset-top))
-      max(12px, env(safe-area-inset-right)) 8px
+    padding: 12px max(12px, env(safe-area-inset-right)) 8px
       max(12px, env(safe-area-inset-left));
     position: sticky;
     top: 0;

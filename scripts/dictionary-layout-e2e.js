@@ -164,6 +164,10 @@ async function inspectLayout(page) {
     const dialogRect = dialog.getBoundingClientRect();
     const contentRect = content.getBoundingClientRect();
     const navigationRect = navigation.getBoundingClientRect();
+    const contentPaddingTop = parseFloat(getComputedStyle(content).paddingTop);
+    const navigationPaddingTop = parseFloat(
+      getComputedStyle(navigation).paddingTop,
+    );
     const obscuredTabs = [...tabs.children]
       .filter(visible)
       .filter((tab) => {
@@ -195,6 +199,8 @@ async function inspectLayout(page) {
       visualViewportTop: window.visualViewport?.offsetTop || 0,
       dialogTop: dialogRect.top,
       contentTop: contentRect.top,
+      contentPaddingTop,
+      navigationPaddingTop,
       navigationObscured:
         navigationRect.top < contentRect.top - 1 ||
         navigationRect.bottom > contentRect.bottom + 1,
@@ -215,6 +221,7 @@ async function main() {
   });
   try {
     const page = await browser.newPage();
+    const client = await page.createCDPSession();
     await installAndroidBridge(page);
     for (const scenario of [
       { width: 412, height: 732, scale: 1.5 },
@@ -224,6 +231,13 @@ async function main() {
         width: scenario.width,
         height: scenario.height,
         deviceScaleFactor: 1,
+      });
+      // The native Activity has already laid its WebView out below Android's
+      // system and action bars. Some WebView versions still expose that top
+      // inset to CSS, so emulate it and ensure the web page does not reserve
+      // the same space a second time.
+      await client.send("Emulation.setSafeAreaInsetsOverride", {
+        insets: { top: 80, right: 0, bottom: 0, left: 0 },
       });
       await page.goto(`${url}/dictionary.html?dictionary-management=1`, {
         waitUntil: "networkidle0",
@@ -268,6 +282,8 @@ async function main() {
             layout.visualViewportTop === 0 &&
             layout.dialogTop >= -1 &&
             layout.contentTop >= -1 &&
+            layout.contentPaddingTop <= 12.5 &&
+            layout.navigationPaddingTop <= 12.5 &&
             !layout.navigationObscured &&
             !layout.horizontalPageOverflow &&
             !layout.tabOverflow &&
