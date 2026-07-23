@@ -5,7 +5,14 @@
  * decoder still generates complete candidates and uses KenLM for contextual
  * scoring; it is not allowed to call the repository's existing beam search.
  */
-const MODEL = {};
+import data from "../generated/model.js";
+
+const MODEL = Object.create(null);
+for (const row of data.split("\n")) {
+  if (!row) continue;
+  const [code, phrase, encodedBonus] = row.split("\t");
+  (MODEL[code] ||= Object.create(null))[phrase] = Number(encodedBonus) / 4;
+}
 
 export default function infer(input, api) {
   const slots = api.enumerate(input.v7Island);

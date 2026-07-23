@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "compile": "node scripts/compile.mjs",
-    "evaluate": "node scripts/evaluate.mjs",
-    "train": "node scripts/train.mjs"
+    "evaluate": "node scripts/run.mjs evaluate",
+    "train": "node scripts/run.mjs train"
   }
 }
