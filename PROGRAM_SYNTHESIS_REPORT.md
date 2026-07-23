@@ -15,8 +15,17 @@ against accidentally improving the interaction metric with impossible output.
 This is feasible, but it is an empirical research project rather than a
 credible promise of a particular accuracy gain. Program search can find a
 better policy for using available information. It cannot infer an ambiguity
-that is absent from the V7 input, the left context, user history, and its
+that is absent from the V7 input, left context, public training corpus, and
 language-model queries.
+
+## Privacy scope
+
+The synthesized decoder is deliberately **non-personalized**. It must not
+collect, retain, or learn from a user's typing history, profile, or private
+documents. Its only linguistic data is a public, versioned training corpus.
+The existing explicit dictionary remains the privacy-preserving mechanism for
+names, specialist vocabulary, and user-specific phrases: users can define a
+stroke rather than relying on hidden behavioral adaptation.
 
 ## Operating constraint: CPU-only, no model training
 
@@ -70,7 +79,7 @@ The standard decoder is one hand-written point in a much larger program space:
 a fixed-width constrained beam search using KenLM as its score. A synthesized
 program can choose its own candidate-generation and search policy, including
 dynamic programming, A*, diverse beams, best-first search, adaptive beam
-widths, phrase caching, and user-history logic.
+widths, phrase caching, and public-corpus-derived grammar rules.
 
 ## Proposed sandboxed interface
 
@@ -93,7 +102,6 @@ type V7Api = {
   kenlmBegin(leftText: string): KenLmState;
   kenlmStep(state: KenLmState, word: string): [KenLmState, number];
   vocabularyRank(word: string): number | null;
-  userRecency?(wordOrPhrase: string): number;
 };
 ```
 
@@ -120,7 +128,7 @@ linguistic knowledge:
 - optimize the visible top five, where rank 2--5 costs one user action but a
   missing answer can require piecemeal editing;
 - use phrase frequency, candidate diversity, candidate-score margins, and
-  local recency in addition to raw 3-gram score;
+  public-corpus-derived grammatical structure in addition to raw 3-gram score;
 - specialize fallback behavior for proper nouns, rare words, code-switching,
   and unknown words; and
 - discover compact conditional policies for recurring V7 ambiguity classes.
