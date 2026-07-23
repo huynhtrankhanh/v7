@@ -9,16 +9,15 @@ import data from "../generated/model.js";
 
 const MODEL = Object.create(null);
 const CONTEXT = Object.create(null);
-for (const row of data.split("\n")) {
+for (const row of data[0].split("\n")) {
   if (!row) continue;
-  const fields = row.split("\t");
-  if (fields.length === 3) {
-    const [code, phrase, encodedBonus] = fields;
-    (MODEL[code] ||= Object.create(null))[phrase] = Number(encodedBonus) / 4;
-  } else {
-    const [leftWord, code, phrase, encodedBonus] = fields;
-    CONTEXT[`${leftWord}\t${code}`] = [phrase, Number(encodedBonus) / 4];
-  }
+  const [code, phrase, encodedBonus] = row.split("\t");
+  (MODEL[code] ||= Object.create(null))[phrase] = Number(encodedBonus) / 4;
+}
+for (const row of data[1].split("\n")) {
+  if (!row) continue;
+  const [leftWord, code, phrase] = row.split("\t");
+  CONTEXT[`${leftWord}\t${code}`] = phrase;
 }
 
 export default function infer(input, api) {
@@ -46,11 +45,11 @@ export default function infer(input, api) {
     const leftScore =
       api.kenlmScore(left) +
       (prior && prior[leftText] ? prior[leftText] : 0) +
-      (contextual && contextual[0] === leftText ? contextual[1] : 0);
+      (contextual === leftText ? 12 : 0);
     const rightScore =
       api.kenlmScore(right) +
       (prior && prior[rightText] ? prior[rightText] : 0) +
-      (contextual && contextual[0] === rightText ? contextual[1] : 0);
+      (contextual === rightText ? 12 : 0);
     return rightScore - leftScore || leftText.localeCompare(rightText);
   });
   return sequences

@@ -32,16 +32,20 @@ npm run compile
 npm run evaluate -- --scope=corpus --limit=0
 ```
 
-The current artifact combines 1,200 global phrase priors with 600
-previous-word-conditioned exceptions. It uses 50,199 bytes. On all 11,385
-corpus sentences it produces:
+The current compressed artifact combines 1,200 global phrase priors with 665
+previous-word-conditioned exceptions in 50,116 bytes. On the 500-sentence
+tuning slice it scores 5,075 versus the baseline's 5,147.
+
+The latest complete-corpus measurement used the immediately preceding
+600-context artifact:
 
 | decoder            |  bytes | inconvenience | per syllable |      top-1 |      top-5 |
 | ------------------ | -----: | ------------: | -----------: | ---------: | ---------: |
 | KenLM baseline     |    745 |       101,249 |     0.592387 |     89.82% |     98.88% |
 | synthesized policy | 50,199 |   **100,083** | **0.585565** | **91.02%** | **98.93%** |
 
-This saves 1,166 modeled user actions on 170,917 representable syllables. Put
-another way, it removes 10.84% of the baseline's inconvenience above the
-unavoidable one-entry-per-island cost. The machine-readable records are in
+That artifact saves 1,166 modeled user actions on 170,917 representable
+syllables. Put another way, it removes 10.84% of the baseline's inconvenience
+above the unavoidable one-entry-per-island cost. A complete-corpus confirmation
+of the denser 665-context artifact is pending. Machine-readable records are in
 `results/`; baseline and synthesized policies share one oracle pass.

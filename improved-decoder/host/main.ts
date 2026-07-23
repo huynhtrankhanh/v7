@@ -392,7 +392,7 @@ const evaluate = async (
 const train = async (): Promise<void> => {
   const recordLimit = Number.parseInt(option("records", "1200"), 10);
   const contextRecordLimit = Number.parseInt(
-    option("context-records", "600"),
+    option("context-records", "665"),
     10,
   );
   const phrasesPerCode = Number.parseInt(option("phrases-per-code", "3"), 10);
@@ -465,14 +465,13 @@ const train = async (): Promise<void> => {
         a.key.localeCompare(b.key),
     )
     .slice(0, contextRecordLimit)
-    .map(({ key, phrase }) => `${key}\t${phrase}\t48`)
+    .map(({ key, phrase }) => `${key}\t${phrase}`)
     .join("\n");
-  const data = [baseRows, contextRows].filter(Boolean).join("\n");
   await mkdir(resolve(ROOT, "generated"), { recursive: true });
   await writeFile(
     resolve(ROOT, "generated", "model.js"),
     "// Generated from the complete public corpus by `npm run train`.\n" +
-      `export default ${JSON.stringify(data)};\n`,
+      `export default ${JSON.stringify([baseRows, contextRows])};\n`,
     "utf8",
   );
   console.log(
