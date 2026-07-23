@@ -294,6 +294,7 @@ interface AndroidImeBridge {
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
+  undoRawOutlineStroke?(): void;
 }
 
 interface AndroidDictionaryBridge {
@@ -1706,6 +1707,21 @@ async function handleChord(stroke) {
   if (androidRawOutlineMode) {
     abortInferenceRequest(true);
     const currentOutline = renderVisibleText(state.islands, []);
+    if (stroke === "*") {
+      const strokes = currentOutline ? currentOutline.split("/") : [];
+      strokes.pop();
+      const previousOutline = strokes.join("/");
+      buffer.setIslands(
+        previousOutline ? [createIsland("vietnamese", previousOutline)] : [],
+      );
+      if (!currentOutline) {
+        androidIme?.undoRawOutlineStroke?.();
+      }
+      state.candidates = [];
+      piecemealCursorIndex = null;
+      updateDisplay();
+      return;
+    }
     buffer.setIslands([
       createIsland(
         "vietnamese",

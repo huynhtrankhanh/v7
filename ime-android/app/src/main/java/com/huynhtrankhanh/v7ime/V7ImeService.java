@@ -693,6 +693,24 @@ public class V7ImeService extends InputMethodService {
         );
     }
 
+    private void undoCommittedRawOutlineStroke() {
+        if (!rawOutlineMode) {
+            return;
+        }
+        InputConnection connection = getCurrentInputConnection();
+        if (connection == null) {
+            return;
+        }
+        CharSequence textBeforeCursor = connection.getTextBeforeCursor(
+                RawOutlineEditor.MAX_CONTEXT_LENGTH,
+                0
+        );
+        int deletionLength = RawOutlineEditor.deletionLength(textBeforeCursor);
+        if (deletionLength > 0) {
+            connection.deleteSurroundingText(deletionLength, 0);
+        }
+    }
+
     private boolean isRawOutlineEditor(EditorInfo editorInfo) {
         if (editorInfo == null || editorInfo.privateImeOptions == null) {
             return false;
@@ -1076,6 +1094,18 @@ public class V7ImeService extends InputMethodService {
                                 normalized,
                                 normalizedGrammarSections
                         );
+                    }
+                });
+            }
+        }
+
+        @JavascriptInterface
+        public void undoRawOutlineStroke() {
+            int generation = inputGeneration.get();
+            if (webView != null) {
+                webView.post(() -> {
+                    if (generation == inputGeneration.get()) {
+                        undoCommittedRawOutlineStroke();
                     }
                 });
             }

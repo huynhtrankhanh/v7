@@ -32,10 +32,11 @@ imports.
   `{PLOVER:LOOKUP}` opens an entry lookup whose rows name their source
   dictionary, `{PLOVER:ADD_TRANSLATION}` opens an add form with a writable
   dictionary picker, and `{PLOVER:CONFIGURE}` opens V7 IME settings directly.
-- The add-translation outline field marks its editor context for raw outline
-  capture. V7 then joins physical steno chords with `/` and collapses to a
-  labeled 48 dp **Raw outline mode** bar. Focusing the translation field
-  restores ordinary V7/Emily/Stripped Plover input.
+- The lookup stroke and add-translation outline fields mark their editor
+  context for raw outline capture. V7 then joins physical steno chords with `/`
+  and collapses to a labeled 48 dp **Raw outline mode** bar. A lone `*` chord
+  removes the latest slash-delimited stroke from the textbox. Focusing a
+  translation field restores ordinary V7/Emily/Stripped Plover input.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.

@@ -120,6 +120,7 @@ async function main() {
       ];
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
+      window.__androidRawOutlineUndos = 0;
       window.AndroidIme = {
         getInferenceModelError() {
           return "";
@@ -147,6 +148,9 @@ async function main() {
             text,
             grammarSections: JSON.parse(grammarSectionsJson),
           });
+        },
+        undoRawOutlineStroke() {
+          window.__androidRawOutlineUndos += 1;
         },
         requestInference(body, requestId) {
           window.__androidInferenceBodies.push(JSON.parse(body));
@@ -307,6 +311,19 @@ async function main() {
         rawOutlineSurface.outline.split("/").length === 2,
       `Raw outline mode did not join strokes in a thin bar: ${JSON.stringify(rawOutlineSurface)}`,
     );
+    const firstRawStroke = rawOutlineSurface.outline.split("/")[0];
+    await androidChord(page, [" "]);
+    await page.waitForFunction(
+      (expected) => window.__androidPreedits.at(-1)?.text === expected,
+      {},
+      firstRawStroke,
+    );
+    await androidChord(page, [" "]);
+    await page.waitForFunction(
+      () => window.__androidPreedits.at(-1)?.text === "",
+    );
+    await androidChord(page, [" "]);
+    await page.waitForFunction(() => window.__androidRawOutlineUndos === 1);
     await page.evaluate(() => {
       window.handleAndroidRawOutlineModeChanged(false);
       window.clearPreeditFromAndroid();

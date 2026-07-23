@@ -85,6 +85,7 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         );
+        configureRawOutlineField(stroke);
         EditText translation = addField(
                 R.string.translation_label,
                 R.string.translation_hint,
@@ -149,8 +150,7 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
         );
-        outline.setPrivateImeOptions(RAW_OUTLINE_IME_OPTION);
-        outline.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        configureRawOutlineField(outline);
 
         EditText translation = addField(
                 R.string.translation_label,
@@ -344,6 +344,11 @@ public class PloverCommandActivity extends Activity {
         field.setInputType(inputType);
         content.addView(field, matchWrap());
         return field;
+    }
+
+    private void configureRawOutlineField(EditText field) {
+        field.setPrivateImeOptions(RAW_OUTLINE_IME_OPTION);
+        field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
     }
 
     private TextView addLabel(int text) {

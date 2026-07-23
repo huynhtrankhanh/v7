@@ -62,3 +62,13 @@ Android native key handling runs before WebView dispatch:
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.
+
+## Raw outline fields
+
+The native lookup stroke field and add-translation outline field request
+**Raw outline mode** from V7 IME. Captured chords are inserted into the active
+textbox as one `/`-delimited outline. A lone `*` chord is reserved for undo: it
+removes the most recent in-progress stroke, or removes the last delimited
+stroke before the textbox cursor when the in-progress buffer is already empty.
+It is never appended as a literal stroke in this mode. Translation fields do
+not request raw-outline handling and retain ordinary input behavior.
