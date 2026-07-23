@@ -158,3 +158,32 @@ The APK is written to:
 ```text
 ime-android/app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Signed release pipeline
+
+The manual **Generate V7 IME Release App Bundle** GitHub Actions workflow builds
+a signed release App Bundle (`.aab`) from a version name, an optional Android
+`versionCode`, and a signing password. It uploads the App Bundle, its SHA-256
+checksum, matching bundle/key certificate fingerprints, and a compressed
+artifact bundle.
+
+The same flow is available locally after installing the Android, Node, Rust,
+and NDK dependencies above:
+
+```sh
+V7_SIGNING_PASSWORD='your signing password' \
+  ime-android/scripts/build-release-aab.sh "1.0.0" 100
+```
+
+Artifacts are written to `android-artifacts/` by default. The release script
+derives a deterministic PKCS#12 key from the password when no upload key is
+provided. For Play uploads, provide the registered key through
+`SIGNING_STORE_FILE`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, and
+`SIGNING_KEY_PASSWORD` (plus `SIGNING_STORE_TYPE` when it is not PKCS#12); the
+script verifies the generated App Bundle with
+`jarsigner`, records the bundle and key SHA-1/SHA-256 certificate fingerprints,
+and fails if they differ.
+
+Keep the same derived signing password for compatible updates, or use the
+registered Play upload key. The private keystore is temporary build material
+and is never copied into `android-artifacts/`.

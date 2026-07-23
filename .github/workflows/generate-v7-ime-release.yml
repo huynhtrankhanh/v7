@@ -1,0 +1,105 @@
+name: Generate V7 IME Release App Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version name for the signed release App Bundle (for example 1.0.0)
+        required: true
+        type: string
+      version_code:
+        description: Optional Android versionCode override
+        required: false
+        type: string
+      signing_password:
+        description: Secret signing password used to derive the release key
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-release-aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ANDROID_NDK_VERSION: "27.2.12479018"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install signing helper dependency
+        run: python -m pip install --disable-pip-version-check cryptography==43.0.3
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          sdkmanager "ndk;${ANDROID_NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install WebUI dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --version 4.1.2 --locked
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build and verify signed release App Bundle
+        env:
+          VERSION: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          SIGNING_PASSWORD: ${{ inputs.signing_password }}
+          V7_ARTIFACTS_DIR: ${{ github.workspace }}/android-artifacts
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${SIGNING_PASSWORD}"
+          if [ -n "${VERSION_CODE}" ]; then
+            V7_SIGNING_PASSWORD="${SIGNING_PASSWORD}" \
+              ime-android/scripts/build-release-aab.sh "${VERSION}" "${VERSION_CODE}"
+          else
+            V7_SIGNING_PASSWORD="${SIGNING_PASSWORD}" \
+              ime-android/scripts/build-release-aab.sh "${VERSION}"
+          fi
+
+      - name: Bundle artifacts
+        env:
+          VERSION: ${{ inputs.version }}
+        run: tar -C android-artifacts -czf "v7-ime-release-${VERSION}.tar.gz" .
+
+      - name: Upload signed release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: v7-ime-release-${{ inputs.version }}
+          path: |
+            android-artifacts/**
+            v7-ime-release-${{ inputs.version }}.tar.gz
+          if-no-files-found: error

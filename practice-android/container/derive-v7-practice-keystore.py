@@ -3,6 +3,7 @@ import base64
 import datetime as dt
 import hashlib
 import math
+import os
 import pathlib
 import sys
 
@@ -43,10 +44,14 @@ SMALL_PRIMES = (
     89,
     97,
 )
+KEYSTORE_ID = os.environ.get("V7_KEYSTORE_ID", "v7-practice")
+COMMON_NAME = os.environ.get("V7_KEYSTORE_COMMON_NAME", "V7 Practice")
 
 
 def secret(label: str, password: str) -> bytes:
-    return hashlib.sha256(f"v7-practice:{label}:{password}".encode("utf-8")).digest()
+    return hashlib.sha256(
+        f"{KEYSTORE_ID}:{label}:{password}".encode("utf-8")
+    ).digest()
 
 
 def secret_stream(label: str, password: str, length: int) -> bytes:
@@ -176,7 +181,7 @@ def main() -> int:
 
     subject = issuer = x509.Name(
         [
-            x509.NameAttribute(NameOID.COMMON_NAME, "V7 Practice"),
+            x509.NameAttribute(NameOID.COMMON_NAME, COMMON_NAME),
             x509.NameAttribute(NameOID.ORGANIZATION_NAME, "V7"),
             x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
         ]
@@ -200,7 +205,7 @@ def main() -> int:
 
     store_password = printable_secret("store-password", password)
     p12 = pkcs12.serialize_key_and_certificates(
-        name=b"v7-practice",
+        name=KEYSTORE_ID.encode("utf-8"),
         key=private_key,
         cert=certificate,
         cas=None,
@@ -213,7 +218,7 @@ def main() -> int:
 
     print(f"SIGNING_STORE_PASSWORD={store_password}")
     print(f"SIGNING_KEY_PASSWORD={store_password}")
-    print("SIGNING_KEY_ALIAS=v7-practice")
+    print(f"SIGNING_KEY_ALIAS={KEYSTORE_ID}")
     return 0
 
 
