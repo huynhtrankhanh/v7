@@ -3,6 +3,7 @@ import {
   evaluate,
   evaluateDetailed,
   getPiecemealCorrectionCost,
+  ILLEGAL,
   type InferenceFunction,
 } from "../evaluator/evaluateInference";
 
@@ -110,11 +111,24 @@ describe("inference inconvenience evaluator", () => {
   test("honors the visible candidate limit", async () => {
     const result = await evaluateDetailed(
       "trời mưa",
-      async () => [["trời mua"], ["trời mùa"], ["trời mưa"]],
+      async () => [["trời mua"], ["trời mua"], ["trời mưa"]],
       { candidateLimit: 2 },
     );
 
     expect(result.score).toBe(3);
     expect(result.steps[0].strategy).toBe("piecemeal");
+  });
+
+  test("returns ILLEGAL when any inference candidate does not round-trip to V7", async () => {
+    const result = await evaluateDetailed("trời mưa", async () => [
+      ["trời mua"],
+      ["trời bạn"],
+    ]);
+
+    expect(result.score).toBe(ILLEGAL);
+    expect(result.steps).toEqual([]);
+    await expect(
+      evaluate("trời mưa", async () => [["trời, mưa"]]),
+    ).resolves.toBe(ILLEGAL);
   });
 });

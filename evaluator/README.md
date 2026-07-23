@@ -71,5 +71,13 @@ An inference candidate may be:
 compact V7 request, top prediction, chosen correction strategy, and cost. Use
 `evaluate` when only the numeric score is needed.
 
+If inference returns any candidate whose replacement does not round-trip to
+the requested V7 island, both functions return `"ILLEGAL"` instead of a
+numeric score. A legal replacement contains only whitespace-separated
+Vietnamese syllables, and the concatenated V7 codes of those syllables must
+exactly equal the requested island. This makes the evaluator suitable for
+testing generated decoders without rewarding outputs that cannot be typed in
+V7.
+
 `EvaluationOptions` can change the candidate limit, island size, and individual
 action weights. All weights must be finite and non-negative.

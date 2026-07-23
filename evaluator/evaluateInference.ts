@@ -41,11 +41,19 @@ export interface EvaluationStep {
 }
 
 export interface EvaluationResult {
-  score: number;
+  /**
+   * Total interaction cost, or ILLEGAL when inference emitted a candidate that
+   * cannot be represented by the requested V7 island.
+   */
+  score: EvaluationScore;
   representableSyllables: number;
   fixedText: string[];
   steps: EvaluationStep[];
 }
+
+/** Returned instead of a numeric score when an inference candidate violates V7. */
+export const ILLEGAL = "ILLEGAL" as const;
+export type EvaluationScore = number | typeof ILLEGAL;
 
 export interface EvaluationIsland {
   sourceStart: number;
@@ -222,6 +230,36 @@ const getSyllables = (text: string | null): string[] => {
 };
 
 /**
+ * A V7 replacement may contain only word-like Vietnamese syllables separated
+ * by whitespace. Every syllable must have a V7 code, and their concatenation
+ * must exactly reproduce the requested island.
+ */
+const isLegalV7Replacement = (
+  replacement: string | null,
+  v7Code: string,
+): boolean => {
+  if (replacement === null) return false;
+
+  const normalized = replacement.normalize("NFC").trim();
+  if (!normalized) return false;
+
+  const parts = [
+    ...new Intl.Segmenter("vi", { granularity: "word" }).segment(normalized),
+  ];
+  if (
+    parts.some((part) => !part.isWordLike && part.segment.trim().length > 0)
+  ) {
+    return false;
+  }
+
+  const syllables = getSyllables(normalized);
+  if (syllables.length === 0) return false;
+
+  const codes = syllables.map((syllable) => getV7Code(syllable));
+  return codes.every((code) => code !== undefined) && codes.join("") === v7Code;
+};
+
+/**
  * Find the cheapest sequence of piecemeal edits. A piecemeal entry may replace
  * a contiguous range because the edit cursor advances after every replacement.
  * Retyping a correct syllable can therefore be cheaper than entering edit mode
@@ -301,11 +339,29 @@ export async function evaluateDetailed(
       throw new TypeError("Inference must return an array of candidates.");
     }
 
-    const predictions = response
+    const replacements = response.map((candidate) =>
+      candidateReplacement(candidate, request),
+    );
+    if (
+      replacements.some(
+        (replacement) => !isLegalV7Replacement(replacement, island.v7Code),
+      )
+    ) {
+      return {
+        score: ILLEGAL,
+        representableSyllables: islands.reduce(
+          (total, currentIsland) =>
+            total + currentIsland.targetSyllables.length,
+          0,
+        ),
+        fixedText: getFixedText(text, islands),
+        steps,
+      };
+    }
+
+    const predictions = replacements
       .slice(0, candidateLimit)
-      .map((candidate) =>
-        getSyllables(candidateReplacement(candidate, request)),
-      );
+      .map((replacement) => getSyllables(replacement));
     const topPrediction = predictions[0] ?? [];
     const exactCandidateIndex = predictions.findIndex((candidate) =>
       sameSyllables(candidate, island.targetSyllables),
@@ -366,6 +422,7 @@ export const evaluate = async (
   text: string,
   inference: InferenceFunction,
   options?: EvaluationOptions,
-): Promise<number> => (await evaluateDetailed(text, inference, options)).score;
+): Promise<EvaluationScore> =>
+  (await evaluateDetailed(text, inference, options)).score;
 
 export default evaluate;
