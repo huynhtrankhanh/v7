@@ -240,7 +240,8 @@ const scoreIsland = async (
 > => {
   const slots = enumerate(island.v7Code);
   const sequences = cartesian(slots);
-  const prefix = words(fixedLeftText);
+  // The oracle is a 3-gram model, so two preceding words are a complete state.
+  const prefix = words(fixedLeftText).slice(-2);
   const scores = await Promise.all(
     sequences.map((sequence) => kenlm.score(prefix, sequence)),
   );
@@ -389,15 +390,29 @@ const evaluate = async (
 };
 
 const train = async (): Promise<void> => {
-  const recordLimit = Number.parseInt(option("records", "1800"), 10);
+  const recordLimit = Number.parseInt(option("records", "1200"), 10);
+  const contextRecordLimit = Number.parseInt(
+    option("context-records", "600"),
+    10,
+  );
   const phrasesPerCode = Number.parseInt(option("phrases-per-code", "3"), 10);
   const counts = new Map<string, Map<string, number>>();
+  const contextCounts = new Map<string, Map<string, number>>();
   for (const sentence of dataset) {
     for (const island of buildEvaluationIslands(sentence)) {
       const phrase = island.targetSyllables.join(" ");
       const phrases = counts.get(island.v7Code) ?? new Map<string, number>();
       phrases.set(phrase, (phrases.get(phrase) ?? 0) + 1);
       counts.set(island.v7Code, phrases);
+
+      const leftWord = words(sentence.slice(0, island.sourceStart)).at(-1);
+      if (leftWord) {
+        const contextKey = `${leftWord}\t${island.v7Code}`;
+        const contextualPhrases =
+          contextCounts.get(contextKey) ?? new Map<string, number>();
+        contextualPhrases.set(phrase, (contextualPhrases.get(phrase) ?? 0) + 1);
+        contextCounts.set(contextKey, contextualPhrases);
+      }
     }
   }
 
@@ -421,10 +436,38 @@ const train = async (): Promise<void> => {
   }
   records.sort((a, b) => b.count - a.count);
 
-  const data = records
+  const baseRows = records
     .slice(0, recordLimit)
     .map(({ code, phrase, bonus }) => `${code}\t${phrase}\t${bonus}`)
     .join("\n");
+  const contextRows = [...contextCounts]
+    .map(([key, phrases]) => {
+      const ranked = [...phrases].sort((a, b) => b[1] - a[1]);
+      const [phrase, count] = ranked[0];
+      const runnerUp = ranked[1]?.[1] ?? 0;
+      const [, code] = key.split("\t");
+      const globalPhrase = [...(counts.get(code) ?? [])].sort(
+        (a, b) => b[1] - a[1],
+      )[0]?.[0];
+      return {
+        key,
+        phrase,
+        count,
+        advantage: count - runnerUp,
+        differsFromGlobal: phrase !== globalPhrase,
+      };
+    })
+    .filter((record) => record.differsFromGlobal)
+    .sort(
+      (a, b) =>
+        b.advantage - a.advantage ||
+        b.count - a.count ||
+        a.key.localeCompare(b.key),
+    )
+    .slice(0, contextRecordLimit)
+    .map(({ key, phrase }) => `${key}\t${phrase}\t48`)
+    .join("\n");
+  const data = [baseRows, contextRows].filter(Boolean).join("\n");
   await mkdir(resolve(ROOT, "generated"), { recursive: true });
   await writeFile(
     resolve(ROOT, "generated", "model.js"),
@@ -434,7 +477,8 @@ const train = async (): Promise<void> => {
   );
   console.log(
     `Generated ${Math.min(records.length, recordLimit)}/${records.length} ` +
-      `prior records across ${counts.size} codes.`,
+      `base records and ${Math.min(contextCounts.size, contextRecordLimit)} ` +
+      `context records across ${counts.size} codes.`,
   );
 };
 

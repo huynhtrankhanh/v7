@@ -32,14 +32,15 @@ npm run compile
 npm run evaluate -- --scope=corpus --limit=500
 ```
 
-The current 1,800-record artifact uses 48,651 bytes. On the first 500 corpus
-sentences it produces:
+The current artifact combines 1,200 global phrase priors with 600
+previous-word-conditioned exceptions. It uses 50,199 bytes. On the first 500
+corpus sentences it produces:
 
 | decoder            |  bytes | inconvenience | per syllable |      top-1 |      top-5 |
 | ------------------ | -----: | ------------: | -----------: | ---------: | ---------: |
 | KenLM baseline     |    745 |         5,147 |     0.569926 |     92.44% |     99.45% |
-| synthesized priors | 48,651 |     **5,087** | **0.563282** | **93.60%** | **99.52%** |
+| synthesized policy | 50,199 |     **5,077** | **0.562175** | **93.87%** | **99.49%** |
 
-This saves 60 modeled user actions on 9,031 representable syllables. The
+This saves 70 modeled user actions on 9,031 representable syllables. The
 machine-readable records are in `results/`. The full-corpus score remains to be
 measured; baseline and synthesized policies now share one oracle pass.

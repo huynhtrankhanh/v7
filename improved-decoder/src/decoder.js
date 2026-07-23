@@ -8,10 +8,17 @@
 import data from "../generated/model.js";
 
 const MODEL = Object.create(null);
+const CONTEXT = Object.create(null);
 for (const row of data.split("\n")) {
   if (!row) continue;
-  const [code, phrase, encodedBonus] = row.split("\t");
-  (MODEL[code] ||= Object.create(null))[phrase] = Number(encodedBonus) / 4;
+  const fields = row.split("\t");
+  if (fields.length === 3) {
+    const [code, phrase, encodedBonus] = fields;
+    (MODEL[code] ||= Object.create(null))[phrase] = Number(encodedBonus) / 4;
+  } else {
+    const [leftWord, code, phrase, encodedBonus] = fields;
+    CONTEXT[`${leftWord}\t${code}`] = [phrase, Number(encodedBonus) / 4];
+  }
 }
 
 export default function infer(input, api) {
@@ -26,14 +33,24 @@ export default function infer(input, api) {
   }
 
   const prior = MODEL[input.v7Island];
+  const leftWords = input.fixedLeftText
+    .normalize("NFC")
+    .toLocaleLowerCase("vi")
+    .match(/\p{L}+/gu);
+  const contextual =
+    leftWords &&
+    CONTEXT[`${leftWords[leftWords.length - 1]}\t${input.v7Island}`];
   sequences.sort((left, right) => {
     const leftText = left.join(" ");
     const rightText = right.join(" ");
     const leftScore =
-      api.kenlmScore(left) + (prior && prior[leftText] ? prior[leftText] : 0);
+      api.kenlmScore(left) +
+      (prior && prior[leftText] ? prior[leftText] : 0) +
+      (contextual && contextual[0] === leftText ? contextual[1] : 0);
     const rightScore =
       api.kenlmScore(right) +
-      (prior && prior[rightText] ? prior[rightText] : 0);
+      (prior && prior[rightText] ? prior[rightText] : 0) +
+      (contextual && contextual[0] === rightText ? contextual[1] : 0);
     return rightScore - leftScore || leftText.localeCompare(rightText);
   });
   return sequences
