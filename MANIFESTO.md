@@ -9,6 +9,7 @@
       * in the stroke input the IME should switch to some "raw outline mode" where strokes are joined by / to form an outline. this requires some input field marking and IME coordination. and the IME should show a thin bar saying "Raw outline mode"
       * in the translation input the IME is in the ordinary mode where user can type v7, Emily, stripped plover etc
   * Configure: user is to be taken straight to V7 IME settings activity
+* Yes, because Stripped Plover source structure has changed, the building code might have to be modified to intercept the new events from the source code.
 * Dictionary management screen:
   * Remove the top bar, it causes all sorts of layout problems for the inside WebView. the WebView should just occupy the entire real estate available
   * Allow the user to create a new blank JSON dictionary. the user doesn't have to upload anything to create that blank dictionary
