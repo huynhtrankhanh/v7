@@ -3,6 +3,7 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "lib": ["ES2020", "ES2022.Intl"],
     "ignoreDeprecations": "5.0",
     "rootDir": ".",
     "outDir": "./.ts-scripts"

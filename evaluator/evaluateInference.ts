@@ -1,10 +1,371 @@
-// This code returns a score indicating how bad the inference algorithm is.
-// The lower the score, the better the inference quality.
+import { getV7Code } from "./getInference";
 
-const evaluate = async (
-  text: string,
-  inference: (request: string[]) => string[],
-): number => {
-  const segmenter = new Intl.Segmenter("en", { granularity: "word" });
-  const parts = [...segmenter.segment(text)].map((x) => x.segment);
+export type InferenceCandidate = string | readonly string[];
+export type InferenceResponse = readonly InferenceCandidate[];
+export type InferenceFunction = (
+  request: string[],
+) => InferenceResponse | Promise<InferenceResponse>;
+
+export interface EvaluationWeights {
+  /** Enter one V7 island (normally one chord containing up to two syllables). */
+  v7Entry: number;
+  /** Select any visible candidate other than the first candidate. */
+  candidateSelection: number;
+  /** Enter piecemeal-edit mode at a position. */
+  piecemealEntry: number;
+  /** Replace one syllable while in piecemeal-edit mode. */
+  piecemealReplacement: number;
+}
+
+export interface EvaluationOptions {
+  /** Only candidates in this visible prefix can be selected. Defaults to 5. */
+  candidateLimit?: number;
+  /** V7 encodes at most two adjacent syllables in one island by default. */
+  maxSyllablesPerV7Island?: number;
+  weights?: Partial<EvaluationWeights>;
+}
+
+export type CorrectionStrategy = "accept" | "candidate-selection" | "piecemeal";
+
+export interface EvaluationStep {
+  sourceText: string;
+  targetSyllables: string[];
+  v7Code: string;
+  request: string[];
+  topPrediction: string[];
+  selectedCandidateIndex: number | null;
+  strategy: CorrectionStrategy;
+  v7EntryCost: number;
+  correctionCost: number;
+  score: number;
+}
+
+export interface EvaluationResult {
+  score: number;
+  representableSyllables: number;
+  fixedText: string[];
+  steps: EvaluationStep[];
+}
+
+export interface EvaluationIsland {
+  sourceStart: number;
+  sourceEnd: number;
+  sourceText: string;
+  targetSyllables: string[];
+  v7Code: string;
+}
+
+const DEFAULT_WEIGHTS: EvaluationWeights = {
+  v7Entry: 1,
+  candidateSelection: 1,
+  piecemealEntry: 1,
+  piecemealReplacement: 1,
 };
+
+const normalizeSyllable = (value: string): string =>
+  value.normalize("NFC").toLocaleLowerCase("vi");
+
+const sameSyllables = (
+  left: readonly string[],
+  right: readonly string[],
+): boolean =>
+  left.length === right.length &&
+  left.every((value, index) => value === right[index]);
+
+const isV7IslandSeparator = (value: string): boolean => value === " ";
+
+const positiveInteger = (value: number, name: string): number => {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new RangeError(`${name} must be a positive integer.`);
+  }
+  return value;
+};
+
+const nonNegativeNumber = (value: number, name: string): number => {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${name} must be a finite, non-negative number.`);
+  }
+  return value;
+};
+
+const resolveWeights = (
+  partial: Partial<EvaluationWeights> | undefined,
+): EvaluationWeights => {
+  const weights = { ...DEFAULT_WEIGHTS, ...partial };
+  return {
+    v7Entry: nonNegativeNumber(weights.v7Entry, "weights.v7Entry"),
+    candidateSelection: nonNegativeNumber(
+      weights.candidateSelection,
+      "weights.candidateSelection",
+    ),
+    piecemealEntry: nonNegativeNumber(
+      weights.piecemealEntry,
+      "weights.piecemealEntry",
+    ),
+    piecemealReplacement: nonNegativeNumber(
+      weights.piecemealReplacement,
+      "weights.piecemealReplacement",
+    ),
+  };
+};
+
+/**
+ * Split the target into V7 islands. Words that cannot be represented by the V7
+ * tokenizer, along with punctuation and layout, remain fixed text.
+ */
+export function buildEvaluationIslands(
+  text: string,
+  maxSyllablesPerV7Island = 2,
+): EvaluationIsland[] {
+  positiveInteger(maxSyllablesPerV7Island, "maxSyllablesPerV7Island");
+
+  const parts = [
+    ...new Intl.Segmenter("vi", { granularity: "word" }).segment(text),
+  ];
+  const islands: EvaluationIsland[] = [];
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (!part.isWordLike) continue;
+
+    const normalized = normalizeSyllable(part.segment);
+    const firstCode = getV7Code(normalized);
+    if (!firstCode) continue;
+
+    const targetSyllables = [normalized];
+    const codes = [firstCode];
+    let lastPartIndex = index;
+
+    while (targetSyllables.length < maxSyllablesPerV7Island) {
+      let nextWordIndex = lastPartIndex + 1;
+      let separator = "";
+      while (nextWordIndex < parts.length && !parts[nextWordIndex].isWordLike) {
+        separator += parts[nextWordIndex].segment;
+        nextWordIndex += 1;
+      }
+
+      if (nextWordIndex >= parts.length || !isV7IslandSeparator(separator)) {
+        break;
+      }
+
+      const nextSyllable = normalizeSyllable(parts[nextWordIndex].segment);
+      const nextCode = getV7Code(nextSyllable);
+      if (!nextCode) break;
+
+      targetSyllables.push(nextSyllable);
+      codes.push(nextCode);
+      lastPartIndex = nextWordIndex;
+    }
+
+    const sourceStart = part.index;
+    const lastPart = parts[lastPartIndex];
+    const sourceEnd = lastPart.index + lastPart.segment.length;
+    islands.push({
+      sourceStart,
+      sourceEnd,
+      sourceText: text.slice(sourceStart, sourceEnd),
+      targetSyllables,
+      v7Code: codes.join(""),
+    });
+    index = lastPartIndex;
+  }
+
+  return islands;
+}
+
+const getFixedText = (
+  text: string,
+  islands: readonly EvaluationIsland[],
+): string[] => {
+  const fixed: string[] = [];
+  let cursor = 0;
+  for (const island of islands) {
+    const span = text.slice(cursor, island.sourceStart);
+    if (span) fixed.push(span);
+    cursor = island.sourceEnd;
+  }
+  const trailing = text.slice(cursor);
+  if (trailing) fixed.push(trailing);
+  return fixed;
+};
+
+const candidateReplacement = (
+  candidate: InferenceCandidate,
+  request: readonly string[],
+): string | null => {
+  if (typeof candidate === "string") {
+    const prefix = request[0];
+    const suffix = request[2];
+    if (
+      candidate.startsWith(prefix) &&
+      candidate.endsWith(suffix) &&
+      candidate.length >= prefix.length + suffix.length
+    ) {
+      return candidate.slice(
+        prefix.length,
+        suffix ? candidate.length - suffix.length : undefined,
+      );
+    }
+    return candidate;
+  }
+
+  if (candidate.length === 1) return candidate[0];
+  if (candidate.length === request.length) return candidate[1];
+  return null;
+};
+
+const getSyllables = (text: string | null): string[] => {
+  if (text === null) return [];
+  return [...new Intl.Segmenter("vi", { granularity: "word" }).segment(text)]
+    .filter((part) => part.isWordLike)
+    .map((part) => normalizeSyllable(part.segment));
+};
+
+/**
+ * Find the cheapest sequence of piecemeal edits. A piecemeal entry may replace
+ * a contiguous range because the edit cursor advances after every replacement.
+ * Retyping a correct syllable can therefore be cheaper than entering edit mode
+ * a second time.
+ */
+export function getPiecemealCorrectionCost(
+  target: readonly string[],
+  prediction: readonly string[],
+  weights: Pick<
+    EvaluationWeights,
+    "piecemealEntry" | "piecemealReplacement"
+  > = DEFAULT_WEIGHTS,
+): number {
+  if (sameSyllables(target, prediction)) return 0;
+  if (target.length === 0) return 0;
+
+  if (target.length !== prediction.length) {
+    return (
+      weights.piecemealEntry + target.length * weights.piecemealReplacement
+    );
+  }
+
+  const memo = new Map<number, number>();
+  const solve = (from: number): number => {
+    let firstMismatch = from;
+    while (
+      firstMismatch < target.length &&
+      target[firstMismatch] === prediction[firstMismatch]
+    ) {
+      firstMismatch += 1;
+    }
+    if (firstMismatch === target.length) return 0;
+
+    const cached = memo.get(firstMismatch);
+    if (cached !== undefined) return cached;
+
+    let best = Number.POSITIVE_INFINITY;
+    for (let end = firstMismatch; end < target.length; end += 1) {
+      const rangeCost =
+        weights.piecemealEntry +
+        (end - firstMismatch + 1) * weights.piecemealReplacement;
+      best = Math.min(best, rangeCost + solve(end + 1));
+    }
+    memo.set(firstMismatch, best);
+    return best;
+  };
+
+  return solve(0);
+}
+
+/**
+ * Return an explainable inconvenience score. Fixed text is supplied verbatim
+ * and costs zero; every representable island pays for its V7 entry and then
+ * takes the cheapest available correction route.
+ */
+export async function evaluateDetailed(
+  text: string,
+  inference: InferenceFunction,
+  options: EvaluationOptions = {},
+): Promise<EvaluationResult> {
+  const candidateLimit = positiveInteger(
+    options.candidateLimit ?? 5,
+    "candidateLimit",
+  );
+  const maxSyllables = positiveInteger(
+    options.maxSyllablesPerV7Island ?? 2,
+    "maxSyllablesPerV7Island",
+  );
+  const weights = resolveWeights(options.weights);
+  const islands = buildEvaluationIslands(text, maxSyllables);
+  const steps: EvaluationStep[] = [];
+
+  for (const island of islands) {
+    const request = [text.slice(0, island.sourceStart), island.v7Code, ""];
+    const response = await inference([...request]);
+    if (!Array.isArray(response)) {
+      throw new TypeError("Inference must return an array of candidates.");
+    }
+
+    const predictions = response
+      .slice(0, candidateLimit)
+      .map((candidate) =>
+        getSyllables(candidateReplacement(candidate, request)),
+      );
+    const topPrediction = predictions[0] ?? [];
+    const exactCandidateIndex = predictions.findIndex((candidate) =>
+      sameSyllables(candidate, island.targetSyllables),
+    );
+    const piecemealCost = getPiecemealCorrectionCost(
+      island.targetSyllables,
+      topPrediction,
+      weights,
+    );
+
+    let strategy: CorrectionStrategy;
+    let correctionCost: number;
+    let selectedCandidateIndex: number | null;
+
+    if (exactCandidateIndex === 0) {
+      strategy = "accept";
+      correctionCost = 0;
+      selectedCandidateIndex = 0;
+    } else if (
+      exactCandidateIndex > 0 &&
+      weights.candidateSelection <= piecemealCost
+    ) {
+      strategy = "candidate-selection";
+      correctionCost = weights.candidateSelection;
+      selectedCandidateIndex = exactCandidateIndex;
+    } else {
+      strategy = "piecemeal";
+      correctionCost = piecemealCost;
+      selectedCandidateIndex = null;
+    }
+
+    steps.push({
+      sourceText: island.sourceText,
+      targetSyllables: [...island.targetSyllables],
+      v7Code: island.v7Code,
+      request,
+      topPrediction,
+      selectedCandidateIndex,
+      strategy,
+      v7EntryCost: weights.v7Entry,
+      correctionCost,
+      score: weights.v7Entry + correctionCost,
+    });
+  }
+
+  return {
+    score: steps.reduce((total, step) => total + step.score, 0),
+    representableSyllables: islands.reduce(
+      (total, island) => total + island.targetSyllables.length,
+      0,
+    ),
+    fixedText: getFixedText(text, islands),
+    steps,
+  };
+}
+
+export const evaluate = async (
+  text: string,
+  inference: InferenceFunction,
+  options?: EvaluationOptions,
+): Promise<number> => (await evaluateDetailed(text, inference, options)).score;
+
+export default evaluate;
