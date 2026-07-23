@@ -53,6 +53,10 @@ final class BundledStrippedPloverRuntime {
         void onPausedChanged(boolean paused);
     }
 
+    interface EventListener {
+        void onPloverEvent(String event);
+    }
+
     static synchronized BundledStrippedPloverRuntime get(Context context) {
         if (instance == null) {
             instance = new BundledStrippedPloverRuntime(
@@ -68,6 +72,7 @@ final class BundledStrippedPloverRuntime {
     private final Map<Integer, PendingCallback> callbacks = new HashMap<>();
     private final List<PendingRequest> pendingRequests = new ArrayList<>();
     private final List<StateListener> stateListeners = new ArrayList<>();
+    private final List<EventListener> eventListeners = new ArrayList<>();
     private WebView runtimeWebView;
     private FrameLayout attachedHost;
     private NativeStrippedPloverSqlite sqlite;
@@ -112,6 +117,24 @@ final class BundledStrippedPloverRuntime {
 
     void removeStateListener(StateListener listener) {
         mainHandler.post(() -> stateListeners.remove(listener));
+    }
+
+    void addEventListener(EventListener listener) {
+        mainHandler.post(() -> {
+            if (!eventListeners.contains(listener)) {
+                eventListeners.add(listener);
+            }
+        });
+    }
+
+    void removeEventListener(EventListener listener) {
+        mainHandler.post(() -> eventListeners.remove(listener));
+    }
+
+    private void publishEvent(String event) {
+        for (EventListener listener : new ArrayList<>(eventListeners)) {
+            listener.onPloverEvent(event == null ? "" : event);
+        }
     }
 
     private void publishPausedState() {
@@ -508,6 +531,11 @@ final class BundledStrippedPloverRuntime {
             } else {
                 complete(requestId, response, error);
             }
+        }
+
+        @JavascriptInterface
+        public void onEvent(String event) {
+            mainHandler.post(() -> publishEvent(event));
         }
 
     }

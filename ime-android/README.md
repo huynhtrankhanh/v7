@@ -28,6 +28,14 @@ imports.
   non-visual WebView separate from both the IME interface and dictionary
   manager. Its persistence bridge uses Android's private native SQLite
   database; no Node runtime or external server is required.
+- Stripped Plover's host-command events use native Android surfaces:
+  `{PLOVER:LOOKUP}` opens an entry lookup whose rows name their source
+  dictionary, `{PLOVER:ADD_TRANSLATION}` opens an add form with a writable
+  dictionary picker, and `{PLOVER:CONFIGURE}` opens V7 IME settings directly.
+- The add-translation outline field marks its editor context for raw outline
+  capture. V7 then joins physical steno chords with `/` and collapses to a
+  labeled 48 dp **Raw outline mode** bar. Focusing the translation field
+  restores ordinary V7/Emily/Stripped Plover input.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.
@@ -64,8 +72,8 @@ keyboard settings. The native settings activity includes:
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
 - a full-screen Stripped Plover dictionary manager opened from settings,
-  reusing a phone-friendly browser UI without nesting editable fields inside
-  the IME;
+  reusing a phone-friendly browser UI without an Activity action bar or
+  nesting editable fields inside the IME;
 - durable background dictionary imports in AndroidX's out-of-process
   JavaScript sandbox, with entry counts, phases, and a determinate loading
   notification while native SQLite installs the source transactionally;

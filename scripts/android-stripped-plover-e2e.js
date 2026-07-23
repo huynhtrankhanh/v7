@@ -205,7 +205,9 @@ async function main() {
     });
     await page.evaluateOnNewDocument(() => {
       window.__runtimeResults = [];
+      window.__runtimeEvents = [];
       window.__sqliteExec = [];
+      window.__sqliteEntries = [];
       window.AndroidStrippedPloverRuntime = {
         onReady() {
           window.__runtimeReady = true;
@@ -213,22 +215,70 @@ async function main() {
         onResponse(requestId, response, error) {
           window.__runtimeResults.push({ requestId, response, error });
         },
+        onEvent(event) {
+          window.__runtimeEvents.push(JSON.parse(event));
+        },
       };
       window.AndroidStrippedPloverSqlite = {
         open() {},
         exec(sql) {
           window.__sqliteExec.push(sql);
         },
-        query(sql) {
+        query(sql, parametersJson = "[]") {
+          const parameters = JSON.parse(parametersJson);
+          if (
+            /SELECT COUNT\(\*\) AS count FROM entries WHERE dictionary = \?/i.test(
+              sql,
+            )
+          ) {
+            return JSON.stringify([
+              {
+                count: window.__sqliteEntries.filter(
+                  (entry) => entry.dictionary === parameters[0],
+                ).length,
+              },
+            ]);
+          }
+          if (
+            /SELECT translation FROM entries WHERE stroke = \? AND dictionary = \?/i.test(
+              sql,
+            )
+          ) {
+            const entry = window.__sqliteEntries.find(
+              (candidate) =>
+                candidate.stroke === parameters[0] &&
+                candidate.dictionary === parameters[1],
+            );
+            return JSON.stringify(
+              entry ? [{ translation: entry.translation }] : [],
+            );
+          }
           if (/COUNT\(\*\)/i.test(sql)) {
-            return JSON.stringify([{ count: 0 }]);
+            return JSON.stringify([{ count: window.__sqliteEntries.length }]);
           }
           if (/SELECT MAX\(/i.test(sql)) {
             return JSON.stringify([{ maxLen: null }]);
           }
           return "[]";
         },
-        run() {
+        run(sql, parametersJson = "[]") {
+          const parameters = JSON.parse(parametersJson);
+          if (/INSERT OR REPLACE INTO entries/i.test(sql)) {
+            const [dictionary, stroke, translation] = parameters;
+            window.__sqliteEntries = window.__sqliteEntries.filter(
+              (entry) =>
+                entry.dictionary !== dictionary || entry.stroke !== stroke,
+            );
+            window.__sqliteEntries.push({
+              dictionary,
+              stroke,
+              translation,
+            });
+          } else if (/DELETE FROM entries WHERE dictionary = \?/i.test(sql)) {
+            window.__sqliteEntries = window.__sqliteEntries.filter(
+              (entry) => entry.dictionary !== parameters[0],
+            );
+          }
           return JSON.stringify({ changes: 1, lastInsertRowid: 1 });
         },
       };
@@ -263,6 +313,33 @@ async function main() {
     if (!parsed || !Array.isArray(parsed.dictionaries)) {
       throw new Error(`unexpected dictionary state: ${JSON.stringify(parsed)}`);
     }
+    const eventImport = await requestRuntime(page, 8, "import_dictionary", {
+      name: "host-events.json",
+      type: "json",
+      data: { TEFT: "{PLOVER:LOOKUP:test}" },
+      merge: false,
+    });
+    const eventTranslation = await requestRuntime(page, 9, "translate", {
+      stroke: "TEFT",
+    });
+    const lookupEvent = await page.evaluate(() =>
+      window.__runtimeEvents.find(
+        (event) =>
+          event.event === "plover:lookup" &&
+          event.command === "lookup" &&
+          event.argument === "test",
+      ),
+    );
+    if (!lookupEvent) {
+      const runtimeEvents = await page.evaluate(() => window.__runtimeEvents);
+      throw new Error(
+        `Bundled runtime did not forward the upstream Plover command event: ${JSON.stringify({ eventImport, eventTranslation, runtimeEvents })}`,
+      );
+    }
+    await requestRuntime(page, 10, "remove_dictionary", {
+      name: "host-events.json",
+    });
+    await requestRuntime(page, 11, "reset_state");
 
     // Exercise the same consumeNamedData contract used by AndroidX
     // JavaScriptSandbox. This is intentionally a separate, DOM-free import

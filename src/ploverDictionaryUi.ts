@@ -44,6 +44,19 @@ const PLOVER_DICTIONARY_DIALOG_HTML = `
             <button id="plover-refresh" type="button">Refresh</button>
           </div>
           <div id="plover-dictionary-list"></div>
+          <div class="plover-create-dictionary">
+            <label class="plover-field">
+              <span>New blank JSON dictionary</span>
+              <input
+                type="text"
+                id="plover-new-dictionary-name"
+                placeholder="Dictionary name"
+              />
+            </label>
+            <button id="plover-new-dictionary-create" type="button">
+              Create blank dictionary
+            </button>
+          </div>
         </div>
         <details class="plover-section">
           <summary>Import</summary>

@@ -286,6 +286,7 @@ interface AndroidImeBridge {
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
   isPloverPaused?(): boolean;
+  isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
@@ -322,6 +323,7 @@ const isDictionaryManagementPage = new URLSearchParams(
 ).has("dictionary-management");
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
+let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
@@ -365,6 +367,7 @@ let ploverRpcId = 1;
 const ploverPending = new Map();
 const dictionaryInputIds = new Set([
   "plover-dict-name",
+  "plover-new-dictionary-name",
   "plover-entry-search-stroke",
   "plover-entry-search-output",
   "plover-entry-stroke",
@@ -862,6 +865,56 @@ async function refreshPloverDictionaries({ force = false } = {}) {
   } catch (e) {
     console.log(e);
     setPloverMessage(e.message || "Failed to load dictionaries.");
+  }
+}
+
+async function createBlankJsonDictionary(button: HTMLElement) {
+  if (!strippedPlover.available) {
+    setPloverMessage("Stripped Plover is unavailable.");
+    return;
+  }
+  const nameInput = document.getElementById(
+    "plover-new-dictionary-name",
+  ) as HTMLInputElement | null;
+  let name = (nameInput?.value || "").trim();
+  if (!name) {
+    setPloverMessage("Enter a name for the blank dictionary.");
+    nameInput?.focus();
+    return;
+  }
+  if (!name.toLowerCase().endsWith(".json")) {
+    name += ".json";
+  }
+  if (
+    ploverDictionaries.some(
+      (dictionary) =>
+        dictionary.identifier.toLowerCase() === name.toLowerCase(),
+    )
+  ) {
+    setPloverMessage(`Dictionary "${name}" already exists.`);
+    return;
+  }
+
+  setButtonLoading(button, true, "Creating...");
+  try {
+    await ploverRpc("import_dictionary", {
+      name,
+      type: "json",
+      data: {},
+      merge: false,
+    });
+    if (nameInput) nameInput.value = "";
+    await refreshPloverDictionaries({ force: true });
+    setPloverMessage("");
+  } catch (error) {
+    console.error(error);
+    setPloverMessage(
+      error instanceof Error
+        ? error.message
+        : "Failed to create the blank dictionary.",
+    );
+  } finally {
+    setButtonLoading(button, false, "");
   }
 }
 
@@ -1650,6 +1703,21 @@ function isStaleInference(controller) {
 }
 
 async function handleChord(stroke) {
+  if (androidRawOutlineMode) {
+    abortInferenceRequest(true);
+    const currentOutline = renderVisibleText(state.islands, []);
+    buffer.setIslands([
+      createIsland(
+        "vietnamese",
+        currentOutline ? `${currentOutline}/${stroke}` : stroke,
+      ),
+    ]);
+    state.candidates = [];
+    piecemealCursorIndex = null;
+    updateDisplay();
+    return;
+  }
+
   // On Android, Q+A on the physical QWERTY keyboard serializes to #S.
   // It is reserved for choosing another IME and is not a V7/Plover stroke.
   if (androidIme && (stroke === "#S-" || stroke === "#S")) {
@@ -2229,18 +2297,27 @@ function updateDisplay() {
   document.body.classList.toggle("stripped-display", strippedDisplay.enabled);
   document.body.classList.toggle(
     "android-normal-typing",
-    strippedDisplay.enabled && !androidStenoModeEnabled,
+    strippedDisplay.enabled &&
+      !androidStenoModeEnabled &&
+      !androidRawOutlineMode,
+  );
+  document.body.classList.toggle(
+    "android-raw-outline",
+    strippedDisplay.enabled && androidRawOutlineMode,
   );
   const modeTitle = document.querySelector<HTMLElement>(".ime-mode-title");
   if (modeTitle && strippedDisplay.enabled) {
-    modeTitle.textContent = androidStenoModeEnabled
-      ? "Compose"
-      : "Normal typing";
+    modeTitle.textContent = androidRawOutlineMode
+      ? "Raw outline mode"
+      : androidStenoModeEnabled
+        ? "Compose"
+        : "Normal typing";
   }
   document.body.classList.toggle(
     "stripped-plover-active",
     strippedDisplay.enabled &&
       androidStenoModeEnabled &&
+      !androidRawOutlineMode &&
       strippedPlover.enabled,
   );
   if (inferenceError) {
@@ -2581,6 +2658,9 @@ function setupPloverControls() {
   );
   const refreshButton = document.getElementById("plover-refresh");
   const endSoloButton = document.getElementById("plover-end-solo");
+  const createDictionaryButton = document.getElementById(
+    "plover-new-dictionary-create",
+  );
   const uploadButton = document.getElementById("plover-dict-upload");
   const dictionaryFileInput = document.getElementById(
     "plover-dict-file",
@@ -2688,6 +2768,11 @@ function setupPloverControls() {
   if (endSoloButton) {
     endSoloButton.addEventListener("click", () => {
       void endSoloDictionaries(endSoloButton);
+    });
+  }
+  if (createDictionaryButton) {
+    createDictionaryButton.addEventListener("click", () => {
+      void createBlankJsonDictionary(createDictionaryButton);
     });
   }
   if (dictionaryFileInput && dictionaryTypeSelect) {
@@ -2926,6 +3011,7 @@ declare global {
       errorMessage: string,
     ) => void;
     handleAndroidPloverPaused?: (paused: boolean) => void;
+    handleAndroidRawOutlineModeChanged?: (enabled: boolean) => void;
     handleAndroidStenoModeChanged?: (enabled: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
@@ -3105,6 +3191,12 @@ window.handleAndroidStenoModeChanged = (enabled) => {
   updateDisplay();
 };
 
+window.handleAndroidRawOutlineModeChanged = (enabled) => {
+  androidRawOutlineMode = enabled;
+  clearPressedQwertyKeys();
+  updateDisplay();
+};
+
 function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   if (!androidIme) return;
   const grammarSections = (candidateDiffPlan?.sections ?? [])
@@ -3141,7 +3233,8 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   window.requestAnimationFrame(() => {
     if (
       document.body.classList.contains("stripped-plover-active") ||
-      document.body.classList.contains("android-normal-typing")
+      document.body.classList.contains("android-normal-typing") ||
+      document.body.classList.contains("android-raw-outline")
     ) {
       if (lastRequestedAndroidKeyboardHeight !== 48) {
         lastRequestedAndroidKeyboardHeight = 48;

@@ -21,6 +21,7 @@ interface Engine {
 interface NativeRuntimeBridge {
   onReady(): void;
   onResponse(requestId: number, response: string, error: string): void;
+  onEvent(event: string): void;
 }
 
 declare const AndroidStrippedPloverRuntime: NativeRuntimeBridge;
@@ -152,7 +153,17 @@ async function preparePythonRuntime(): Promise<void> {
 async function loadEngine(): Promise<Engine> {
   await preparePythonRuntime();
   const { StrippedPlover } = await import("@stripped-plover/engine");
-  return new StrippedPlover("android-native.sqlite") as Engine;
+  const engine = new StrippedPlover("android-native.sqlite") as unknown as
+    Engine & {
+      eventSink: (event: Record<string, unknown>) => void;
+    };
+  // The upstream CLI writes asynchronous host-command events to STDOUT. The
+  // Android bundle has no STDOUT protocol transport, so replace that sink
+  // with the deliberately narrow native event bridge.
+  engine.eventSink = (event) => {
+    AndroidStrippedPloverRuntime.onEvent(JSON.stringify(event));
+  };
+  return engine;
 }
 
 function report(

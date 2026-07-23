@@ -184,6 +184,15 @@ body.dictionary-management-page #plover-lookup-results {
   overflow: auto;
 }
 
+.plover-create-dictionary {
+  align-items: end;
+  border-top: 1px solid #d8dee8;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-top: 10px;
+}
+
 .plover-dictionary-item {
   align-items: center;
   background: #fff;
@@ -519,7 +528,8 @@ body.dictionary-management-page #plover-lookup-results {
   }
 
   .plover-grid,
-  .plover-grid.three {
+  .plover-grid.three,
+  .plover-create-dictionary {
     grid-template-columns: 1fr;
   }
 

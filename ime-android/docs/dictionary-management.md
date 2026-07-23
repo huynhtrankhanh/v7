@@ -21,6 +21,10 @@ The activity loads the dedicated `static/dictionary.html` page. That page has
 no inference, PREEDIT, keyboard-mode, or input-method controls. Conversely, the
 normal IME page does not mount the dictionary dialog.
 
+The activity uses a no-action-bar theme. Its WebView is the root visual
+surface and occupies all content space between the real system bars; there is
+no native title strip reducing or offsetting the page.
+
 ## Web and native responsibilities
 
 The management WebView uses standard web capabilities for dialog rendering,
@@ -53,6 +57,8 @@ Android uses the same controller and Stripped Plover RPC methods as the browser
 surface:
 
 - refresh, enable/disable, reprioritize, solo, rename, and remove dictionaries;
+- create a named, writable blank JSON dictionary without selecting or
+  uploading a file;
 - open a dictionary's entries directly from its dictionary card;
 - import and export JSON or Python dictionaries;
 - enumerate, search, add, update, and remove entries;

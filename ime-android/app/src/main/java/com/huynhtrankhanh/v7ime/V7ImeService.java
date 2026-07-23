@@ -1,6 +1,7 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.inputmethodservice.InputMethodService;
@@ -67,6 +68,7 @@ public class V7ImeService extends InputMethodService {
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
+    private boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> evaluateJavascript(
                     "window.handleAndroidPloverPaused"
@@ -74,14 +76,17 @@ public class V7ImeService extends InputMethodService {
                             + paused
                             + ")"
             );
+    private final BundledStrippedPloverRuntime.EventListener ploverEventListener =
+            this::handlePloverEvent;
 
     @Override
     public void onCreate() {
         super.onCreate();
         rememberKeyboardConfiguration(getResources().getConfiguration());
-        BundledStrippedPloverRuntime.get(this).addStateListener(
-                ploverStateListener
-        );
+        BundledStrippedPloverRuntime runtime =
+                BundledStrippedPloverRuntime.get(this);
+        runtime.addStateListener(ploverStateListener);
+        runtime.addEventListener(ploverEventListener);
     }
 
     @Override
@@ -116,6 +121,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
+        rawOutlineMode = isRawOutlineEditor(attribute);
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
@@ -125,11 +131,14 @@ public class V7ImeService extends InputMethodService {
         editorPassedHardwareKeys.clear();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
+        publishRawOutlineModeState();
     }
 
     @Override
     public void onFinishInput() {
         clearPreeditSession();
+        rawOutlineMode = false;
+        publishRawOutlineModeState();
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
         editorPassedHardwareKeys.clear();
@@ -212,9 +221,10 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
-        BundledStrippedPloverRuntime.get(this).removeStateListener(
-                ploverStateListener
-        );
+        BundledStrippedPloverRuntime runtime =
+                BundledStrippedPloverRuntime.get(this);
+        runtime.removeStateListener(ploverStateListener);
+        runtime.removeEventListener(ploverEventListener);
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
             inputContainer = null;
@@ -267,7 +277,7 @@ public class V7ImeService extends InputMethodService {
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
-                        stenoModeEnabled,
+                        stenoModeEnabled || rawOutlineMode,
                         event.getKeyCode(),
                         event.getAction(),
                         event.getRepeatCount()
@@ -283,7 +293,7 @@ public class V7ImeService extends InputMethodService {
                 && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if (!stenoModeEnabled) {
+        if (!stenoModeEnabled && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 editorPassedHardwareKeys.add(event.getKeyCode());
@@ -326,6 +336,9 @@ public class V7ImeService extends InputMethodService {
         lastKeyEventSignature = signature;
 
         if (action == HardwareKeyActionResolver.Action.TOGGLE_STENO) {
+            if (rawOutlineMode) {
+                return true;
+            }
             editorPassedHardwareKeys.remove(event.getKeyCode());
             stenoModeEnabled = !stenoModeEnabled;
             finishCurrentPreedit();
@@ -671,6 +684,73 @@ public class V7ImeService extends InputMethodService {
         );
     }
 
+    private void publishRawOutlineModeState() {
+        evaluateJavascript(
+                "window.handleAndroidRawOutlineModeChanged"
+                        + " && window.handleAndroidRawOutlineModeChanged("
+                        + rawOutlineMode
+                        + ")"
+        );
+    }
+
+    private boolean isRawOutlineEditor(EditorInfo editorInfo) {
+        if (editorInfo == null || editorInfo.privateImeOptions == null) {
+            return false;
+        }
+        for (String option : editorInfo.privateImeOptions.split(",")) {
+            if (PloverCommandActivity.RAW_OUTLINE_IME_OPTION.equals(
+                    option.trim()
+            )) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void handlePloverEvent(String eventBody) {
+        try {
+            JSONObject event = new JSONObject(eventBody);
+            PloverCommandEvent commandEvent = new PloverCommandEvent(
+                    PloverCommandEvent.typeFor(
+                            event.optString("event", ""),
+                            event.optString("command", "")
+                    ),
+                    event.optString("argument", "")
+            );
+            Intent intent;
+            switch (commandEvent.type) {
+                case LOOKUP:
+                    intent = new Intent(
+                            this,
+                            PloverCommandActivity.class
+                    ).setAction(PloverCommandActivity.ACTION_LOOKUP);
+                    break;
+                case ADD_TRANSLATION:
+                    intent = new Intent(
+                            this,
+                            PloverCommandActivity.class
+                    ).setAction(PloverCommandActivity.ACTION_ADD_TRANSLATION);
+                    break;
+                case CONFIGURE:
+                    intent = new Intent(this, SettingsActivity.class);
+                    break;
+                default:
+                    Log.w(LOG_TAG, "Ignoring unknown Plover event: " + eventBody);
+                    return;
+            }
+            if (!commandEvent.argument.isEmpty()) {
+                intent.putExtra(
+                        PloverCommandActivity.EXTRA_ARGUMENT,
+                        commandEvent.argument
+                );
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception error) {
+            Log.e(LOG_TAG, "Unable to handle Plover event", error);
+        }
+    }
+
     private void evaluateJavascript(String script) {
         if (webView == null) {
             return;
@@ -927,6 +1007,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public boolean isStenoModeEnabled() {
             return stenoModeEnabled;
+        }
+
+        @JavascriptInterface
+        public boolean isRawOutlineMode() {
+            return rawOutlineMode;
         }
 
         @JavascriptInterface

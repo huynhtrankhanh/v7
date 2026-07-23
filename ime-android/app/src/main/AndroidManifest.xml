@@ -29,7 +29,15 @@
         <activity
             android:name=".DictionaryManagementActivity"
             android:exported="false"
-            android:label="@string/manage_dictionaries" />
+            android:label="@string/manage_dictionaries"
+            android:theme="@style/AppTheme.NoActionBar" />
+
+        <activity
+            android:name=".PloverCommandActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:theme="@style/AppTheme.CommandDialog"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize" />
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

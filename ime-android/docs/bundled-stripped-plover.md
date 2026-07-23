@@ -38,6 +38,14 @@ editing bridge. Both interface clients submit the existing JSON RPC protocol
 to the same serialized runtime queue, so translation and dictionary editing
 share one engine and database.
 
+The pinned engine also emits the upstream asynchronous `plover:lookup`,
+`plover:add_translation`, and `plover:configure` events. The CLI normally
+writes them between STDIO protocol responses. Android replaces that event sink
+with a separate native callback while leaving request/response completion
+unchanged. `V7ImeService` routes lookup and add-translation to native dialog
+activities and configure directly to `SettingsActivity`; unrelated events are
+not treated as UI commands.
+
 Dictionary imports use that separation to outlive the management screen. A
 WorkManager foreground task owns the loading notification and staged source.
 It pauses the WebView engine, creates AndroidX JavaScriptEngine's official
@@ -126,7 +134,8 @@ At the pinned revision, the direct engine surface is:
 - `process.platform`.
 
 The STDIO entry's `node:readline`, `process.argv`, stdin, stdout, and exit APIs
-are intentionally absent. Android supplies a small browser RPC entry instead.
+are intentionally absent. Android supplies a small browser RPC entry and
+explicit asynchronous event sink instead.
 Web Crypto implements secure random bytes. Maintained browser packages provide
 the Buffer/process and Node-core compatibility required inside the upstream
 browser WebAssembly dependencies.

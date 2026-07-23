@@ -67,7 +67,8 @@ button {
 }
 
 .ime-plover-banner,
-.ime-normal-banner {
+.ime-normal-banner,
+.ime-raw-outline-banner {
   align-items: center;
   display: none;
   gap: 9px;
@@ -75,7 +76,8 @@ button {
 }
 
 .ime-plover-banner strong,
-.ime-normal-banner strong {
+.ime-normal-banner strong,
+.ime-raw-outline-banner strong {
   font-size: 0.82rem;
   letter-spacing: 0.02em;
 }
@@ -92,6 +94,14 @@ button {
   background: var(--ime-accent);
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgb(201 245 111 / 14%);
+  height: 7px;
+  width: 7px;
+}
+
+.ime-raw-outline-pulse {
+  background: #7dd3fc;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(125 211 252 / 14%);
   height: 7px;
   width: 7px;
 }
@@ -477,12 +487,14 @@ body.stripped-plover-paused .ime-status-dot {
 }
 
 body.stripped-plover-active,
-body.android-normal-typing {
+body.android-normal-typing,
+body.android-raw-outline {
   background: #17140e;
 }
 
 body.stripped-plover-active .ime-toolbar,
-body.android-normal-typing .ime-toolbar {
+body.android-normal-typing .ime-toolbar,
+body.android-raw-outline .ime-toolbar {
   border: 0;
   flex: 1 1 auto;
   justify-content: center;
@@ -498,15 +510,22 @@ body.android-normal-typing .ime-normal-banner {
   display: flex;
 }
 
+body.android-raw-outline .ime-raw-outline-banner {
+  display: flex;
+}
+
 body.stripped-plover-active .ime-identity,
 body.stripped-plover-active #workbench,
 body.android-normal-typing .ime-identity,
-body.android-normal-typing #workbench {
+body.android-normal-typing #workbench,
+body.android-raw-outline .ime-identity,
+body.android-raw-outline #workbench {
   display: none !important;
 }
 
 body.stripped-plover-active .ime-plover-state,
-body.android-normal-typing .ime-plover-state {
+body.android-normal-typing .ime-plover-state,
+body.android-raw-outline .ime-plover-state {
   display: none;
 }
 

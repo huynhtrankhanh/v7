@@ -110,6 +110,14 @@ async function main() {
       window.__androidModelState = "loading";
       window.__androidPloverBodies = [];
       window.__androidPloverPaused = false;
+      window.__androidDictionaries = [
+        {
+          identifier: "main.json",
+          enabled: true,
+          readonly: false,
+          entries: 2,
+        },
+      ];
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.AndroidIme = {
@@ -124,6 +132,9 @@ async function main() {
         },
         isStenoModeEnabled() {
           return true;
+        },
+        isRawOutlineMode() {
+          return false;
         },
         isPloverPaused() {
           return window.__androidPloverPaused;
@@ -175,18 +186,25 @@ async function main() {
         requestPlover(body, requestId) {
           const request = JSON.parse(body);
           window.__androidPloverBodies.push(request);
+          if (
+            request.method === "import_dictionary" &&
+            request.params?.type === "json" &&
+            !window.__androidDictionaries.some(
+              ({ identifier }) => identifier === request.params.name,
+            )
+          ) {
+            window.__androidDictionaries.push({
+              identifier: request.params.name,
+              enabled: true,
+              readonly: false,
+              entries: Object.keys(request.params.data || {}).length,
+            });
+          }
           setTimeout(() => {
             const results = {
               get_dictionary_state: {
                 solo: false,
-                dictionaries: [
-                  {
-                    identifier: "main.json",
-                    enabled: true,
-                    readonly: false,
-                    entries: 2,
-                  },
-                ],
+                dictionaries: window.__androidDictionaries,
               },
               enumerate_entries: {
                 page: 1,
@@ -261,6 +279,38 @@ async function main() {
       dedicatedSurface: document.body.classList.contains("ime-surface"),
       inferenceStatus: document.querySelector("#inference-status").textContent,
     }));
+
+    await page.evaluate(() => {
+      window.clearPreeditFromAndroid();
+      window.handleAndroidRawOutlineModeChanged(true);
+    });
+    await androidChord(page, ["t"]);
+    await androidChord(page, ["e"]);
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("android-raw-outline") &&
+        window.__androidHeight === 48 &&
+        window.__androidPreedits.at(-1)?.text.includes("/"),
+    );
+    const rawOutlineSurface = await page.evaluate(() => ({
+      label: document
+        .querySelector(".ime-raw-outline-banner")
+        .textContent.trim(),
+      workbench: getComputedStyle(document.querySelector("#workbench")).display,
+      height: window.__androidHeight,
+      outline: window.__androidPreedits.at(-1)?.text,
+    }));
+    assert(
+      rawOutlineSurface.label === "Raw outline mode" &&
+        rawOutlineSurface.workbench === "none" &&
+        rawOutlineSurface.height === 48 &&
+        rawOutlineSurface.outline.split("/").length === 2,
+      `Raw outline mode did not join strokes in a thin bar: ${JSON.stringify(rawOutlineSurface)}`,
+    );
+    await page.evaluate(() => {
+      window.handleAndroidRawOutlineModeChanged(false);
+      window.clearPreeditFromAndroid();
+    });
     assert(initial.stripped, "Android bridge did not enable stripped mode");
     assert(
       await page.evaluate(
@@ -833,6 +883,25 @@ async function main() {
         document.querySelector("#plover-dictionary-dialog")?.open &&
         document.querySelector(".plover-dictionary-name")?.textContent ===
           "main.json",
+    );
+    await page.type("#plover-new-dictionary-name", "scratch");
+    await page.click("#plover-new-dictionary-create");
+    await page.waitForFunction(() =>
+      Array.from(document.querySelectorAll(".plover-dictionary-name")).some(
+        (element) => element.textContent === "scratch.json",
+      ),
+    );
+    assert(
+      await page.evaluate(() =>
+        window.__androidPloverBodies.some(
+          (request) =>
+            request.method === "import_dictionary" &&
+            request.params.name === "scratch.json" &&
+            request.params.type === "json" &&
+            Object.keys(request.params.data).length === 0,
+        ),
+      ),
+      "Blank JSON dictionary creation did not issue an empty import",
     );
     const managementSurface = await page.evaluate(() => ({
       managementPage: document.body.classList.contains(
