@@ -29,18 +29,19 @@ Run:
 cd improved-decoder
 npm run train
 npm run compile
-npm run evaluate -- --scope=corpus --limit=500
+npm run evaluate -- --scope=corpus --limit=0
 ```
 
 The current artifact combines 1,200 global phrase priors with 600
-previous-word-conditioned exceptions. It uses 50,199 bytes. On the first 500
+previous-word-conditioned exceptions. It uses 50,199 bytes. On all 11,385
 corpus sentences it produces:
 
 | decoder            |  bytes | inconvenience | per syllable |      top-1 |      top-5 |
 | ------------------ | -----: | ------------: | -----------: | ---------: | ---------: |
-| KenLM baseline     |    745 |         5,147 |     0.569926 |     92.44% |     99.45% |
-| synthesized policy | 50,199 |     **5,077** | **0.562175** | **93.87%** | **99.49%** |
+| KenLM baseline     |    745 |       101,249 |     0.592387 |     89.82% |     98.88% |
+| synthesized policy | 50,199 |   **100,083** | **0.585565** | **91.02%** | **98.93%** |
 
-This saves 70 modeled user actions on 9,031 representable syllables. The
-machine-readable records are in `results/`. The full-corpus score remains to be
-measured; baseline and synthesized policies now share one oracle pass.
+This saves 1,166 modeled user actions on 170,917 representable syllables. Put
+another way, it removes 10.84% of the baseline's inconvenience above the
+unavoidable one-entry-per-island cost. The machine-readable records are in
+`results/`; baseline and synthesized policies share one oracle pass.

@@ -1,0 +1,36 @@
+{
+  "benchmark": {
+    "scope": "corpus",
+    "limit": 0,
+    "note": "Synthesis and evaluation both use the complete public corpus; this is a corpus-fit result, not a held-out estimate."
+  },
+  "artifacts": {
+    "limitBytes": 51200,
+    "baselineBytes": 745,
+    "decoderBytes": 50199
+  },
+  "results": [
+    {
+      "decoder": "baseline",
+      "sentences": 11385,
+      "islands": 90497,
+      "representableSyllables": 170917,
+      "score": 101249,
+      "inconveniencePerSyllable": 0.5923869480508083,
+      "top1Exact": 0.898173420113374,
+      "top5Recall": 0.988762058410776,
+      "elapsedMs": 1375751
+    },
+    {
+      "decoder": "decoder",
+      "sentences": 11385,
+      "islands": 90497,
+      "representableSyllables": 170917,
+      "score": 100083,
+      "inconveniencePerSyllable": 0.5855649233253567,
+      "top1Exact": 0.9102290683669072,
+      "top5Recall": 0.989325613003746,
+      "elapsedMs": 1375751
+    }
+  ]
+}
