@@ -15,6 +15,8 @@ The artifact:
 `src/baseline.js` is the exhaustive KenLM-only reference policy.
 `src/decoder.js` is the trainable/synthesizable policy. `scripts/compile.mjs`
 bundles and minifies both to `dist/` and rejects artifacts over 51,200 bytes.
+See [`TRAINING.md`](TRAINING.md) for the complete training recipe, experiment
+history, failed ablations, infrastructure lessons, and recommendations.
 
 The current experiment is deliberately **corpus-fit**, not held-out: synthesis
 may inspect all of `evaluator/dataset.json`, and scoring uses that same complete
