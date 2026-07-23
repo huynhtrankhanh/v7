@@ -361,7 +361,7 @@ The next search study should score and time:
 
 That comparison separates candidate-pruning gains from corpus-prior gains.
 
-### The existing inconvenience evaluator is optimistic
+### The local inconvenience evaluator is optimistic
 
 Every island receives the ground-truth preceding text. A wrong prediction does
 not become context for the next island, and the model assumes the user detects
@@ -369,9 +369,11 @@ and corrects every error immediately. Candidate ranks 2 through 5 all cost one
 action. It does not model delayed discovery, cursor travel, undo, deletion,
 retyping, inspection time, or error cascades.
 
-The complete discussion and proposed stateful causal replay evaluator are in
-`../PROGRAM_SYNTHESIS_REPORT.md`. Until that evaluator exists, the score should
-be described as local oracle-history inconvenience, not actual IME effort.
+The complete discussion is in `../PROGRAM_SYNTHESIS_REPORT.md`. The new
+`../evaluator/evaluateImeSession.ts` implements the stateful sensitivity curve
+described there; see `../evaluator/SESSION_EVALUATOR.md`. This score should
+still be described as local oracle-history inconvenience, not actual IME
+effort.
 
 ### Corpus-fit accuracy is not generalization
 
@@ -391,10 +393,10 @@ shipping requires the device and session tests described in the report.
 
 ## Recommended next iteration
 
-1. Implement stateful session replay before optimizing the current scalar much
-   further. Feed actual committed predictions into later inference so errors
-   can propagate, and model delayed correction policies.
-2. Measure the real Rust decoder on both the local and causal evaluators.
+1. Measure the real Rust decoder on both the local and causal evaluators, then
+   calibrate action-time weights on the target-device matrix.
+2. Add recorded-stroke trace ingestion and compare undo-and-retype recovery
+   with the deterministic piecemeal/editor policy.
 3. Use exhaustive search only to label pruning failures and establish an oracle
    upper bound.
 4. Distill the winning priors and exceptions into an adaptive-width beam,

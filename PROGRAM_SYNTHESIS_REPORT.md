@@ -232,33 +232,36 @@ lattice diagnostics, and fast synthesis iterations, but an improvement in this
 score is evidence of decoder headroom rather than a direct prediction of user
 experience.
 
-### Replace it with stateful causal replay
+### Stateful causal replay is now available
 
-A realistic primary evaluator should replay complete sessions through the same
-state transitions as the IME. Its state should include the actual committed
-text, active composition, visible candidates and selected index, cursor or
-selection, undo history, elapsed actions, and unresolved errors. The next
-inference request must use the decoder's committed prefix, not the reference
-prefix.
+`evaluator/evaluateImeSession.ts` now replays complete sessions through the
+IME's causal editing constraints. It tracks actual fixed text, unresolved
+composition, visible candidates, delayed errors, recovery operations, and
+elapsed decoder calls. The next inference request uses the actual current
+buffer, not the reference prefix. The detailed model, API, and declared
+limitations are in `evaluator/SESSION_EVALUATOR.md`.
 
-At minimum, implement three paired modes:
+It provides three categories of paired mode:
 
 1. **Oracle-history local mode:** retain the current evaluator as a cheap,
    explainable diagnostic.
-2. **Free-running causal mode:** automatically accept the top candidate and
-   feed it into all later requests. Report final word/syllable error, error
-   cascade length, and how much later ranking degrades after the first error.
+2. **Free-running causal mode:** make no explicit corrections, keep unresolved
+   islands live for later evidence, and apply only the IME's normal automatic
+   commits at punctuation. Report final word/syllable error, error cascade
+   length, and how much later ranking degrades after the first error.
 3. **Delayed-correction user mode:** simulate when a user notices an error and
-   replay the cheapest legal recovery through real IME operations. Use several
+   replay a declared legal recovery through real IME operations. Use several
    predeclared detection policies--for example immediate, after 1/3/5 islands,
    at clause punctuation, and at end of message--rather than hiding one
    favorable assumption in a scalar.
 
-The delayed-correction mode should charge action-specific costs for candidate
+The delayed-correction mode charges action-specific costs for candidate
 navigation by rank, commit, cursor movement, range selection, backspace/delete,
-undo, retyping V7 chords, and reopening piecemeal mode. If time data is
-available, add measured latency and candidate inspection time rather than
-assuming all actions cost equally. A small user study or anonymized,
+retyping V7 chords, and reopening piecemeal mode. Undo-history search is not yet
+used by the deterministic recovery policy; adding recorded action traces is the
+next way to compare undo-and-retype with piecemeal and editor recovery. If time
+data is available, add measured latency and candidate inspection time rather
+than assuming all actions cost equally. A small user study or anonymized,
 opt-in-only interaction study can calibrate detection-delay and action-time
 distributions; personalization must remain unnecessary and disabled.
 
@@ -275,7 +278,8 @@ The session-level report should include:
 - mean and p95 cascade length;
 - distance and actions from error creation to recovery;
 - candidate-navigation distance, not only top-five recall;
-- undo, deletion, cursor-travel, and re-entry counts; and
+- commit, deletion, cursor-travel, and re-entry counts (plus undo counts once
+  recorded-trace replay is added); and
 - p50/p95 decoder latency during actual incremental replay.
 
 Use paired target sessions and replay the baseline and synthesized decoder under

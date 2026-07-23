@@ -1,4 +1,17 @@
-# Inference inconvenience evaluator
+# Local inference inconvenience evaluator
+
+This is the fast **oracle-history local evaluator**. It is useful for legality,
+candidate-lattice diagnostics, and decoder iteration, but it is not a realistic
+typing-session model.
+
+For product-facing evaluation, use the
+[causal IME session evaluator](SESSION_EVALUATOR.md). It keeps unresolved
+islands live, carries actual predictions into later context, exercises delayed
+correction policies, applies the real nine-syllable piecemeal window, models
+editor recovery, and reports action, error-cascade, and latency vectors.
+
+For automated program search, `synthesisObjective.ts` exposes a single
+corpus-to-lexicographic-tuple measure with an explicit comparator.
 
 The evaluator measures how many user actions are needed to enter target text
 through the V7 engine. Lower is better.
