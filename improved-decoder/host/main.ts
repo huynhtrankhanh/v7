@@ -226,16 +226,18 @@ interface EvaluationSummary {
 }
 
 const scoreIsland = async (
-  decoder: Decoder,
+  decoders: readonly Decoder[],
   island: EvaluationIsland,
   fixedLeftText: string,
   kenlm: KenLmQuery,
-): Promise<{
-  illegal: boolean;
-  score: number;
-  top1: boolean;
-  top5: boolean;
-}> => {
+): Promise<
+  Array<{
+    illegal: boolean;
+    score: number;
+    top1: boolean;
+    top5: boolean;
+  }>
+> => {
   const slots = enumerate(island.v7Code);
   const sequences = cartesian(slots);
   const prefix = words(fixedLeftText);
@@ -259,6 +261,20 @@ const scoreIsland = async (
     maxCandidates: MAX_CANDIDATES,
   });
 
+  return decoders.map((decoder) => scoreDecoder(decoder, input, api, island));
+};
+
+const scoreDecoder = (
+  decoder: Decoder,
+  input: DecoderInput,
+  api: CandidateApi,
+  island: EvaluationIsland,
+): {
+  illegal: boolean;
+  score: number;
+  top1: boolean;
+  top5: boolean;
+} => {
   const candidates = decoder(input, api);
   if (
     !Array.isArray(candidates) ||
@@ -296,11 +312,11 @@ const scoreIsland = async (
 };
 
 const evaluate = async (
-  decoderName: "baseline" | "decoder",
   scope: Scope,
   limit: number,
-): Promise<EvaluationSummary> => {
-  const decoder = await loadDecoder(decoderName);
+): Promise<EvaluationSummary[]> => {
+  const decoderNames = ["baseline", "decoder"] as const;
+  const decoders = await Promise.all(decoderNames.map(loadDecoder));
   const selected =
     scope === "corpus"
       ? dataset
@@ -308,54 +324,73 @@ const evaluate = async (
   const sample = limit > 0 ? selected.slice(0, limit) : selected;
   const kenlm = new KenLmQuery();
   const started = performance.now();
-  let totalScore = 0;
-  let islandCount = 0;
-  let syllableCount = 0;
-  let top1Count = 0;
-  let top5Count = 0;
-  let illegal = false;
+  const totals = decoderNames.map(() => ({
+    score: 0,
+    islands: 0,
+    syllables: 0,
+    top1: 0,
+    top5: 0,
+    illegal: false,
+  }));
 
   try {
-    for (const sentence of sample) {
+    for (const [sentenceIndex, sentence] of sample.entries()) {
       for (const island of buildEvaluationIslands(sentence)) {
-        const result = await scoreIsland(
-          decoder,
+        const results = await scoreIsland(
+          decoders,
           island,
           sentence.slice(0, island.sourceStart),
           kenlm,
         );
-        islandCount += 1;
-        syllableCount += island.targetSyllables.length;
-        if (result.illegal) {
-          illegal = true;
-          break;
+        for (const [index, result] of results.entries()) {
+          const total = totals[index];
+          if (total.illegal) continue;
+          total.islands += 1;
+          total.syllables += island.targetSyllables.length;
+          if (result.illegal) {
+            total.illegal = true;
+            continue;
+          }
+          total.score += result.score;
+          if (result.top1) total.top1 += 1;
+          if (result.top5) total.top5 += 1;
         }
-        totalScore += result.score;
-        if (result.top1) top1Count += 1;
-        if (result.top5) top5Count += 1;
       }
-      if (illegal) break;
+      if ((sentenceIndex + 1) % 250 === 0) {
+        console.error(
+          `evaluated ${sentenceIndex + 1}/${sample.length} sentences`,
+        );
+      }
+      if (totals.every((total) => total.illegal)) break;
     }
   } finally {
     await kenlm.close();
   }
 
-  return {
-    decoder: decoderName,
-    scope,
-    sentences: sample.length,
-    islands: islandCount,
-    representableSyllables: syllableCount,
-    score: illegal ? "ILLEGAL" : totalScore,
-    inconveniencePerSyllable:
-      illegal || syllableCount === 0 ? "ILLEGAL" : totalScore / syllableCount,
-    top1Exact: islandCount === 0 ? 0 : top1Count / islandCount,
-    top5Recall: islandCount === 0 ? 0 : top5Count / islandCount,
-    elapsedMs: Math.round(performance.now() - started),
-  };
+  const elapsedMs = Math.round(performance.now() - started);
+  return decoderNames.map((decoder, index) => {
+    const total = totals[index];
+    return {
+      decoder,
+      scope,
+      sentences: sample.length,
+      islands: total.islands,
+      representableSyllables: total.syllables,
+      score: total.illegal ? "ILLEGAL" : total.score,
+      inconveniencePerSyllable:
+        total.illegal || total.syllables === 0
+          ? "ILLEGAL"
+          : total.score / total.syllables,
+      top1Exact: total.islands === 0 ? 0 : total.top1 / total.islands,
+      top5Recall: total.islands === 0 ? 0 : total.top5 / total.islands,
+      elapsedMs,
+    };
+  });
 };
 
 const train = async (): Promise<void> => {
+  const recordLimit = Number.parseInt(option("records", "1800"), 10);
+  const phrasesPerCode = Number.parseInt(option("phrases-per-code", "3"), 10);
   const counts = new Map<string, Map<string, number>>();
   for (const sentence of dataset) {
     for (const island of buildEvaluationIslands(sentence)) {
@@ -375,7 +410,7 @@ const train = async (): Promise<void> => {
   for (const [code, phrases] of counts) {
     for (const [phrase, count] of [...phrases]
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)) {
+      .slice(0, phrasesPerCode)) {
       records.push({
         code,
         phrase,
@@ -386,10 +421,8 @@ const train = async (): Promise<void> => {
   }
   records.sort((a, b) => b.count - a.count);
 
-  // A conservative cap leaves room for the decoder and future synthesized
-  // logic. The compiler is the final authority on the 50 KiB limit.
   const data = records
-    .slice(0, 1_200)
+    .slice(0, recordLimit)
     .map(({ code, phrase, bonus }) => `${code}\t${phrase}\t${bonus}`)
     .join("\n");
   await mkdir(resolve(ROOT, "generated"), { recursive: true });
@@ -399,7 +432,10 @@ const train = async (): Promise<void> => {
       `export default ${JSON.stringify(data)};\n`,
     "utf8",
   );
-  console.log(`Generated ${Math.min(records.length, 1_200)} prior records.`);
+  console.log(
+    `Generated ${Math.min(records.length, recordLimit)}/${records.length} ` +
+      `prior records across ${counts.size} codes.`,
+  );
 };
 
 const option = (name: string, fallback: string): string => {
@@ -424,8 +460,8 @@ const main = async (): Promise<void> => {
     throw new Error(`Unknown scope: ${scope}`);
   }
   const limit = Number.parseInt(option("limit", "100"), 10);
-  for (const name of ["baseline", "decoder"] as const) {
-    console.log(JSON.stringify(await evaluate(name, scope, limit), null, 2));
+  for (const result of await evaluate(scope, limit)) {
+    console.log(JSON.stringify(result, null, 2));
   }
 };
 

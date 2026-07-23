@@ -29,16 +29,17 @@ Run:
 cd improved-decoder
 npm run train
 npm run compile
-npm run evaluate -- --scope=corpus --limit=100
+npm run evaluate -- --scope=corpus --limit=500
 ```
 
-The first 100 corpus sentences produce:
+The current 1,800-record artifact uses 48,651 bytes. On the first 500 corpus
+sentences it produces:
 
-| decoder            |  bytes | inconvenience | per syllable |      top-1 |  top-5 |
-| ------------------ | -----: | ------------: | -----------: | ---------: | -----: |
-| KenLM baseline     |    745 |           875 |     0.578321 |     91.52% | 99.63% |
-| synthesized priors | 32,507 |       **868** | **0.573695** | **92.39%** | 99.63% |
+| decoder            |  bytes | inconvenience | per syllable |      top-1 |      top-5 |
+| ------------------ | -----: | ------------: | -----------: | ---------: | ---------: |
+| KenLM baseline     |    745 |         5,147 |     0.569926 |     92.44% |     99.45% |
+| synthesized priors | 48,651 |     **5,087** | **0.563282** | **93.60%** | **99.52%** |
 
-The machine-readable record is in `results/corpus-100.json`. The full-corpus
-score remains to be measured after eliminating duplicate oracle work between
-the two decoders.
+This saves 60 modeled user actions on 9,031 representable syllables. The
+machine-readable records are in `results/`. The full-corpus score remains to be
+measured; baseline and synthesized policies now share one oracle pass.
