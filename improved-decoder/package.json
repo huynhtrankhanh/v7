@@ -1,0 +1,11 @@
+{
+  "name": "v7-improved-decoder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node scripts/compile.mjs",
+    "evaluate": "node scripts/evaluate.mjs",
+    "train": "node scripts/train.mjs"
+  }
+}

@@ -1,0 +1,35 @@
+/**
+ * Synthesized-artifact seed.
+ *
+ * Training replaces MODEL with a compact public-corpus-derived table. The
+ * decoder still generates complete candidates and uses KenLM for contextual
+ * scoring; it is not allowed to call the repository's existing beam search.
+ */
+const MODEL = {};
+
+export default function infer(input, api) {
+  const slots = api.enumerate(input.v7Island);
+  let sequences = [[]];
+  for (const slot of slots) {
+    const next = [];
+    for (const prefix of sequences) {
+      for (const syllable of slot) next.push(prefix.concat(syllable));
+    }
+    sequences = next;
+  }
+
+  const prior = MODEL[input.v7Island];
+  sequences.sort((left, right) => {
+    const leftText = left.join(" ");
+    const rightText = right.join(" ");
+    const leftScore =
+      api.kenlmScore(left) + (prior && prior[leftText] ? prior[leftText] : 0);
+    const rightScore =
+      api.kenlmScore(right) +
+      (prior && prior[rightText] ? prior[rightText] : 0);
+    return rightScore - leftScore || leftText.localeCompare(rightText);
+  });
+  return sequences
+    .slice(0, input.maxCandidates)
+    .map((sequence) => sequence.join(" "));
+}
