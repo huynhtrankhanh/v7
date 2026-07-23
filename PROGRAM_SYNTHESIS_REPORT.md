@@ -81,6 +81,37 @@ program can choose its own candidate-generation and search policy, including
 dynamic programming, A*, diverse beams, best-first search, adaptive beam
 widths, phrase caching, and public-corpus-derived grammar rules.
 
+### Measured ambiguity in the bundled evaluation corpus
+
+The corpus supports the premise that contextual reconstruction is worthwhile.
+Using `evaluator/getInference.ts` to encode every Unicode-letter word in
+`evaluator/dataset.json` produced the following descriptive statistics:
+
+| Measure                                     |            Value |
+| ------------------------------------------- | ---------------: |
+| Sentences                                   |           11,385 |
+| Word tokens                                 |          171,422 |
+| V7-representable tokens                     | 170,924 (99.71%) |
+| Observed V7 codes                           |              793 |
+| Observed syllables                          |            3,027 |
+| Codes with more than one observed syllable  |      621 (78.3%) |
+| Mean observed syllables per code            |             3.82 |
+| Largest observed ambiguity class            |     15 syllables |
+| Code-only empirical Top-1 accuracy          |            65.1% |
+| Conditional lexical entropy given a V7 code |  1.35 bits/token |
+
+The code-only Top-1 number selects the most frequent syllable for each code on
+the same corpus, so it is **not** an accuracy estimate for a deployable model.
+It is evidence of the problem's ambiguity: 95.0% of represented tokens use a
+code that has more than one observed syllable. Context and search policy have
+substantial headroom to matter.
+
+It does not establish that grammar is the missing signal. A grammatical rule
+cannot distinguish two syntactically valid alternatives, and a 3-gram may
+already capture common short patterns. The report therefore treats grammar as
+one candidate feature family, to be tested against simpler search and
+phrase-frequency improvements rather than assumed to win.
+
 ## Proposed sandboxed interface
 
 The synthesized JavaScript is a pure function:
@@ -138,6 +169,27 @@ whether it is (a) absent from the legal syllable lattice, (b) in the lattice
 but pruned by a broad reference search, (c) in the full beam but outside the
 visible five, or (d) visible but poorly ordered. Synthesis can address (b)--(d)
 but not missing legal candidates.
+
+### Feasibility gates before a large search
+
+Do not commit a large agent budget until three CPU-only measurements pass:
+
+1. **Reference-beam recall:** Run a deliberately broad, legal reference search
+   and measure target-in-lattice and target-in-beam recall. Low recall means
+   improve enumeration/search before grammatical rules.
+2. **Failure taxonomy:** Independently label a random sample of baseline
+   failures as missing candidate, pruning, phrase/grammar, lexical-semantic,
+   or rare-term failures. Grammar synthesis is only justified when
+   phrase/grammar and pruning form a material share.
+3. **Non-agent ablation:** Compare adaptive beam width, phrase counts, and
+   simple public-corpus rules with the fixed beam. If these cannot improve
+   sealed inconvenience, an agent is unlikely to create an easy win from the
+   same information.
+
+The first useful success criterion is modest and concrete: reduce sealed-test
+mean inconvenience at a fixed p95 latency while preserving legal output and
+target-in-top-five recall. Do not pre-commit to a large Top-1 gain. A lower
+correction cost from better top-five ordering is already a product improvement.
 
 ## Search and evaluation protocol
 
@@ -271,6 +323,24 @@ new contextual information.
 - [RankEvolve](https://arxiv.org/abs/2602.16932) is recent preprint evidence
   that LLM-guided program evolution can discover retrieval algorithms that
   transfer across benchmarks; it is encouraging but not proof for V7.
+- [A Lexicalized Tree-Adjoining Grammar for Vietnamese](https://aclanthology.org/L06-1426/)
+  establishes that Vietnamese admits a broad grammar usable for parsing and
+  generation, supporting structural experimentation without claiming that a
+  full grammar is required here.
+- [VnCoreNLP](https://aclanthology.org/N18-5012/) demonstrates that CPU-friendly
+  Vietnamese segmentation, POS tagging, and dependency parsing are practical.
+  This project need not add such a dependency initially: the agent can first
+  synthesize rules from public corpus counts. It is a possible offline source
+  of structural annotations for later ablations, not a runtime requirement.
+- [Explicit Syntactic Guidance for Neural Text Generation](https://aclanthology.org/2023.acl-long.788/)
+  reports that structural beam search can improve generation and diversity,
+  though it uses neural components and is evidence for the search principle,
+  not a direct V7 result.
+- [Dictionaries, Not Darwin](https://arxiv.org/abs/2607.04108) is an important
+  recent negative result: on one equation-discovery setting, iterative
+  parent-conditioned LLM evolution did not beat independent proposal sets at
+  matched budgets. It argues for a diverse program-component library and
+  external selection, rather than assuming evolution itself compounds gains.
 - [Grammar-Constrained Decoding](https://aclanthology.org/2023.emnlp-main.674/)
   and [Constrained Beam Search](https://aclanthology.org/D17-1098.pdf) support
   enforcing a formal output space during generation rather than checking an
