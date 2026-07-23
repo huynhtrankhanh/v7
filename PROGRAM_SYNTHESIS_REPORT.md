@@ -191,6 +191,154 @@ mean inconvenience at a fixed p95 latency while preserving legal output and
 target-in-top-five recall. Do not pre-commit to a large Top-1 gain. A lower
 correction cost from better top-five ordering is already a product improvement.
 
+## The current evaluator is not a realistic typing-session model
+
+`evaluator/evaluateInference.ts` is useful for controlled local comparisons,
+but its inconvenience score should not be presented as an end-to-end estimate
+of actual IME effort. It divides finished prose into independent V7 islands of
+at most two syllables and requests every prediction with:
+
+```ts
+[targetText.slice(0, island.sourceStart), island.v7Code, ""];
+```
+
+That prefix is the ground-truth text, not text the decoder actually committed.
+After scoring one island, the evaluator moves to the next target island without
+carrying the prediction or simulated correction state forward. It therefore
+assumes that every ambiguity is noticed and resolved immediately.
+
+This creates several optimistic simplifications:
+
+- A wrong prediction never becomes KenLM context for the next prediction.
+  Real errors can compound: one accepted homophone changes later rankings and
+  can start a cascade.
+- The user never overlooks a plausible wrong word. In practice, detection may
+  occur several islands later, at punctuation, after rereading a clause, or not
+  at all before sending.
+- Every visible non-first candidate costs one action. Candidate 2 and candidate
+  5 are treated alike, with no scanning, navigation, or decision-time cost.
+- Piecemeal correction begins at the erroneous island immediately. There is no
+  cursor travel, selection, deletion of intervening text, undo, re-entry, or
+  reconstruction of a longer corrupted span.
+- The evaluator starts from completed target prose instead of replaying
+  incremental strokes, composition updates, candidate changes, commits, and
+  timing.
+- Independent two-syllable decisions cannot model maintaining ambiguity across
+  a longer phrase and resolving it using later evidence.
+
+As a result, the current score measures **local oracle-history ranking and
+immediate correction cost**. It is still valuable for legality tests, candidate
+lattice diagnostics, and fast synthesis iterations, but an improvement in this
+score is evidence of decoder headroom rather than a direct prediction of user
+experience.
+
+### Replace it with stateful causal replay
+
+A realistic primary evaluator should replay complete sessions through the same
+state transitions as the IME. Its state should include the actual committed
+text, active composition, visible candidates and selected index, cursor or
+selection, undo history, elapsed actions, and unresolved errors. The next
+inference request must use the decoder's committed prefix, not the reference
+prefix.
+
+At minimum, implement three paired modes:
+
+1. **Oracle-history local mode:** retain the current evaluator as a cheap,
+   explainable diagnostic.
+2. **Free-running causal mode:** automatically accept the top candidate and
+   feed it into all later requests. Report final word/syllable error, error
+   cascade length, and how much later ranking degrades after the first error.
+3. **Delayed-correction user mode:** simulate when a user notices an error and
+   replay the cheapest legal recovery through real IME operations. Use several
+   predeclared detection policies--for example immediate, after 1/3/5 islands,
+   at clause punctuation, and at end of message--rather than hiding one
+   favorable assumption in a scalar.
+
+The delayed-correction mode should charge action-specific costs for candidate
+navigation by rank, commit, cursor movement, range selection, backspace/delete,
+undo, retyping V7 chords, and reopening piecemeal mode. If time data is
+available, add measured latency and candidate inspection time rather than
+assuming all actions cost equally. A small user study or anonymized,
+opt-in-only interaction study can calibrate detection-delay and action-time
+distributions; personalization must remain unnecessary and disabled.
+
+For deterministic research without user data, treat user behavior as a set of
+scenarios and report the full sensitivity curve. A decoder should not be
+declared better if it wins only under immediate correction but creates longer
+cascades under delayed detection.
+
+The session-level report should include:
+
+- actions and estimated time per intended syllable;
+- final uncorrected syllable/word error rate;
+- probability that one error causes another;
+- mean and p95 cascade length;
+- distance and actions from error creation to recovery;
+- candidate-navigation distance, not only top-five recall;
+- undo, deletion, cursor-travel, and re-entry counts; and
+- p50/p95 decoder latency during actual incremental replay.
+
+Use paired target sessions and replay the baseline and synthesized decoder under
+identical user policies. Keep the local inconvenience score as a decomposition:
+when session performance changes, it helps distinguish better candidate
+generation from merely different error propagation or recovery behavior.
+
+### Enforce an interactive decoding deadline
+
+Accuracy gains are not useful if candidate generation blocks typing. Treat
+latency as a hard feasibility constraint and optimize inconvenience only among
+programs that remain interactive.
+
+Use two complementary limits:
+
+1. A deterministic per-request work budget caps legal-candidate expansions,
+   KenLM transitions, heap/beam operations, output candidates, and allocated
+   bytes. This makes synthesis results comparable across machines and prevents
+   a program from hiding unbounded work behind a fast development CPU.
+2. A wall-clock deadline covers the complete hot path: parsing the new stroke,
+   legal enumeration, KenLM scoring, synthesized search, validation, and
+   rendering the candidate update. Measure this on representative low-end
+   target phones, not only the development workstation.
+
+Set the numeric deadline from product measurements rather than an arbitrary
+desktop benchmark. First record the current decoder's warm p50/p95/p99 on the
+target-device matrix while replaying realistic incremental sessions. Choose a
+hard deadline that preserves the UI's frame/input-response budget, then require
+new decoders to be no worse than the baseline at p95 and p99. Report cold-start
+model-loading latency separately. A reasonable engineering starting gate can
+be tested at 16, 25, and 50 ms per candidate update, but the shipped threshold
+must be justified by device measurements and typing studies.
+
+The evaluator must interrupt the **decoder invocation**, not only module
+initialization. Run each call in an interruptible worker or VM execution with a
+deadline; terminate and recreate the worker after timeout so no computation
+continues in the background. Also enforce an aggregate session CPU budget to
+catch programs that stay just below the per-call limit on every keystroke.
+Timeouts are evaluation failures and must be reported explicitly, never
+converted silently into a good inconvenience score.
+
+Production should degrade safely: cancel obsolete work when a newer stroke
+arrives, retain the last valid candidate list, and fall back to a small
+known-good bounded decoder when the synthesized policy exceeds its budget.
+Evaluation should score both the timeout and the fallback result so a program
+cannot improve accuracy by routinely invoking the fallback. Cache immutable
+KenLM states and reuse prefix work, but include cache misses and memory in the
+device benchmark.
+
+Exhaustive Cartesian enumeration is acceptable as a two-syllable research
+oracle because it exposes pruning headroom. It should not be the production
+latency target. Distill its discoveries into adaptive beams, best-first search,
+branch-and-bound rules, or direct contextual exceptions with explicit expansion
+caps, then compare their score against the exhaustive upper bound.
+
+The prototype in `improved-decoder` now enforces a 50 ms sandboxed-program
+deadline. On a 500-sentence corpus slice, its optimized synthesized policy
+completed all 4,751 islands, while the intentionally naïve exhaustive reference
+timed out after 1,829 islands. This is evidence that hoisting per-candidate work
+out of the sort comparator matters, not proof of interactive production
+latency: enumeration and KenLM scoring are prepared by the research host before
+the timed call.
+
 ## Search and evaluation protocol
 
 Use three strictly different data roles:

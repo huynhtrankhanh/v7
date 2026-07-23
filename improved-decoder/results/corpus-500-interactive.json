@@ -1,0 +1,34 @@
+{
+  "benchmark": {
+    "scope": "corpus",
+    "limit": 500,
+    "decoderTimeoutMs": 50,
+    "note": "The deadline covers sandboxed artifact execution only; host enumeration and KenLM scoring occur before the timed call."
+  },
+  "artifacts": {
+    "limitBytes": 51200,
+    "baselineBytes": 745,
+    "decoderBytes": 50070
+  },
+  "results": [
+    {
+      "decoder": "baseline",
+      "sentencesRequested": 500,
+      "islandsBeforeFailure": 1829,
+      "representableSyllablesBeforeFailure": 3476,
+      "score": "TIMEOUT",
+      "inconveniencePerSyllable": "TIMEOUT"
+    },
+    {
+      "decoder": "decoder",
+      "sentences": 500,
+      "islands": 4751,
+      "representableSyllables": 9031,
+      "score": 5075,
+      "inconveniencePerSyllable": 0.5619532720628945,
+      "top1Exact": 0.9389602189012839,
+      "top5Recall": 0.9951589139128605
+    }
+  ],
+  "sharedElapsedMs": 61084
+}

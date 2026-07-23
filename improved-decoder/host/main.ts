@@ -16,6 +16,7 @@ const ROOT = resolve(__dirname, "..");
 const REPOSITORY_ROOT = resolve(ROOT, "..");
 const ARTIFACT_LIMIT = 50 * 1024;
 const MAX_CANDIDATES = 5;
+const DECODER_TIMEOUT_MS = 50;
 
 type Split = "train" | "development" | "test";
 type Scope = Split | "corpus";
@@ -32,6 +33,9 @@ interface DecoderInput {
 }
 
 type Decoder = (input: DecoderInput, api: CandidateApi) => string[];
+type EvaluationFailure = "ILLEGAL" | "TIMEOUT";
+
+class DecoderTimeoutError extends Error {}
 
 const normalizeWord = (value: string): string =>
   value.normalize("NFC").toLocaleLowerCase("vi");
@@ -195,7 +199,38 @@ const loadDecoder = async (name: "baseline" | "decoder"): Promise<Decoder> => {
   if (typeof decoder !== "function") {
     throw new TypeError(`${name} artifact did not export a decoder.`);
   }
-  return decoder;
+
+  Object.assign(context, { __decoder: decoder });
+  const invocation = new vm.Script("__decoder(__decoderInput, __decoderApi)", {
+    filename: `${filename}:invoke`,
+  });
+  return (input, api) => {
+    Object.assign(context, {
+      __decoderInput: input,
+      __decoderApi: api,
+    });
+    try {
+      return invocation.runInContext(context, {
+        timeout: DECODER_TIMEOUT_MS,
+      }) as string[];
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "ERR_SCRIPT_EXECUTION_TIMEOUT"
+      ) {
+        throw new DecoderTimeoutError(
+          `${name} decoder exceeded ${DECODER_TIMEOUT_MS} ms.`,
+          { cause: error },
+        );
+      }
+      throw error;
+    } finally {
+      Reflect.deleteProperty(context, "__decoderInput");
+      Reflect.deleteProperty(context, "__decoderApi");
+    }
+  };
 };
 
 const legalCandidate = (candidate: string, v7Code: string): boolean => {
@@ -218,25 +253,25 @@ interface EvaluationSummary {
   sentences: number;
   islands: number;
   representableSyllables: number;
-  score: number | "ILLEGAL";
-  inconveniencePerSyllable: number | "ILLEGAL";
+  score: number | EvaluationFailure;
+  inconveniencePerSyllable: number | EvaluationFailure;
   top1Exact: number;
   top5Recall: number;
   elapsedMs: number;
 }
 
 const scoreIsland = async (
-  decoders: readonly Decoder[],
+  decoders: readonly (Decoder | null)[],
   island: EvaluationIsland,
   fixedLeftText: string,
   kenlm: KenLmQuery,
 ): Promise<
   Array<{
-    illegal: boolean;
+    failure: EvaluationFailure | null;
     score: number;
     top1: boolean;
     top5: boolean;
-  }>
+  } | null>
 > => {
   const slots = enumerate(island.v7Code);
   const sequences = cartesian(slots);
@@ -262,7 +297,9 @@ const scoreIsland = async (
     maxCandidates: MAX_CANDIDATES,
   });
 
-  return decoders.map((decoder) => scoreDecoder(decoder, input, api, island));
+  return decoders.map((decoder) =>
+    decoder ? scoreDecoder(decoder, input, api, island) : null,
+  );
 };
 
 const scoreDecoder = (
@@ -271,12 +308,25 @@ const scoreDecoder = (
   api: CandidateApi,
   island: EvaluationIsland,
 ): {
-  illegal: boolean;
+  failure: EvaluationFailure | null;
   score: number;
   top1: boolean;
   top5: boolean;
 } => {
-  const candidates = decoder(input, api);
+  let candidates: string[];
+  try {
+    candidates = decoder(input, api);
+  } catch (error) {
+    if (error instanceof DecoderTimeoutError) {
+      return {
+        failure: "TIMEOUT",
+        score: 0,
+        top1: false,
+        top5: false,
+      };
+    }
+    throw error;
+  }
   if (
     !Array.isArray(candidates) ||
     candidates.length > MAX_CANDIDATES ||
@@ -286,7 +336,7 @@ const scoreDecoder = (
         !legalCandidate(candidate, island.v7Code),
     )
   ) {
-    return { illegal: true, score: 0, top1: false, top5: false };
+    return { failure: "ILLEGAL", score: 0, top1: false, top5: false };
   }
 
   const normalizedCandidates = candidates.map((candidate) =>
@@ -305,7 +355,7 @@ const scoreDecoder = (
         ? 1
         : getPiecemealCorrectionCost(target, topPrediction);
   return {
-    illegal: false,
+    failure: null,
     score: 1 + correction,
     top1: exactIndex === 0,
     top5: exactIndex >= 0,
@@ -331,25 +381,28 @@ const evaluate = async (
     syllables: 0,
     top1: 0,
     top5: 0,
-    illegal: false,
+    failure: null as EvaluationFailure | null,
   }));
 
   try {
     for (const [sentenceIndex, sentence] of sample.entries()) {
       for (const island of buildEvaluationIslands(sentence)) {
         const results = await scoreIsland(
-          decoders,
+          decoders.map((decoder, index) =>
+            totals[index].failure ? null : decoder,
+          ),
           island,
           sentence.slice(0, island.sourceStart),
           kenlm,
         );
         for (const [index, result] of results.entries()) {
+          if (!result) continue;
           const total = totals[index];
-          if (total.illegal) continue;
+          if (total.failure) continue;
           total.islands += 1;
           total.syllables += island.targetSyllables.length;
-          if (result.illegal) {
-            total.illegal = true;
+          if (result.failure) {
+            total.failure = result.failure;
             continue;
           }
           total.score += result.score;
@@ -362,7 +415,7 @@ const evaluate = async (
           `evaluated ${sentenceIndex + 1}/${sample.length} sentences`,
         );
       }
-      if (totals.every((total) => total.illegal)) break;
+      if (totals.every((total) => total.failure)) break;
     }
   } finally {
     await kenlm.close();
@@ -377,10 +430,10 @@ const evaluate = async (
       sentences: sample.length,
       islands: total.islands,
       representableSyllables: total.syllables,
-      score: total.illegal ? "ILLEGAL" : total.score,
+      score: total.failure ?? total.score,
       inconveniencePerSyllable:
-        total.illegal || total.syllables === 0
-          ? "ILLEGAL"
+        total.failure || total.syllables === 0
+          ? (total.failure ?? "ILLEGAL")
           : total.score / total.syllables,
       top1Exact: total.islands === 0 ? 0 : total.top1 / total.islands,
       top5Recall: total.islands === 0 ? 0 : total.top5 / total.islands,

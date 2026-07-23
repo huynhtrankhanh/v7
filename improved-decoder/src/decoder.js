@@ -39,20 +39,19 @@ export default function infer(input, api) {
   const contextual =
     leftWords &&
     CONTEXT[`${leftWords[leftWords.length - 1]}\t${input.v7Island}`];
-  sequences.sort((left, right) => {
-    const leftText = left.join(" ");
-    const rightText = right.join(" ");
-    const leftScore =
-      api.kenlmScore(left) +
-      (prior && prior[leftText] ? prior[leftText] : 0) +
-      (contextual === leftText ? 12 : 0);
-    const rightScore =
-      api.kenlmScore(right) +
-      (prior && prior[rightText] ? prior[rightText] : 0) +
-      (contextual === rightText ? 12 : 0);
-    return rightScore - leftScore || leftText.localeCompare(rightText);
-  });
   return sequences
+    .map((sequence) => {
+      const text = sequence.join(" ");
+      return [
+        text,
+        api.kenlmScore(sequence) +
+          (prior && prior[text] ? prior[text] : 0) +
+          (contextual === text ? 12 : 0),
+      ];
+    })
+    .sort(
+      (left, right) => right[1] - left[1] || left[0].localeCompare(right[0]),
+    )
     .slice(0, input.maxCandidates)
-    .map((sequence) => sequence.join(" "));
+    .map((candidate) => candidate[0]);
 }
