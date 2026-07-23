@@ -153,10 +153,11 @@ async function preparePythonRuntime(): Promise<void> {
 async function loadEngine(): Promise<Engine> {
   await preparePythonRuntime();
   const { StrippedPlover } = await import("@stripped-plover/engine");
-  const engine = new StrippedPlover("android-native.sqlite") as unknown as
-    Engine & {
-      eventSink: (event: Record<string, unknown>) => void;
-    };
+  const engine = new StrippedPlover(
+    "android-native.sqlite",
+  ) as unknown as Engine & {
+    eventSink: (event: Record<string, unknown>) => void;
+  };
   // The upstream CLI writes asynchronous host-command events to STDOUT. The
   // Android bundle has no STDOUT protocol transport, so replace that sink
   // with the deliberately narrow native event bridge.
