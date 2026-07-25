@@ -53,6 +53,22 @@ services:
     volumes:
       - ./android-artifacts:/workspace/artifacts
     command: ["sleep", "infinity"]
+  trainer:
+    build:
+      context: .
+      dockerfile: trainer/Dockerfile
+    environment:
+      V7_INFERENCE_URL: http://inference:3000/infer
+      V7_TRAINER_DB: /data/trainer.sqlite3
+    volumes:
+      - trainer-data:/data
+    ports:
+      - "3001:3001"
+    depends_on:
+      inference:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   stripped-plover-data:
+  trainer-data:

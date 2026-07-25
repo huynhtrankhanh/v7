@@ -322,6 +322,10 @@ const androidPloverBridge = androidDictionary ?? androidIme;
 const isDictionaryManagementPage = new URLSearchParams(
   window.location.search,
 ).has("dictionary-management");
+const isTrainerEmbedded = new URLSearchParams(window.location.search).has(
+  "trainer-embedded",
+);
+document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
@@ -1704,6 +1708,11 @@ function isStaleInference(controller) {
 }
 
 async function handleChord(stroke) {
+  window.dispatchEvent(
+    new CustomEvent("v7-editor-stroke", {
+      detail: { stroke },
+    }),
+  );
   if (androidRawOutlineMode) {
     abortInferenceRequest(true);
     const currentOutline = renderVisibleText(state.islands, []);
@@ -2212,7 +2221,11 @@ function updateKeyboardLayout() {
   if (summary) {
     const labels = Array.from(pressedQwertyKeys, formatKeyboardKeyLabel);
     summary.textContent =
-      labels.length > 0 ? labels.join(" + ") : "No keys pressed";
+      labels.length > 0
+        ? labels.join(" + ")
+        : isTrainerEmbedded
+          ? "Chưa bấm phím"
+          : "No keys pressed";
   }
 }
 
@@ -2339,7 +2352,9 @@ function updateDisplay() {
   if (inferenceError) {
     inferenceError.hidden = inferenceErrorMessage === "";
     inferenceError.textContent = inferenceErrorMessage
-      ? `Inference error: ${inferenceErrorMessage}`
+      ? isTrainerEmbedded
+        ? `Không lấy được các cách viết: ${inferenceErrorMessage}`
+        : `Inference error: ${inferenceErrorMessage}`
       : "";
   }
   if (strippedDisplay.enabled && candidateDiffPlan?.sections.length) {
@@ -2398,7 +2413,9 @@ function updateDisplay() {
       const placeholder = document.createElement("span");
       placeholder.textContent = strippedDisplay.enabled
         ? "👋"
-        : "Start typing with your steno keyboard...";
+        : isTrainerEmbedded
+          ? "Bắt đầu gõ bằng bàn phím V7…"
+          : "Start typing with your steno keyboard...";
       placeholder.className = strippedDisplay.enabled ? "empty-wave" : "";
       placeholder.style.color = strippedDisplay.enabled ? "" : "#999";
       textFlow.appendChild(placeholder);
@@ -2517,6 +2534,19 @@ function updateDisplay() {
   scrollToBottom(isRawMode ? textArea : display);
   syncAndroidKeyboardHeight(candArea);
   syncAndroidPreedit(candidateDiffPlan);
+  window.dispatchEvent(
+    new CustomEvent("v7-editor-state", {
+      detail: {
+        text,
+        candidates: state.candidates
+          .slice(0, 5)
+          .map((candidate) => candidate.join("")),
+        piecemealCursorIndex,
+        inferencePending: inferenceAbortController !== null,
+        inferenceError: inferenceErrorMessage,
+      },
+    }),
+  );
 }
 
 // --- Input Handling ---

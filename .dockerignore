@@ -6,6 +6,8 @@
 !inference-rs/
 !practice-android/
 !practice-android/**
+!trainer/
+!trainer/**
 !src/
 !static/
 !scripts/

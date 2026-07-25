@@ -1,0 +1,16 @@
+{
+  "name": "v7-ime-trainer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "user:add": "node src/admin.mjs create",
+    "user:disable": "node src/admin.mjs disable",
+    "user:list": "node src/admin.mjs list",
+    "test": "node --test"
+  }
+}

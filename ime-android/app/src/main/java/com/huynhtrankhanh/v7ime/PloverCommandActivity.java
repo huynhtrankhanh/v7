@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
@@ -139,6 +140,8 @@ public class PloverCommandActivity extends Activity {
                 ));
             });
         });
+        submitOnEnter(stroke, lookup);
+        submitOnEnter(translation, lookup);
         addCloseButton();
     }
 
@@ -246,6 +249,8 @@ public class PloverCommandActivity extends Activity {
                 ));
             });
         });
+        submitOnEnter(outline, add);
+        submitOnEnter(translation, add);
     }
 
     private String formatLookupResults(
@@ -349,6 +354,28 @@ public class PloverCommandActivity extends Activity {
     private void configureRawOutlineField(EditText field) {
         field.setPrivateImeOptions(RAW_OUTLINE_IME_OPTION);
         field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+    }
+
+    private void submitOnEnter(EditText field, Button submit) {
+        field.setImeOptions(
+                EditorInfo.IME_ACTION_DONE
+                        | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        );
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            int keyCode = event == null ? KeyEvent.KEYCODE_UNKNOWN : event.getKeyCode();
+            int keyAction = event == null ? -1 : event.getAction();
+            if (!NativeFormSubmit.shouldSubmit(
+                    actionId,
+                    keyCode,
+                    keyAction
+            )) {
+                return false;
+            }
+            if (submit.isEnabled()) {
+                submit.performClick();
+            }
+            return true;
+        });
     }
 
     private TextView addLabel(int text) {

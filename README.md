@@ -12,6 +12,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `practice-android/`: Android WebView wrapper that packages `static/practice.html` as a signed release app bundle.
 *   `ime-android/`: Android input method that packages the stripped V7 WebUI and connects it to native composing text and inference settings.
 *   `evaluator/`: Evaluation and dataset (JSONL) tooling, including the TypeScript port of the V7 tokenizer/candidate-enumeration logic.
+*   `trainer/`: Separate Node.js/SQLite subsystem for consent-gated, adaptive V7 IME chord training.
 *   `preprocess_corpus.py`: Python corpus preprocessor used by the Docker training build.
 *   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).
 *   `Dockerfile` / `docker-compose.yml`: Multi-stage Docker build and compose configuration.
@@ -27,6 +28,26 @@ Docker is the recommended way to build and run the project. The `docker-compose.
 | `train` | Preprocesses the corpus and trains the KenLM language model. |
 | `stripped-plover` | Optional Stripped Plover TCP proxy for dictionary-based fallback strokes. |
 | `practice-android` | Builds `static/practice.html` into a signed fullscreen Android App Bundle. |
+| `trainer` | Runs the manually provisioned, FSRS-adaptive V7 IME training website on port 3001. |
+
+### Run the IME trainer
+
+The trainer is a separate Node.js subsystem. It uses the inference service's
+HTTP API for predictive exercises, but does not launch or use Stripped Plover.
+
+```bash
+docker compose up -d inference trainer
+read -rs password
+printf '%s' "$password" |
+  docker compose run --rm -T trainer npm run user:add -- learner
+unset password
+```
+
+Open `http://localhost:3001` and sign in with the manually created account.
+Users must explicitly consent to detailed telemetry and pass the external
+keyboard NKRO chord check before practice begins. See
+[`trainer/README.md`](trainer/README.md) for the data boundary, FSRS scheduling,
+administration, API, and local test instructions.
 
 ### Build all services
 

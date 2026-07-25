@@ -72,3 +72,11 @@ removes the most recent in-progress stroke, or removes the last delimited
 stroke before the textbox cursor when the in-progress buffer is already empty.
 It is never appended as a literal stroke in this mode. Translation fields do
 not request raw-outline handling and retain ordinary input behavior.
+
+## Native form submission
+
+Both native Stripped Plover forms treat Enter as form submission. In lookup,
+Enter in either query field runs the lookup action. In add-translation, Enter
+in either field runs the add action once a writable dictionary has loaded.
+The fields advertise Android's `IME_ACTION_DONE`, so V7's physical Enter
+routing and ordinary software keyboards reach the same editor-action listener.

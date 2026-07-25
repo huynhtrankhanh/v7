@@ -37,6 +37,8 @@ imports.
   and collapses to a labeled 48 dp **Raw outline mode** bar. A lone `*` chord
   removes the latest slash-delimited stroke from the textbox. Focusing a
   translation field restores ordinary V7/Emily/Stripped Plover input.
+- Enter submits the active native lookup or add-translation form through the
+  editor action advertised by each field.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.

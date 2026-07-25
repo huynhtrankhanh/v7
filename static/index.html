@@ -24,6 +24,9 @@
       body.stripped-display #text-input {
         display: none !important;
       }
+      body.trainer-embedded #plover-controls {
+        display: none !important;
+      }
       body.stripped-display {
         --ime-buffer-font-size: 1.25rem;
         --ime-candidate-font-size: 1rem;
@@ -682,16 +685,14 @@
     </div>
     <div id="inference-shell">
       <div id="workbench">
-        <div id="text-display">Type with your steno keyboard...</div>
+        <div id="text-display"></div>
         <textarea id="text-input"></textarea>
         <div id="candidate-area">
-          <div class="candidate">Candidates will appear here...</div>
+          <div class="candidate"></div>
         </div>
       </div>
       <div id="keyboard-layout" aria-hidden="true">
-        <div id="keyboard-pressed-summary" aria-live="polite">
-          No keys pressed
-        </div>
+        <div id="keyboard-pressed-summary" aria-live="polite"></div>
         <div id="qwerty-board" class="qwerty-board"></div>
       </div>
     </div>
