@@ -140,4 +140,104 @@ export const sentenceCards = [
     "Mọi người cùng chia sẻ sách trong thư viện nhỏ.",
     "Cộng đồng",
   ),
+  makeSentence(
+    "rain",
+    "Chiều nay mưa lớn nên đường phố vắng hơn thường lệ.",
+    "Thời tiết và nhịp sống",
+  ),
+  makeSentence(
+    "home",
+    "Mẹ tôi trồng thêm vài chậu hoa trước hiên nhà.",
+    "Gia đình và nhà cửa",
+  ),
+  makeSentence(
+    "office",
+    "Cuộc họp bắt đầu lúc chín giờ sáng thứ hai.",
+    "Công việc",
+  ),
+  makeSentence(
+    "request",
+    "Bạn gửi giúp tôi bản đồ của khu phố này nhé.",
+    "Hội thoại và nhờ vả",
+  ),
+  makeSentence(
+    "negative",
+    "Tôi chưa nhận được thư dù đã kiểm tra hộp thư.",
+    "Hội thoại và phủ định",
+  ),
+  makeSentence(
+    "condition",
+    "Nếu trời quang, chúng ta sẽ ngắm sao ngoài sân.",
+    "Điều kiện và kế hoạch",
+  ),
+  makeSentence(
+    "education",
+    "Cô giáo giải thích bài học bằng một ví dụ gần gũi.",
+    "Học tập",
+  ),
+  makeSentence(
+    "health",
+    "Uống đủ nước và ngủ sớm giúp cơ thể khỏe hơn.",
+    "Sức khỏe",
+  ),
+  makeSentence(
+    "nature",
+    "Dòng sông uốn quanh cánh đồng xanh ngát phía xa.",
+    "Thiên nhiên",
+  ),
+  makeSentence(
+    "market",
+    "Người bán chọn những quả cam chín và cân thật nhanh.",
+    "Mua bán",
+  ),
+  makeSentence(
+    "bus",
+    "Chuyến xe buýt đông khách nhưng vẫn đến đúng giờ.",
+    "Giao thông",
+  ),
+  makeSentence(
+    "book",
+    "Tôi thường đọc vài trang sách trước khi đi ngủ.",
+    "Thói quen",
+  ),
+  makeSentence(
+    "music",
+    "Quán nhỏ bên đường mở một bản nhạc rất dịu dàng.",
+    "Nghệ thuật",
+  ),
+  makeSentence(
+    "technology",
+    "Điện thoại mới có pin lâu và màn hình sáng rõ.",
+    "Công nghệ đời sống",
+  ),
+  makeSentence(
+    "reasoning",
+    "Chúng tôi đổi lịch vì chuyến bay bị hoãn đến tối.",
+    "Giải thích và nguyên nhân",
+  ),
+  makeSentence(
+    "polite",
+    "Xin hãy đóng cửa nhẹ để em bé không thức giấc.",
+    "Lời nhờ lịch sự",
+  ),
+  makeSentence(
+    "memory",
+    "Ông kể lại câu chuyện cũ bằng giọng nói đầy ấm áp.",
+    "Ký ức và gia đình",
+  ),
+  makeSentence(
+    "meeting",
+    "Mỗi người nêu một ý kiến trước khi cả nhóm quyết định.",
+    "Trao đổi và quyết định",
+  ),
+  makeSentence(
+    "environment",
+    "Khu phố đặt thêm thùng rác để giữ vỉa hè sạch sẽ.",
+    "Môi trường và cộng đồng",
+  ),
+  makeSentence(
+    "future",
+    "Năm sau tôi muốn học thêm một ngôn ngữ mới.",
+    "Mục tiêu cá nhân",
+  ),
 ];

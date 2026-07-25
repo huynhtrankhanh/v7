@@ -80,9 +80,10 @@ trainer uses only for target completion, FSRS scoring, and consented telemetry.
 The trainer exposes an authenticated `/infer` proxy, so the embedded editor
 still reaches inference through the Node backend.
 
-`src/sentences.mjs` contains ten Vietnamese sentence sets spanning everyday
+`src/sentences.mjs` contains thirty Vietnamese sentence sets spanning everyday
 life, questions, instructions, narrative, formal language, travel, food,
-technical language, explanations, and community topics. Every suggested
+technical language, explanations, health, education, environment, and
+community topics. Every suggested
 two-syllable island is generated from the same V7 encoding rules and is
 round-trip tested. During a sentence run, each island is inferred with the
 already committed sentence text as backend context.

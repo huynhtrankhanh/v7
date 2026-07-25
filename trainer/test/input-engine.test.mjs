@@ -4,6 +4,11 @@ import { sentenceCards } from "../src/sentences.mjs";
 import { strokeForV7Pair } from "../src/v7-stroke.mjs";
 
 test("every sentence pair has a generated physical V7 hint", () => {
+  assert.ok(sentenceCards.length >= 30);
+  assert.equal(
+    new Set(sentenceCards.map((sentence) => sentence.id)).size,
+    sentenceCards.length,
+  );
   for (const sentence of sentenceCards) {
     for (const pair of sentence.pairs) {
       assert.deepEqual(strokeForV7Pair(pair.code), {
