@@ -1,17 +1,21 @@
-# Stripped Plover management and UI
-* This affects: **Android IME**
-* Bump Stripped Plover
-* Now it emits 3 events: lookup, add translation, configure
-  * Lookup: display native popup to look up entries. lookup results should clearly show from which dictionary an entry is
-  * Add translation:
-    * also native popup to add new translation while choosing the dictionary to add the translation to
-    * native popup details
-      * in the stroke input the IME should switch to some "raw outline mode" where strokes are joined by / to form an outline. this requires some input field marking and IME coordination. and the IME should show a thin bar saying "Raw outline mode"
-      * in the translation input the IME is in the ordinary mode where user can type v7, Emily, stripped plover etc
-  * Configure: user is to be taken straight to V7 IME settings activity
-* Yes, because Stripped Plover source structure has changed, the building code might have to be modified to intercept the new events from the source code.
-* Dictionary management screen:
-  * Remove the top bar, it causes all sorts of layout problems for the inside WebView. the WebView should just occupy the entire real estate available
-  * Allow the user to create a new blank JSON dictionary. the user doesn't have to upload anything to create that blank dictionary
- 
-Test, document, commit, push to main
+# Task 1
+* This affects: **Android IME**, native popups
+* When the user hits Enter on the keyboard, the popup form should be submitted
+# Task 2
+* This **creates a new subsystem**
+* The subsystem's purpose is to enable the user to learn how to use the IME
+* To properly implement the subsystem, you must investigate the entire IME codebase
+* The subsystem teaches IME principles in Vietnamese
+* The subsystem is web based
+* The subsystem requires the use of an external keyboard
+* Prior to "enrollment", the subsystem checks if the user truly has an NKRO keyboard by asking the user to **chord specific keys**
+* The subsystem uses FSRS retention model to adaptively tailor lessons to reinforce IME concepts
+* The subsystem has very detailed tracking, including keystroke logging within the website
+* The user has to consent to **detailed data logging** prior to being enrolled
+* The system has a backend
+* No one can voluntarily sign up for the website. Accounts have to be created manually on the database.
+* The backing database is SQLite
+* For lessons involving the predictive model, **backend inference** is used
+* Stripped Plover is not covered by the lessons
+* Backend must not launch Stripped Plover
+* Document the feature thoroughly
