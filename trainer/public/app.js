@@ -401,6 +401,13 @@ function scoreHtml(stats) {
     <div class="score"><strong>${sessionCorrect}/${sessionAttempts}</strong><span>Phiên này</span></div>`;
 }
 
+function cardPrompt(card) {
+  if (card.kind === "control") return `Bấm một lần để ${card.target}.`;
+  if (card.kind === "punctuation")
+    return `Bấm một lần để thêm dấu “${card.target}”.`;
+  return `Bấm một lần để viết “${card.target}”.`;
+}
+
 function renderPractice(payload) {
   if (payload.card.kind === "sentence") {
     return renderSentencePractice(payload);
@@ -430,7 +437,7 @@ function renderPractice(payload) {
           </div>
           ${keyboardHtml(hintHidden ? [] : card.keys)}
           ${card.note ? `<p class="note">${escapeHtml(card.note)}</p>` : ""}
-          <p id="feedback" class="feedback waiting">Bấm một lần để viết “${escapeHtml(card.target)}”.</p>
+          <p id="feedback" class="feedback waiting">${escapeHtml(cardPrompt(card))}</p>
         </div>
       </section>
       <aside class="panel sidebar">

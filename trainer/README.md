@@ -88,6 +88,14 @@ two-syllable island is generated from the same V7 encoding rules and is
 round-trip tested. During a sentence run, each island is inferred with the
 already committed sentence text as backend context.
 
+`src/drills.mjs` contains a complete physical-coverage set: 15 vowel shapes,
+all 22 initial families (including the loanword `p` path), all six final
+families, every tone-mark operation including stop-final spelling, four
+punctuation strokes, explicit undo/spacing controls, and all five candidate
+selection strokes. Seven guided repair cards cover both candidate selection and
+the main correction-entry positions; free sentence practice then exercises the
+remaining positions in natural context.
+
 Each attempt generates an FSRS rating automatically:
 
 - wrong stroke: Again;
