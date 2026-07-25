@@ -10,10 +10,11 @@
 * The subsystem requires the use of an external keyboard
 * Prior to "enrollment", the subsystem checks if the user truly has an NKRO keyboard by asking the user to **chord specific keys**
 * The subsystem uses FSRS retention model to adaptively tailor lessons to reinforce IME concepts
-* The subsystem has very detailed tracking, including keystroke logging within the website
+* The subsystem has very detailed tracking, including keystroke logging within the website, mouse tracking, click tracking, screenshotting (HTML DOM level, do not render because that'd be dangerous to space, viewport recorded)
 * The user has to consent to **detailed data logging** prior to being enrolled
 * The system has a backend
 * No one can voluntarily sign up for the website. Accounts have to be created manually on the database.
+* Prior to signing in or consent, no tracking takes place
 * The backing database is SQLite
 * For lessons involving the predictive model, **backend inference** is used
 * Stripped Plover is not covered by the lessons
