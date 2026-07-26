@@ -29,7 +29,18 @@ fn main() {
     // rustc-link-lib directives to that library rather than the host binary.
     // Pass the host archives to the binary explicitly and keep their order:
     // Rust objects -> wrapper -> KenLM -> utility/system dependencies.
-    println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--start-group");
+    //
+    // GNU ld's archive-group syntax (`--start-group`/`--end-group`) resolves
+    // circular references between the archives below, but Apple's linker
+    // (used when targeting macOS) does not understand those flags at all and
+    // aborts with "unknown options". Apple's linker already re-scans
+    // archives for undefined symbols, so the grouping is unnecessary there.
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let use_archive_group = target_os == "linux";
+
+    if use_archive_group {
+        println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--start-group");
+    }
     println!(
         "cargo:rustc-link-arg-bin=inference-rs={}",
         wrapper_archive.display()
@@ -42,8 +53,20 @@ fn main() {
         "cargo:rustc-link-arg-bin=inference-rs={}",
         kenlm_build_lib.join("libkenlm_util.a").display()
     );
-    println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--end-group");
-    for library in ["stdc++", "pthread", "z", "bz2", "lzma", "dl"] {
+    if use_archive_group {
+        println!("cargo:rustc-link-arg-bin=inference-rs=-Wl,--end-group");
+    }
+
+    // macOS ships libc++, not libstdc++, and folds libdl/libpthread into
+    // libSystem; Linux distributions need the GNU C++ runtime named
+    // explicitly plus separate libdl/libpthread.
+    let cxx_runtime = if target_os == "macos" { "c++" } else { "stdc++" };
+    let mut libraries = vec![cxx_runtime, "z", "bz2", "lzma"];
+    if target_os != "macos" {
+        libraries.push("pthread");
+        libraries.push("dl");
+    }
+    for library in libraries {
         println!("cargo:rustc-link-arg-bin=inference-rs=-l{library}");
     }
 

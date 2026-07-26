@@ -205,3 +205,7 @@ kenlm/
 android-artifacts/
 .gradle/
 ime-android/.native/
+
+# macOS IME build outputs
+ime-macos/.build/
+ime-macos/build/

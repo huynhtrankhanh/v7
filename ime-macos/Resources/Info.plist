@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>V7 IME</string>
+    <key>CFBundleDisplayName</key>
+    <string>V7 Vietnamese IME</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.huynhtrankhanh.v7ime.mac</string>
+    <key>CFBundleExecutable</key>
+    <string>V7ImeMac</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleSignature</key>
+    <string>????</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSBackgroundOnly</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <!--
+      IMKServer (created manually in main.swift) reads these two keys.
+      InputMethodConnectionName must match the string passed to
+      IMKServer.init(name:bundleIdentifier:); InputMethodServerControllerClass
+      must match the @objc(...) name pinned on V7InputController.
+    -->
+    <key>InputMethodConnectionName</key>
+    <string>V7ImeMac_Connection</string>
+    <key>InputMethodServerControllerClass</key>
+    <string>V7InputController</string>
+    <key>InputMethodServerDelegateClass</key>
+    <string>V7InputController</string>
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array>
+        <string>Latn</string>
+        <string>vi</string>
+    </array>
+    <!--
+      HIToolbox reads tsInputModeListKey / tsVisibleInputModeOrderedArrayKey
+      directly at the top level of Info.plist (NOT wrapped in a
+      ComponentInputModeDict, which is a legacy Carbon-component key that is
+      ignored for modern app-bundle input methods and causes the source to
+      never appear in System Settings > Keyboard > Input Sources).
+    -->
+    <key>tsInputModeListKey</key>
+    <dict>
+        <key>com.huynhtrankhanh.v7ime.mac.inputmode</key>
+        <dict>
+            <key>TISInputSourceID</key>
+            <string>com.huynhtrankhanh.v7ime.mac.inputmode</string>
+            <key>TISIntendedLanguage</key>
+            <string>vi</string>
+            <key>tsInputModeScriptKey</key>
+            <string>smUnicodeScript</string>
+            <key>tsInputModeDefaultStateKey</key>
+            <true/>
+            <key>tsInputModePrimaryInScriptKey</key>
+            <true/>
+        </dict>
+    </dict>
+    <key>tsVisibleInputModeOrderedArrayKey</key>
+    <array>
+        <string>com.huynhtrankhanh.v7ime.mac.inputmode</string>
+    </array>
+</dict>
+</plist>
