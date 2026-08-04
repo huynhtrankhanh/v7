@@ -118,7 +118,7 @@ Standard steno chords for punctuation:
 Punctuation marks are inserted as Punctuation Islands without trailing spaces. Spacing after punctuation is handled automatically by the spacing rules.
 
 ### Emily Symbols
-Emily symbol strokes (starter `SKWH`) follow the upstream spacing behavior. Attachment keys control spacing around the symbol in the `space` attachment method:
+Emily symbol strokes use the `WH` starter. The capitalization command is left-hand `WHR` rather than `WH*`, avoiding a collision with two-syllable V7 mode; the right-hand `WH-R` chord remains the period symbol. Attachment keys control spacing around the symbol in the `space` attachment method:
 - No attachment keys: no surrounding spaces (symbol attaches to both sides).
 - `A`: insert space before the symbol.
 - `O`: insert space after the symbol.

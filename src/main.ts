@@ -31,6 +31,10 @@ import {
   selectCandidateIslands,
   stripVisibleTextSegments,
 } from "./webCore";
+import {
+  isEmilyCapitalizationStroke,
+  isRetiredEmilyCapitalizationStroke,
+} from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 
 // Maps for V7 Decoding
@@ -122,6 +126,21 @@ const PUNCTUATION_MAP: Record<string, string> = {
 };
 
 function handleEmilySymbol(stroke) {
+  // WHR replaces the otherwise ambiguous WH* capitalization command. The
+  // right-hand R pattern remains WH-R and continues to produce a period.
+  if (isEmilyCapitalizationStroke(stroke)) {
+    return {
+      type: "emily",
+      value: "",
+      leftSpace: false,
+      rightSpace: false,
+      explicitSpacing: true,
+      capNext: true,
+      retroSpace: null,
+      repeat: 1,
+    };
+  }
+
   // stroke pattern: starter WH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
   const match = stroke.match(
     /^([#]?WH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/,
@@ -129,6 +148,8 @@ function handleEmilySymbol(stroke) {
   if (!match) return null;
   const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] =
     match;
+
+  if (isRetiredEmilyCapitalizationStroke(stroke)) return null;
 
   if (!(pattern in EMILY_SYMBOLS)) return null;
 
