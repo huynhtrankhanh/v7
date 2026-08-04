@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 
 export interface SandboxLimits {
   image: string;
-  modelVolume: string;
+  modelHostPath: string;
   memoryBytes: number;
   cpus: number;
   pids: number;
@@ -41,7 +41,6 @@ export async function verifySandboxAssets(
   limits: SandboxLimits,
 ): Promise<void> {
   try {
-    await execFileAsync("docker", ["volume", "inspect", limits.modelVolume]);
     await execFileAsync("docker", [
       "run",
       "--rm",
@@ -49,7 +48,7 @@ export async function verifySandboxAssets(
       "--read-only",
       "--cap-drop=ALL",
       "--security-opt=no-new-privileges:true",
-      `--mount=type=volume,source=${limits.modelVolume},target=/model,readonly`,
+      `--mount=type=bind,source=${limits.modelHostPath},target=/model/lm.binary,readonly`,
       "--user=65534:65534",
       limits.image,
       "/usr/bin/test",
@@ -139,9 +138,11 @@ export class DockerSandboxSession implements InferenceSession {
         "--ulimit=nofile=64:64",
         "--tmpfs=/tmp:rw,noexec,nosuid,nodev,size=16777216",
         `--mount=type=volume,source=${volumeName},target=/submission,readonly`,
-        `--mount=type=volume,source=${limits.modelVolume},target=/model,readonly`,
+        `--mount=type=bind,source=${limits.modelHostPath},target=/model/lm.binary,readonly`,
         "--user=65534:65534",
         "--workdir=/tmp",
+        "--env=V7_EVALUATION_PROTOCOL=ndjson-v1",
+        "--env=V7_MODEL_PATH=/model/lm.binary",
         limits.image,
         "/submission/program",
       ]);

@@ -24,6 +24,7 @@ ModelPtr load_model(const char* path) {
 }
 
 ModelPtr load_model_fd(int fd, const char* name) {
+#ifdef __ANDROID__
     try {
         model_error.clear();
         lm::ngram::Config config;
@@ -39,6 +40,13 @@ ModelPtr load_model_fd(int fd, const char* name) {
         std::cerr << "Error loading model descriptor: " << e.what() << std::endl;
         return nullptr;
     }
+#else
+    // File-descriptor model loading is an Android-only integration. Keeping
+    // the host build independent of the patched Android KenLM overload lets
+    // CLI/server binaries build against upstream KenLM releases.
+    (void)fd;
+    return load_model(name);
+#endif
 }
 
 const char* last_model_error() {

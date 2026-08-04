@@ -74,21 +74,6 @@ services:
       context: .
       dockerfile: evaluation-server/sandbox.Dockerfile
     command: ["/bin/true"]
-  evaluator-model:
-    image: v7-evaluator-sandbox:latest
-    user: "0:0"
-    volumes:
-      - ./lm.binary:/model-source/lm.binary:ro
-      - evaluator-model:/model
-    command:
-      [
-        "/bin/sh",
-        "-c",
-        "cp /model-source/lm.binary /model/lm.binary && chmod 0444 /model/lm.binary",
-      ]
-    depends_on:
-      evaluator-sandbox:
-        condition: service_completed_successfully
   evaluation-server:
     build:
       context: .
@@ -96,18 +81,16 @@ services:
     environment:
       EVALUATION_PORT: "3002"
       EVALUATION_SANDBOX_IMAGE: v7-evaluator-sandbox:latest
-      EVALUATION_MODEL_VOLUME: v7-evaluator-model
+      EVALUATION_MODEL_HOST_PATH: ${PWD}/lm.binary
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3002:3002"
     depends_on:
-      evaluator-model:
+      evaluator-sandbox:
         condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:
   stripped-plover-data:
   trainer-data:
-  evaluator-model:
-    name: v7-evaluator-model

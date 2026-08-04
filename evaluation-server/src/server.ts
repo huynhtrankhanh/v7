@@ -3,12 +3,12 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readFileSync } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import corpus from "../../evaluator/dataset.json";
+import defaultCorpus from "../../evaluator/dataset.json";
 import {
   DockerSandboxSession,
   SandboxError,
@@ -33,10 +33,27 @@ const maxUploadBytes = parsePositiveInt(
 );
 const maxConcurrent = parsePositiveInt("EVALUATION_MAX_CONCURRENT", 2);
 const authToken = process.env.EVALUATION_AUTH_TOKEN;
+const corpus = (() => {
+  const path = process.env.EVALUATION_CORPUS_PATH;
+  const value: unknown = path
+    ? JSON.parse(readFileSync(path, "utf8"))
+    : defaultCorpus;
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((text) => typeof text !== "string" || text.length === 0)
+  ) {
+    throw new Error("Evaluation corpus must be a non-empty JSON string array.");
+  }
+  return value as string[];
+})();
 const limits: SandboxLimits = {
   image: process.env.EVALUATION_SANDBOX_IMAGE ?? "v7-evaluator-sandbox:latest",
-  modelVolume: process.env.EVALUATION_MODEL_VOLUME ?? "v7-evaluator-model",
-  memoryBytes: parsePositiveInt("EVALUATION_MEMORY_BYTES", 256 * 1024 * 1024),
+  modelHostPath: process.env.EVALUATION_MODEL_HOST_PATH ?? resolve("lm.binary"),
+  memoryBytes: parsePositiveInt(
+    "EVALUATION_MEMORY_BYTES",
+    2 * 1024 * 1024 * 1024,
+  ),
   cpus: Number(process.env.EVALUATION_CPUS ?? "0.5"),
   pids: parsePositiveInt("EVALUATION_PIDS", 64),
   outputBytes: parsePositiveInt("EVALUATION_OUTPUT_BYTES", 1024 * 1024),

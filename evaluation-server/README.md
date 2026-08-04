@@ -63,6 +63,9 @@ minimal Debian sandbox image.
 
 The trained language model is available read-only at `/model/lm.binary`. It is
 not part of the submission and its size is not included in evaluation metrics.
+The sandbox also sets `V7_MODEL_PATH=/model/lm.binary` and
+`V7_EVALUATION_PROTOCOL=ndjson-v1`; `inference-rs` uses these variables to enter
+its evaluator protocol automatically.
 
 ## Run
 
@@ -78,12 +81,7 @@ Or run the server on the host:
 ```sh
 docker build -f evaluation-server/sandbox.Dockerfile \
   -t v7-evaluator-sandbox:latest .
-docker volume create v7-evaluator-model
-docker run --rm --user 0:0 \
-  -v "$PWD/lm.binary:/model-source/lm.binary:ro" \
-  -v v7-evaluator-model:/model \
-  v7-evaluator-sandbox:latest \
-  /bin/sh -c 'cp /model-source/lm.binary /model/lm.binary && chmod 0444 /model/lm.binary'
+chmod 0444 lm.binary
 npm run build:evaluation-server
 EVALUATION_AUTH_TOKEN='replace-me' npm run start:evaluation-server
 ```
@@ -92,6 +90,10 @@ The Compose deployment mounts the Docker socket. Access to that socket is
 equivalent to host-level control, so the evaluation server container must not
 be exposed to untrusted administrators and should run on a dedicated worker.
 Submitted code never receives the socket.
+
+The model bind mount preserves host permissions. `lm.binary` must be readable
+by the sandbox's unprivileged UID 65534; the documented `0444` mode is safe for
+this generated, non-secret model and prevents sandbox writes.
 
 ## Isolation and limits
 
@@ -118,8 +120,9 @@ Configuration:
 | `EVALUATION_MAX_UPLOAD_BYTES`     |                    `16777216` | Maximum executable size                  |
 | `EVALUATION_MAX_CONCURRENT`       |                           `2` | Concurrent submissions                   |
 | `EVALUATION_SANDBOX_IMAGE`        | `v7-evaluator-sandbox:latest` | Sandbox image                            |
-| `EVALUATION_MODEL_VOLUME`         |          `v7-evaluator-model` | Read-only volume containing `lm.binary`  |
-| `EVALUATION_MEMORY_BYTES`         |                   `268435456` | Container memory and swap ceiling        |
+| `EVALUATION_MODEL_HOST_PATH`      |             `<cwd>/lm.binary` | Host model path bind-mounted read-only   |
+| `EVALUATION_CORPUS_PATH`          |                bundled corpus | Optional server-side JSON string array   |
+| `EVALUATION_MEMORY_BYTES`         |                  `2147483648` | Container memory and swap ceiling        |
 | `EVALUATION_CPUS`                 |                         `0.5` | Container CPU quota                      |
 | `EVALUATION_PIDS`                 |                          `64` | Container PID ceiling                    |
 | `EVALUATION_OUTPUT_BYTES`         |                     `1048576` | One-response stdout and total stderr cap |
@@ -132,6 +135,57 @@ causal metrics.
 
 Do not publish the service without authentication, TLS, request-rate limiting,
 and restricted access to its internal logs.
+
+## Evaluate `inference-rs` on one text
+
+The checked-in [`example-corpus.json`](example-corpus.json) contains one
+invented Vietnamese sentence. Build `inference-rs`, ensure `lm.binary` is in
+the repository root, and start the host server with that corpus:
+
+```sh
+EVALUATION_CORPUS_PATH=evaluation-server/example-corpus.json \
+EVALUATION_INFERENCE_TIMEOUT_MS=30000 \
+npm run start:evaluation-server
+```
+
+In another terminal, submit the executable:
+
+```sh
+curl --fail-with-body \
+  -H 'Content-Type: application/octet-stream' \
+  --data-binary @inference-rs/target/release/inference-rs \
+  http://localhost:3002/evaluate
+```
+
+The first request includes process/model initialization, so this example uses
+a longer per-inference limit. Every later inference receives a fresh 30-second
+deadline as well. The full bundled corpus remains the default whenever
+`EVALUATION_CORPUS_PATH` is unset. Corpus selection is server configuration,
+not part of the submission request.
+
+This workflow was exercised with the release `inference-rs` binary and the
+checked-in sentence. The public result was:
+
+```json
+{
+  "status": "completed",
+  "metrics": {
+    "hardFailureFlag": 0,
+    "failedScenarioRuns": 0,
+    "illegalScenarioRuns": 0,
+    "timeoutScenarioRuns": 0,
+    "freeRunningFinalSyllableErrors": 0,
+    "worstCorrectingPolicyPhysicalActions": 12,
+    "totalCorrectingPhysicalActions": 72,
+    "p95ErrorCascadeLength": 1,
+    "totalCandidateInspectionSteps": 1,
+    "p95InferenceLatencyMilliseconds": 10
+  },
+  "numericPolicy": "padme-rounded-up"
+}
+```
+
+The exact values were emitted only to the internal structured log, as required.
 
 ## Metric privacy
 

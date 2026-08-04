@@ -13,6 +13,7 @@ use futures_util::StreamExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, Write};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tower_http::services::{ServeDir, ServeFile};
@@ -33,6 +34,12 @@ struct Args {
 
     #[arg(long)]
     server: bool,
+
+    /// Read JSON inference requests from stdin and write one candidate array
+    /// per line. The evaluation sandbox also enables this through
+    /// V7_EVALUATION_PROTOCOL=ndjson-v1.
+    #[arg(long)]
+    evaluation_stdio: bool,
 
     #[arg(long, default_value = "3000")]
     port: u16,
@@ -1053,15 +1060,33 @@ impl EmbeddedInference {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+    let evaluation_stdio = args.evaluation_stdio
+        || std::env::var("V7_EVALUATION_PROTOCOL").as_deref() == Ok("ndjson-v1");
+    let model_path = std::env::var("V7_MODEL_PATH").unwrap_or(args.model_path);
     eprintln!("Loading tokenizer (from structured regex logic)...");
     let tokenizer = Tokenizer::new()?;
 
     let model = {
-        eprintln!("Loading model from {}...", args.model_path);
-        kenlm::Model::new(&args.model_path).map_err(|e| anyhow::anyhow!(e))?
+        eprintln!("Loading model from {}...", model_path);
+        kenlm::Model::new(&model_path).map_err(|e| anyhow::anyhow!(e))?
     };
 
-    if args.server {
+    if evaluation_stdio {
+        let stdin = std::io::stdin();
+        let mut stdout = std::io::BufWriter::new(std::io::stdout().lock());
+        for line in stdin.lock().lines() {
+            let line = line?;
+            let islands: Vec<String> = serde_json::from_str(&line)?;
+            let candidates = if islands.is_empty() {
+                vec![]
+            } else {
+                perform_inference(&islands, &tokenizer, &model, 100)?
+            };
+            serde_json::to_writer(&mut stdout, &candidates)?;
+            stdout.write_all(b"\n")?;
+            stdout.flush()?;
+        }
+    } else if args.server {
         let plover_host = args
             .stripped_plover_host
             .or_else(|| std::env::var("STRIPPED_PLOVER_HOST").ok());
