@@ -247,7 +247,9 @@ describe("realistic IME session evaluator", () => {
 
   test("accepts a hard sandbox deadline as a timeout result", async () => {
     const result = await evaluateImeSession("trời mưa", async () => {
-      throw Object.assign(new Error("sandbox deadline"), { code: "TIME_LIMIT" });
+      throw Object.assign(new Error("sandbox deadline"), {
+        code: "TIME_LIMIT",
+      });
     });
 
     expect(result.failure).toBe(TIMEOUT);
