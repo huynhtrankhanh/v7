@@ -8,6 +8,10 @@
 !practice-android/**
 !trainer/
 !trainer/**
+!evaluator/
+!evaluator/**
+!evaluation-server/
+!evaluation-server/**
 !src/
 !static/
 !scripts/

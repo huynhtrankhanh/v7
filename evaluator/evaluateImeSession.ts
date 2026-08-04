@@ -537,6 +537,16 @@ const runInference = async (
     ));
   } catch (error) {
     if (error instanceof InferenceTimeoutError) return TIMEOUT;
+    // Isolated evaluators can enforce a hard process deadline outside this
+    // thread and report it with this stable error code.
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "TIME_LIMIT"
+    ) {
+      return TIMEOUT;
+    }
     throw error;
   }
   state.latencies.push(latencyMs);

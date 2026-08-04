@@ -12,6 +12,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `practice-android/`: Android WebView wrapper that packages `static/practice.html` as a signed release app bundle.
 *   `ime-android/`: Android input method that packages the stripped V7 WebUI and connects it to native composing text and inference settings.
 *   `evaluator/`: Evaluation and dataset (JSONL) tooling, including the TypeScript port of the V7 tokenizer/candidate-enumeration logic.
+*   `evaluation-server/`: Sandboxed HTTP evaluation for submitted executables; see [`evaluation-server/README.md`](evaluation-server/README.md).
 *   `trainer/`: Separate Node.js/SQLite subsystem for consent-gated, adaptive V7 IME chord training.
 *   `preprocess_corpus.py`: Python corpus preprocessor used by the Docker training build.
 *   `train_lm.sh`: Shell script to preprocess and train the language model (intended to run inside the `train` Docker service).

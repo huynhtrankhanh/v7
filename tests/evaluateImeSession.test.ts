@@ -245,6 +245,14 @@ describe("realistic IME session evaluator", () => {
     expect(result.failure).toBe(TIMEOUT);
   });
 
+  test("accepts a hard sandbox deadline as a timeout result", async () => {
+    const result = await evaluateImeSession("trời mưa", async () => {
+      throw Object.assign(new Error("sandbox deadline"), { code: "TIME_LIMIT" });
+    });
+
+    expect(result.failure).toBe(TIMEOUT);
+  });
+
   test("runs a predeclared behavior sensitivity curve", async () => {
     const scenarios = await evaluateImeScenarios(
       "trời mưa",
