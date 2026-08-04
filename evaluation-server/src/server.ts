@@ -3,12 +3,11 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { createWriteStream, readFileSync } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import defaultCorpus from "../../evaluator/dataset.json";
 import {
   DockerSandboxSession,
   SandboxError,
@@ -17,6 +16,7 @@ import {
 } from "./dockerSandbox";
 import { evaluateCorpus } from "./evaluationService";
 import { obfuscateNumbers } from "./padme";
+import { loadCorpus } from "./corpus";
 
 const parsePositiveInt = (name: string, fallback: number): number => {
   const raw = process.env[name];
@@ -33,20 +33,10 @@ const maxUploadBytes = parsePositiveInt(
 );
 const maxConcurrent = parsePositiveInt("EVALUATION_MAX_CONCURRENT", 2);
 const authToken = process.env.EVALUATION_AUTH_TOKEN;
-const corpus = (() => {
-  const path = process.env.EVALUATION_CORPUS_PATH;
-  const value: unknown = path
-    ? JSON.parse(readFileSync(path, "utf8"))
-    : defaultCorpus;
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.some((text) => typeof text !== "string" || text.length === 0)
-  ) {
-    throw new Error("Evaluation corpus must be a non-empty JSON string array.");
-  }
-  return value as string[];
-})();
+const corpus = loadCorpus(
+  process.env.EVALUATION_CORPUS_PATH ??
+    resolve(__dirname, "../corpus/default.txt"),
+);
 const limits: SandboxLimits = {
   image: process.env.EVALUATION_SANDBOX_IMAGE ?? "v7-evaluator-sandbox:latest",
   modelHostPath: process.env.EVALUATION_MODEL_HOST_PATH ?? resolve("lm.binary"),
