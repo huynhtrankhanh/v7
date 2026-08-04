@@ -1,10 +1,12 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.app.Activity;
+import android.graphics.Rect;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.ArrayAdapter;
@@ -36,6 +38,8 @@ public class PloverCommandActivity extends Activity {
     private final AtomicInteger requestIds = new AtomicInteger(1);
     private LinearLayout content;
     private FrameLayout rootView;
+    private ScrollView scrollView;
+    private final List<View> focusOrder = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,7 +48,7 @@ public class PloverCommandActivity extends Activity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(16), dp(20), dp(16));
 
-        ScrollView scrollView = new ScrollView(this);
+        scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
         scrollView.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -67,6 +71,25 @@ public class PloverCommandActivity extends Activity {
             setTitle(R.string.lookup_entries_title);
             showLookup(argument == null ? "" : argument);
         }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                finish();
+            }
+            return true;
+        }
+        if (event.getKeyCode() == KeyEvent.KEYCODE_TAB) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                moveFocus(event.isShiftPressed());
+            }
+            return true;
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
@@ -143,6 +166,7 @@ public class PloverCommandActivity extends Activity {
         submitOnEnter(stroke, lookup);
         submitOnEnter(translation, lookup);
         addCloseButton();
+        focusInitially(stroke);
     }
 
     private void showAddTranslation(String argument) {
@@ -170,6 +194,7 @@ public class PloverCommandActivity extends Activity {
 
         TextView dictionaryLabel = addLabel(R.string.dictionary_label);
         Spinner dictionaries = new Spinner(this);
+        registerFocusable(dictionaries);
         content.addView(dictionaries, matchWrap());
         TextView status = addStatus();
         Button add = addButton(R.string.add_translation_action);
@@ -251,6 +276,7 @@ public class PloverCommandActivity extends Activity {
         });
         submitOnEnter(outline, add);
         submitOnEnter(translation, add);
+        focusInitially(outline);
     }
 
     private String formatLookupResults(
@@ -347,6 +373,7 @@ public class PloverCommandActivity extends Activity {
         EditText field = new EditText(this);
         field.setHint(hintText);
         field.setInputType(inputType);
+        registerFocusable(field);
         content.addView(field, matchWrap());
         return field;
     }
@@ -397,8 +424,62 @@ public class PloverCommandActivity extends Activity {
     private Button addButton(int text) {
         Button button = new Button(this);
         button.setText(text);
+        registerFocusable(button);
         content.addView(button, matchWrap());
         return button;
+    }
+
+    private <T extends View> T registerFocusable(T view) {
+        if (view.getId() == View.NO_ID) {
+            view.setId(View.generateViewId());
+        }
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
+        focusOrder.add(view);
+        return view;
+    }
+
+    private void focusInitially(EditText field) {
+        field.post(() -> {
+            field.requestFocus();
+            field.setSelection(field.getText().length());
+            revealFocusedView(field);
+        });
+    }
+
+    private void moveFocus(boolean backwards) {
+        if (focusOrder.isEmpty()) {
+            return;
+        }
+        View current = getCurrentFocus();
+        int currentIndex = focusOrder.indexOf(current);
+        boolean[] eligible = new boolean[focusOrder.size()];
+        for (int index = 0; index < focusOrder.size(); index++) {
+            View candidate = focusOrder.get(index);
+            eligible[index] = candidate.isEnabled()
+                    && candidate.getVisibility() == View.VISIBLE
+                    && candidate.isFocusable();
+        }
+        int nextIndex = KeyboardFocusCycle.nextIndex(
+                currentIndex,
+                backwards,
+                eligible
+        );
+        if (nextIndex >= 0) {
+            View candidate = focusOrder.get(nextIndex);
+            candidate.requestFocus();
+            revealFocusedView(candidate);
+        }
+    }
+
+    private void revealFocusedView(View view) {
+        if (scrollView == null) {
+            return;
+        }
+        Rect rectangle = new Rect();
+        view.getDrawingRect(rectangle);
+        scrollView.offsetDescendantRectToMyCoords(view, rectangle);
+        scrollView.requestRectangleOnScreen(rectangle, true);
     }
 
     private void addCloseButton() {

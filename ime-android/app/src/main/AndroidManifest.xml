@@ -36,6 +36,9 @@
             android:name=".PloverCommandActivity"
             android:excludeFromRecents="true"
             android:exported="false"
+            android:finishOnTaskLaunch="true"
+            android:noHistory="true"
+            android:taskAffinity=""
             android:theme="@style/AppTheme.CommandDialog"
             android:windowSoftInputMode="stateAlwaysHidden|adjustResize" />
 

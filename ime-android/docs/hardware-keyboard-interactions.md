@@ -80,3 +80,16 @@ Enter in either query field runs the lookup action. In add-translation, Enter
 in either field runs the add action once a writable dictionary has loaded.
 The fields advertise Android's `IME_ACTION_DONE`, so V7's physical Enter
 routing and ordinary software keyboards reach the same editor-action listener.
+
+## Native command-dialog navigation
+
+Stripped Plover lookup and add-translation commands open as transient native
+dialog activities above the application containing the current editor. They
+use an empty task affinity and a dedicated excluded, no-history task, so an
+already open V7 Settings task is not brought forward behind the dialog.
+
+Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
+and backward through the editable fields, dictionary selector, primary action,
+and Close button with wraparound; disabled controls are skipped and newly
+focused controls are scrolled into view. `Escape` closes the dialog. Enter
+keeps the submission behavior described above.

@@ -742,12 +742,14 @@ public class V7ImeService extends InputMethodService {
                             this,
                             PloverCommandActivity.class
                     ).setAction(PloverCommandActivity.ACTION_LOOKUP);
+                    intent.addFlags(PloverCommandLaunchPolicy.FLAGS);
                     break;
                 case ADD_TRANSLATION:
                     intent = new Intent(
                             this,
                             PloverCommandActivity.class
                     ).setAction(PloverCommandActivity.ACTION_ADD_TRANSLATION);
+                    intent.addFlags(PloverCommandLaunchPolicy.FLAGS);
                     break;
                 case CONFIGURE:
                     intent = new Intent(this, SettingsActivity.class);
@@ -762,7 +764,9 @@ public class V7ImeService extends InputMethodService {
                         commandEvent.argument
                 );
             }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (commandEvent.type == PloverCommandEvent.Type.CONFIGURE) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            }
             startActivity(intent);
         } catch (Exception error) {
             Log.e(LOG_TAG, "Unable to handle Plover event", error);

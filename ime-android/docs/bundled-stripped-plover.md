@@ -44,7 +44,17 @@ writes them between STDIO protocol responses. Android replaces that event sink
 with a separate native callback while leaving request/response completion
 unchanged. `V7ImeService` routes lookup and add-translation to native dialog
 activities and configure directly to `SettingsActivity`; unrelated events are
-not treated as UI commands.
+not treated as UI commands. Command dialogs run in their own excluded,
+no-history task with empty affinity, so an existing V7 Settings task is never
+pulled underneath the modal. The transient dialog appears over the application
+that currently owns the editor and disappears completely when closed.
+
+Hardware-keyboard users can cycle every enabled command control with Tab and
+Shift-Tab, including wraparound, while disabled controls are skipped. Focus
+starts in the first editable field, focused controls are scrolled into view,
+Enter retains the existing submit behavior, and Escape closes the dialog.
+These rules are implemented natively so they remain consistent when the soft
+keyboard is hidden.
 
 Dictionary imports use that separation to outlive the management screen. A
 WorkManager foreground task owns the loading notification and staged source.
@@ -132,6 +142,10 @@ At the pinned revision, the direct engine surface is:
   list;
 - `Buffer.alloc` and `writeBigUInt64LE`; and
 - `process.platform`.
+
+The pinned Stripped Plover revision also makes Python dictionaries
+filesystem-hermetic: the CPython/Wasm adapter omits host filesystem and stdio
+mounts while retaining its private in-memory standard-library filesystem.
 
 The STDIO entry's `node:readline`, `process.argv`, stdin, stdout, and exit APIs
 are intentionally absent. Android supplies a small browser RPC entry and
