@@ -3,7 +3,9 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
-    "outDir": "./.ts-jest"
+    "outDir": "./.ts-jest",
+    "lib": ["ES2020", "DOM", "DOM.Iterable", "ES2022.Intl"],
+    "types": ["node", "jest"]
   },
   "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

@@ -6,6 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "format": "prettier --write \"**/*.{ts,js,html,css}\"",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.jest.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "test:unit": "jest",
     "test:e2e": "npm run build && node scripts/fullstack-e2e.js",
     "test:e2e:v7-piecemeal": "npm run build && node scripts/v7-piecemeal-e2e.js",
@@ -16,7 +17,7 @@
     "test:android-ime": "npm run build && node scripts/android-ime-e2e.js",
     "test:dictionary-layout": "npm run build && node scripts/dictionary-layout-e2e.js",
     "test:android-stripped-plover": "npm run build && node scripts/android-stripped-plover-e2e.js && V7_TEST_NON_ISOLATED_WEBVIEW=1 node scripts/android-stripped-plover-e2e.js",
-    "test": "npm run test:unit",
+    "test": "npm run typecheck && npm run test:unit",
     "build:evaluation-server": "esbuild evaluation-server/src/server.ts --bundle --platform=node --target=node22 --format=cjs --outfile=evaluation-server/dist/server.cjs",
     "start:evaluation-server": "node evaluation-server/dist/server.cjs"
   },

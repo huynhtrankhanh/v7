@@ -24,6 +24,32 @@ const sandbox = {
 };
 vm.runInNewContext(scriptMatch[1], sandbox);
 
+type PracticeCode = Record<string, unknown>;
+type PracticeEntry = { syllable: string; code: PracticeCode };
+type EmilyEntry = { pattern: string; symbol: string };
+interface PracticeExports {
+  enumerateRegex(regex: string): string[];
+  buildSyllableEntriesFromRegexMap(
+    regexMap: Record<string, string>,
+  ): PracticeEntry[];
+  decodeEmbeddedRegexMap(marker: string): Promise<Record<string, string>>;
+  parseCodeKey(key: string): PracticeCode;
+  buildExpectedChordSymbols(
+    code: PracticeCode | { left: PracticeCode; right: PracticeCode },
+    mode: string,
+    hand?: string,
+  ): Set<string>;
+  buildExpectedChordSymbolOptions(
+    entries: PracticeEntry[],
+    syllable: string,
+    mode: string,
+    hand: string,
+  ): Set<string>[];
+  strokeSetToSyllable(strokes: Set<string>): string;
+  buildEmilyEntries(): EmilyEntry[];
+  buildExpectedEmilyChord(pattern: string, variant: number): Set<string>;
+}
+
 const {
   enumerateRegex,
   buildSyllableEntriesFromRegexMap,
@@ -34,7 +60,7 @@ const {
   strokeSetToSyllable,
   buildEmilyEntries,
   buildExpectedEmilyChord,
-} = sandbox.module.exports;
+} = sandbox.module.exports as PracticeExports;
 
 describe("practice game helpers", () => {
   test("enumerateRegex expands non-capturing groups and optionals", () => {

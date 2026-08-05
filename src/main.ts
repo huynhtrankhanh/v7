@@ -1,4 +1,5 @@
 import {
+  type Island,
   TextBuffer,
   convertIslandsForInference,
   createIsland,
@@ -14,6 +15,7 @@ import { decodeV7PermittedSyllableStroke } from "./vietnameseSyllables";
 import {
   buildCandidateDiffPlan,
   type CandidateDiffPlan,
+  type VisibleTextSegment,
   KeyboardStrokeTracker,
   findPiecemealSyllableTargets,
   getNextPiecemealCursorIndex,
@@ -35,7 +37,67 @@ import {
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 
 // Maps for V7 Decoding
-const consonantIntMap = {};
+type RetroSpaceAction = "insert" | "delete";
+
+interface EmilyResult {
+  type: "emily";
+  value: string;
+  leftSpace: boolean;
+  rightSpace: boolean;
+  explicitSpacing: boolean;
+  capNext: boolean;
+  retroSpace: RetroSpaceAction | null;
+  repeat: number;
+}
+
+interface PloverDictionary {
+  name?: string;
+  identifier: string;
+  path?: string;
+  entries?: number;
+  readonly?: boolean;
+  enabled: boolean;
+}
+
+interface PloverEntry {
+  dictionary?: string;
+  stroke: string;
+  translation: string;
+}
+
+interface PloverOutputItem {
+  type: "committed" | "preedit";
+  text?: string;
+}
+
+interface PloverRpcResult {
+  dictionaries?: PloverDictionary[];
+  solo?: boolean;
+  output?: PloverOutputItem[];
+  type?: "json" | "python";
+  pythonCode?: string;
+  data?: unknown;
+  page?: number;
+  entries?: PloverEntry[];
+  has_more?: boolean;
+  total?: number;
+  translation?: string;
+  stroke?: string;
+  strokes?: string[];
+}
+
+interface PloverPendingRequest {
+  resolve: (value: PloverRpcResult) => void;
+  reject: (reason: Error) => void;
+}
+
+type LoadingControl = HTMLButtonElement | HTMLSelectElement;
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
+const consonantIntMap: Record<number, string> = {};
 consonantIntMap[0] = "0";
 consonantIntMap[2 * 4 + 3] = "b";
 consonantIntMap[1 * 4 + 1] = "k";
@@ -62,7 +124,7 @@ consonantIntMap[6 * 4 + 1] = "x";
 consonantIntMap[3] = "w";
 consonantIntMap[5 * 4 + 2] = "ch";
 
-const vowelIntMap = {
+const vowelIntMap: Record<number, string> = {
   1: "a",
   2: "o",
   3: "i",
@@ -72,7 +134,7 @@ const vowelIntMap = {
 // Emily symbols (subset mapping adapted from emily-symbols)
 const EMILY_ATTACHMENT_METHOD = "space";
 const EMILY_NO_SPACING_SYMBOLS = ["{*!}", "{*?}"];
-const EMILY_SYMBOLS = {
+const EMILY_SYMBOLS: Record<string, readonly string[]> = {
   // System / navigation
   FG: ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
   RPBG: ["{#Up}", "{#Left}", "{#Right}", "{#Down}"],
@@ -122,7 +184,7 @@ const PUNCTUATION_MAP: Record<string, string> = {
   "TP-BG": "!",
 };
 
-function handleEmilySymbol(stroke) {
+function handleEmilySymbol(stroke: string): EmilyResult | null {
   // WHR replaces the otherwise ambiguous WH* capitalization command. The
   // right-hand R pattern remains WH-R and continues to produce a period.
   if (isEmilyCapitalizationStroke(stroke)) {
@@ -168,7 +230,7 @@ function handleEmilySymbol(stroke) {
     ? attachments.includes("O")
     : !attachments.includes("O");
 
-  let output = symbol.repeat(repeat);
+  const output = symbol.repeat(repeat);
 
   const capNext = capKey === "*";
   const shouldApplySpacing = !EMILY_NO_SPACING_SYMBOLS.includes(symbol);
@@ -187,7 +249,10 @@ function handleEmilySymbol(stroke) {
   };
 }
 
-function applyRetroactiveSpace(action, repeat) {
+function applyRetroactiveSpace(
+  action: RetroSpaceAction | null,
+  repeat: number,
+): boolean {
   if (!action) return false;
   let changed = false;
   for (let i = 0; i < repeat; i++) {
@@ -223,7 +288,7 @@ function applyRetroactiveSpace(action, repeat) {
 
 // --- V7 Decoding ---
 
-function remapTone(t) {
+function remapTone(t: number): number {
   if (t === 3) return 4;
   if (t === 4) return 3;
   if (t === 5) return 6;
@@ -231,7 +296,7 @@ function remapTone(t) {
   return t;
 }
 
-function getV7FromStroke(stroke) {
+function getV7FromStroke(stroke: string): string | null {
   if (!stroke.includes("*")) return null;
   const parts = stroke.split("*");
 
@@ -241,10 +306,10 @@ function getV7FromStroke(stroke) {
 
   const hasSuffixD = rightSide.includes("D");
   const hasSuffixZ = rightSide.includes("Z");
-  let rightKeys = rightSide.replace("D", "").replace("Z", "");
+  const rightKeys = rightSide.replace("D", "").replace("Z", "");
 
   // Left Syllable
-  const lk = (k) => (leftKeys.includes(k) ? 1 : 0);
+  const lk = (k: string) => (leftKeys.includes(k) ? 1 : 0);
   const cA =
     lk("#") * 1 + lk("S") * 2 + lk("T") * 4 + lk("P") * 8 + lk("H") * 16;
   const tA = lk("K") * 1 + lk("W") * 2 + lk("R") * 4;
@@ -256,7 +321,7 @@ function getV7FromStroke(stroke) {
   if (vA === 0) vowelCharA = hasSuffixD ? "u" : "e";
 
   // Right Syllable
-  const rk = (k) => (rightKeys.includes(k) ? 1 : 0);
+  const rk = (k: string) => (rightKeys.includes(k) ? 1 : 0);
   const vB = rk("U") * 1 + rk("E") * 2;
   // F->C4, P->C3, L->C2, T->C0, S->C1
   const cB =
@@ -277,7 +342,13 @@ function getV7FromStroke(stroke) {
 // --- App State ---
 
 const buffer = new TextBuffer();
-const state = {
+interface AppState {
+  islands: Island[];
+  pendingCapitalization: boolean;
+  candidates: string[][];
+}
+
+const state: AppState = {
   get islands() {
     return buffer.getIslands();
   },
@@ -365,29 +436,35 @@ const ANDROID_PLOVER_REQUEST_TIMEOUT_MS = 180_000;
 const androidPloverPending = new Map<
   number,
   {
-    resolve: (value: unknown) => void;
+    resolve: (value: PloverRpcResult) => void;
     reject: (reason: Error) => void;
-    timeoutId: ReturnType<typeof setTimeout>;
+    timeoutId: number;
   }
 >();
 
 let piecemealCursorIndex: number | null = null;
-let inferenceAbortController = null;
+let inferenceAbortController: AbortController | null = null;
 let isKeyboardLayoutVisible = false;
 const pressedQwertyKeys = new Set<string>();
-let strippedPlover = {
+const strippedPlover: {
+  available: boolean;
+  enabled: boolean;
+  solo: boolean;
+  preeditIndex: number | null;
+  requestId: number;
+} = {
   available: false,
   enabled: false,
   solo: false,
   preeditIndex: null,
   requestId: 0,
 };
-let ploverDictionaries = [];
-let ploverSocket = null;
-let ploverSocketReady = null;
-let ploverSocketReadyReject = null;
+let ploverDictionaries: PloverDictionary[] = [];
+let ploverSocket: WebSocket | null = null;
+let ploverSocketReady: Promise<WebSocket> | null = null;
+let ploverSocketReadyReject: ((reason: Error) => void) | null = null;
 let ploverRpcId = 1;
-const ploverPending = new Map();
+const ploverPending = new Map<string, PloverPendingRequest>();
 const dictionaryInputIds = new Set([
   "plover-dict-name",
   "plover-new-dictionary-name",
@@ -405,12 +482,14 @@ let ploverEntrySearchPage = 1;
 let ploverEntrySearchHasMore = false;
 const PLOVER_ENTRY_PAGE_SIZE = 25;
 const PLOVER_STATUS_RETRY_MS = 2000;
-let ploverStatusTimer: ReturnType<typeof setTimeout> | null = null;
+let ploverStatusTimer: number | null = null;
 let ploverStatusCheckInFlight = false;
 let androidDictionaryImportTaskId = "";
-let androidDictionaryImportTimer: ReturnType<typeof setTimeout> | null = null;
+let androidDictionaryImportTimer: number | null = null;
 
-function isDictionaryTextInputFocused(target = document.activeElement) {
+function isDictionaryTextInputFocused(
+  target: Element | null = document.activeElement,
+): boolean {
   if (!target) return false;
   if (dictionaryInputIds.has(target.id)) return true;
   if (
@@ -436,36 +515,40 @@ const undoManager = createUndoManager(
   },
 );
 
-function saveState(group) {
+function saveState(group?: string): void {
   undoManager.save(group);
 }
 
-function restoreState() {
+function restoreState(): void {
   undoManager.undo();
 }
 
-function setPloverMessage(message) {
+function setPloverMessage(message: string): void {
   const messageEl = document.getElementById("plover-message");
   if (messageEl) {
     messageEl.textContent = message || "";
   }
 }
 
-function setEntryMessage(message) {
+function setEntryMessage(message: string): void {
   const messageEl = document.getElementById("plover-entry-message");
   if (messageEl) {
     messageEl.textContent = message || "";
   }
 }
 
-function setLookupMessage(message) {
+function setLookupMessage(message: string): void {
   const messageEl = document.getElementById("plover-lookup-message");
   if (messageEl) {
     messageEl.textContent = message || "";
   }
 }
 
-function setButtonLoading(button, isLoading, loadingText = "") {
+function setButtonLoading(
+  button: LoadingControl | null,
+  isLoading: boolean,
+  loadingText = "",
+): void {
   if (!button) return;
   if (button.tagName === "SELECT") {
     button.disabled = isLoading;
@@ -493,7 +576,7 @@ function setButtonLoading(button, isLoading, loadingText = "") {
   }
 }
 
-function getDictionarySignature(dictionaries) {
+function getDictionarySignature(dictionaries: PloverDictionary[]): string {
   return JSON.stringify(
     dictionaries.map((dict) => ({
       name: dict.name || "",
@@ -506,7 +589,10 @@ function getDictionarySignature(dictionaries) {
   );
 }
 
-function updatePloverDictionaries(nextDictionaries, { force = false } = {}) {
+function updatePloverDictionaries(
+  nextDictionaries: PloverDictionary[],
+  { force = false }: { force?: boolean } = {},
+): boolean {
   const signature = getDictionarySignature(nextDictionaries);
   if (!force && signature === ploverDictionarySignature) {
     updatePloverSoloUI();
@@ -518,9 +604,11 @@ function updatePloverDictionaries(nextDictionaries, { force = false } = {}) {
   return true;
 }
 
-function updatePloverSoloUI() {
+function updatePloverSoloUI(): void {
   const statusEl = document.getElementById("plover-solo-status");
-  const endSoloButton = document.getElementById("plover-end-solo");
+  const endSoloButton = document.getElementById(
+    "plover-end-solo",
+  ) as HTMLButtonElement | null;
   if (statusEl) {
     statusEl.textContent = strippedPlover.solo ? "Solo" : "Normal";
   }
@@ -529,9 +617,11 @@ function updatePloverSoloUI() {
   }
 }
 
-function updatePloverStatusUI() {
+function updatePloverStatusUI(): void {
   const statusEl = document.getElementById("plover-status");
-  const dictionaryButton = document.getElementById("plover-dictionary-open");
+  const dictionaryButton = document.getElementById(
+    "plover-dictionary-open",
+  ) as HTMLButtonElement | null;
   if (statusEl) {
     if (androidPloverPaused) {
       statusEl.textContent = "PAUSED";
@@ -564,7 +654,7 @@ function updatePloverStatusUI() {
   updatePloverSoloUI();
 }
 
-async function fetchPloverStatus() {
+async function fetchPloverStatus(): Promise<void> {
   try {
     if (androidPloverBridge) {
       if (androidPloverBridge.hasPloverConfiguration()) {
@@ -575,7 +665,7 @@ async function fetchPloverStatus() {
       }
     } else {
       const resp = await fetch("/plover/status");
-      const data = await resp.json();
+      const data = (await resp.json()) as { available?: boolean };
       strippedPlover.available = !!data.available;
     }
     if (!strippedPlover.available) {
@@ -592,14 +682,14 @@ async function fetchPloverStatus() {
   updatePloverStatusUI();
 }
 
-function clearPloverStatusTimer() {
+function clearPloverStatusTimer(): void {
   if (ploverStatusTimer) {
     clearTimeout(ploverStatusTimer);
     ploverStatusTimer = null;
   }
 }
 
-function schedulePloverStatusRetry() {
+function schedulePloverStatusRetry(): void {
   clearPloverStatusTimer();
   if (androidPloverBridge && !androidPloverBridge.hasPloverConfiguration()) {
     return;
@@ -611,7 +701,7 @@ function schedulePloverStatusRetry() {
   }, PLOVER_STATUS_RETRY_MS);
 }
 
-async function ensurePloverAvailability() {
+async function ensurePloverAvailability(): Promise<void> {
   if (ploverStatusCheckInFlight) {
     return;
   }
@@ -637,7 +727,7 @@ async function ensurePloverAvailability() {
   }
 }
 
-function resetPloverSocket(message) {
+function resetPloverSocket(message: string): void {
   const error = new Error(message || "Stripped Plover connection lost");
   if (ploverSocket) {
     try {
@@ -669,14 +759,14 @@ function resetPloverSocket(message) {
   schedulePloverStatusRetry();
 }
 
-function ensurePloverSocket() {
+function ensurePloverSocket(): Promise<WebSocket> {
   if (androidPloverBridge) {
     return Promise.reject(
       new Error("Android uses its native Stripped Plover bridge"),
     );
   }
   if (ploverSocketReady) return ploverSocketReady;
-  ploverSocketReady = new Promise((resolve, reject) => {
+  ploverSocketReady = new Promise<WebSocket>((resolve, reject) => {
     ploverSocketReadyReject = reject;
     const protocol = location.protocol === "https:" ? "wss://" : "ws://";
     const ws = new WebSocket(`${protocol}${location.host}/plover/ws`);
@@ -689,9 +779,16 @@ function ensurePloverSocket() {
     });
     ws.addEventListener("message", (event) => {
       try {
-        const data = JSON.parse(event.data);
+        const data = JSON.parse(String(event.data)) as {
+          id?: unknown;
+          ok?: boolean;
+          result?: PloverRpcResult;
+          error?: string;
+          dictionaries?: PloverDictionary[];
+          solo?: boolean;
+        };
         if (!data.id) {
-          const dictionaries = data?.dictionaries || data?.result?.dictionaries;
+          const dictionaries = data.dictionaries || data.result?.dictionaries;
           if (Array.isArray(dictionaries)) {
             if (typeof data.solo === "boolean") {
               strippedPlover.solo = data.solo;
@@ -708,7 +805,7 @@ function ensurePloverSocket() {
         if (pending) {
           ploverPending.delete(key);
           if (data.ok) {
-            pending.resolve(data.result);
+            pending.resolve(data.result ?? {});
           } else {
             pending.reject(new Error(data.error || "Stripped Plover error"));
           }
@@ -728,7 +825,10 @@ function ensurePloverSocket() {
   return ploverSocketReady;
 }
 
-async function ploverRpc(method, params) {
+async function ploverRpc(
+  method: string,
+  params: Record<string, unknown>,
+): Promise<PloverRpcResult> {
   if (androidPloverBridge) {
     return requestAndroidPlover(method, params);
   }
@@ -738,7 +838,7 @@ async function ploverRpc(method, params) {
   }
   const id = ploverRpcId++;
   const payload = { id, method, params };
-  const promise = new Promise((resolve, reject) => {
+  const promise = new Promise<PloverRpcResult>((resolve, reject) => {
     const key = JSON.stringify(id);
     socket.send(JSON.stringify(payload));
     ploverPending.set(key, { resolve, reject });
@@ -746,7 +846,7 @@ async function ploverRpc(method, params) {
   return promise;
 }
 
-function clearPloverPreedit() {
+function clearPloverPreedit(): void {
   if (strippedPlover.preeditIndex !== null) {
     const index = strippedPlover.preeditIndex;
     if (index >= 0 && index < buffer.getIslandCount()) {
@@ -756,7 +856,7 @@ function clearPloverPreedit() {
   }
 }
 
-function syncPloverPreeditIndex() {
+function syncPloverPreeditIndex(): void {
   const islands = buffer.getIslands();
   strippedPlover.preeditIndex = null;
   for (let i = islands.length - 1; i >= 0; i--) {
@@ -767,7 +867,7 @@ function syncPloverPreeditIndex() {
   }
 }
 
-function finalizePloverPreedit() {
+function finalizePloverPreedit(): void {
   if (strippedPlover.preeditIndex !== null) {
     const index = strippedPlover.preeditIndex;
     if (index >= 0 && index < buffer.getIslandCount()) {
@@ -781,11 +881,19 @@ function finalizePloverPreedit() {
 }
 
 function applyPloverOutput(
-  output,
-  { recordHistory, allowInference, finalizePreedit },
-) {
+  output: PloverOutputItem[],
+  {
+    recordHistory,
+    allowInference,
+    finalizePreedit,
+  }: {
+    recordHistory: boolean;
+    allowInference: boolean;
+    finalizePreedit: boolean;
+  },
+): void {
   if (!Array.isArray(output)) return;
-  const committedParts = [];
+  const committedParts: string[] = [];
   let preeditText = "";
   const hadPreedit = strippedPlover.preeditIndex !== null;
   for (const item of output) {
@@ -836,13 +944,16 @@ function applyPloverOutput(
   }
 }
 
-async function handlePloverStroke(stroke, { oneShot }) {
+async function handlePloverStroke(
+  stroke: string,
+  { oneShot }: { oneShot: boolean },
+): Promise<void> {
   if (!strippedPlover.available || androidPloverPaused) return;
   const currentRequest = ++strippedPlover.requestId;
   try {
     const result = await ploverRpc("translate", { stroke });
     if (currentRequest !== strippedPlover.requestId) return;
-    applyPloverOutput(result.output || [], {
+    applyPloverOutput(result.output ?? [], {
       recordHistory: oneShot,
       allowInference: true,
       finalizePreedit: oneShot,
@@ -853,11 +964,11 @@ async function handlePloverStroke(stroke, { oneShot }) {
   } catch (e) {
     if (currentRequest !== strippedPlover.requestId) return;
     console.log(e);
-    setPloverMessage(e.message || "Stripped Plover request failed.");
+    setPloverMessage(errorMessage(e, "Stripped Plover request failed."));
   }
 }
 
-async function togglePloverMode() {
+async function togglePloverMode(): Promise<void> {
   if (!strippedPlover.available || androidPloverPaused) return;
   strippedPlover.enabled = !strippedPlover.enabled;
   setPloverMessage("");
@@ -867,7 +978,7 @@ async function togglePloverMode() {
       await ploverRpc("reset_state", {});
     } catch (e) {
       console.log(e);
-      setPloverMessage(e.message || "Failed to reset Stripped Plover.");
+      setPloverMessage(errorMessage(e, "Failed to reset Stripped Plover."));
     }
     runInference();
   } else {
@@ -877,7 +988,9 @@ async function togglePloverMode() {
   updateDisplay();
 }
 
-async function refreshPloverDictionaries({ force = false } = {}) {
+async function refreshPloverDictionaries({
+  force = false,
+}: { force?: boolean } = {}): Promise<void> {
   if (!strippedPlover.available) return;
   try {
     const result = await ploverRpc("get_dictionary_state", {});
@@ -887,11 +1000,13 @@ async function refreshPloverDictionaries({ force = false } = {}) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to load dictionaries.");
+    setPloverMessage(errorMessage(e, "Failed to load dictionaries."));
   }
 }
 
-async function createBlankJsonDictionary(button: HTMLElement) {
+async function createBlankJsonDictionary(
+  button: HTMLButtonElement,
+): Promise<void> {
   if (!strippedPlover.available) {
     setPloverMessage("Stripped Plover is unavailable.");
     return;
@@ -942,8 +1057,12 @@ async function createBlankJsonDictionary(button: HTMLElement) {
 }
 
 function updatePloverDictionarySelects() {
-  const editSelectEl = document.getElementById("plover-entry-dict");
-  const searchSelectEl = document.getElementById("plover-entry-search-dict");
+  const editSelectEl = document.getElementById(
+    "plover-entry-dict",
+  ) as HTMLSelectElement | null;
+  const searchSelectEl = document.getElementById(
+    "plover-entry-search-dict",
+  ) as HTMLSelectElement | null;
   const availableDictionaries = ploverDictionaries;
 
   if (editSelectEl) {
@@ -998,10 +1117,18 @@ function updatePloverDictionarySelects() {
 }
 
 function updateEntryControls() {
-  const selectEl = document.getElementById("plover-entry-dict");
-  const addButton = document.getElementById("plover-entry-add");
-  const updateButton = document.getElementById("plover-entry-update");
-  const removeButton = document.getElementById("plover-entry-remove");
+  const selectEl = document.getElementById(
+    "plover-entry-dict",
+  ) as HTMLSelectElement | null;
+  const addButton = document.getElementById(
+    "plover-entry-add",
+  ) as HTMLButtonElement | null;
+  const updateButton = document.getElementById(
+    "plover-entry-update",
+  ) as HTMLButtonElement | null;
+  const removeButton = document.getElementById(
+    "plover-entry-remove",
+  ) as HTMLButtonElement | null;
   if (!selectEl || !addButton || !updateButton || !removeButton) return;
   const selectedId = selectEl.value || "";
   const selectedDict = selectedId
@@ -1027,7 +1154,10 @@ function updateEntryControls() {
   }
 }
 
-function getDictionaryFilename(dict, extension) {
+function getDictionaryFilename(
+  dict: PloverDictionary,
+  extension: string,
+): string {
   const rawName = dict.identifier;
   const base = rawName.split("/").pop() || "dictionary";
   const safeBase = base.replace(/[\\/:*?"<>|]+/g, "-");
@@ -1122,7 +1252,9 @@ function renderAndroidDictionaryImportState(
   }
 }
 
-function pollAndroidDictionaryImport(taskId = androidDictionaryImportTaskId) {
+function pollAndroidDictionaryImport(
+  taskId = androidDictionaryImportTaskId,
+): void {
   if (!androidDictionary?.getDictionaryImportState) return;
   if (androidDictionaryImportTimer) {
     window.clearTimeout(androidDictionaryImportTimer);
@@ -1176,7 +1308,11 @@ function enqueueAndroidDictionaryImport(
   return true;
 }
 
-function downloadDictionaryFile(filename, content, mimeType) {
+function downloadDictionaryFile(
+  filename: string,
+  content: string,
+  mimeType: string,
+): void {
   if (androidDictionary) {
     androidDictionary.saveDictionaryFile(filename, content, mimeType);
     return;
@@ -1192,18 +1328,21 @@ function downloadDictionaryFile(filename, content, mimeType) {
   URL.revokeObjectURL(url);
 }
 
-async function exportDictionary(dict, button) {
+async function exportDictionary(
+  dict: PloverDictionary,
+  button: LoadingControl,
+): Promise<void> {
   const name = dict.identifier;
   if (!name) return;
   setButtonLoading(button, true, "Exporting...");
   try {
     const result = await ploverRpc("export_dictionary", { name });
-    const type = result.type || "json";
+    const type = result.type ?? "json";
     if (type === "python") {
       const filename = getDictionaryFilename(dict, "py");
       downloadDictionaryFile(
         filename,
-        result.pythonCode || "",
+        result.pythonCode ?? "",
         "text/x-python",
       );
     } else {
@@ -1214,13 +1353,16 @@ async function exportDictionary(dict, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to export dictionary.");
+    setPloverMessage(errorMessage(e, "Failed to export dictionary."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function renameDictionary(dict, button) {
+async function renameDictionary(
+  dict: PloverDictionary,
+  button: LoadingControl,
+): Promise<void> {
   const name = dict.identifier;
   const currentLabel = dict.identifier;
   if (!name) return;
@@ -1256,13 +1398,16 @@ async function renameDictionary(dict, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to rename dictionary.");
+    setPloverMessage(errorMessage(e, "Failed to rename dictionary."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function deleteDictionary(dict, button) {
+async function deleteDictionary(
+  dict: PloverDictionary,
+  button: LoadingControl,
+): Promise<void> {
   const name = dict.identifier;
   if (!name) return;
   if (!window.confirm(`Delete dictionary "${dict.identifier}"?`)) return;
@@ -1273,13 +1418,17 @@ async function deleteDictionary(dict, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to delete dictionary.");
+    setPloverMessage(errorMessage(e, "Failed to delete dictionary."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function setDictionaryEnabled(dict, enabled, button) {
+async function setDictionaryEnabled(
+  dict: PloverDictionary,
+  enabled: boolean,
+  button: LoadingControl,
+): Promise<void> {
   const identifier = dict.identifier;
   if (!identifier) return;
   setButtonLoading(button, true, enabled ? "Enabling..." : "Disabling...");
@@ -1297,13 +1446,16 @@ async function setDictionaryEnabled(dict, enabled, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to update dictionary state.");
+    setPloverMessage(errorMessage(e, "Failed to update dictionary state."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function prioritizeDictionaryOrder(identifiers, button) {
+async function prioritizeDictionaryOrder(
+  identifiers: string[],
+  button: LoadingControl,
+): Promise<void> {
   if (identifiers.length === 0) return;
   setButtonLoading(button, true, "Moving...");
   try {
@@ -1312,13 +1464,16 @@ async function prioritizeDictionaryOrder(identifiers, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to reorder dictionaries.");
+    setPloverMessage(errorMessage(e, "Failed to reorder dictionaries."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-function getMovedDictionaryOrder(index, direction) {
+function getMovedDictionaryOrder(
+  index: number,
+  direction: -1 | 1,
+): string[] | null {
   const nextIndex = index + direction;
   if (nextIndex < 0 || nextIndex >= ploverDictionaries.length) return null;
   const identifiers = ploverDictionaries.map((dict) => dict.identifier);
@@ -1327,7 +1482,10 @@ function getMovedDictionaryOrder(index, direction) {
   return identifiers;
 }
 
-async function soloDictionary(dict, button) {
+async function soloDictionary(
+  dict: PloverDictionary,
+  button: LoadingControl,
+): Promise<void> {
   const identifier = dict.identifier;
   if (!identifier) return;
   setButtonLoading(button, true, "Solo...");
@@ -1340,13 +1498,13 @@ async function soloDictionary(dict, button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to solo dictionary.");
+    setPloverMessage(errorMessage(e, "Failed to solo dictionary."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function endSoloDictionaries(button) {
+async function endSoloDictionaries(button: LoadingControl): Promise<void> {
   setButtonLoading(button, true, "Ending...");
   try {
     const result = await ploverRpc("end_solo_dictionaries", {});
@@ -1355,13 +1513,17 @@ async function endSoloDictionaries(button) {
     setPloverMessage("");
   } catch (e) {
     console.log(e);
-    setPloverMessage(e.message || "Failed to end solo mode.");
+    setPloverMessage(errorMessage(e, "Failed to end solo mode."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-function createDictionaryActionOption(value, label, disabled = false) {
+function createDictionaryActionOption(
+  value: string,
+  label: string,
+  disabled = false,
+): HTMLOptionElement {
   const option = document.createElement("option");
   option.value = value;
   option.textContent = label;
@@ -1369,7 +1531,22 @@ function createDictionaryActionOption(value, label, disabled = false) {
   return option;
 }
 
-async function runDictionaryAction(dict, index, action, control) {
+type DictionaryAction =
+  | "enable"
+  | "disable"
+  | "up"
+  | "down"
+  | "solo"
+  | "export"
+  | "rename"
+  | "delete";
+
+async function runDictionaryAction(
+  dict: PloverDictionary,
+  index: number,
+  action: DictionaryAction,
+  control: LoadingControl,
+): Promise<void> {
   if (action === "enable") {
     await setDictionaryEnabled(dict, true, control);
   } else if (action === "disable") {
@@ -1391,7 +1568,7 @@ async function runDictionaryAction(dict, index, action, control) {
   }
 }
 
-function openDictionaryEntries(dict) {
+function openDictionaryEntries(dict: PloverDictionary): void {
   const identifier = dict.identifier;
   if (!identifier) return;
 
@@ -1508,7 +1685,7 @@ function renderPloverDictionaries() {
       createDictionaryActionOption("delete", "Delete", !!dict.readonly),
     );
     actionSelect.addEventListener("change", () => {
-      const action = actionSelect.value;
+      const action = actionSelect.value as DictionaryAction | "";
       if (!action) return;
       void runDictionaryAction(dict, index, action, actionSelect);
     });
@@ -1520,10 +1697,16 @@ function renderPloverDictionaries() {
   updatePloverDictionarySelects();
 }
 
-function fillEntryEditor(entry) {
-  const dictSelect = document.getElementById("plover-entry-dict");
-  const strokeInput = document.getElementById("plover-entry-stroke");
-  const translationInput = document.getElementById("plover-entry-translation");
+function fillEntryEditor(entry: PloverEntry): void {
+  const dictSelect = document.getElementById(
+    "plover-entry-dict",
+  ) as HTMLSelectElement | null;
+  const strokeInput = document.getElementById(
+    "plover-entry-stroke",
+  ) as HTMLInputElement | null;
+  const translationInput = document.getElementById(
+    "plover-entry-translation",
+  ) as HTMLInputElement | null;
   if (dictSelect && entry.dictionary) {
     dictSelect.value = entry.dictionary;
   }
@@ -1536,7 +1719,7 @@ function fillEntryEditor(entry) {
   updateEntryControls();
 }
 
-function renderEntryRows(container, entries) {
+function renderEntryRows(container: HTMLElement, entries: PloverEntry[]): void {
   container.replaceChildren();
   if (!entries || entries.length === 0) {
     const empty = document.createElement("div");
@@ -1564,9 +1747,13 @@ function renderEntryRows(container, entries) {
   }
 }
 
-function updateEntryPagination(result) {
-  const prevButton = document.getElementById("plover-entry-prev");
-  const nextButton = document.getElementById("plover-entry-next");
+function updateEntryPagination(result: PloverRpcResult): void {
+  const prevButton = document.getElementById(
+    "plover-entry-prev",
+  ) as HTMLButtonElement | null;
+  const nextButton = document.getElementById(
+    "plover-entry-next",
+  ) as HTMLButtonElement | null;
   const pageEl = document.getElementById("plover-entry-page");
   ploverEntrySearchHasMore = !!result?.has_more;
   if (prevButton) {
@@ -1581,16 +1768,39 @@ function updateEntryPagination(result) {
   }
 }
 
-function getEntrySearchParams(page) {
-  const dictSelect = document.getElementById("plover-entry-search-dict");
-  const strokeInput = document.getElementById("plover-entry-search-stroke");
-  const outputInput = document.getElementById("plover-entry-search-output");
-  const matchSelect = document.getElementById("plover-entry-search-match");
-  const sortSelect = document.getElementById("plover-entry-sort");
+interface EntrySearchParams extends Record<string, unknown> {
+  page: number;
+  page_size: number;
+  sort: string;
+  dictionary?: string;
+  stroke?: string;
+  output?: string;
+  match?: string;
+}
+
+function getEntrySearchParams(page: number): {
+  params: EntrySearchParams;
+  hasSearchQuery: boolean;
+} {
+  const dictSelect = document.getElementById(
+    "plover-entry-search-dict",
+  ) as HTMLSelectElement | null;
+  const strokeInput = document.getElementById(
+    "plover-entry-search-stroke",
+  ) as HTMLInputElement | null;
+  const outputInput = document.getElementById(
+    "plover-entry-search-output",
+  ) as HTMLInputElement | null;
+  const matchSelect = document.getElementById(
+    "plover-entry-search-match",
+  ) as HTMLSelectElement | null;
+  const sortSelect = document.getElementById(
+    "plover-entry-sort",
+  ) as HTMLSelectElement | null;
   const dictionary = (dictSelect?.value || "").trim();
   const stroke = (strokeInput?.value || "").trim();
   const output = (outputInput?.value || "").trim();
-  const params = {
+  const params: EntrySearchParams = {
     page,
     page_size: PLOVER_ENTRY_PAGE_SIZE,
     sort: sortSelect?.value || "alphabetic",
@@ -1604,7 +1814,10 @@ function getEntrySearchParams(page) {
   return { params, hasSearchQuery: !!(stroke || output) };
 }
 
-async function runEntrySearch({ page = 1, button = null } = {}) {
+async function runEntrySearch({
+  page = 1,
+  button = null,
+}: { page?: number; button?: LoadingControl | null } = {}): Promise<void> {
   if (!strippedPlover.available) {
     setEntryMessage("Stripped Plover is unavailable.");
     return;
@@ -1619,12 +1832,12 @@ async function runEntrySearch({ page = 1, button = null } = {}) {
     const method = hasSearchQuery ? "search_entries" : "enumerate_entries";
     const result = await ploverRpc(method, params);
     ploverEntrySearchPage = result.page || page;
-    renderEntryRows(resultsEl, result.entries || []);
+    renderEntryRows(resultsEl, result.entries ?? []);
     updateEntryPagination(result);
     setEntryMessage("");
   } catch (e) {
     console.log(e);
-    setEntryMessage(e.message || "Entry search failed.");
+    setEntryMessage(errorMessage(e, "Entry search failed."));
   } finally {
     if (button) {
       setButtonLoading(button, false, "");
@@ -1632,18 +1845,20 @@ async function runEntrySearch({ page = 1, button = null } = {}) {
   }
 }
 
-function renderLookupRows(entries) {
+function renderLookupRows(entries: PloverEntry[]): void {
   const resultsEl = document.getElementById("plover-lookup-results");
   if (!resultsEl) return;
   renderEntryRows(resultsEl, entries);
 }
 
-async function runStrokeLookup(button) {
+async function runStrokeLookup(button: LoadingControl): Promise<void> {
   if (!strippedPlover.available) {
     setLookupMessage("Stripped Plover is unavailable.");
     return;
   }
-  const strokeInput = document.getElementById("plover-lookup-stroke");
+  const strokeInput = document.getElementById(
+    "plover-lookup-stroke",
+  ) as HTMLInputElement | null;
   const stroke = (strokeInput?.value || "").trim();
   if (!stroke) {
     setLookupMessage("Provide a stroke to look up.");
@@ -1666,18 +1881,20 @@ async function runStrokeLookup(button) {
     setLookupMessage(result.translation ? "" : "No translation found.");
   } catch (e) {
     console.log(e);
-    setLookupMessage(e.message || "Stroke lookup failed.");
+    setLookupMessage(errorMessage(e, "Stroke lookup failed."));
   } finally {
     setButtonLoading(button, false, "");
   }
 }
 
-async function runReverseLookup(button) {
+async function runReverseLookup(button: LoadingControl): Promise<void> {
   if (!strippedPlover.available) {
     setLookupMessage("Stripped Plover is unavailable.");
     return;
   }
-  const translationInput = document.getElementById("plover-lookup-translation");
+  const translationInput = document.getElementById(
+    "plover-lookup-translation",
+  ) as HTMLInputElement | null;
   const translation = (translationInput?.value || "").trim();
   if (!translation) {
     setLookupMessage("Provide a translation to look up.");
@@ -1686,7 +1903,7 @@ async function runReverseLookup(button) {
   setButtonLoading(button, true, "Looking...");
   try {
     const result = await ploverRpc("reverse_lookup", { translation });
-    const entries = (result.strokes || []).map((stroke) => ({
+    const entries: PloverEntry[] = (result.strokes ?? []).map((stroke) => ({
       stroke,
       translation: result.translation || translation,
       dictionary: "active dictionaries",
@@ -1695,7 +1912,7 @@ async function runReverseLookup(button) {
     setLookupMessage(entries.length > 0 ? "" : "No strokes found.");
   } catch (e) {
     console.log(e);
-    setLookupMessage(e.message || "Reverse lookup failed.");
+    setLookupMessage(errorMessage(e, "Reverse lookup failed."));
   } finally {
     setButtonLoading(button, false, "");
   }
@@ -1703,7 +1920,7 @@ async function runReverseLookup(button) {
 
 // --- Logic ---
 
-function appendText(text) {
+function appendText(text: string): void {
   if (state.pendingCapitalization && text.length > 0) {
     text = text.charAt(0).toUpperCase() + text.slice(1);
     state.pendingCapitalization = false;
@@ -1712,7 +1929,7 @@ function appendText(text) {
   buffer.appendIsland(createIsland("vietnamese", text));
 }
 
-function abortInferenceRequest(clearController) {
+function abortInferenceRequest(clearController: boolean): void {
   if (inferenceAbortController) {
     inferenceAbortController.abort();
     if (clearController) {
@@ -1721,11 +1938,11 @@ function abortInferenceRequest(clearController) {
   }
 }
 
-function isStaleInference(controller) {
-  return controller && controller !== inferenceAbortController;
+function isStaleInference(controller: AbortController | null): boolean {
+  return controller !== null && controller !== inferenceAbortController;
 }
 
-async function handleChord(stroke) {
+async function handleChord(stroke: string): Promise<void> {
   window.dispatchEvent(
     new CustomEvent("v7-editor-stroke", {
       detail: { stroke },
@@ -1787,7 +2004,9 @@ async function handleChord(stroke) {
     isRawMode = true;
     buffer.clearHistory();
     updateDisplay();
-    const textArea = document.getElementById("text-input");
+    const textArea = document.getElementById(
+      "text-input",
+    ) as HTMLTextAreaElement | null;
     if (textArea) {
       textArea.focus();
       textArea.selectionStart = textArea.value.length;
@@ -2092,7 +2311,7 @@ async function runInference() {
     inferenceErrorMessage = "";
     updateDisplay();
   } catch (e) {
-    if (e && e.name === "AbortError") {
+    if (e instanceof DOMException && e.name === "AbortError") {
       return;
     }
     console.error("Inference failed", e);
@@ -2108,11 +2327,11 @@ async function runInference() {
   }
 }
 
-function shouldDeferAndroidInferenceRender() {
-  return androidIme && inferenceModelState === "ready";
+function shouldDeferAndroidInferenceRender(): boolean {
+  return !!androidIme && inferenceModelState === "ready";
 }
 
-function hasOsPassthroughModifier(event) {
+function hasOsPassthroughModifier(event: KeyboardEvent): boolean {
   return event.ctrlKey || event.altKey || event.metaKey;
 }
 
@@ -2140,9 +2359,9 @@ type SelectCandidateOptions = {
 };
 
 function selectCandidate(
-  index,
+  index: number,
   options: SelectCandidateOptions = { saveHistory: true, refreshDisplay: true },
-) {
+): boolean {
   const nextIslands = selectCandidateIslands(
     state.candidates,
     index,
@@ -2161,7 +2380,11 @@ function selectCandidate(
   return true;
 }
 
-function updateInputPadding(display, textArea, candidateArea) {
+function updateInputPadding(
+  display: HTMLElement,
+  textArea: HTMLTextAreaElement,
+  candidateArea: HTMLElement,
+): void {
   if (!display.dataset.basePaddingBottom) {
     display.dataset.basePaddingBottom = String(
       parseFloat(getComputedStyle(display).paddingBottom) || 0,
@@ -2190,20 +2413,20 @@ function updateInputPadding(display, textArea, candidateArea) {
   textArea.style.paddingBottom = `${textAreaBase + candidateHeight}px`;
 }
 
-function scrollToBottom(element) {
+function scrollToBottom(element: HTMLElement): void {
   element.scrollTop = element.scrollHeight;
   requestAnimationFrame(() => {
     element.scrollTop = element.scrollHeight;
   });
 }
 
-function formatKeyboardKeyLabel(key) {
+function formatKeyboardKeyLabel(key: string): string {
   if (key === " ") return "Spacebar";
   if (key.length === 1) return key.toUpperCase();
   return key;
 }
 
-function renderKeyboardLayout() {
+function renderKeyboardLayout(): void {
   const board = document.getElementById("qwerty-board");
   if (!board) return;
   board.replaceChildren();
@@ -2224,7 +2447,7 @@ function renderKeyboardLayout() {
   }
 }
 
-function updateKeyboardLayout() {
+function updateKeyboardLayout(): void {
   const layout = document.getElementById("keyboard-layout");
   if (!layout) return;
 
@@ -2233,7 +2456,7 @@ function updateKeyboardLayout() {
     "aria-hidden",
     isKeyboardLayoutVisible ? "false" : "true",
   );
-  for (const keyEl of layout.querySelectorAll(".qwerty-key")) {
+  for (const keyEl of layout.querySelectorAll<HTMLElement>(".qwerty-key")) {
     const key = keyEl.dataset.key || "";
     keyEl.classList.toggle("is-pressed", pressedQwertyKeys.has(key));
   }
@@ -2250,7 +2473,9 @@ function updateKeyboardLayout() {
   }
 }
 
-function renderVisibleSegmentFragment(segment) {
+function renderVisibleSegmentFragment(
+  segment: VisibleTextSegment,
+): DocumentFragment {
   const fragment = document.createDocumentFragment();
   if (segment.piecemealNumber === undefined) {
     fragment.appendChild(document.createTextNode(segment.text));
@@ -2278,16 +2503,16 @@ function renderVisibleSegmentFragment(segment) {
   return fragment;
 }
 
-function setKeyboardLayoutVisible(visible) {
+function setKeyboardLayoutVisible(visible: boolean): void {
   isKeyboardLayoutVisible = visible;
   updateKeyboardLayout();
 }
 
-function toggleKeyboardLayout() {
+function toggleKeyboardLayout(): void {
   setKeyboardLayoutVisible(!isKeyboardLayoutVisible);
 }
 
-function setupImeControls() {
+function setupImeControls(): void {
   const switchKeyboard = document.getElementById("ime-switch-keyboard");
   if (switchKeyboard) {
     if (androidIme) {
@@ -2300,10 +2525,10 @@ function setupImeControls() {
   }
 }
 
-function updateInferenceStatusUI() {
+function updateInferenceStatusUI(): void {
   const status = document.getElementById("inference-status");
   if (!status || !androidIme) return;
-  const labels = {
+  const labels: Record<string, string> = {
     missing: "Model missing",
     not_loaded: "Model not loaded",
     loading: "Loading model… · raw buffer",
@@ -2315,7 +2540,7 @@ function updateInferenceStatusUI() {
   status.className = `ime-mode-detail ${inferenceModelState}`;
 }
 
-function trackQwertyKey(event, isPressed) {
+function trackQwertyKey(event: KeyboardEvent, isPressed: boolean): void {
   const key = normalizeQwertyDisplayKey(event.key, event.code || "");
   if (!key) return;
   if (isPressed) {
@@ -2326,17 +2551,22 @@ function trackQwertyKey(event, isPressed) {
   updateKeyboardLayout();
 }
 
-function clearPressedQwertyKeys() {
+function clearPressedQwertyKeys(): void {
   if (pressedQwertyKeys.size === 0) return;
   pressedQwertyKeys.clear();
   updateKeyboardLayout();
 }
 
-function updateDisplay() {
-  const display = document.getElementById("text-display");
-  const textArea = document.getElementById("text-input");
-  const candArea = document.getElementById("candidate-area");
+function updateDisplay(): void {
+  const display = document.getElementById("text-display") as HTMLElement | null;
+  const textArea = document.getElementById(
+    "text-input",
+  ) as HTMLTextAreaElement | null;
+  const candArea = document.getElementById(
+    "candidate-area",
+  ) as HTMLElement | null;
   const inferenceError = document.getElementById("inference-error");
+  if (!display || !textArea || !candArea) return;
 
   const text = renderVisibleText(state.islands, state.candidates);
   const candidateDiffPlan =
@@ -2413,7 +2643,7 @@ function updateDisplay() {
       !state.islands[0].isV7;
 
     display.replaceChildren();
-    let textFlow = display;
+    let textFlow: HTMLElement = display;
     if (strippedDisplay.enabled) {
       // Stripped display uses flex layout to anchor the buffer to the bottom.
       // Keep its contents in one normal inline formatting context so text
@@ -2502,7 +2732,7 @@ function updateDisplay() {
         div.className = "candidate";
 
         const sup = document.createElement("sup");
-        sup.textContent = i + 1;
+        sup.textContent = String(i + 1);
         div.appendChild(sup);
 
         div.appendChild(document.createTextNode(" "));
@@ -2590,7 +2820,7 @@ document.addEventListener("keydown", (e) => {
     // Copy entire buffer if nothing selected
     if (
       (!strippedDisplay.enabled || strippedDisplay.copyAllowed) &&
-      !window.getSelection().toString()
+      !window.getSelection()?.toString()
     ) {
       const textToCopy = renderVisibleText(state.islands, state.candidates);
 
@@ -2611,14 +2841,17 @@ document.addEventListener("keydown", (e) => {
 
   trackQwertyKey(e, true);
 
-  if (isDictionaryTextInputFocused(e.target)) {
+  if (isDictionaryTextInputFocused(e.target as Element | null)) {
     return; // Allow normal typing in dictionary text boxes
   }
 
   if (isRawMode) {
     if (e.key === "Escape") {
       // Exit Raw Mode
-      const textArea = document.getElementById("text-input");
+      const textArea = document.getElementById(
+        "text-input",
+      ) as HTMLTextAreaElement | null;
+      if (!textArea) return;
       const newText = textArea.value;
 
       // Update state
@@ -2696,7 +2929,7 @@ document.addEventListener("keyup", (e) => {
 
   if (isRawMode) return; // Don't process steno in raw mode
 
-  if (isDictionaryTextInputFocused(e.target)) {
+  if (isDictionaryTextInputFocused(e.target as Element | null)) {
     return;
   }
 
@@ -2715,48 +2948,74 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
-function setupPloverControls() {
+function setupPloverControls(): void {
   const dictionaryOpenButton = document.getElementById(
     "plover-dictionary-open",
-  );
-  const dictionaryDialog = document.getElementById("plover-dictionary-dialog");
+  ) as HTMLButtonElement | null;
+  const dictionaryDialog = document.getElementById(
+    "plover-dictionary-dialog",
+  ) as HTMLDialogElement | null;
   const dictionaryCloseButton = document.getElementById(
     "plover-dictionary-close",
-  );
-  const refreshButton = document.getElementById("plover-refresh");
-  const endSoloButton = document.getElementById("plover-end-solo");
+  ) as HTMLButtonElement | null;
+  const refreshButton = document.getElementById(
+    "plover-refresh",
+  ) as HTMLButtonElement | null;
+  const endSoloButton = document.getElementById(
+    "plover-end-solo",
+  ) as HTMLButtonElement | null;
   const createDictionaryButton = document.getElementById(
     "plover-new-dictionary-create",
-  );
-  const uploadButton = document.getElementById("plover-dict-upload");
+  ) as HTMLButtonElement | null;
+  const uploadButton = document.getElementById(
+    "plover-dict-upload",
+  ) as HTMLButtonElement | null;
   const dictionaryFileInput = document.getElementById(
     "plover-dict-file",
   ) as HTMLInputElement | null;
   const dictionaryTypeSelect = document.getElementById(
     "plover-dict-type",
   ) as HTMLSelectElement | null;
-  const entrySearchButton = document.getElementById("plover-entry-search");
-  const entryPrevButton = document.getElementById("plover-entry-prev");
-  const entryNextButton = document.getElementById("plover-entry-next");
+  const entrySearchButton = document.getElementById(
+    "plover-entry-search",
+  ) as HTMLButtonElement | null;
+  const entryPrevButton = document.getElementById(
+    "plover-entry-prev",
+  ) as HTMLButtonElement | null;
+  const entryNextButton = document.getElementById(
+    "plover-entry-next",
+  ) as HTMLButtonElement | null;
   const lookupStrokeButton = document.getElementById(
     "plover-lookup-stroke-run",
-  );
+  ) as HTMLButtonElement | null;
   const lookupTranslationButton = document.getElementById(
     "plover-lookup-translation-run",
-  );
-  const addButton = document.getElementById("plover-entry-add");
-  const updateButton = document.getElementById("plover-entry-update");
-  const removeButton = document.getElementById("plover-entry-remove");
-  const dictSelect = document.getElementById("plover-entry-dict");
+  ) as HTMLButtonElement | null;
+  const addButton = document.getElementById(
+    "plover-entry-add",
+  ) as HTMLButtonElement | null;
+  const updateButton = document.getElementById(
+    "plover-entry-update",
+  ) as HTMLButtonElement | null;
+  const removeButton = document.getElementById(
+    "plover-entry-remove",
+  ) as HTMLButtonElement | null;
+  const dictSelect = document.getElementById(
+    "plover-entry-dict",
+  ) as HTMLSelectElement | null;
 
-  for (const tab of document.querySelectorAll(".plover-tab")) {
+  for (const tab of document.querySelectorAll<HTMLElement>(".plover-tab")) {
     tab.addEventListener("click", () => {
       const panelId = tab.dataset.panel;
       if (!panelId) return;
-      for (const candidate of document.querySelectorAll(".plover-tab")) {
+      for (const candidate of document.querySelectorAll<HTMLElement>(
+        ".plover-tab",
+      )) {
         candidate.classList.toggle("active", candidate === tab);
       }
-      for (const panel of document.querySelectorAll(".plover-panel")) {
+      for (const panel of document.querySelectorAll<HTMLElement>(
+        ".plover-panel",
+      )) {
         panel.classList.toggle("active", panel.id === panelId);
       }
       const content = dictionaryDialog?.querySelector<HTMLElement>(
@@ -2858,8 +3117,12 @@ function setupPloverControls() {
         setPloverMessage("Stripped Plover is unavailable.");
         return;
       }
-      const nameInput = document.getElementById("plover-dict-name");
-      const mergeToggle = document.getElementById("plover-dict-merge");
+      const nameInput = document.getElementById(
+        "plover-dict-name",
+      ) as HTMLInputElement | null;
+      const mergeToggle = document.getElementById(
+        "plover-dict-merge",
+      ) as HTMLInputElement | null;
       const file = dictionaryFileInput?.files?.[0];
       if (!file) {
         setPloverMessage("Select a dictionary file to upload.");
@@ -2907,7 +3170,7 @@ function setupPloverControls() {
         setPloverMessage("");
       } catch (e) {
         console.log(e);
-        setPloverMessage(e.message || "Failed to upload dictionary.");
+        setPloverMessage(errorMessage(e, "Failed to upload dictionary."));
       } finally {
         setButtonLoading(uploadButton, false, "");
       }
@@ -2952,16 +3215,22 @@ function setupPloverControls() {
     });
   }
 
-  const entryHandler = async (action) => {
+  const entryHandler = async (
+    action: "add" | "update" | "remove",
+  ): Promise<void> => {
     if (!strippedPlover.available) {
       setEntryMessage("Stripped Plover is unavailable.");
       return;
     }
-    const dictSelect = document.getElementById("plover-entry-dict");
-    const strokeInput = document.getElementById("plover-entry-stroke");
+    const dictSelect = document.getElementById(
+      "plover-entry-dict",
+    ) as HTMLSelectElement | null;
+    const strokeInput = document.getElementById(
+      "plover-entry-stroke",
+    ) as HTMLInputElement | null;
     const translationInput = document.getElementById(
       "plover-entry-translation",
-    );
+    ) as HTMLInputElement | null;
     const stroke = (strokeInput?.value || "").trim();
     const translation = (translationInput?.value || "").trim();
     const name = (dictSelect?.value || "").trim();
@@ -3002,7 +3271,7 @@ function setupPloverControls() {
       await runEntrySearch({ page: ploverEntrySearchPage });
     } catch (e) {
       console.log(e);
-      setEntryMessage(e.message || "Entry update failed.");
+      setEntryMessage(errorMessage(e, "Entry update failed."));
     }
   };
 
@@ -3151,8 +3420,8 @@ function requestAndroidInference(
 function requestAndroidPlover(
   method: string,
   params: unknown,
-): Promise<unknown> {
-  return new Promise((resolve, reject) => {
+): Promise<PloverRpcResult> {
+  return new Promise<PloverRpcResult>((resolve, reject) => {
     if (!androidPloverBridge) {
       reject(new Error("Android Plover bridge is unavailable"));
       return;
@@ -3317,8 +3586,9 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
     const label = document.querySelector<HTMLElement>(".ime-composition-label");
     const display = document.getElementById("text-display");
     const flow = display?.querySelector<HTMLElement>(".text-display-flow");
-    const inferenceError =
-      document.getElementById<HTMLElement>("inference-error");
+    const inferenceError = document.getElementById(
+      "inference-error",
+    ) as HTMLElement | null;
     if (!toolbar || !workbench || !display || !flow) return;
 
     const workbenchStyle = getComputedStyle(workbench);

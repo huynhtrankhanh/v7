@@ -1,6 +1,7 @@
 import { Rope } from "./rope";
 
-export type IslandType = "vietnamese" | "punctuation" | "capital" | "spacing";
+export type IslandType =
+  "vietnamese" | "punctuation" | "capital" | "spacing" | "emily";
 
 export interface Island {
   type: IslandType;
