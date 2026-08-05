@@ -1,6 +1,6 @@
 # Sandboxed HTTP evaluation server
 
-This service accepts one executable, runs it against `evaluator/dataset.json`,
+This service accepts one executable, runs it against the bundled line-oriented text corpus,
 and returns aggregate V7 inconvenience metrics. Each submission runs in a new,
 resource-limited Docker container.
 
@@ -95,6 +95,15 @@ The model bind mount preserves host permissions. `lm.binary` must be readable
 by the sandbox's unprivileged UID 65534; the documented `0444` mode is safe for
 this generated, non-secret model and prevents sandbox writes.
 
+## Corpus files
+
+The corpus is loaded from UTF-8 text files, with one evaluation text per
+non-empty line. `EVALUATION_CORPUS_PATH` accepts either one file path or a glob
+such as `corpora/**/*.txt`; quote globs in shell commands so the server, rather
+than the shell, expands them. Matching files are read in sorted path order, and
+blank lines and surrounding whitespace are ignored. Startup fails when the
+specification matches no files or the matched files contain no evaluation text.
+
 ## Isolation and limits
 
 Each submission gets uniquely named staging and execution containers plus a
@@ -121,7 +130,7 @@ Configuration:
 | `EVALUATION_MAX_CONCURRENT`       |                           `2` | Concurrent submissions                   |
 | `EVALUATION_SANDBOX_IMAGE`        | `v7-evaluator-sandbox:latest` | Sandbox image                            |
 | `EVALUATION_MODEL_HOST_PATH`      |             `<cwd>/lm.binary` | Host model path bind-mounted read-only   |
-| `EVALUATION_CORPUS_PATH`          |                bundled corpus | Optional server-side JSON string array   |
+| `EVALUATION_CORPUS_PATH`          |                bundled corpus | Text-file path or glob specification     |
 | `EVALUATION_MEMORY_BYTES`         |                  `2147483648` | Container memory and swap ceiling        |
 | `EVALUATION_CPUS`                 |                         `0.5` | Container CPU quota                      |
 | `EVALUATION_PIDS`                 |                          `64` | Container PID ceiling                    |
@@ -138,12 +147,12 @@ and restricted access to its internal logs.
 
 ## Evaluate `inference-rs` on one text
 
-The checked-in [`example-corpus.json`](example-corpus.json) contains one
+The checked-in [`example-corpus.txt`](example-corpus.txt) contains one
 invented Vietnamese sentence. Build `inference-rs`, ensure `lm.binary` is in
 the repository root, and start the host server with that corpus:
 
 ```sh
-EVALUATION_CORPUS_PATH=evaluation-server/example-corpus.json \
+EVALUATION_CORPUS_PATH='evaluation-server/example-corpus.txt' \
 EVALUATION_INFERENCE_TIMEOUT_MS=30000 \
 npm run start:evaluation-server
 ```

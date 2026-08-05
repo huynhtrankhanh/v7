@@ -21,6 +21,7 @@
     "start:evaluation-server": "node evaluation-server/dist/server.cjs"
   },
   "dependencies": {
+    "glob": "^10.5.0",
     "puppeteer": "^24.36.0"
   },
   "devDependencies": {
