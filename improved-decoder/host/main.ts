@@ -10,7 +10,7 @@ import {
   getPiecemealCorrectionCost,
   type EvaluationIsland,
 } from "../../evaluator/evaluateInference";
-import { getInference, getV7Code } from "../../evaluator/getInference";
+import { getInference, getV7Code } from "../../src/v7Core";
 
 const ROOT = resolve(__dirname, "..");
 const REPOSITORY_ROOT = resolve(ROOT, "..");

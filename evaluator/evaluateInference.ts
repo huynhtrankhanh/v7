@@ -1,4 +1,4 @@
-import { getV7Code } from "./getInference";
+import { getV7Code } from "../src/v7Core";
 
 export type InferenceCandidate = string | readonly string[];
 export type InferenceResponse = readonly InferenceCandidate[];

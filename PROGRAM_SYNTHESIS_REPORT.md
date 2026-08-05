@@ -84,7 +84,7 @@ widths, phrase caching, and public-corpus-derived grammar rules.
 ### Measured ambiguity in the bundled evaluation corpus
 
 The corpus supports the premise that contextual reconstruction is worthwhile.
-Using `evaluator/getInference.ts` to encode every Unicode-letter word in
+Using `src/v7Core.ts` to encode every Unicode-letter word in
 `evaluator/dataset.json` produced the following descriptive statistics:
 
 | Measure                                     |            Value |

@@ -6,7 +6,7 @@ import {
   toneMap,
   vowelMap,
 } from "./syllableStroke";
-import { getV7Code } from "../evaluator/getInference";
+import { getV7Code } from "./v7Core";
 
 let validVietnameseSyllables: Set<string> | null = null;
 

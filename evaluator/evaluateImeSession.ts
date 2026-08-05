@@ -1,4 +1,4 @@
-import { getV7Code } from "./getInference";
+import { getV7Code } from "../src/v7Core";
 import {
   buildEvaluationIslands,
   ILLEGAL,
