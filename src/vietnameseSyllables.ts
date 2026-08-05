@@ -6,11 +6,16 @@ import {
   toneMap,
   vowelMap,
 } from "./syllableStroke";
+import { getV7Code } from "../evaluator/getInference";
 
 let validVietnameseSyllables: Set<string> | null = null;
 
 export function isValidVietnameseSyllable(syllable: string): boolean {
   return getValidVietnameseSyllables().has(syllable.toLocaleLowerCase("vi"));
+}
+
+export function isV7PermittedSyllable(syllable: string): boolean {
+  return getV7Code(syllable.toLocaleLowerCase("vi")) !== undefined;
 }
 
 export function getValidVietnameseSyllables(): Set<string> {

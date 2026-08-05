@@ -36,6 +36,7 @@ import {
   isRetiredEmilyCapitalizationStroke,
 } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
+import { isV7PermittedSyllable } from "./vietnameseSyllables";
 
 // Maps for V7 Decoding
 const consonantIntMap = {};
@@ -1706,6 +1707,10 @@ async function runReverseLookup(button) {
 
 // --- Logic ---
 
+function isPermittedSingleSyllableText(text) {
+  return isV7PermittedSyllable(text);
+}
+
 function appendText(text) {
   if (state.pendingCapitalization && text.length > 0) {
     text = text.charAt(0).toUpperCase() + text.slice(1);
@@ -1832,9 +1837,16 @@ async function handleChord(stroke) {
     if (firstCandidateAppendStroke && state.candidates.length === 0) {
       const parsedAppend = parse(firstCandidateAppendStroke);
       if (parsedAppend) {
+        const appendTextValue = assemble(parsedAppend);
+        if (!isPermittedSingleSyllableText(appendTextValue)) {
+          piecemealCursorIndex = null;
+          suppressPiecemealEntry = true;
+          updateDisplay();
+          return;
+        }
         saveState();
         piecemealCursorIndex = null;
-        appendText(assemble(parsedAppend));
+        appendText(appendTextValue);
         runInference();
         return;
       }
@@ -1853,8 +1865,14 @@ async function handleChord(stroke) {
         const targets = findPiecemealSyllableTargets(state.islands);
         const target = targets[piecemealCursorIndex];
         if (target) {
-          saveState();
           const replacement = assemble(parsedPiecemeal);
+          if (!isPermittedSingleSyllableText(replacement)) {
+            piecemealCursorIndex = null;
+            suppressPiecemealEntry = true;
+            updateDisplay();
+            return;
+          }
+          saveState();
           buffer.setIslands(
             replacePiecemealSyllable(state.islands, target, replacement),
           );
@@ -1957,17 +1975,19 @@ async function handleChord(stroke) {
     const parsedSelection = parse(selection.syllableStroke);
     if (parsedSelection) {
       const syllableText = assemble(parsedSelection);
-      saveState();
-      if (
-        selectCandidate(selection.candidateIndex, {
-          saveHistory: false,
-          refreshDisplay: false,
-        })
-      ) {
-        piecemealCursorIndex = null;
-        appendText(syllableText);
-        runInference();
-        return;
+      if (isPermittedSingleSyllableText(syllableText)) {
+        saveState();
+        if (
+          selectCandidate(selection.candidateIndex, {
+            saveHistory: false,
+            refreshDisplay: false,
+          })
+        ) {
+          piecemealCursorIndex = null;
+          appendText(syllableText);
+          runInference();
+          return;
+        }
       }
     }
   }
@@ -2000,11 +2020,15 @@ async function handleChord(stroke) {
   const parsed = parse(stroke);
   if (parsed) {
     const text = assemble(parsed);
-    saveState();
-    piecemealCursorIndex = null;
-    appendText(text);
-    runInference();
-    return;
+    if (isPermittedSingleSyllableText(text)) {
+      saveState();
+      piecemealCursorIndex = null;
+      appendText(text);
+      runInference();
+      return;
+    }
+    // Reject orthographically assembled syllables outside the V7 regex list
+    // so lower-priority handlers can continue down the cascade.
   }
 
   const firstCandidateAppendStroke =
@@ -2014,11 +2038,14 @@ async function handleChord(stroke) {
   if (firstCandidateAppendStroke) {
     const parsedAppend = parse(firstCandidateAppendStroke);
     if (parsedAppend) {
-      saveState();
-      piecemealCursorIndex = null;
-      appendText(assemble(parsedAppend));
-      runInference();
-      return;
+      const appendTextValue = assemble(parsedAppend);
+      if (isPermittedSingleSyllableText(appendTextValue)) {
+        saveState();
+        piecemealCursorIndex = null;
+        appendText(appendTextValue);
+        runInference();
+        return;
+      }
     }
   }
 
