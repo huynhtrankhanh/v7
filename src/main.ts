@@ -10,10 +10,7 @@ import {
   getFirstCandidateAppendStroke,
   isLoneCandidateSelectionStroke,
 } from "./candidateSelection";
-import {
-  assembleSyllable as assemble,
-  parseSyllableStroke as parse,
-} from "./syllableStroke";
+import { decodeV7PermittedSyllableStroke } from "./vietnameseSyllables";
 import {
   buildCandidateDiffPlan,
   type CandidateDiffPlan,
@@ -1830,11 +1827,13 @@ async function handleChord(stroke) {
     // without candidates it still appends the syllable normally.
     const firstCandidateAppendStroke = getFirstCandidateAppendStroke(stroke);
     if (firstCandidateAppendStroke && state.candidates.length === 0) {
-      const parsedAppend = parse(firstCandidateAppendStroke);
-      if (parsedAppend) {
+      const appendedSyllable = decodeV7PermittedSyllableStroke(
+        firstCandidateAppendStroke,
+      );
+      if (appendedSyllable !== null) {
         saveState();
         piecemealCursorIndex = null;
-        appendText(assemble(parsedAppend));
+        appendText(appendedSyllable);
         runInference();
         return;
       }
@@ -1848,13 +1847,12 @@ async function handleChord(stroke) {
     if (piecemealSelection) {
       suppressPiecemealEntry = true;
     } else {
-      const parsedPiecemeal = parse(stroke);
-      if (parsedPiecemeal) {
+      const replacement = decodeV7PermittedSyllableStroke(stroke);
+      if (replacement !== null) {
         const targets = findPiecemealSyllableTargets(state.islands);
         const target = targets[piecemealCursorIndex];
         if (target) {
           saveState();
-          const replacement = assemble(parsedPiecemeal);
           buffer.setIslands(
             replacePiecemealSyllable(state.islands, target, replacement),
           );
@@ -1954,9 +1952,10 @@ async function handleChord(stroke) {
         return;
       }
     }
-    const parsedSelection = parse(selection.syllableStroke);
-    if (parsedSelection) {
-      const syllableText = assemble(parsedSelection);
+    const syllableText = decodeV7PermittedSyllableStroke(
+      selection.syllableStroke,
+    );
+    if (syllableText !== null) {
       saveState();
       if (
         selectCandidate(selection.candidateIndex, {
@@ -1997,9 +1996,8 @@ async function handleChord(stroke) {
     return;
   }
 
-  const parsed = parse(stroke);
-  if (parsed) {
-    const text = assemble(parsed);
+  const text = decodeV7PermittedSyllableStroke(stroke);
+  if (text !== null) {
     saveState();
     piecemealCursorIndex = null;
     appendText(text);
@@ -2012,11 +2010,13 @@ async function handleChord(stroke) {
       ? getFirstCandidateAppendStroke(stroke)
       : null;
   if (firstCandidateAppendStroke) {
-    const parsedAppend = parse(firstCandidateAppendStroke);
-    if (parsedAppend) {
+    const appendedSyllable = decodeV7PermittedSyllableStroke(
+      firstCandidateAppendStroke,
+    );
+    if (appendedSyllable !== null) {
       saveState();
       piecemealCursorIndex = null;
-      appendText(assemble(parsedAppend));
+      appendText(appendedSyllable);
       runInference();
       return;
     }

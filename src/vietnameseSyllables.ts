@@ -6,11 +6,23 @@ import {
   toneMap,
   vowelMap,
 } from "./syllableStroke";
+import { getV7Code } from "../evaluator/getInference";
 
 let validVietnameseSyllables: Set<string> | null = null;
 
 export function isValidVietnameseSyllable(syllable: string): boolean {
   return getValidVietnameseSyllables().has(syllable.toLocaleLowerCase("vi"));
+}
+
+/** Decode a stroke only when its result belongs to the V7 regex lattice. */
+export function decodeV7PermittedSyllableStroke(stroke: string): string | null {
+  const parsed = parseSyllableStroke(stroke);
+  if (!parsed) return null;
+
+  const syllable = assembleSyllable(parsed);
+  return getV7Code(syllable.toLocaleLowerCase("vi")) === undefined
+    ? null
+    : syllable;
 }
 
 export function getValidVietnameseSyllables(): Set<string> {
