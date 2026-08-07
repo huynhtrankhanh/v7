@@ -365,6 +365,7 @@ const state: AppState = {
 };
 let isRawMode = false;
 let inferenceErrorMessage = "";
+let rerankerErrorMessage = "";
 let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
   enabled: false,
   copyAllowed: false,
@@ -381,6 +382,10 @@ interface AndroidImeBridge {
   changeInputMethod(): void;
   requestInference(body: string, requestId: number): void;
   requestInferenceSync?: (body: string, requestId: number) => string;
+  shouldUseAsyncInference?(): boolean;
+  getExperimentalRerankerState?(): string;
+  getExperimentalRerankerError?(): string;
+  getExperimentalRerankerBackend?(): string;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
@@ -426,6 +431,9 @@ if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
 let androidInferenceRequestId = 1;
+let inferenceRunGeneration = 0;
+let androidInferenceInProgress = false;
+let inferenceProgressTimer: number | null = null;
 let lastRequestedAndroidKeyboardHeight = 0;
 let lastExpandedAndroidKeyboardHeight = 160;
 const androidInferencePending = new Map<
@@ -2295,6 +2303,8 @@ async function runInference() {
   // Optimization: If no V7 islands, skip inference
   const hasV7 = state.islands.some((i) => i.isV7);
   if (!hasV7) {
+    inferenceRunGeneration += 1;
+    setAndroidInferenceInProgress(false);
     abortInferenceRequest(true);
     state.candidates = [];
     inferenceErrorMessage =
@@ -2306,14 +2316,19 @@ async function runInference() {
   }
 
   abortInferenceRequest(false);
+  const runGeneration = ++inferenceRunGeneration;
   const controller = hasAbortController ? new AbortController() : null;
   inferenceAbortController = controller;
+  const usesAsyncAndroidInference =
+    !!androidIme && !canUseSynchronousAndroidInference();
+  if (usesAsyncAndroidInference) {
+    setAndroidInferenceInProgress(true);
+  }
 
   // Candidates from the previous buffer are no longer valid while this request
-  // is in flight. On Android, hardware-key inference is synchronous once the
-  // model is ready, so avoid flashing raw V7 between the keystroke and the
-  // native result. Raw V7 is still useful while the model is loading or after
-  // an error, because there may be no imminent inference result to render.
+  // is in flight. The fast KenLM-only Android path can avoid flashing raw V7.
+  // Experimental LiteRT reranking is asynchronous and deliberately keeps the
+  // raw composition visible and editable while the progress indicator runs.
   state.candidates = [];
   if (!shouldDeferAndroidInferenceRender()) {
     updateDisplay();
@@ -2344,6 +2359,9 @@ async function runInference() {
       // A newer inference request has started; discard this response.
       return;
     }
+    if (runGeneration === inferenceRunGeneration) {
+      setAndroidInferenceInProgress(false);
+    }
     state.candidates = getInferenceCandidates(data);
     inferenceErrorMessage = "";
     updateDisplay();
@@ -2357,6 +2375,9 @@ async function runInference() {
     state.candidates = [];
     updateDisplay();
   } finally {
+    if (runGeneration === inferenceRunGeneration) {
+      setAndroidInferenceInProgress(false);
+    }
     if (controller && controller === inferenceAbortController) {
       // Only clear if this is still the latest inference request.
       inferenceAbortController = null;
@@ -2364,8 +2385,24 @@ async function runInference() {
   }
 }
 
+function setAndroidInferenceInProgress(inProgress: boolean): void {
+  if (androidInferenceInProgress === inProgress) return;
+  androidInferenceInProgress = inProgress;
+  if (inProgress && inferenceProgressTimer === null) {
+    inferenceProgressTimer = window.setInterval(updateInferenceStatusUI, 250);
+  } else if (!inProgress && inferenceProgressTimer !== null) {
+    window.clearInterval(inferenceProgressTimer);
+    inferenceProgressTimer = null;
+  }
+  updateInferenceStatusUI();
+}
+
 function shouldDeferAndroidInferenceRender(): boolean {
-  return !!androidIme && inferenceModelState === "ready";
+  return (
+    !!androidIme &&
+    inferenceModelState === "ready" &&
+    canUseSynchronousAndroidInference()
+  );
 }
 
 function hasOsPassthroughModifier(event: KeyboardEvent): boolean {
@@ -2564,7 +2601,52 @@ function setupImeControls(): void {
 
 function updateInferenceStatusUI(): void {
   const status = document.getElementById("inference-status");
+  const progress = document.getElementById("inference-progress");
   if (!status || !androidIme) return;
+  let rerankerState = "disabled";
+  let rerankerError = "";
+  let rerankerBackend = "";
+  try {
+    rerankerState = androidIme.getExperimentalRerankerState?.() ?? "disabled";
+    rerankerError = androidIme.getExperimentalRerankerError?.() ?? "";
+    rerankerBackend = androidIme.getExperimentalRerankerBackend?.() ?? "";
+  } catch {
+    // Older native bridges have only the core inference status.
+  }
+  rerankerErrorMessage = rerankerState === "error" ? rerankerError : "";
+  if (progress) {
+    progress.hidden = !androidInferenceInProgress;
+  }
+  if (androidInferenceInProgress) {
+    const loadingCoreModel = inferenceModelState === "loading";
+    const loadingReranker =
+      rerankerState === "not_loaded" || rerankerState === "loading";
+    status.textContent = loadingCoreModel
+      ? "Loading KenLM model… · typing active"
+      : loadingReranker
+        ? "Loading Android ML model… · typing active"
+        : "Reranking 50 candidates… · typing active";
+    status.className = "ime-mode-detail reranking";
+    status.title = "";
+    return;
+  }
+  if (rerankerState !== "disabled") {
+    const rerankerLabels: Record<string, string> = {
+      missing: "Reranker model missing · KenLM active",
+      not_loaded: "Reranker waiting · KenLM active",
+      loading: "Loading Android ML model…",
+      ranking: "Reranking 50 candidates…",
+      ready: rerankerBackend
+        ? `Reranker ready · ${rerankerBackend.toUpperCase()}`
+        : "Reranker ready",
+      error: "Reranker error · KenLM fallback",
+    };
+    status.textContent =
+      rerankerLabels[rerankerState] ?? `Reranker ${rerankerState}`;
+    status.className = `ime-mode-detail reranker-${rerankerState}`;
+    status.title = rerankerError;
+    return;
+  }
   const labels: Record<string, string> = {
     missing: "Model missing",
     not_loaded: "Model not loaded",
@@ -2575,6 +2657,7 @@ function updateInferenceStatusUI(): void {
   status.textContent =
     labels[inferenceModelState] ?? `Model ${inferenceModelState}`;
   status.className = `ime-mode-detail ${inferenceModelState}`;
+  status.title = "";
 }
 
 function trackQwertyKey(event: KeyboardEvent, isPressed: boolean): void {
@@ -2595,6 +2678,9 @@ function clearPressedQwertyKeys(): void {
 }
 
 function updateDisplay(): void {
+  if (androidIme) {
+    updateInferenceStatusUI();
+  }
   const display = document.getElementById("text-display") as HTMLElement | null;
   const textArea = document.getElementById(
     "text-input",
@@ -2639,12 +2725,15 @@ function updateDisplay(): void {
       strippedPlover.enabled,
   );
   if (inferenceError) {
-    inferenceError.hidden = inferenceErrorMessage === "";
+    const visibleError = inferenceErrorMessage || rerankerErrorMessage;
+    inferenceError.hidden = visibleError === "";
     inferenceError.textContent = inferenceErrorMessage
       ? isTrainerEmbedded
         ? `Không lấy được các cách viết: ${inferenceErrorMessage}`
         : `Inference error: ${inferenceErrorMessage}`
-      : "";
+      : rerankerErrorMessage
+        ? `Reranker error (KenLM fallback): ${rerankerErrorMessage}`
+        : "";
   }
   if (strippedDisplay.enabled && candidateDiffPlan?.sections.length) {
     console.info(
@@ -3432,9 +3521,9 @@ function requestAndroidInference(
     }
 
     try {
-      if (androidIme.requestInferenceSync) {
+      if (canUseSynchronousAndroidInference()) {
         const response = JSON.parse(
-          androidIme.requestInferenceSync(body, requestId),
+          androidIme.requestInferenceSync!(body, requestId),
         );
         if (response.errorMessage) {
           reject(new Error(String(response.errorMessage)));
@@ -3463,6 +3552,17 @@ function requestAndroidInference(
       reject(error instanceof Error ? error : new Error(String(error)));
     }
   });
+}
+
+function canUseSynchronousAndroidInference(): boolean {
+  if (!androidIme?.requestInferenceSync) return false;
+  try {
+    return androidIme.shouldUseAsyncInference?.() !== true;
+  } catch {
+    // A bridge-version mismatch must not push expensive inference back onto
+    // the WebView's blocking JavascriptInterface call.
+    return false;
+  }
 }
 
 function requestAndroidPlover(

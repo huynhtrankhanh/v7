@@ -113,6 +113,11 @@ async function main() {
       window.__androidInferenceError = "";
       window.__androidInferenceResponse = null;
       window.__androidModelState = "loading";
+      window.__androidUseAsyncInference = false;
+      window.__androidRerankerState = "disabled";
+      window.__androidRerankerError = "";
+      window.__androidRerankerBackend = "";
+      window.__androidSyncInferenceCalls = 0;
       window.__androidPloverBodies = [];
       window.__androidPloverPaused = false;
       window.__androidDictionaries = [
@@ -148,6 +153,18 @@ async function main() {
         isPloverPaused() {
           return window.__androidPloverPaused;
         },
+        shouldUseAsyncInference() {
+          return window.__androidUseAsyncInference;
+        },
+        getExperimentalRerankerState() {
+          return window.__androidRerankerState;
+        },
+        getExperimentalRerankerError() {
+          return window.__androidRerankerError;
+        },
+        getExperimentalRerankerBackend() {
+          return window.__androidRerankerBackend;
+        },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
@@ -162,8 +179,18 @@ async function main() {
         },
         requestInference(body, requestId) {
           window.__androidInferenceBodies.push(JSON.parse(body));
-          window.__androidModelState = "loading";
-          window.handleAndroidInferenceState("loading");
+          if (window.__androidRerankerState === "disabled") {
+            window.__androidModelState = "loading";
+            window.handleAndroidInferenceState("loading");
+          } else {
+            window.__androidRerankerState = "loading";
+            setTimeout(
+              () => {
+                window.__androidRerankerState = "ranking";
+              },
+              Math.max(1, window.__androidInferenceDelay / 2),
+            );
+          }
           setTimeout(() => {
             if (window.__androidInferenceError) {
               window.__androidModelState = "error";
@@ -177,6 +204,9 @@ async function main() {
               return;
             }
             window.__androidModelState = "ready";
+            if (window.__androidRerankerState !== "disabled") {
+              window.__androidRerankerState = "ready";
+            }
             window.handleAndroidInferenceState("ready");
             window.handleAndroidInferenceResponse(
               requestId,
@@ -580,6 +610,7 @@ async function main() {
 
     await page.evaluate(() => {
       window.AndroidIme.requestInferenceSync = (body) => {
+        window.__androidSyncInferenceCalls += 1;
         window.__androidInferenceBodies.push(JSON.parse(body));
         if (window.__androidInferenceError) {
           window.__androidModelState = "error";
@@ -626,7 +657,85 @@ async function main() {
         readyPendingInference.inferenceBodies === 2,
       `Android did not render synchronous inference without raw V7 flicker: ${JSON.stringify(readyPendingInference)}`,
     );
+
     await page.evaluate(() => {
+      window.clearPreeditFromAndroid();
+      window.__androidUseAsyncInference = true;
+      window.__androidRerankerState = "not_loaded";
+      window.__androidRerankerBackend = "gpu";
+      window.__androidInferenceDelay = 400;
+      window.__androidInferenceResponse = {
+        candidates: [["async reranked result"]],
+      };
+    });
+    const asyncBodiesBefore = await page.evaluate(
+      () => window.__androidInferenceBodies.length,
+    );
+    const syncCallsBefore = await page.evaluate(
+      () => window.__androidSyncInferenceCalls,
+    );
+    await androidChord(page, ["c", " ", "m"]);
+    const rerankerLoading = await page.evaluate(() => ({
+      bodyCount: window.__androidInferenceBodies.length,
+      syncCalls: window.__androidSyncInferenceCalls,
+      rawBuffer: document.querySelector("#text-display").textContent,
+      progressHidden: document.querySelector("#inference-progress").hidden,
+      progressRole: document
+        .querySelector("#inference-progress")
+        .getAttribute("role"),
+      status: document.querySelector("#inference-status").textContent,
+    }));
+    assert(
+      rerankerLoading.bodyCount === asyncBodiesBefore + 1 &&
+        rerankerLoading.syncCalls === syncCallsBefore &&
+        rerankerLoading.rawBuffer.trim() !== "" &&
+        !rerankerLoading.progressHidden &&
+        rerankerLoading.progressRole === "progressbar" &&
+        rerankerLoading.status.includes("Android ML model") &&
+        rerankerLoading.status.includes("typing active"),
+      `Reranking blocked the WebUI or hid its loading state: ${JSON.stringify(rerankerLoading)}`,
+    );
+    await androidChord(page, ["t"]);
+    const responsiveWhileReranking = await page.evaluate(() => ({
+      bodyCount: window.__androidInferenceBodies.length,
+      rawBuffer: document.querySelector("#text-display").textContent,
+      progressHidden: document.querySelector("#inference-progress").hidden,
+    }));
+    assert(
+      responsiveWhileReranking.bodyCount === asyncBodiesBefore + 2 &&
+        responsiveWhileReranking.rawBuffer.trim() !== "" &&
+        !responsiveWhileReranking.progressHidden,
+      `Keyboard stopped accepting chords while reranking: ${JSON.stringify(responsiveWhileReranking)}`,
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#inference-progress").hidden &&
+        document.querySelector("#inference-status").textContent ===
+          "Reranker ready · GPU" &&
+        window.__androidPreedits.at(-1)?.text.includes("async reranked result"),
+    );
+    await page.evaluate(() => {
+      window.__androidRerankerState = "error";
+      window.__androidRerankerError = "Unsupported LiteRT model metadata";
+      window.handleAndroidInferenceState("ready");
+    });
+    const rerankerFailure = await page.evaluate(() => ({
+      status: document.querySelector("#inference-status").textContent,
+      error: document.querySelector("#inference-error").textContent,
+      hidden: document.querySelector("#inference-error").hidden,
+    }));
+    assert(
+      rerankerFailure.status === "Reranker error · KenLM fallback" &&
+        !rerankerFailure.hidden &&
+        rerankerFailure.error.includes("Unsupported LiteRT model metadata") &&
+        rerankerFailure.error.includes("KenLM fallback"),
+      `Reranker failure did not expose its fail-open state: ${JSON.stringify(rerankerFailure)}`,
+    );
+    await page.evaluate(() => {
+      window.__androidUseAsyncInference = false;
+      window.__androidRerankerState = "disabled";
+      window.__androidRerankerError = "";
+      window.__androidRerankerBackend = "";
       delete window.AndroidIme.requestInferenceSync;
       window.__androidInferenceResponse = null;
       window.clearPreeditFromAndroid();
@@ -652,7 +761,8 @@ async function main() {
       pendingInference.reducedBuffer.trim() !== "" &&
         pendingInference.preedit.trim() !== "" &&
         pendingInference.candidatesHidden &&
-        pendingInference.inferenceStatus === "Loading model… · raw buffer",
+        pendingInference.inferenceStatus ===
+          "Loading KenLM model… · typing active",
       `Edited buffer was not rendered while inference was pending: ${JSON.stringify(pendingInference)}`,
     );
     await page.waitForFunction(

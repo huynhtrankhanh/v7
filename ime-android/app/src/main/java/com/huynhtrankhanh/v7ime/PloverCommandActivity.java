@@ -47,6 +47,7 @@ public class PloverCommandActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        PloverCommandFocusState.setNativeControlFocused(false);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.setPadding(dp(20), dp(16), dp(20), dp(16));
@@ -74,6 +75,21 @@ public class PloverCommandActivity extends Activity {
         super.onNewIntent(intent);
         setIntent(intent);
         renderCommand(intent);
+    }
+
+    @Override
+    protected void onPause() {
+        PloverCommandFocusState.setNativeControlFocused(false);
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        View focused = getCurrentFocus();
+        PloverCommandFocusState.setNativeControlFocused(
+                focused != null && !(focused instanceof EditText)
+        );
     }
 
     private void renderCommand(Intent intent) {
@@ -123,6 +139,7 @@ public class PloverCommandActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        PloverCommandFocusState.setNativeControlFocused(false);
         if (rootView != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(rootView);
             rootView = null;
@@ -302,7 +319,7 @@ public class PloverCommandActivity extends Activity {
                 ));
             });
         });
-        submitOnEnter(outline, add);
+        advanceOnEnter(outline, translation);
         submitOnEnter(translation, add);
         focusInitially(outline);
     }
@@ -416,6 +433,11 @@ public class PloverCommandActivity extends Activity {
         label.setLabelFor(field.getId());
         field.setHint(hintText);
         field.setInputType(inputType);
+        field.setOnFocusChangeListener((view, hasFocus) -> {
+            if (hasFocus) {
+                PloverCommandFocusState.setNativeControlFocused(false);
+            }
+        });
         registerFocusable(field);
         content.addView(field, matchWrap());
         return field;
@@ -456,6 +478,27 @@ public class PloverCommandActivity extends Activity {
         });
     }
 
+    private void advanceOnEnter(EditText field, View next) {
+        field.setImeOptions(
+                EditorInfo.IME_ACTION_NEXT
+                        | EditorInfo.IME_FLAG_NO_EXTRACT_UI
+        );
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            int keyCode = event == null ? KeyEvent.KEYCODE_UNKNOWN : event.getKeyCode();
+            int keyAction = event == null ? -1 : event.getAction();
+            boolean nextAction = actionId == EditorInfo.IME_ACTION_NEXT;
+            boolean enterDown = keyCode == KeyEvent.KEYCODE_ENTER
+                    && keyAction == KeyEvent.ACTION_DOWN;
+            if (!nextAction && !enterDown) {
+                return false;
+            }
+            next.requestFocus();
+            revealFocusedView(next);
+            showKeyboard(next);
+            return true;
+        });
+    }
+
     private TextView addLabel(int text) {
         TextView label = new TextView(this);
         label.setText(text);
@@ -481,6 +524,7 @@ public class PloverCommandActivity extends Activity {
         dictionaryGroup.removeAllViews();
         dictionaryChoices.clear();
         for (int index = 0; index < writableDictionaries.size(); index++) {
+            final int choiceIndex = index;
             RadioButton choice = new RadioButton(this);
             choice.setId(View.generateViewId());
             choice.setText((index + 1) + ". " + writableDictionaries.get(index));
@@ -489,9 +533,23 @@ public class PloverCommandActivity extends Activity {
                     index + 1,
                     writableDictionaries.get(index)
             ));
+            choice.setMinHeight(dp(48));
+            choice.setPadding(dp(12), dp(8), dp(12), dp(8));
             dictionaryGroup.addView(choice, matchWrap());
             registerFocusableBefore(choice, focusSuccessor);
             dictionaryChoices.add(choice);
+            choice.setOnClickListener(view -> {
+                dictionaryGroup.check(choice.getId());
+                choice.requestFocus();
+                revealFocusedView(choice);
+            });
+            choice.setOnFocusChangeListener((view, hasFocus) -> {
+                if (hasFocus) {
+                    PloverCommandFocusState.setNativeControlFocused(true);
+                    dictionaryGroup.check(dictionaryChoices.get(choiceIndex).getId());
+                    revealFocusedView(view);
+                }
+            });
         }
         if (!dictionaryChoices.isEmpty()) {
             dictionaryChoices.get(0).setChecked(true);
@@ -547,6 +605,14 @@ public class PloverCommandActivity extends Activity {
         }
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
+        if (!(view instanceof EditText)) {
+            view.setOnFocusChangeListener((focusedView, hasFocus) -> {
+                if (hasFocus) {
+                    PloverCommandFocusState.setNativeControlFocused(true);
+                    revealFocusedView(focusedView);
+                }
+            });
+        }
         focusOrder.add(view);
         return view;
     }

@@ -69,16 +69,54 @@ WebUI islands
 ```
 
 The ML stage is implemented in `AndroidCandidateReranker` and runs through
-Google's Android-native LiteRT-LM 0.15.0 API. There is no Retrofit client, HTTP
+Google’s Android-native LiteRT-LM 0.15.0 API. There is no Retrofit client, HTTP
 request, remote service, or reranker code in Rust. Candidate text and model
 output remain inside the IME process.
+
+## Responsiveness, progress, and cancellation
+
+Experimental reranking always uses the asynchronous Android bridge. The
+KenLM-only path may use the fast synchronous bridge, but a LiteRT model load or
+generation must never run inside a blocking `JavascriptInterface` return. The
+WebUI therefore keeps the raw composition visible and accepts new chords while
+an indeterminate progress bar reports one of these stages:
+
+- **Loading KenLM model · typing active**;
+- **Loading Android ML model · typing active**;
+- **Reranking 50 candidates · typing active**;
+- **Reranker ready**; or
+- **Reranker error · KenLM fallback**.
+
+On failure, the workbench also shows the concrete LiteRT error while continuing
+with KenLM candidates, so a bad or unsupported model is diagnosable without
+making the keyboard unusable.
+
+The original implementation incorrectly reused `requestInferenceSync` after
+enabling LiteRT. Although Android invokes that bridge method off the UI thread,
+JavaScript waits synchronously for its return. Model initialization and token
+generation consequently prevented the same WebView execution context from
+handling the next keyboard event, making the keyboard appear frozen.
+
+Each candidate set is ranked in one listwise model call rather than 50 serial
+calls. Android tries LiteRT-LM's GPU backend first and requests its optional
+OpenCL vendor libraries. If GPU initialization is unsupported by the device or
+model, it falls back to CPU automatically; the ready label reports `GPU` or
+`CPU`. The fallback receives up to four worker threads (bounded by the device's
+available processors), so CPU kernels execute in parallel without creating
+duplicate 557 MiB engines. If another chord arrives during generation,
+Android calls `Conversation.cancelProcess()`: obsolete work stops, queued stale
+requests are discarded, and only the newest composition proceeds. A cold engine
+initialization is allowed to finish once because cancelling and reloading it
+would increase latency and memory churn.
 
 The prompt asks for natural Vietnamese grammar, word choice, meaning, and
 longer-range coherence. It labels each candidate with an integer, treats its
 text as untrusted data, caps each reconstructed string to a bounded head/tail
-sample, uses greedy decoding, and accepts only in-range unique IDs. Omitted IDs
-are appended in their original KenLM order. Candidates 51 through 100 are never
-sent to Gemma and keep their original relative order.
+sample, uses greedy decoding, and asks for only the best 10 in-range unique IDs
+from the 50-way comparison. Avoiding generation of the remaining 40 IDs reduces
+interactive decode latency; omitted IDs are appended in their original KenLM
+order. Candidates 51 through 100 are never sent to Gemma and keep their original
+relative order.
 
 Reranking is fail-open. A missing model, disabled preference, invalid native
 response, unsupported ABI, LiteRT load/generation failure, or malformed model
@@ -120,8 +158,16 @@ Actions workflows therefore use JDK 21. A 32-bit-only device can still use the
 normal KenLM IME, but experimental reranking fails open because LiteRT-LM has no
 matching native library in this artifact.
 
-The engine uses the CPU backend, an 8,192-token cache limit, a 256-token answer
-limit, temperature 0, and a process-level model cache. LiteRT-LM documents that
+The engine prefers GPU and otherwise uses up to four CPU workers. It uses an
+8,192-token cache limit, a 64-token answer limit, temperature 0, a writable
+compilation cache, and a process-level model cache. LiteRT-LM's
+[Android API guide](https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md)
+documents the optional OpenCL manifest entries and CPU/GPU/NPU backends. Its
+[published Gemma 3 1B measurements](https://github.com/google-ai-edge/LiteRT-LM#supported-models-and-performance)
+show that GPU primarily accelerates long prompt prefill; decode speed can remain
+similar. NPU is not selected automatically because its native runtime remains
+vendor-specific rather than one broadly deployable application backend.
+LiteRT-LM documents that
 initialization can take up to roughly ten seconds; generation adds further
 per-request latency. This mode is intentionally opt-in and may be unsuitable
 for interactive typing on slower devices.

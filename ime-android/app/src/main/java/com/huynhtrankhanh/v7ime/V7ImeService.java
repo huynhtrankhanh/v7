@@ -322,6 +322,12 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
+        if (PloverCommandFocusState.shouldPassHardwareKeysToActivity()) {
+            hardwareKeyActionResolver.reset();
+            webCapturedHardwareKeys.clear();
+            editorPassedHardwareKeys.clear();
+            return false;
+        }
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
                         (stenoModeEnabled && !plainTextMode) || rawOutlineMode,
@@ -861,6 +867,7 @@ public class V7ImeService extends InputMethodService {
                 );
             } catch (Exception | LinkageError rerankerError) {
                 // Experimental ML must never make the core IME unavailable.
+                AndroidCandidateReranker.recordFailure(rerankerError);
                 Log.w(
                         LOG_TAG,
                         "Experimental Android candidate reranking failed; "
@@ -888,6 +895,7 @@ public class V7ImeService extends InputMethodService {
 
     private void requestInference(String requestBody, int requestId) {
         latestInferenceRequestId.set(requestId);
+        AndroidCandidateReranker.cancelActiveRanking();
         inferenceExecutor.execute(() -> {
             if (latestInferenceRequestId.get() != requestId) {
                 return;
@@ -1217,6 +1225,35 @@ public class V7ImeService extends InputMethodService {
                         + "\"errorMessage\":\"Stale input view\"}";
             }
             return V7ImeService.this.requestInferenceSync(body, requestId);
+        }
+
+        @JavascriptInterface
+        public boolean shouldUseAsyncInference() {
+            return isCurrentInputView()
+                    && ImePreferences.isExperimentalRerankerEnabled(
+                            V7ImeService.this
+                    );
+        }
+
+        @JavascriptInterface
+        public String getExperimentalRerankerState() {
+            return isCurrentInputView()
+                    ? AndroidCandidateReranker.getState(V7ImeService.this)
+                    : "disabled";
+        }
+
+        @JavascriptInterface
+        public String getExperimentalRerankerError() {
+            return isCurrentInputView()
+                    ? AndroidCandidateReranker.getLastError()
+                    : "";
+        }
+
+        @JavascriptInterface
+        public String getExperimentalRerankerBackend() {
+            return isCurrentInputView()
+                    ? AndroidCandidateReranker.getBackend()
+                    : "";
         }
 
         @JavascriptInterface

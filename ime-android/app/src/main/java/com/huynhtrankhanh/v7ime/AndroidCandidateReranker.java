@@ -1,6 +1,7 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.content.Context;
+import android.util.Log;
 
 import com.google.ai.edge.litertlm.Backend;
 import com.google.ai.edge.litertlm.Conversation;
@@ -18,15 +19,25 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Android-owned, process-local LiteRT-LM reranking. No model call crosses JNI. */
 final class AndroidCandidateReranker {
+    private static final String LOG_TAG = "V7Reranker";
     private static final Object ENGINE_LOCK = new Object();
     private static final int MAX_CONTEXT_TOKENS = 8192;
-    private static final int MAX_OUTPUT_TOKENS = 256;
+    private static final int MAX_OUTPUT_TOKENS = 64;
+    private static final int CPU_THREADS = RerankerExecutionPolicy.cpuThreadCount(
+            Runtime.getRuntime().availableProcessors()
+    );
+    private static final AtomicLong CANCELLATION_GENERATION = new AtomicLong();
 
     private static Engine engine;
+    private static volatile Conversation activeConversation;
     private static String loadedModelId = "";
+    private static volatile String loadedBackend = "";
+    private static volatile String state = "disabled";
+    private static volatile String lastError = "";
 
     private AndroidCandidateReranker() {
     }
@@ -65,6 +76,8 @@ final class AndroidCandidateReranker {
         String modelOutput;
         synchronized (ENGINE_LOCK) {
             Engine current = getOrLoadEngine(context);
+            state = "ranking";
+            long cancellationGeneration = CANCELLATION_GENERATION.get();
             ConversationConfig config = new ConversationConfig(
                     null,
                     Collections.emptyList(),
@@ -81,12 +94,25 @@ final class AndroidCandidateReranker {
             );
             try {
                 try (Conversation conversation = current.createConversation(config)) {
-                    Message answer = conversation.sendMessage(
-                            CandidateRerankProtocol.buildPrompt(candidateTexts)
-                    );
-                    modelOutput = answer.toString();
+                    activeConversation = conversation;
+                    try {
+                        Message answer = conversation.sendMessage(
+                                CandidateRerankProtocol.buildPrompt(candidateTexts)
+                        );
+                        modelOutput = answer.toString();
+                    } finally {
+                        if (activeConversation == conversation) {
+                            activeConversation = null;
+                        }
+                    }
                 }
             } catch (Exception | LinkageError error) {
+                if (cancellationGeneration != CANCELLATION_GENERATION.get()) {
+                    state = "ready";
+                    lastError = "";
+                    return responseBody;
+                }
+                setFailure(error);
                 closeEngine();
                 throw error;
             }
@@ -105,6 +131,8 @@ final class AndroidCandidateReranker {
             reordered.put(candidate);
         }
         response.put("candidates", reordered);
+        state = "ready";
+        lastError = "";
         return response.toString();
     }
 
@@ -118,9 +146,43 @@ final class AndroidCandidateReranker {
             return engine;
         }
         closeEngine();
+        state = "loading";
+        lastError = "";
+        Engine replacement;
+        try {
+            replacement = initializeEngine(context, model, new Backend.GPU(), "gpu");
+        } catch (Exception | LinkageError gpuError) {
+            Log.w(
+                    LOG_TAG,
+                    "LiteRT-LM GPU unavailable; falling back to CPU",
+                    gpuError
+            );
+            try {
+                replacement = initializeEngine(
+                        context,
+                        model,
+                        new Backend.CPU(CPU_THREADS, null),
+                        "cpu"
+                );
+            } catch (Exception | LinkageError cpuError) {
+                cpuError.addSuppressed(gpuError);
+                setFailure(cpuError);
+                throw cpuError;
+            }
+        }
+        engine = replacement;
+        loadedModelId = modelId;
+        return replacement;
+    }
+
+    private static Engine initializeEngine(
+            Context context,
+            File model,
+            Backend backend,
+            String backendName) throws Exception {
         EngineConfig config = new EngineConfig(
                 model.getAbsolutePath(),
-                new Backend.CPU(null, null),
+                backend,
                 null,
                 null,
                 MAX_CONTEXT_TOKENS,
@@ -134,8 +196,7 @@ final class AndroidCandidateReranker {
             replacement.close();
             throw error;
         }
-        engine = replacement;
-        loadedModelId = modelId;
+        loadedBackend = backendName;
         return replacement;
     }
 
@@ -144,9 +205,60 @@ final class AndroidCandidateReranker {
                 && RerankerModelStore.hasModel(context)) {
             return;
         }
+        cancelActiveRanking();
         synchronized (ENGINE_LOCK) {
             closeEngine();
+            state = ImePreferences.isExperimentalRerankerEnabled(context)
+                    ? "missing"
+                    : "disabled";
+            lastError = "";
         }
+    }
+
+    static String getState(Context context) {
+        if (!ImePreferences.isExperimentalRerankerEnabled(context)) {
+            return "disabled";
+        }
+        if (!RerankerModelStore.hasModel(context)) {
+            return "missing";
+        }
+        return state.equals("disabled") ? "not_loaded" : state;
+    }
+
+    static String getLastError() {
+        return lastError;
+    }
+
+    static String getBackend() {
+        return loadedBackend;
+    }
+
+    static void recordFailure(Throwable error) {
+        synchronized (ENGINE_LOCK) {
+            setFailure(error);
+            closeEngine();
+        }
+    }
+
+    static void cancelActiveRanking() {
+        Conversation active = activeConversation;
+        if (active == null) {
+            return;
+        }
+        CANCELLATION_GENERATION.incrementAndGet();
+        try {
+            active.cancelProcess();
+        } catch (Exception | LinkageError ignored) {
+            // The running request remains fail-open if cancellation races close.
+        }
+    }
+
+    private static void setFailure(Throwable error) {
+        state = "error";
+        String message = error.getMessage();
+        lastError = message == null || message.isEmpty()
+                ? error.getClass().getSimpleName()
+                : message;
     }
 
     private static void closeEngine() {
@@ -155,5 +267,6 @@ final class AndroidCandidateReranker {
             engine = null;
         }
         loadedModelId = "";
+        loadedBackend = "";
     }
 }

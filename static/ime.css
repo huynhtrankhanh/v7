@@ -145,10 +145,65 @@ button {
 .ime-mode-detail {
   color: var(--ime-muted);
   font-size: 0.61rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #inference-status.loading {
   color: var(--ime-plover);
+}
+
+#inference-status.reranking,
+#inference-status.reranker-loading,
+#inference-status.reranker-ranking {
+  color: var(--ime-plover);
+}
+
+#inference-status.reranker-ready {
+  color: var(--ime-accent);
+}
+
+#inference-status.reranker-error,
+#inference-status.reranker-missing {
+  color: var(--ime-danger);
+}
+
+.ime-inference-progress {
+  background: rgba(245, 189, 79, 0.24);
+  border-radius: 999px;
+  display: inline-block;
+  height: 3px;
+  overflow: hidden;
+  position: relative;
+  width: 42px;
+}
+
+.ime-inference-progress[hidden] {
+  display: none;
+}
+
+.ime-inference-progress::after {
+  background: var(--ime-plover);
+  border-radius: inherit;
+  content: "";
+  height: 100%;
+  left: 0;
+  position: absolute;
+  top: 0;
+  transform: translateX(60%);
+  width: 45%;
+}
+
+@keyframes ime-inference-progress {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(245%);
+  }
 }
 
 #inference-status.ready {
@@ -536,6 +591,10 @@ body.android-raw-outline .ime-plover-state {
     display: none;
   }
 
+  #inference-status.reranking {
+    display: inline;
+  }
+
   .ime-toolbar {
     gap: 8px;
   }
@@ -552,6 +611,10 @@ body.android-raw-outline .ime-plover-state {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  .ime-inference-progress::after {
+    animation: ime-inference-progress 900ms ease-in-out infinite;
+  }
+
   #cursor {
     animation: ime-cursor 1.1s steps(1, end) infinite;
   }

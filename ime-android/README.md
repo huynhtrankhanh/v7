@@ -25,6 +25,11 @@ imports.
   100 candidates with user-installed Gemma 3 1B IT through LiteRT-LM. It runs
   in Android Java after JNI and before the WebUI callback; it has no Rust or
   Retrofit implementation and fails open to the original KenLM order.
+- LiteRT requests use the non-blocking Android bridge. The raw composition and
+  an indeterminate load/rerank progress bar remain live while the model works;
+  a new chord cancels obsolete generation. Compatible devices use LiteRT-LM GPU
+  acceleration first; unsupported devices fall back to bounded parallel CPU
+  kernels rather than duplicate model instances.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
@@ -46,8 +51,9 @@ imports.
 - Native command dialogs request the IME surface as soon as their first editor
   is focused, retain it during keyboard navigation, and do not close from an
   accidental outside touch.
-- Enter submits the active native lookup or add-translation form through the
-  editor action advertised by each field.
+- Add-translation uses one-tap, 48 dp dictionary choices; hardware keys return
+  to the native activity while those controls have focus. Outline Enter advances
+  to translation, and translation Enter submits.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.
