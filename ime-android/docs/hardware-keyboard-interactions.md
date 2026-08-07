@@ -89,11 +89,11 @@ temporarily suppressed without changing the user's persistent mode selection.
 
 ## Native form submission
 
-Both native Stripped Plover forms treat Enter as form submission. In lookup,
-Enter in either query field runs the lookup action. In add-translation, Enter
-in either field runs the add action once a writable dictionary has loaded.
-The fields advertise Android's `IME_ACTION_DONE`, so V7's physical Enter
-routing and ordinary software keyboards reach the same editor-action listener.
+Lookup fields treat Enter as form submission. In add-translation, the outline
+field advertises `IME_ACTION_NEXT` and moves to ordinary translation text; the
+translation field advertises `IME_ACTION_DONE` and adds the entry once a
+writable dictionary has loaded. V7's physical Enter routing and ordinary
+software keyboards therefore reach the same predictable editor actions.
 
 ## Native command-dialog navigation
 
@@ -119,8 +119,11 @@ surface instead of initially hiding it, and touching outside the dialog does
 not silently discard the form.
 
 Writable dictionaries are shown as numbered radio choices rather than hidden
-behind a Spinner. With a choice focused, number-row or numpad keys `1` through
+behind a Spinner. Every choice is a full-width, at-least-48-dp target and one
+tap both checks and focuses it. With a choice focused, number-row or numpad keys `1` through
 `9` select and focus the matching dictionary directly. `Alt+1` through
 `Alt+9` provide the same access from anywhere in the dialog without stealing
 ordinary digits from the translation field; arrow-key radio navigation remains
-available.
+available. When a non-editor control owns focus, the IME explicitly passes
+hardware keys back to the activity instead of retaining the previous outline
+editor's steno-routing contract.
