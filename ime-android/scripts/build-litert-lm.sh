@@ -37,11 +37,11 @@ for abi in arm64-v8a x86_64; do
   rm -f "$output_dir/$abi/liblitert-lm.so"
   cp "$source_root/bazel-bin/c/liblitert-lm.so" "$output_dir/$abi/"
   llvm_nm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+  exported_symbols=$("$llvm_nm" -D --defined-only "$output_dir/$abi/liblitert-lm.so")
   for symbol in \
     litert_lm_session_clone \
     litert_lm_v7_get_last_error; do
-    if ! "$llvm_nm" -D --defined-only "$output_dir/$abi/liblitert-lm.so" \
-      | grep -q " $symbol$"; then
+    if ! grep -q " $symbol$" <<<"$exported_symbols"; then
       echo "Missing required LiteRT-LM bridge symbol $symbol for $abi" >&2
       exit 1
     fi
