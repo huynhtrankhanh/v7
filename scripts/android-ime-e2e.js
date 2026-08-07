@@ -184,9 +184,12 @@ async function main() {
             window.handleAndroidInferenceState("loading");
           } else {
             window.__androidRerankerState = "loading";
-            setTimeout(() => {
-              window.__androidRerankerState = "ranking";
-            }, Math.max(1, window.__androidInferenceDelay / 2));
+            setTimeout(
+              () => {
+                window.__androidRerankerState = "ranking";
+              },
+              Math.max(1, window.__androidInferenceDelay / 2),
+            );
           }
           setTimeout(() => {
             if (window.__androidInferenceError) {
