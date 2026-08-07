@@ -237,7 +237,7 @@ Pass a JSON array of strings to interleave existing fixed text with V7 code isla
 **Format:** `["Fixed Text", "V7 Code", "Fixed Text", "V7 Code", ...]`
 *   The array **must** start with a Fixed Text element (use an empty string `""` if there is no preceding text).
 *   **Alternating structure:** Even indices are Fixed Text, odd indices are V7 Code.
-*   **Context Propagation:** The engine "reads" the fixed text to update its internal state, ensuring that subsequent V7 predictions are contextually appropriate.
+*   **Context Propagation:** The engine "reads" fixed text to update its internal state, ensuring that subsequent V7 predictions are contextually appropriate. A question mark (`?`), exclamation mark (`!`), or full stop (`.`) starts a fresh sentence state, so words before it cannot influence inference after it.
 
 **Example:**
 ```bash

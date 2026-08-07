@@ -232,4 +232,45 @@ public class HardwareKeyActionResolverTest {
                 )
         );
     }
+
+    @Test
+    public void apostropheFinishesPreeditAndInsertsOneSpaceInStenoMode() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        assertEquals(
+                HardwareKeyActionResolver.Action.FINISH_PREEDIT_AND_INSERT_SPACE,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_APOSTROPHE,
+                        KeyEvent.ACTION_DOWN,
+                        0
+                )
+        );
+        assertEquals(
+                HardwareKeyActionResolver.Action.CONSUME,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_APOSTROPHE,
+                        KeyEvent.ACTION_DOWN,
+                        1
+                )
+        );
+        assertEquals(
+                HardwareKeyActionResolver.Action.CONSUME,
+                resolver.resolve(
+                        true,
+                        KeyEvent.KEYCODE_APOSTROPHE,
+                        KeyEvent.ACTION_UP,
+                        0
+                )
+        );
+        assertEquals(
+                HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(
+                        false,
+                        KeyEvent.KEYCODE_APOSTROPHE,
+                        KeyEvent.ACTION_DOWN,
+                        0
+                )
+        );
+    }
 }

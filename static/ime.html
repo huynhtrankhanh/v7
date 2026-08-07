@@ -18,6 +18,9 @@
         const rawOutline =
           typeof bridge.isRawOutlineMode === "function" &&
           bridge.isRawOutlineMode();
+        const plainText =
+          typeof bridge.isPlainTextMode === "function" &&
+          bridge.isPlainTextMode();
         const steno =
           typeof bridge.isStenoModeEnabled !== "function" ||
           bridge.isStenoModeEnabled();
@@ -25,7 +28,7 @@
         document.body.classList.toggle("android-raw-outline", rawOutline);
         document.body.classList.toggle(
           "android-normal-typing",
-          !rawOutline && !steno,
+          !rawOutline && (!steno || plainText),
         );
       })();
     </script>

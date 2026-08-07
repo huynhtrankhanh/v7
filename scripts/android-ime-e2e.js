@@ -142,6 +142,9 @@ async function main() {
         isRawOutlineMode() {
           return false;
         },
+        isPlainTextMode() {
+          return false;
+        },
         isPloverPaused() {
           return window.__androidPloverPaused;
         },
@@ -294,7 +297,7 @@ async function main() {
 
     await page.evaluate(() => {
       window.clearPreeditFromAndroid();
-      window.handleAndroidRawOutlineModeChanged(true);
+      window.handleAndroidEditorModeChanged(true, false);
     });
     await androidChord(page, ["t"]);
     await androidChord(page, ["e"]);
@@ -333,8 +336,17 @@ async function main() {
     await androidChord(page, [" "]);
     await page.waitForFunction(() => window.__androidRawOutlineUndos === 1);
     await page.evaluate(() => {
-      window.handleAndroidRawOutlineModeChanged(false);
+      window.handleAndroidEditorModeChanged(false, true);
       window.clearPreeditFromAndroid();
+    });
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("android-normal-typing") &&
+        !document.body.classList.contains("stripped-plover-active") &&
+        window.__androidHeight === 48,
+    );
+    await page.evaluate(() => {
+      window.handleAndroidEditorModeChanged(false, false);
     });
     assert(initial.stripped, "Android bridge did not enable stripped mode");
     assert(
