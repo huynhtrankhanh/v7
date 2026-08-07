@@ -755,8 +755,12 @@ async function main() {
     const scoringProgress = await page.evaluate(() => ({
       status: document.querySelector("#inference-status").textContent,
       hidden: document.querySelector("#inference-progress").hidden,
-      now: document.querySelector("#inference-progress").getAttribute("aria-valuenow"),
-      max: document.querySelector("#inference-progress").getAttribute("aria-valuemax"),
+      now: document
+        .querySelector("#inference-progress")
+        .getAttribute("aria-valuenow"),
+      max: document
+        .querySelector("#inference-progress")
+        .getAttribute("aria-valuemax"),
       determinate: document
         .querySelector("#inference-progress")
         .classList.contains("determinate"),

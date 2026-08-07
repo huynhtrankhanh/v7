@@ -2654,8 +2654,7 @@ function updateInferenceStatusUI(): void {
   }
   if (progress) {
     progress.hidden = !shouldPoll;
-    const hasRankingProgress =
-      rerankerState === "ranking" && rerankerTotal > 0;
+    const hasRankingProgress = rerankerState === "ranking" && rerankerTotal > 0;
     progress.classList.toggle("determinate", hasRankingProgress);
     if (hasRankingProgress) {
       progress.style.setProperty(
