@@ -29,5 +29,10 @@ public class DictionarySelectionShortcutTest {
                 KeyEvent.KEYCODE_DPAD_DOWN,
                 9
         ));
+        assertEquals(-1, DictionarySelectionShortcut.indexFor(
+                KeyEvent.KEYCODE_1,
+                9,
+                false
+        ));
     }
 }

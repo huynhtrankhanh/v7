@@ -15,7 +15,7 @@ including across editor changes.
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Pass both keys through normally |
 | `[` down                     | Finalize the current PREEDIT and start a clean composing session | Pass `[` through normally       |
 | `[` repeat/up                | Consume without finalizing again                                 | Pass through normally           |
-| `Caps Lock`                  | Capitalize the next inferred V7 island                           | Pass through to the editor      |
+| `Caps Lock`                  | Uppercase all steno output while the current lock state is on    | Pass through to the editor      |
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
@@ -59,8 +59,11 @@ Android native key handling runs before WebView dispatch:
 2. while in STENO, resolve and consume `[`;
 3. while in normal typing mode, pass all other events back to the editor;
 4. while in STENO, forward captured steno keys to the WebUI;
-5. carry a one-shot Caps Lock instruction on the next V7 island so every
-   rendered candidate and the selected text use the same capitalization;
+5. carry the current native Caps Lock state with every event and uppercase
+   every cased character emitted anywhere in the steno pipeline while it is
+   active, including V7, Emily, Stripped Plover, rendered candidates,
+   and piecemeal edits; candidate selection preserves the casing attached when
+   each output was produced and never retroactively uppercases older text;
 6. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
 
 This ordering keeps the mode-control chord out of steno aggregation while
@@ -95,12 +98,16 @@ dialog tasks behind for Android to resurface. The full, wrapping title is part
 of the dialog content rather than a truncating platform title bar.
 
 Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
-and backward through the editable fields, dictionary selector, primary action,
-and Close button with wraparound; disabled controls are skipped and newly
-focused controls are scrolled into view. `Escape` closes the dialog. Enter
-keeps the submission behavior described above.
+and backward through the editable fields, every visible dictionary choice,
+the selectable result/status region, the primary action, and Close button with
+wraparound; disabled controls are skipped and newly focused controls are
+scrolled into view. Labels are linked to their fields and changing status text
+is exposed as a polite accessibility announcement. `Escape` closes the dialog.
+Enter keeps the submission behavior described above.
 
-Writable dictionaries are numbered in the add-translation picker. With the
-picker focused, number-row or numpad keys `1` through `9` select the matching
-visible dictionary directly; arrow keys and normal Spinner navigation remain
+Writable dictionaries are shown as numbered radio choices rather than hidden
+behind a Spinner. With a choice focused, number-row or numpad keys `1` through
+`9` select and focus the matching dictionary directly. `Alt+1` through
+`Alt+9` provide the same access from anywhere in the dialog without stealing
+ordinary digits from the translation field; arrow-key radio navigation remains
 available.

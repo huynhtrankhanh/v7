@@ -48,33 +48,38 @@ function startStaticServer() {
   });
 }
 
-async function androidChord(page, keys) {
-  await page.evaluate((downKeys) => {
-    for (const key of downKeys) {
-      window.handleAndroidKeyEvent(
-        "keydown",
-        key,
-        key === " " ? "Space" : `Key${key.toUpperCase()}`,
-        false,
-        false,
-        false,
-        false,
-        false,
-      );
-    }
-    for (const key of [...downKeys].reverse()) {
-      window.handleAndroidKeyEvent(
-        "keyup",
-        key,
-        key === " " ? "Space" : `Key${key.toUpperCase()}`,
-        false,
-        false,
-        false,
-        false,
-        false,
-      );
-    }
-  }, keys);
+async function androidChord(page, keys, { capsLock = false } = {}) {
+  await page.evaluate(
+    ({ downKeys, capsLockActive }) => {
+      for (const key of downKeys) {
+        window.handleAndroidKeyEvent(
+          "keydown",
+          key,
+          key === " " ? "Space" : `Key${key.toUpperCase()}`,
+          false,
+          false,
+          false,
+          false,
+          false,
+          capsLockActive,
+        );
+      }
+      for (const key of [...downKeys].reverse()) {
+        window.handleAndroidKeyEvent(
+          "keyup",
+          key,
+          key === " " ? "Space" : `Key${key.toUpperCase()}`,
+          false,
+          false,
+          false,
+          false,
+          false,
+          capsLockActive,
+        );
+      }
+    },
+    { downKeys: keys, capsLockActive: capsLock },
+  );
 }
 
 async function applyRequestedImeHeight(page) {
@@ -242,6 +247,9 @@ async function main() {
                 translation: "test",
                 strokes: ["TEFT"],
               },
+              translate: {
+                output: [{ type: "preedit", text: "plover word" }],
+              },
             };
             window.handleAndroidPloverResponse(
               requestId,
@@ -352,7 +360,14 @@ async function main() {
       `Android IME did not expose initial model readiness: ${JSON.stringify(initial)}`,
     );
 
-    await page.evaluate(() => window.handleAndroidStenoModeChanged(false));
+    const immediateCompactHeight = await page.evaluate(() => {
+      window.handleAndroidStenoModeChanged(false);
+      return window.__androidHeight;
+    });
+    assert(
+      immediateCompactHeight === 48,
+      `Normal typing height was deferred past the mode change: ${immediateCompactHeight}`,
+    );
     await page.waitForFunction(
       () =>
         document.body.classList.contains("android-normal-typing") &&
@@ -385,7 +400,14 @@ async function main() {
       await page.evaluate(() => window.__androidKeyboardSwitches === 1),
       "Normal typing bar switch did not invoke the input method picker",
     );
-    await page.evaluate(() => window.handleAndroidStenoModeChanged(true));
+    const immediateRestoredHeight = await page.evaluate(() => {
+      window.handleAndroidStenoModeChanged(true);
+      return window.__androidHeight;
+    });
+    assert(
+      immediateRestoredHeight === initial.height,
+      `Full V7 height was not restored atomically: ${immediateRestoredHeight}`,
+    );
     await page.waitForFunction(
       () =>
         !document.body.classList.contains("android-normal-typing") &&
@@ -429,33 +451,11 @@ async function main() {
       `Modified hardware keys leaked into V7 handling: ${JSON.stringify(modifiedKeyState)}`,
     );
 
-    await page.evaluate(() => {
-      window.handleAndroidKeyEvent(
-        "keydown",
-        "CapsLock",
-        "CapsLock",
-        false,
-        false,
-        false,
-        false,
-        false,
-      );
-      window.handleAndroidKeyEvent(
-        "keyup",
-        "CapsLock",
-        "CapsLock",
-        false,
-        false,
-        false,
-        false,
-        false,
-      );
-    });
-    await androidChord(page, ["c", " ", "m"]);
+    await androidChord(page, ["c", " ", "m"], { capsLock: true });
     await page.waitForFunction(
       () =>
         window.__androidInferenceBodies.length === 1 &&
-        window.__androidPreedits.at(-1).text === "Alpha beta keep delta omega",
+        window.__androidPreedits.at(-1).text === "ALPHA BETA KEEP DELTA OMEGA",
     );
     await page.waitForFunction(
       (emptyHeight) => window.__androidHeight > emptyHeight,
@@ -494,8 +494,8 @@ async function main() {
       "Inference request did not use the V7 island protocol",
     );
     assert(
-      bridgeState.preedit.text === "Alpha beta keep delta omega",
-      "Caps Lock capitalization was not mirrored to Android composing text",
+      bridgeState.preedit.text === "ALPHA BETA KEEP DELTA OMEGA",
+      "Current Caps Lock state did not uppercase every composing character",
     );
     assert(
       bridgeState.preedit.grammarSections.length === 2,
@@ -504,13 +504,13 @@ async function main() {
     assert(
       bridgeState.preedit.grammarSections[0].start === 6 &&
         bridgeState.preedit.grammarSections[0].end === 10 &&
-        bridgeState.preedit.grammarSections[0].suggestions.includes("x"),
+        bridgeState.preedit.grammarSections[0].suggestions.includes("X"),
       "Android left grammar suggestion range was incorrect",
     );
     assert(
       bridgeState.preedit.grammarSections[1].start === 16 &&
         bridgeState.preedit.grammarSections[1].end === 21 &&
-        bridgeState.preedit.grammarSections[1].suggestions.includes("y"),
+        bridgeState.preedit.grammarSections[1].suggestions.includes("Y"),
       "Android right grammar suggestion range was incorrect",
     );
     assert(
@@ -889,9 +889,11 @@ async function main() {
       window.__androidPloverPaused = false;
       window.handleAndroidPloverPaused(false);
     });
-    await androidChord(page, ["t"]);
+    await androidChord(page, ["t"], { capsLock: true });
     await page.waitForFunction(
-      (requestCount) => window.__androidPloverBodies.length > requestCount,
+      (requestCount) =>
+        window.__androidPloverBodies.length > requestCount &&
+        window.__androidPreedits.at(-1)?.text.includes("PLOVER WORD"),
       {},
       requestsBeforePause,
     );

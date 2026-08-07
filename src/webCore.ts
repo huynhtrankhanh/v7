@@ -559,7 +559,7 @@ function splitV7IslandForReplacement(
   pieces.push(
     createIsland(
       "vietnamese",
-      target.syllableIndex === 0
+      island.uppercase || target.syllableIndex === 0
         ? applyIslandCapitalization(island, replacement)
         : replacement,
     ),
@@ -1342,6 +1342,7 @@ function applyIslandCapitalization(
   island: Island | undefined,
   value: string,
 ): string {
+  if (island?.uppercase) return value.toLocaleUpperCase("vi");
   if (!island?.capitalize || value.length === 0) return value;
   return value.charAt(0).toLocaleUpperCase("vi") + value.slice(1);
 }

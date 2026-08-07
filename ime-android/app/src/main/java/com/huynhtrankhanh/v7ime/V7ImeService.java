@@ -488,6 +488,8 @@ public class V7ImeService extends InputMethodService {
                 + event.isCtrlPressed() + ","
                 + event.isAltPressed() + ","
                 + event.isMetaPressed()
+                + ","
+                + event.isCapsLockOn()
                 + ")";
         webView.evaluateJavascript(script, null);
         return true;

@@ -7,6 +7,13 @@ final class DictionarySelectionShortcut {
     }
 
     static int indexFor(int keyCode, int itemCount) {
+        return indexFor(keyCode, itemCount, true);
+    }
+
+    static int indexFor(int keyCode, int itemCount, boolean enabled) {
+        if (!enabled) {
+            return -1;
+        }
         int number;
         if (keyCode >= KeyEvent.KEYCODE_1 && keyCode <= KeyEvent.KEYCODE_9) {
             number = keyCode - KeyEvent.KEYCODE_1 + 1;

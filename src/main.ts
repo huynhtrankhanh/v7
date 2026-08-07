@@ -419,11 +419,13 @@ let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
+let keyboardCapsLockActive = false;
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
 let androidInferenceRequestId = 1;
 let lastRequestedAndroidKeyboardHeight = 0;
+let lastExpandedAndroidKeyboardHeight = 160;
 const androidInferencePending = new Map<
   number,
   {
@@ -886,10 +888,12 @@ function applyPloverOutput(
     recordHistory,
     allowInference,
     finalizePreedit,
+    uppercase,
   }: {
     recordHistory: boolean;
     allowInference: boolean;
     finalizePreedit: boolean;
+    uppercase: boolean;
   },
 ): void {
   if (!Array.isArray(output)) return;
@@ -908,8 +912,13 @@ function applyPloverOutput(
   const combinedCommitted = finalizePreedit
     ? `${committedJoined}${preeditText}`
     : committedJoined;
-  const committedText = ensureString(combinedCommitted);
-  const normalizedPreedit = finalizePreedit ? "" : ensureString(preeditText);
+  const committedText = applyCapsLockToText(
+    ensureString(combinedCommitted),
+    uppercase,
+  );
+  const normalizedPreedit = finalizePreedit
+    ? ""
+    : applyCapsLockToText(ensureString(preeditText), uppercase);
   const shouldSave =
     hadPreedit || committedText !== "" || normalizedPreedit !== "";
   if (shouldSave) {
@@ -950,6 +959,7 @@ async function handlePloverStroke(
 ): Promise<void> {
   if (!strippedPlover.available || androidPloverPaused) return;
   const currentRequest = ++strippedPlover.requestId;
+  const uppercase = keyboardCapsLockActive;
   try {
     const result = await ploverRpc("translate", { stroke });
     if (currentRequest !== strippedPlover.requestId) return;
@@ -957,6 +967,7 @@ async function handlePloverStroke(
       recordHistory: oneShot,
       allowInference: true,
       finalizePreedit: oneShot,
+      uppercase,
     });
     if (oneShot) {
       await ploverRpc("reset_state", {});
@@ -1921,12 +1932,22 @@ async function runReverseLookup(button: LoadingControl): Promise<void> {
 // --- Logic ---
 
 function appendText(text: string): void {
-  if (state.pendingCapitalization && text.length > 0) {
+  if (keyboardCapsLockActive && text.length > 0) {
+    text = applyCapsLockToText(text, true);
+    state.pendingCapitalization = false;
+  } else if (state.pendingCapitalization && text.length > 0) {
     text = text.charAt(0).toUpperCase() + text.slice(1);
     state.pendingCapitalization = false;
   }
   // Append a new Vietnamese (generic text) island
   buffer.appendIsland(createIsland("vietnamese", text));
+}
+
+function applyCapsLockToText(
+  text: string,
+  active = keyboardCapsLockActive,
+): string {
+  return active ? text.toLocaleUpperCase("vi") : text;
 }
 
 function abortInferenceRequest(clearController: boolean): void {
@@ -2066,7 +2087,11 @@ async function handleChord(stroke: string): Promise<void> {
     if (piecemealSelection) {
       suppressPiecemealEntry = true;
     } else {
-      const replacement = decodeV7PermittedSyllableStroke(stroke);
+      const decodedReplacement = decodeV7PermittedSyllableStroke(stroke);
+      const replacement =
+        decodedReplacement === null
+          ? null
+          : applyCapsLockToText(decodedReplacement);
       if (replacement !== null) {
         const targets = findPiecemealSyllableTargets(state.islands);
         const target = targets[piecemealCursorIndex];
@@ -2109,10 +2134,11 @@ async function handleChord(stroke: string): Promise<void> {
     if (v7Code) {
       piecemealCursorIndex = null;
       saveState();
-      const capitalize = state.pendingCapitalization;
+      const uppercase = keyboardCapsLockActive;
+      const capitalize = !uppercase && state.pendingCapitalization;
       state.pendingCapitalization = false;
       buffer.appendIsland(
-        createIsland("vietnamese", v7Code, true, { capitalize }),
+        createIsland("vietnamese", v7Code, true, { capitalize, uppercase }),
       );
       runInference();
       return;
@@ -2141,11 +2167,16 @@ async function handleChord(stroke: string): Promise<void> {
     saveState();
     // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
     buffer.appendIsland(
-      createIsland(emilyResult.type, emilyResult.value, false, {
-        leftSpace: emilyResult.leftSpace,
-        rightSpace: emilyResult.rightSpace,
-        explicitSpacing: emilyResult.explicitSpacing,
-      }),
+      createIsland(
+        emilyResult.type,
+        applyCapsLockToText(emilyResult.value),
+        false,
+        {
+          leftSpace: emilyResult.leftSpace,
+          rightSpace: emilyResult.rightSpace,
+          explicitSpacing: emilyResult.explicitSpacing,
+        },
+      ),
     );
     state.pendingCapitalization = emilyResult.capNext || false;
     piecemealCursorIndex = null;
@@ -2809,6 +2840,9 @@ function updateDisplay(): void {
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
 
 document.addEventListener("keydown", (e) => {
+  if (!androidIme) {
+    keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     clearPressedQwertyKeys();
     if (!e.repeat) {
@@ -2871,16 +2905,6 @@ document.addEventListener("keydown", (e) => {
     return; // Let other keys pass to textarea
   }
 
-  if (!strippedPlover.enabled && e.key === "CapsLock") {
-    if (!e.repeat) {
-      saveState();
-      state.pendingCapitalization = true;
-      updateDisplay();
-    }
-    e.preventDefault();
-    return;
-  }
-
   if (e.repeat) return;
 
   const ploverActive = strippedPlover.enabled;
@@ -2934,6 +2958,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 document.addEventListener("keyup", (e) => {
+  if (!androidIme) {
+    keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
   if (hasOsPassthroughModifier(e)) {
     clearPressedQwertyKeys();
     return;
@@ -3372,6 +3399,7 @@ declare global {
       ctrlKey: boolean,
       altKey: boolean,
       metaKey: boolean,
+      capsLockActive: boolean,
     ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
@@ -3580,16 +3608,32 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
 
 function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   if (!androidIme) return;
+  const compact =
+    document.body.classList.contains("stripped-plover-active") ||
+    document.body.classList.contains("android-normal-typing") ||
+    document.body.classList.contains("android-raw-outline");
+  if (compact) {
+    if (lastRequestedAndroidKeyboardHeight !== 48) {
+      lastRequestedAndroidKeyboardHeight = 48;
+      androidIme.setKeyboardHeight(48);
+    }
+    return;
+  }
+
+  // Restore the last measured full surface before the browser paints the mode
+  // transition. Measuring from a 48 dp compact viewport first makes the full
+  // workbench flash through a squeezed intermediate layout.
+  if (lastRequestedAndroidKeyboardHeight === 48) {
+    lastRequestedAndroidKeyboardHeight = lastExpandedAndroidKeyboardHeight;
+    androidIme.setKeyboardHeight(lastExpandedAndroidKeyboardHeight);
+  }
+
   window.requestAnimationFrame(() => {
     if (
       document.body.classList.contains("stripped-plover-active") ||
       document.body.classList.contains("android-normal-typing") ||
       document.body.classList.contains("android-raw-outline")
     ) {
-      if (lastRequestedAndroidKeyboardHeight !== 48) {
-        lastRequestedAndroidKeyboardHeight = 48;
-        androidIme.setKeyboardHeight(48);
-      }
       return;
     }
 
@@ -3635,6 +3679,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
           candidateHeight,
       ),
     );
+    lastExpandedAndroidKeyboardHeight = desiredHeight;
     if (desiredHeight !== lastRequestedAndroidKeyboardHeight) {
       lastRequestedAndroidKeyboardHeight = desiredHeight;
       androidIme.setKeyboardHeight(desiredHeight);
@@ -3678,7 +3723,9 @@ window.handleAndroidKeyEvent = (
   ctrlKey,
   altKey,
   metaKey,
+  capsLockActive,
 ) => {
+  keyboardCapsLockActive = capsLockActive;
   document.dispatchEvent(
     new KeyboardEvent(action, {
       key,
