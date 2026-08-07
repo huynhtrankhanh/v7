@@ -11,6 +11,24 @@
     <link rel="stylesheet" href="ime.css" />
   </head>
   <body class="ime-surface">
+    <script>
+      (() => {
+        const bridge = window.AndroidIme;
+        if (!bridge) return;
+        const rawOutline =
+          typeof bridge.isRawOutlineMode === "function" &&
+          bridge.isRawOutlineMode();
+        const steno =
+          typeof bridge.isStenoModeEnabled !== "function" ||
+          bridge.isStenoModeEnabled();
+        document.body.classList.add("stripped-display");
+        document.body.classList.toggle("android-raw-outline", rawOutline);
+        document.body.classList.toggle(
+          "android-normal-typing",
+          !rawOutline && !steno,
+        );
+      })();
+    </script>
     <main id="inference-shell">
       <header class="ime-toolbar">
         <div class="ime-plover-banner" aria-label="Stripped Plover active">
@@ -68,7 +86,9 @@
           <span class="ime-hardware-hint">hardware chord input</span>
         </div>
         <div id="text-display" aria-live="polite">
-          Start typing with your steno keyboard...
+          <div class="text-display-flow empty-text-display-flow">
+            <span id="cursor"></span><span class="empty-wave">👋</span>
+          </div>
         </div>
         <textarea id="text-input" aria-label="Raw text input"></textarea>
         <div
@@ -77,9 +97,11 @@
           aria-live="assertive"
           hidden
         ></div>
-        <div id="candidate-area" aria-label="Alternative candidates">
-          <div class="candidate">Candidates will appear here...</div>
-        </div>
+        <div
+          id="candidate-area"
+          aria-label="Alternative candidates"
+          style="display: none"
+        ></div>
       </section>
     </main>
     <script src="script.js"></script>

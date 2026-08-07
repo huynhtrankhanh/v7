@@ -107,6 +107,7 @@ The demo uses a QWERTY-to-Steno mapping:
 
 ### Literal Uppercase
 - `Shift + [Letter]`: Appends the uppercase letter literally as a Capital Island. Spacing is determined by the spacing rules (e.g. no space if previous was capital).
+- `Caps Lock`: Capitalizes the next inferred V7 island. The instruction stays on the island so previews, alternatives, piecemeal display, and candidate selection agree.
 
 ### Punctuation
 Standard steno chords for punctuation:

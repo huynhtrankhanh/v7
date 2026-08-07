@@ -37,10 +37,23 @@ keyboard-configuration transition.
 ## View recreation
 
 The platform can request a new input view as part of the configuration reset.
-Before creating the replacement, V7 destroys the previous `WebView`; this
-prevents a detached WebView and its JavaScript context from leaking across
-repeated keyboard attach/detach cycles. Native composition state remains owned
-by the service and follows the normal Android input-session callbacks.
+Before creating the replacement, V7 detaches the shared Stripped Plover runtime,
+removes the old JavaScript bridge, stops loading, and destroys the previous
+`WebView`. `onFinishInputView()` also detaches the shared runtime until the
+current surface starts again.
+
+Every bridge is bound to both its owning `WebView` identity and an input-view
+generation. Only the newest surface may resize the keyboard, change preedit,
+request inference or Plover work, undo an outline, or open the IME picker. This
+prevents late JavaScript from a dangling keyboard surface from being served to
+the user while a newer surface controls the editor. Native composition state
+remains owned by the service and follows the normal Android input-session
+callbacks.
+
+The same exclusive generation rule applies to recreated IME service instances.
+Only the newest service may act on a process-wide Stripped Plover command event,
+so overlapping teardown cannot launch one command dialog per stale keyboard
+listener.
 
 ## Verification
 
@@ -50,11 +63,17 @@ Host-side tests cover:
 - a `hardKeyboardHidden` transition;
 - unrelated configuration changes;
 - changes while no editor is active;
-- input finishing before a posted recovery runs; and
-- moving to another editor before the recovery runs.
+- input finishing before a posted recovery runs;
+- moving to another editor before the recovery runs; and
+- replacing one keyboard surface with another and rejecting the stale owner's
+  generation.
 
 The Android WebUI bridge test also runs after the native unit suite to verify
 that input-view recreation changes do not alter the JavaScript bridge contract.
+Its long-buffer scenario cycles known-valid V7 syllable chords; invalid `K+A+O`
+was removed after the input core began correctly rejecting non-Vietnamese
+single syllables.
+
 Physical-device verification should exercise both connection directions while
 an editable field is focused, plus a Back-button hide with no connection
 change.

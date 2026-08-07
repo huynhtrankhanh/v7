@@ -52,9 +52,14 @@ imports.
   Ctrl and Shift retain their ordinary behavior.
 - Normal typing uses a labeled 48 dp status bar, matching the compact active
   Stripped Plover treatment instead of leaving the composition UI visible.
+- The IME HTML starts with the same empty composition markup used after
+  JavaScript initialization and applies native compact-mode classes before its
+  layout is parsed, preventing placeholder and full-height layout flicker.
 - While STENO capture is active, the physical Q+A chord opens Android's input
   method picker. The `[` key commits the current PREEDIT and starts a clean
   composing session; it does not delete the committed text.
+- Caps Lock carries a one-shot capitalization instruction on the next inferred
+  V7 island, including candidate previews and the final selected text.
 - Connecting or disconnecting a physical keyboard restores the V7 input view
   when an editor is still active. A generation guard prevents a delayed restore
   from showing the IME over an editor that has already closed or changed.

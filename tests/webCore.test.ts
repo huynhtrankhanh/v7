@@ -218,6 +218,38 @@ describe("webCore keyboard input", () => {
 });
 
 describe("webCore candidate selection", () => {
+  test("capitalizes inferred V7 text without changing the decoder request", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
+      createIsland("vietnamese", "ko0", true),
+    ];
+
+    expect(convertIslandsForInference(islands)).toEqual([
+      "",
+      "tro2ma1",
+      " ",
+      "ko0",
+      "",
+    ]);
+    expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
+      "Trời mà không",
+    );
+    expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
+      createIsland("vietnamese", "Trời mà không"),
+    ]);
+  });
+
+  test("capitalizes V7 parts in complete alternating candidates", () => {
+    const islands = [
+      createIsland("vietnamese", "xin"),
+      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
+    ];
+
+    expect(renderVisibleText(islands, [["xin ", "trời mà", ""]])).toBe(
+      "xin Trời mà",
+    );
+  });
+
   test("returns joined selected candidate text", () => {
     const candidates = [
       ["xin ", "chào"],
@@ -802,6 +834,19 @@ describe("webCore piecemeal syllable edit", () => {
     expect(next).toEqual([
       createIsland("vietnamese", "tro2", true),
       createIsland("vietnamese", "tôi"),
+    ]);
+  });
+
+  test("consumes V7 island capitalization in a first-syllable replacement", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
+    ];
+    const target = findPiecemealSyllableTargets(islands).at(-1);
+    expect(target).toBeDefined();
+
+    expect(replacePiecemealSyllable(islands, target!, "trời")).toEqual([
+      createIsland("vietnamese", "Trời"),
+      createIsland("vietnamese", "ma1", true, { capitalize: false }),
     ]);
   });
 });

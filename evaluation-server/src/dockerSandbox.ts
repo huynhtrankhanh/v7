@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+export const DEFAULT_INFERENCE_TIMEOUT_MS = 30_000;
+
 export interface SandboxLimits {
   image: string;
   modelHostPath: string;

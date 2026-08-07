@@ -8,9 +8,10 @@ import static org.junit.Assert.assertEquals;
 
 public class PloverCommandLaunchPolicyTest {
     @Test
-    public void commandDialogsUseAnIndependentEphemeralTask() {
+    public void commandDialogsReuseOneIndependentEphemeralTask() {
         int expected = Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+                | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                | Intent.FLAG_ACTIVITY_SINGLE_TOP
                 | Intent.FLAG_ACTIVITY_NO_HISTORY
                 | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS;
 

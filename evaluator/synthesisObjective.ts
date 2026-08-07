@@ -64,11 +64,112 @@ const policyKey = (policy: DetectionPolicy): string => {
   }
 };
 
-const percentile = (values: readonly number[], fraction: number): number => {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.ceil(sorted.length * fraction) - 1] ?? sorted[0];
+const histogramPercentile = (
+  histogram: ReadonlyMap<number, number>,
+  count: number,
+  fraction: number,
+): number => {
+  if (count === 0) return 0;
+  const target = Math.ceil(count * fraction);
+  let cumulative = 0;
+  for (const [value, occurrences] of [...histogram].sort(
+    ([left], [right]) => left - right,
+  )) {
+    cumulative += occurrences;
+    if (cumulative >= target) return value;
+  }
+  return 0;
 };
+
+class SynthesisObjectiveAccumulator {
+  private scenarioRuns = 0;
+  private illegalRuns = 0;
+  private timeoutRuns = 0;
+  private freeRunningRuns = 0;
+  private freeRunningErrors = 0;
+  private totalCorrectingActions = 0;
+  private candidateInspectionSteps = 0;
+  private cascadeCount = 0;
+  private latencyCount = 0;
+  private readonly correctingActionsByPolicy = new Map<string, number>();
+  private readonly cascadeHistogram = new Map<number, number>();
+  private readonly latencyHistogram = new Map<number, number>();
+
+  add({ policy, result }: SessionScenarioResult): void {
+    this.scenarioRuns += 1;
+    if (result.failure === ILLEGAL) this.illegalRuns += 1;
+    if (result.failure === TIMEOUT) this.timeoutRuns += 1;
+    for (const cascade of result.metrics.errorCascades) {
+      this.cascadeCount += 1;
+      this.cascadeHistogram.set(
+        cascade,
+        (this.cascadeHistogram.get(cascade) ?? 0) + 1,
+      );
+    }
+    for (const step of result.trace) {
+      if (step.latencyMs === null) continue;
+      // Ceil is monotonic, so nearest-rank percentile(ceil(x)) is exactly
+      // ceil(nearest-rank percentile(x)), while giving the histogram bounded
+      // integer keys instead of retaining every trace sample.
+      const latency = Math.ceil(step.latencyMs);
+      this.latencyCount += 1;
+      this.latencyHistogram.set(
+        latency,
+        (this.latencyHistogram.get(latency) ?? 0) + 1,
+      );
+    }
+
+    if (policy.kind === "never") {
+      this.freeRunningRuns += 1;
+      this.freeRunningErrors += result.metrics.finalSyllableErrors;
+      return;
+    }
+
+    const key = policyKey(policy);
+    const actions = result.metrics.physicalActions;
+    this.correctingActionsByPolicy.set(
+      key,
+      (this.correctingActionsByPolicy.get(key) ?? 0) + actions,
+    );
+    this.totalCorrectingActions += actions;
+    this.candidateInspectionSteps += result.actions.candidateInspectionSteps;
+  }
+
+  finish(options: SynthesisObjectiveOptions = {}): SynthesisObjective {
+    if (this.scenarioRuns === 0) {
+      throw new RangeError("At least one session scenario is required.");
+    }
+    const artifactBytes = options.artifactBytes ?? 0;
+    if (!Number.isInteger(artifactBytes) || artifactBytes < 0) {
+      throw new RangeError("artifactBytes must be a non-negative integer.");
+    }
+    if (this.freeRunningRuns === 0) {
+      throw new RangeError(
+        "The synthesis objective requires a free-running (`never`) scenario.",
+      );
+    }
+    if (this.correctingActionsByPolicy.size === 0) {
+      throw new RangeError(
+        "The synthesis objective requires at least one correcting policy.",
+      );
+    }
+
+    const failedRuns = this.illegalRuns + this.timeoutRuns;
+    return [
+      failedRuns > 0 ? 1 : 0,
+      failedRuns,
+      this.illegalRuns,
+      this.timeoutRuns,
+      this.freeRunningErrors,
+      Math.max(...this.correctingActionsByPolicy.values()),
+      this.totalCorrectingActions,
+      histogramPercentile(this.cascadeHistogram, this.cascadeCount, 0.95),
+      this.candidateInspectionSteps,
+      histogramPercentile(this.latencyHistogram, this.latencyCount, 0.95),
+      artifactBytes,
+    ];
+  }
+}
 
 /**
  * Aggregate paired session scenarios into the total order used by program
@@ -79,73 +180,9 @@ export function buildSynthesisObjective(
   scenarios: readonly SessionScenarioResult[],
   options: SynthesisObjectiveOptions = {},
 ): SynthesisObjective {
-  if (scenarios.length === 0) {
-    throw new RangeError("At least one session scenario is required.");
-  }
-  const artifactBytes = options.artifactBytes ?? 0;
-  if (!Number.isInteger(artifactBytes) || artifactBytes < 0) {
-    throw new RangeError("artifactBytes must be a non-negative integer.");
-  }
-
-  let illegalRuns = 0;
-  let timeoutRuns = 0;
-  let freeRunningRuns = 0;
-  let freeRunningErrors = 0;
-  let totalCorrectingActions = 0;
-  let candidateInspectionSteps = 0;
-  const correctingActionsByPolicy = new Map<string, number>();
-  const cascades: number[] = [];
-  const latencies: number[] = [];
-
-  for (const { policy, result } of scenarios) {
-    if (result.failure === ILLEGAL) illegalRuns += 1;
-    if (result.failure === TIMEOUT) timeoutRuns += 1;
-    cascades.push(...result.metrics.errorCascades);
-    for (const step of result.trace) {
-      if (step.latencyMs !== null) latencies.push(step.latencyMs);
-    }
-
-    if (policy.kind === "never") {
-      freeRunningRuns += 1;
-      freeRunningErrors += result.metrics.finalSyllableErrors;
-      continue;
-    }
-
-    const key = policyKey(policy);
-    const actions = result.metrics.physicalActions;
-    correctingActionsByPolicy.set(
-      key,
-      (correctingActionsByPolicy.get(key) ?? 0) + actions,
-    );
-    totalCorrectingActions += actions;
-    candidateInspectionSteps += result.actions.candidateInspectionSteps;
-  }
-
-  if (freeRunningRuns === 0) {
-    throw new RangeError(
-      "The synthesis objective requires a free-running (`never`) scenario.",
-    );
-  }
-  if (correctingActionsByPolicy.size === 0) {
-    throw new RangeError(
-      "The synthesis objective requires at least one correcting policy.",
-    );
-  }
-
-  const failedRuns = illegalRuns + timeoutRuns;
-  return [
-    failedRuns > 0 ? 1 : 0,
-    failedRuns,
-    illegalRuns,
-    timeoutRuns,
-    freeRunningErrors,
-    Math.max(...correctingActionsByPolicy.values()),
-    totalCorrectingActions,
-    percentile(cascades, 0.95),
-    candidateInspectionSteps,
-    Math.ceil(percentile(latencies, 0.95)),
-    artifactBytes,
-  ];
+  const accumulator = new SynthesisObjectiveAccumulator();
+  for (const scenario of scenarios) accumulator.add(scenario);
+  return accumulator.finish(options);
 }
 
 /** Return -1 when left is better, 1 when right is better, and 0 on a tie. */
@@ -171,10 +208,57 @@ export async function evaluateSynthesisMeasure(
   inference: InferenceFunction,
   options: SynthesisMeasureOptions = {},
 ): Promise<SynthesisObjective> {
-  return (
-    await evaluateSynthesisMeasureDetailed(textOrCorpus, inference, options)
-  ).objective;
+  const corpus =
+    typeof textOrCorpus === "string" ? [textOrCorpus] : textOrCorpus;
+  const accumulator = new SynthesisObjectiveAccumulator();
+  let textCount = 0;
+  for (const item of corpus) {
+    textCount += 1;
+    const prepared =
+      typeof item === "string"
+        ? {
+            text: item,
+            plan: buildImeSessionPlan(
+              item,
+              options.maxSyllablesPerV7Island ?? 2,
+            ),
+          }
+        : item;
+    const scenarios = await evaluateImeScenarios(
+      prepared.text,
+      inference,
+      scenarioOptions(prepared.plan, options),
+    );
+    for (const scenario of scenarios) accumulator.add(scenario);
+  }
+  if (textCount === 0) {
+    throw new RangeError(
+      "The synthesis corpus must contain at least one text.",
+    );
+  }
+  return accumulator.finish({ artifactBytes: options.artifactBytes });
 }
+
+const scenarioOptions = (
+  plan: readonly PlannedSessionEvent[],
+  options: SynthesisMeasureOptions,
+): SessionEvaluationOptions & { policies?: readonly DetectionPolicy[] } => ({
+  plan,
+  ...(options.policies ? { policies: options.policies } : {}),
+  ...(options.candidateLimit === undefined
+    ? {}
+    : { candidateLimit: options.candidateLimit }),
+  ...(options.maxSyllablesPerV7Island === undefined
+    ? {}
+    : { maxSyllablesPerV7Island: options.maxSyllablesPerV7Island }),
+  ...(options.inferenceTimeoutMs === undefined
+    ? {}
+    : { inferenceTimeoutMs: options.inferenceTimeoutMs }),
+  ...(options.weights === undefined ? {} : { weights: options.weights }),
+  ...(options.actionTimeMs === undefined
+    ? {}
+    : { actionTimeMs: options.actionTimeMs }),
+});
 
 /** The same measure plus scenario traces for explaining an objective change. */
 export async function evaluateSynthesisMeasureDetailed(
