@@ -70,6 +70,10 @@ Host-side tests cover:
 
 The Android WebUI bridge test also runs after the native unit suite to verify
 that input-view recreation changes do not alter the JavaScript bridge contract.
+Its long-buffer scenario cycles known-valid V7 syllable chords; invalid `K+A+O`
+was removed after the input core began correctly rejecting non-Vietnamese
+single syllables.
+
 Physical-device verification should exercise both connection directions while
 an editable field is focused, plus a Back-button hide with no connection
 change.

@@ -2,6 +2,7 @@ import {
   buildSynthesisObjective,
   compareSynthesisObjectives,
   evaluateSynthesisMeasure,
+  evaluateSynthesisMeasureDetailed,
   prepareSynthesisCorpus,
 } from "../evaluator/synthesisObjective";
 import {
@@ -81,5 +82,25 @@ describe("program-synthesis objective", () => {
     expect(objective[0]).toBe(0);
     expect(objective[4]).toBe(0);
     expect(objective[10]).toBe(12_345);
+  });
+
+  test("streams the production objective without changing exact metrics", async () => {
+    const corpus = Array.from({ length: 40 }, () => "trời mưa");
+    const options = {
+      policies: [{ kind: "never" }, { kind: "immediate" }] as const,
+      artifactBytes: 54_321,
+    };
+    const inference = async () => [["trời mưa"]];
+
+    const streamed = await evaluateSynthesisMeasure(corpus, inference, options);
+    const detailed = await evaluateSynthesisMeasureDetailed(
+      corpus,
+      inference,
+      options,
+    );
+
+    expect(streamed.slice(0, 9)).toEqual(detailed.objective.slice(0, 9));
+    expect(streamed[10]).toBe(detailed.objective[10]);
+    expect(detailed.scenarios).toHaveLength(corpus.length * 2);
   });
 });

@@ -742,7 +742,9 @@ async function main() {
     );
     const narrowEmptyHeight = await applyRequestedImeHeight(page);
     for (let syllable = 0; syllable < 9; syllable += 1) {
-      await androidChord(page, ["s", "c", "v"]);
+      // Cycle known valid V7 syllables. K+A+O used here previously is not a
+      // Vietnamese syllable and is now correctly rejected by the input core.
+      await androidChord(page, phrase[syllable % phrase.length]);
       await page.keyboard.type("123");
     }
     await page.waitForFunction(

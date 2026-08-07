@@ -1,7 +1,4 @@
-import {
-  evaluateSynthesisMeasure,
-  prepareSynthesisCorpus,
-} from "../../evaluator/synthesisObjective";
+import { evaluateSynthesisMeasure } from "../../evaluator/synthesisObjective";
 import type {
   InferenceFunction,
   InferenceResponse,
@@ -33,11 +30,9 @@ export async function evaluateCorpus(
     }
     return result as InferenceResponse;
   };
-  const objective = await evaluateSynthesisMeasure(
-    prepareSynthesisCorpus(corpus),
-    inference,
-    { artifactBytes: 0 },
-  );
+  const objective = await evaluateSynthesisMeasure(corpus, inference, {
+    artifactBytes: 0,
+  });
 
   // objective[10] is artifactBytes and is intentionally not returned or logged.
   return {

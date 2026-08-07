@@ -144,6 +144,12 @@ causal metrics. The 30-second default accommodates model startup and normal
 tail latency across large corpora without allowing a hung response to occupy a
 sandbox indefinitely.
 
+The production objective is aggregated one text at a time. Completed scenario
+traces and segmentation plans are released before the next corpus row runs;
+only exact integer histograms and scalar totals needed by the final metrics are
+retained. The separate detailed synthesis API still retains traces and is for
+diagnostics on bounded corpora, not server evaluation.
+
 Do not publish the service without authentication, TLS, request-rate limiting,
 and restricted access to its internal logs.
 
