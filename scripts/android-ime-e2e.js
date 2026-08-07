@@ -117,6 +117,9 @@ async function main() {
       window.__androidRerankerState = "disabled";
       window.__androidRerankerError = "";
       window.__androidRerankerBackend = "";
+      window.__androidRerankerWarning = "";
+      window.__androidRerankerCompleted = 0;
+      window.__androidRerankerTotal = 0;
       window.__androidSyncInferenceCalls = 0;
       window.__androidPloverBodies = [];
       window.__androidPloverPaused = false;
@@ -164,6 +167,15 @@ async function main() {
         },
         getExperimentalRerankerBackend() {
           return window.__androidRerankerBackend;
+        },
+        getExperimentalRerankerWarning() {
+          return window.__androidRerankerWarning;
+        },
+        getExperimentalRerankerCompleted() {
+          return window.__androidRerankerCompleted;
+        },
+        getExperimentalRerankerTotal() {
+          return window.__androidRerankerTotal;
         },
         setKeyboardHeight(height) {
           window.__androidHeight = height;
@@ -715,8 +727,52 @@ async function main() {
         window.__androidPreedits.at(-1)?.text.includes("async reranked result"),
     );
     await page.evaluate(() => {
+      window.__androidRerankerState = "ready";
+      window.__androidRerankerBackend = "cpu";
+      window.__androidRerankerWarning =
+        "GPU initialization failed: delegate unavailable; using CPU";
+      window.handleAndroidInferenceState("ready");
+    });
+    const cpuFallback = await page.evaluate(() => ({
+      status: document.querySelector("#inference-status").textContent,
+      warning: document.querySelector("#inference-error").textContent,
+      hidden: document.querySelector("#inference-error").hidden,
+    }));
+    assert(
+      cpuFallback.status === "Reranker ready · CPU" &&
+        !cpuFallback.hidden &&
+        cpuFallback.warning.includes("GPU initialization failed"),
+      `GPU fallback backend/error was not visible: ${JSON.stringify(cpuFallback)}`,
+    );
+    await page.evaluate(() => {
+      window.__androidRerankerWarning = "";
+      window.__androidRerankerBackend = "gpu";
+      window.__androidRerankerState = "ranking";
+      window.__androidRerankerCompleted = 5;
+      window.__androidRerankerTotal = 16;
+      window.handleAndroidInferenceState("ready");
+    });
+    const scoringProgress = await page.evaluate(() => ({
+      status: document.querySelector("#inference-status").textContent,
+      hidden: document.querySelector("#inference-progress").hidden,
+      now: document.querySelector("#inference-progress").getAttribute("aria-valuenow"),
+      max: document.querySelector("#inference-progress").getAttribute("aria-valuemax"),
+      determinate: document
+        .querySelector("#inference-progress")
+        .classList.contains("determinate"),
+    }));
+    assert(
+      scoringProgress.status.includes("Reranking 5/16 · GPU") &&
+        !scoringProgress.hidden &&
+        scoringProgress.now === "5" &&
+        scoringProgress.max === "16" &&
+        scoringProgress.determinate,
+      `Candidate/backend progress was not determinate: ${JSON.stringify(scoringProgress)}`,
+    );
+    await page.evaluate(() => {
       window.__androidRerankerState = "error";
       window.__androidRerankerError = "Unsupported LiteRT model metadata";
+      window.__androidRerankerWarning = "";
       window.handleAndroidInferenceState("ready");
     });
     const rerankerFailure = await page.evaluate(() => ({

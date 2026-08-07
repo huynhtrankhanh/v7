@@ -79,6 +79,18 @@ final class NativeInference {
         return statusValue(context, "backend", "");
     }
 
+    static String getRerankerWarning(Context context) {
+        return statusValue(context, "warning", "");
+    }
+
+    static int getRerankerCompleted(Context context) {
+        return statusIntValue(context, "completed");
+    }
+
+    static int getRerankerTotal(Context context) {
+        return statusIntValue(context, "total");
+    }
+
     private static String statusValue(
             Context context,
             String key,
@@ -91,6 +103,17 @@ final class NativeInference {
             )).optString(key, fallback);
         } catch (Exception error) {
             return fallback;
+        }
+    }
+
+    private static int statusIntValue(Context context, String key) {
+        try {
+            return new JSONObject(rerankerStatusNative(
+                    ImePreferences.isExperimentalRerankerEnabled(context),
+                    RerankerModelStore.hasModel(context)
+            )).optInt(key, 0);
+        } catch (Exception error) {
+            return 0;
         }
     }
 

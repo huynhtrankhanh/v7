@@ -1249,6 +1249,27 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
+        public String getExperimentalRerankerWarning() {
+            return isCurrentInputView()
+                    ? NativeInference.getRerankerWarning(V7ImeService.this)
+                    : "";
+        }
+
+        @JavascriptInterface
+        public int getExperimentalRerankerCompleted() {
+            return isCurrentInputView()
+                    ? NativeInference.getRerankerCompleted(V7ImeService.this)
+                    : 0;
+        }
+
+        @JavascriptInterface
+        public int getExperimentalRerankerTotal() {
+            return isCurrentInputView()
+                    ? NativeInference.getRerankerTotal(V7ImeService.this)
+                    : 0;
+        }
+
+        @JavascriptInterface
         public int getExperimentalRerankerTopK() {
             return ImePreferences.getRerankerTopK(V7ImeService.this);
         }

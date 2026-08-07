@@ -26,15 +26,17 @@ imports.
   LiteRT-LM. Rust owns scoring and reordering inside JNI; there is no managed
   LiteRT or Retrofit implementation, and failures preserve KenLM order.
 - LiteRT requests use the non-blocking Android bridge. The raw composition and
-  an indeterminate load/rerank progress bar remain live while the model works;
-  a new chord cancels obsolete generation. Compatible devices use LiteRT-LM GPU
+  load/rerank progress remain live while the model works; candidate progress
+  and the actual GPU/CPU backend are reported. A new chord cancels obsolete
+  generation. Compatible devices use LiteRT-LM GPU
   acceleration first; unsupported devices fall back to bounded parallel CPU
   kernels rather than duplicate model instances.
-- The enabled model preloads when the IME service starts. Every selected
-  candidate uses an isolated one-target session so fixed batch-size-1 models
-  remain safe. Only the configured top-K prefix is reordered; later candidates
-  retain their KenLM positions. The engine and compilation cache persist across
-  requests.
+- The enabled model preloads when the IME service starts. One base session
+  prefills shared context, then its KV state is cloned into an isolated
+  one-target session per candidate so fixed batch-size-1 models remain safe
+  without repeating prefix work. Only the configured top-K prefix is reordered;
+  later candidates retain their KenLM positions. The engine and compilation
+  cache persist across requests.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.

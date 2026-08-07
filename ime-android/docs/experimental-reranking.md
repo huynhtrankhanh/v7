@@ -48,8 +48,9 @@ redistribute Gemma weights; their use remains subject to the
 WebUI islands
   -> JNI/Rust/KenLM generates 100 candidates
   -> Rust finds the selected top-K candidates' complete shared prefix (possibly empty)
-  -> one isolated LiteRT-LM session prefills that prefix for each candidate
-  -> each session scores exactly one continuation (the upstream-safe batch size)
+  -> one LiteRT-LM base session prefills that prefix once
+  -> Rust clones the prefetched KV state into one isolated session per candidate
+  -> each clone scores exactly one continuation (the upstream-safe batch size)
   -> Rust sorts by mean token log-likelihood, stably breaking ties by KenLM
   -> WebUI receives the complete reordered array and displays at most five
 ```
@@ -71,15 +72,16 @@ through JNI and reports native loading/ranking/backend state.
 ## Batch-size safety, isolation, GPU, and responsiveness
 
 LiteRT-LM 0.15 explicitly supports one target per `RunTextScoring` call. Rust
-therefore creates an isolated session for each candidate, prefills the common
-complete-word prefix into that session, and scores exactly one continuation.
+therefore prefills the common complete-word prefix once, invokes LiteRT-LM's
+native `SessionInterface::Clone` operation, and scores exactly one continuation
+in each clone.
 This is correct for fixed batch-size-1 models as well as models whose tensors
 could support larger batches. A session is never reused for another candidate:
 scoring advances its KV/executor state, so reuse would incorrectly condition a
-later candidate on an earlier one. The model engine and compiled-kernel cache
-remain process-wide and preload on a background executor, but prefix prefill is
-intentionally repeated per candidate until upstream provides a safe KV clone
-or multi-target API.
+later candidate on an earlier one. Cloning copies runtime state while sharing
+the processed prefix context through LiteRT-LM's resource manager. The model
+engine and compiled-kernel cache remain process-wide and preload on a background
+executor.
 
 The app packages the pinned LiteRT-LM C shared library and its official GPU,
 OpenCL, and WebGPU accelerator libraries for `arm64-v8a` and `x86_64`.
@@ -88,12 +90,14 @@ does not sample tokens, saving about 44 MiB of uncompressed APK payload.
 The manifest advertises optional Vulkan compute/OpenGL ES support and permits
 optional vendor `libOpenCL.so`/`libvndksupport.so` access. Rust tries the GPU
 backend first. A GPU that cannot initialize or score is discarded and that
-candidate set is retried once with LiteRT-LM's parallel CPU backend. A 32-bit device
-continues to use KenLM but cannot enable this native reranker.
+candidate set is retried once with LiteRT-LM's parallel CPU backend. The UI
+shows the requested backend during loading, the backend used for scoring, and
+the original native GPU error if CPU fallback occurs. A 32-bit device continues
+to use KenLM but cannot enable this native reranker.
 
 Reranking uses the asynchronous Android bridge. Composition and keyboard input
-remain active while an indeterminate progress indicator distinguishes loading,
-ranking, ready, and fail-open error states. A newer chord requests cancellation
+remain active while loading uses an indeterminate indicator and scoring uses a
+determinate completed/total candidate indicator. A newer chord requests cancellation
 of an obsolete native session. A load or score error is retained for diagnosis
 but returns the original KenLM JSON, so the experimental feature cannot make
 the keyboard unavailable.
@@ -117,6 +121,16 @@ session. A cancellation epoch closes the other timing window: an obsolete
 request that is still finishing KenLM cannot begin Gemma work after a newer
 chord arrives.
 
+The batch-size-1 safety fix introduced a separate performance defect: it
+created 16 complete sessions for top-16, redundantly prefilling the identical
+common context 16 times and running them serially. Because every new chord
+cancels obsolete work, normal continued typing could restart this expensive
+path before any request completed. The result looked like a broken reranker,
+not merely a slow one. The corrected path performs one prefill and clones its
+KV state for the 16 isolated one-target scoring calls. Candidate progress and
+backend reporting now distinguish useful work, loading, cancellation, and CPU
+fallback.
+
 KenLM itself is a fast 3-gram model and necessarily sees only short local
 history. The replacement keeps KenLM for enumeration and its inexpensive first
 pass, then uses the causal LM's actual token likelihood over broader context.
@@ -127,8 +141,8 @@ passed all selected candidates to `Tasks::Score`. That was unsafe: internal
 code contains batch-oriented loops, but the public session contract and many
 mobile model tensors remain fixed at batch size 1. Buffer resizing cannot make
 those model tensors batch-capable. The current implementation follows the
-public one-target contract and isolates every candidate, trading speed for
-correctness on all compatible models.
+public one-target contract, isolates every candidate, and uses the framework's
+supported session clone rather than changing model tensor shapes.
 
 ## Model choice and limitations
 
@@ -143,8 +157,8 @@ Gemma remains experimental: language-model likelihood is a useful naturalness
 signal, not a guarantee of the intended meaning. Representative Vietnamese
 evaluation should measure top-1 accuracy, reciprocal rank, cold/warm latency,
 memory, thermal load, and battery impact against the KenLM baseline. Increasing
-top-K improves coverage but increases latency approximately linearly because
-each candidate uses an isolated scoring session.
+top-K improves coverage but still increases suffix-scoring latency approximately
+linearly. Shared prefix prefill and tokenization are no longer repeated.
 
 ## Native build and license
 
@@ -152,8 +166,10 @@ The build pins LiteRT-LM 0.15.0 commit
 `2117fc4314670e00047bc8469783f02a68c33f0c`, fetches its official accelerator
 libraries with Git LFS, and builds `//c:litert-lm` for Android with Bazel. A
 narrow build patch replaces an unavailable zlib.net archive URL with the same
-immutable official zlib 1.3.1 GitHub archive and its verified checksum. V7 does
-not patch or bypass LiteRT-LM's single-target scoring guard.
+immutable official zlib 1.3.1 GitHub archive and its verified checksum. It also
+exposes the framework's existing session-clone operation and detailed native
+engine error through two small C functions consumed by Rust. V7 does not patch
+or bypass LiteRT-LM's single-target scoring guard.
 
 Required build tools are JDK 21, Go (to obtain pinned Bazelisk 1.26.0), Git
 LFS, Android NDK, Rust/cargo-ndk, Node, and Gradle. The native dependency graph
@@ -179,7 +195,9 @@ and build patch are included in Corresponding Source.
 
 Automated checks cover the WebUI's five-item render cap, Java settings and
 lifecycle compilation, all Android unit tests, cross-compilation of the native
-scorer for all four Android Rust targets, and the signed APK build. Real-device
-acceptance must additionally compare enabled/disabled ordering, verify GPU and
-CPU labels, type during loading/ranking, replace/disable the model, and operate
-in airplane mode.
+scorer for all four Android Rust targets, presence of the clone/error C symbols
+in both 64-bit LiteRT-LM libraries, determinate top-16 WebUI progress, GPU
+fallback warning display, and the signed APK build. Real-device acceptance must
+additionally compare enabled/disabled ordering and latency, verify GPU and CPU
+labels, type during loading/ranking, replace/disable the model, and operate in
+airplane mode.

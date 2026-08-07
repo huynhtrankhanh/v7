@@ -32,17 +32,18 @@ storage, licensing, latency, ABI, and validation details are documented in
 [`ime-android/docs/experimental-reranking.md`](ime-android/docs/experimental-reranking.md).
 
 LiteRT loading and scoring run asynchronously so the WebView can continue
-receiving keyboard events. The composition stays visible with an indeterminate
-progress bar and explicit loading/ranking/fallback state. New chords cancel an
+receiving keyboard events. The composition stays visible with indeterminate
+loading and determinate candidate-scoring progress plus explicit backend and
+fallback state. New chords cancel an
 obsolete ranking. The single model prefers supported device GPUs and falls back
 to bounded parallel CPU workers; the app never duplicates the large model
 merely to rank requests concurrently.
 
-The opt-in model starts loading when the IME service starts. Each selected
-candidate gets an isolated native scoring session that prefills the common
-prefix and scores exactly one continuation, honoring LiteRT-LM's batch-size-1
-contract on every compatible model. Gemma replaces KenLM's order only inside
+The opt-in model starts loading when the IME service starts. One base session
+prefills the common prefix, then LiteRT-LM clones that KV state into an isolated
+one-target session per candidate, honoring the batch-size-1 contract without
+repeating prefix work. Gemma replaces KenLM's order only inside
 the configured top-K pool; lower candidates—including visible candidates when
 top-K is below five—stay in their original KenLM positions. The app packages
 official 64-bit GPU/OpenCL/WebGPU accelerators, prefers GPU, and retries on the
-parallel CPU backend when necessary.
+parallel CPU backend when necessary while retaining the GPU error in the UI.
