@@ -9,15 +9,22 @@ permissions:
 jobs:
   build-debug-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       ANDROID_NDK_VERSION: "27.2.12479018"
+      LITERT_LM_BAZEL_ROOT: ${{ runner.temp }}/v7-litert-lm-bazel
     defaults:
       run:
         working-directory: ime-android
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Reclaim runner disk for native LiteRT-LM
+        run: |
+          docker system prune --all --force
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          df -h /
 
       - name: Setup Java
         uses: actions/setup-java@v4

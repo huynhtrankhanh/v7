@@ -9,9 +9,12 @@
     <string name="model_permission_failed">Android could not retain access to that file. Choose it from a local Storage Access Framework provider.</string>
     <string name="model_status_with_size">%1$s (%2$s)</string>
     <string name="experimental_reranker_heading">Experimental Android ML reranker</string>
-    <string name="experimental_reranker_description">Optional and fully on-device. After KenLM generates 100 candidates, Android LiteRT-LM 0.15.0 asks Gemma 3 1B IT to reorder only the first 8 in one listwise batch before the keyboard UI receives them. The model preloads with the IME, prefers supported device GPUs, and falls back to a parallel CPU backend, but can still add latency. Download gemma3-1b-it-int4.litertlm (about 557 MiB) from the model page after signing in and accepting the Gemma terms, then choose the downloaded file below. The app copies it into private no-backup storage.</string>
+    <string name="experimental_reranker_description">Optional and fully on-device. Rust uses LiteRT-LM token log-likelihoods to rescore a configurable number of KenLM candidates in one batch after one shared-prefix KV-cache prefill. Gemma scores replace the KenLM order inside that batch; the keyboard still displays only five candidates. The model preloads with the IME, uses a supported Android GPU first, and falls back to parallel CPU execution. Download gemma3-1b-it-int4.litertlm (about 557 MiB) from the model page after accepting the Gemma terms, then choose it below. The app copies it into private no-backup storage.</string>
     <string name="no_reranker_model_selected">No .litertlm reranker model installed.</string>
     <string name="enable_experimental_reranker">Enable experimental reranking</string>
+    <string name="reranker_top_k_default">Candidates rescored: 50</string>
+    <string name="reranker_top_k_value">Candidates rescored: %1$d</string>
+    <string name="reranker_top_k_description">Number of top candidates rescored, from 2 through 100</string>
     <string name="open_reranker_model_page">Open Gemma 3 1B IT download page</string>
     <string name="choose_reranker_model">Choose downloaded .litertlm file</string>
     <string name="reranker_model_selected">Reranker model copied to private app storage</string>

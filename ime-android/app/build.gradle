@@ -1,11 +1,5 @@
 plugins { id "com.android.application" }
 
-def liteRtLmVersion = "0.15.0"
-
-configurations {
-    liteRtLmNotices
-}
-
 def suppliedVersionName = providers.gradleProperty("v7ImeVersion")
         .orElse("1.0.0")
         .get()
@@ -73,6 +67,8 @@ def generatedStrippedPloverAssets = layout.buildDirectory.dir(
         "generated/strippedPloverWeb"
 )
 def kenlmRoot = layout.buildDirectory.dir("kenlm")
+def liteRtLmRoot = layout.buildDirectory.dir("litert-lm")
+def liteRtLmTools = layout.buildDirectory.dir("litert-lm-tools")
 def strippedPloverRoot = layout.buildDirectory.dir("stripped-plover")
 def strippedPloverTypecheck = layout.buildDirectory.dir(
         "stripped-plover-android-typecheck"
@@ -85,14 +81,10 @@ def generatedSourceArchive = layout.buildDirectory.file(
 def generatedLiteRtLmNotices = layout.buildDirectory.dir(
         "generated/liteRtLmNotices/third-party/litert-lm"
 )
-def liteRtLmNoticeTrees = configurations.liteRtLmNotices.elements.map {
-    elements -> elements.collect { element -> zipTree(element.asFile) }
-}
-
 tasks.register("extractLiteRtLmNotices", Sync) {
-    from(liteRtLmNoticeTrees) {
+    dependsOn "prepareLiteRtLm"
+    from(liteRtLmRoot) {
         include "LICENSE"
-        include "THIRD_PARTY_NOTICE.txt"
         filePermissions {
             user {
                 read = true
@@ -103,6 +95,39 @@ tasks.register("extractLiteRtLmNotices", Sync) {
         }
     }
     into generatedLiteRtLmNotices
+}
+
+tasks.register("prepareLiteRtLm", Exec) {
+    commandLine(
+            rootProject.file("scripts/prepare-litert-lm.sh"),
+            liteRtLmRoot.get().asFile,
+            rootProject.file("LITERT_LM_REVISION")
+    )
+    inputs.files(
+            rootProject.file("LITERT_LM_REVISION"),
+            rootProject.file("scripts/prepare-litert-lm.sh"),
+            rootProject.file("patches/litert-lm-batched-text-scoring.patch")
+    )
+    outputs.dir liteRtLmRoot
+}
+
+tasks.register("buildLiteRtLm", Exec) {
+    dependsOn "prepareLiteRtLm"
+    commandLine(
+            rootProject.file("scripts/build-litert-lm.sh"),
+            liteRtLmRoot.get().asFile,
+            generatedNativeLibraries.get().asFile,
+            liteRtLmTools.get().asFile
+    )
+    inputs.files(
+            rootProject.file("LITERT_LM_REVISION"),
+            rootProject.file("scripts/build-litert-lm.sh"),
+            rootProject.file("patches/litert-lm-batched-text-scoring.patch")
+    )
+    outputs.files(
+            generatedNativeLibraries.map { it.file("arm64-v8a/liblitert-lm.so") },
+            generatedNativeLibraries.map { it.file("x86_64/liblitert-lm.so") }
+    )
 }
 
 tasks.register("buildWebUi", Exec) {
@@ -199,6 +224,7 @@ tasks.register("buildStrippedPloverWeb", Exec) {
 
 tasks.register("buildNativeInference", Exec) {
     dependsOn "prepareKenlm"
+    dependsOn "buildLiteRtLm"
     commandLine(
             rootProject.file("scripts/build-native.sh"),
             webRoot,
@@ -222,6 +248,7 @@ tasks.register("buildNativeInference", Exec) {
 
 tasks.register("buildSourceArchive", Exec) {
     dependsOn "prepareKenlm"
+    dependsOn "prepareLiteRtLm"
     dependsOn "prepareStrippedPlover"
     commandLine(
             rootProject.file("scripts/make-source-archive.sh"),
@@ -263,12 +290,6 @@ tasks.named("preBuild").configure {
 }
 
 dependencies {
-    implementation "com.google.ai.edge.litertlm:litertlm-android:${liteRtLmVersion}"
-    liteRtLmNotices(
-            "com.google.ai.edge.litertlm:litertlm-android:${liteRtLmVersion}"
-    ) {
-        transitive = false
-    }
     implementation "androidx.javascriptengine:javascriptengine:1.1.0"
     implementation "androidx.webkit:webkit:1.15.0"
     implementation "androidx.work:work-runtime:2.11.2"

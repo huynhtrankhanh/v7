@@ -179,12 +179,11 @@ While Stripped Plover is active, the composition interface collapses to a
 
 ## Build
 
-The Android build uses JDK 21 because the pinned LiteRT-LM Android artifact is
-published as Java 21 bytecode. It invokes the root WebUI build, fetches and
-browser-bundles the
+The Android build uses JDK 21 and builds the pinned LiteRT-LM C API with
+Bazelisk/Bazel for 64-bit Android. It invokes the root WebUI build, fetches and browser-bundles the
 pinned Stripped Plover revision, compiles Rust/KenLM for Android, and creates
 the source ZIP asset. Install the root JavaScript dependencies, Rust 1.88,
-`cargo-ndk`, JDK 21, Android NDK 27.2.12479018, and Gradle 8.9:
+`cargo-ndk`, JDK 21, Go, Git LFS, Android NDK 27.2.12479018, and Gradle:
 
 ```sh
 npm ci
@@ -193,6 +192,7 @@ rustup target add \
   x86_64-linux-android i686-linux-android
 cargo install cargo-ndk --version 4.1.2 --locked
 ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" \
+LITERT_LM_BAZEL_ROOT=/path/with/at-least-15GiB-free \
   gradle -p ime-android assembleDebug
 ```
 

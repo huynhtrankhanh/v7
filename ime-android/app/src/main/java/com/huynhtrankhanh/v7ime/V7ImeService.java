@@ -863,25 +863,6 @@ public class V7ImeService extends InputMethodService {
             Log.e(LOG_TAG, "Local inference failed", error);
         }
 
-        if (errorMessage.isEmpty()
-                && latestInferenceRequestId.get() == requestId) {
-            try {
-                responseBody = AndroidCandidateReranker.rerankIfEnabled(
-                        this,
-                        responseBody
-                );
-            } catch (Exception | LinkageError rerankerError) {
-                // Experimental ML must never make the core IME unavailable.
-                AndroidCandidateReranker.recordFailure(rerankerError);
-                Log.w(
-                        LOG_TAG,
-                        "Experimental Android candidate reranking failed; "
-                                + "keeping the KenLM order",
-                        rerankerError
-                );
-            }
-        }
-
         if (latestInferenceRequestId.get() == requestId) {
             inferenceModelError = errorMessage;
             publishInferenceModelState(
@@ -900,7 +881,7 @@ public class V7ImeService extends InputMethodService {
 
     private void requestInference(String requestBody, int requestId) {
         latestInferenceRequestId.set(requestId);
-        AndroidCandidateReranker.cancelActiveRanking();
+        NativeInference.cancelReranker();
         inferenceExecutor.execute(() -> {
             if (latestInferenceRequestId.get() != requestId) {
                 return;
@@ -975,7 +956,7 @@ public class V7ImeService extends InputMethodService {
 
     private void warmExperimentalReranker() {
         rerankerWarmupExecutor.execute(
-                () -> AndroidCandidateReranker.preloadIfEnabled(this)
+                () -> NativeInference.preloadReranker(this)
         );
     }
 
@@ -1249,22 +1230,27 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public String getExperimentalRerankerState() {
             return isCurrentInputView()
-                    ? AndroidCandidateReranker.getState(V7ImeService.this)
+                    ? NativeInference.getRerankerState(V7ImeService.this)
                     : "disabled";
         }
 
         @JavascriptInterface
         public String getExperimentalRerankerError() {
             return isCurrentInputView()
-                    ? AndroidCandidateReranker.getLastError()
+                    ? NativeInference.getRerankerError(V7ImeService.this)
                     : "";
         }
 
         @JavascriptInterface
         public String getExperimentalRerankerBackend() {
             return isCurrentInputView()
-                    ? AndroidCandidateReranker.getBackend()
+                    ? NativeInference.getRerankerBackend(V7ImeService.this)
                     : "";
+        }
+
+        @JavascriptInterface
+        public int getExperimentalRerankerTopK() {
+            return ImePreferences.getRerankerTopK(V7ImeService.this);
         }
 
         @JavascriptInterface

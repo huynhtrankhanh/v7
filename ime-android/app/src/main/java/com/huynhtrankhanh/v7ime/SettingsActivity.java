@@ -12,6 +12,7 @@ import android.text.TextUtils;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.CheckBox;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -36,6 +37,8 @@ public class SettingsActivity extends Activity {
     private TextView rerankerModelStatus;
     private CheckBox enableExperimentalReranker;
     private Button chooseRerankerModel;
+    private TextView rerankerTopKValue;
+    private SeekBar rerankerTopK;
     private boolean updatingRerankerControls;
     private Button exportAppData;
     private Button importAppData;
@@ -54,6 +57,8 @@ public class SettingsActivity extends Activity {
                 R.id.enable_experimental_reranker
         );
         chooseRerankerModel = findViewById(R.id.choose_reranker_model);
+        rerankerTopKValue = findViewById(R.id.reranker_top_k_value);
+        rerankerTopK = findViewById(R.id.reranker_top_k);
         Button chooseModel = findViewById(R.id.choose_model);
         Button openRerankerModelPage = findViewById(R.id.open_reranker_model_page);
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
@@ -65,6 +70,36 @@ public class SettingsActivity extends Activity {
 
         updateModelStatus();
         updateRerankerStatus();
+        int topK = ImePreferences.getRerankerTopK(this);
+        rerankerTopK.setMax(
+                ImePreferences.MAX_RERANKER_TOP_K
+                        - ImePreferences.MIN_RERANKER_TOP_K
+        );
+        rerankerTopK.setProgress(topK - ImePreferences.MIN_RERANKER_TOP_K);
+        updateRerankerTopKLabel(topK);
+        rerankerTopK.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                int value = progress + ImePreferences.MIN_RERANKER_TOP_K;
+                updateRerankerTopKLabel(value);
+                if (fromUser) {
+                    ImePreferences.setRerankerTopK(SettingsActivity.this, value);
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+                if (ImePreferences.isExperimentalRerankerEnabled(SettingsActivity.this)) {
+                    IO_EXECUTOR.execute(
+                            () -> NativeInference.preloadReranker(SettingsActivity.this)
+                    );
+                }
+            }
+        });
 
         chooseModel.setOnClickListener(view -> chooseModel());
         openRerankerModelPage.setOnClickListener(view -> startActivity(
@@ -89,9 +124,9 @@ public class SettingsActivity extends Activity {
             ImePreferences.setExperimentalRerankerEnabled(this, checked);
             IO_EXECUTOR.execute(() -> {
                 if (checked) {
-                    AndroidCandidateReranker.preloadIfEnabled(this);
+                    NativeInference.preloadReranker(this);
                 } else {
-                    AndroidCandidateReranker.releaseIfUnavailable(this);
+                    NativeInference.preloadReranker(this);
                 }
             });
         });
@@ -230,7 +265,7 @@ public class SettingsActivity extends Activity {
                 });
                 if (ImePreferences.isExperimentalRerankerEnabled(this)) {
                     IO_EXECUTOR.execute(
-                            () -> AndroidCandidateReranker.preloadIfEnabled(this)
+                            () -> NativeInference.preloadReranker(this)
                     );
                 }
             } catch (IOException error) {
@@ -256,6 +291,10 @@ public class SettingsActivity extends Activity {
         if (busy) {
             rerankerModelStatus.setText(R.string.reranker_model_copying);
         }
+    }
+
+    private void updateRerankerTopKLabel(int topK) {
+        rerankerTopKValue.setText(getString(R.string.reranker_top_k_value, topK));
     }
 
     private void updateRerankerStatus() {

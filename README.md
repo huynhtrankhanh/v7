@@ -19,9 +19,9 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `Dockerfile` / `docker-compose.yml`: Multi-stage Docker build and compose configuration.
 *   `lm.binary`: Trained binary language model — **generated artifact**, not in the repository.
 
-The Android IME also has an off-by-default, fully on-device LiteRT-LM stage
-that can rerank KenLM's first 8 candidates with a user-installed Gemma 3 1B
-IT model before results reach the keyboard WebUI. See the
+The Android IME also has an off-by-default, fully on-device native LiteRT-LM
+stage that uses Gemma token likelihood to rescore a configurable 2–100 KenLM
+candidates before results reach the keyboard WebUI (which shows only five). See the
 [experimental reranker guide](ime-android/docs/experimental-reranking.md) for
 the exact gated model download, Android Settings flow, research rationale,
 failure behavior, and performance/licensing constraints.

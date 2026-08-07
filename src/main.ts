@@ -386,6 +386,7 @@ interface AndroidImeBridge {
   getExperimentalRerankerState?(): string;
   getExperimentalRerankerError?(): string;
   getExperimentalRerankerBackend?(): string;
+  getExperimentalRerankerTopK?(): number;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
@@ -2388,12 +2389,6 @@ async function runInference() {
 function setAndroidInferenceInProgress(inProgress: boolean): void {
   if (androidInferenceInProgress === inProgress) return;
   androidInferenceInProgress = inProgress;
-  if (inProgress && inferenceProgressTimer === null) {
-    inferenceProgressTimer = window.setInterval(updateInferenceStatusUI, 250);
-  } else if (!inProgress && inferenceProgressTimer !== null) {
-    window.clearInterval(inferenceProgressTimer);
-    inferenceProgressTimer = null;
-  }
   updateInferenceStatusUI();
 }
 
@@ -2606,16 +2601,27 @@ function updateInferenceStatusUI(): void {
   let rerankerState = "disabled";
   let rerankerError = "";
   let rerankerBackend = "";
+  let rerankerTopK = 50;
   try {
     rerankerState = androidIme.getExperimentalRerankerState?.() ?? "disabled";
     rerankerError = androidIme.getExperimentalRerankerError?.() ?? "";
     rerankerBackend = androidIme.getExperimentalRerankerBackend?.() ?? "";
+    rerankerTopK = androidIme.getExperimentalRerankerTopK?.() ?? 50;
   } catch {
     // Older native bridges have only the core inference status.
   }
   rerankerErrorMessage = rerankerState === "error" ? rerankerError : "";
+  const rerankerBusy =
+    rerankerState === "loading" || rerankerState === "ranking";
+  const shouldPoll = androidInferenceInProgress || rerankerBusy;
+  if (shouldPoll && inferenceProgressTimer === null) {
+    inferenceProgressTimer = window.setInterval(updateInferenceStatusUI, 250);
+  } else if (!shouldPoll && inferenceProgressTimer !== null) {
+    window.clearInterval(inferenceProgressTimer);
+    inferenceProgressTimer = null;
+  }
   if (progress) {
-    progress.hidden = !androidInferenceInProgress;
+    progress.hidden = !shouldPoll;
   }
   if (androidInferenceInProgress) {
     const loadingCoreModel = inferenceModelState === "loading";
@@ -2625,7 +2631,7 @@ function updateInferenceStatusUI(): void {
       ? "Loading KenLM model… · typing active"
       : loadingReranker
         ? "Loading Android ML model… · typing active"
-        : "Reranking 8 candidates… · typing active";
+        : `Reranking ${rerankerTopK} candidates… · typing active`;
     status.className = "ime-mode-detail reranking";
     status.title = "";
     return;
@@ -2635,7 +2641,7 @@ function updateInferenceStatusUI(): void {
       missing: "Reranker model missing · KenLM active",
       not_loaded: "Reranker waiting · KenLM active",
       loading: "Loading Android ML model…",
-      ranking: "Reranking 8 candidates…",
+      ranking: `Reranking ${rerankerTopK} candidates…`,
       ready: rerankerBackend
         ? `Reranker ready · ${rerankerBackend.toUpperCase()}`
         : "Reranker ready",

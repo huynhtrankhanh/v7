@@ -1,42 +1,32 @@
-# Experimental on-device candidate reranking
+# Experimental native candidate rescoring
 
-V7 can optionally pass KenLM's leading candidates through a second, Android-owned
-language model before the WebUI sees them. This is an experimental quality mode,
-not part of the default input path. It is disabled until a user installs a model
-and turns it on in the native Settings activity.
+V7 can optionally replace KenLM's order for its leading candidates with real
+causal-language-model scores from Gemma. The feature is off by default, runs
+entirely on device, and fails open to the unchanged KenLM result.
 
 ## Download and install the model
 
-The recommended accuracy model is the generic CPU package from
+The recommended portable model is
 [`litert-community/Gemma3-1B-IT`](https://huggingface.co/litert-community/Gemma3-1B-IT):
 
 ```text
 gemma3-1b-it-int4.litertlm
 ```
 
-It is 584,417,280 bytes (about 557 MiB). Do not choose a `-web.task` file or a
-device-specific MediaTek/Qualcomm package: this integration selects LiteRT-LM's
-portable CPU backend.
+It is 584,417,280 bytes (about 557 MiB). Do not select a `-web.task` artifact
+or a Qualcomm/MediaTek-specific package. A smaller compatible alternative is
+`gemma3-270m-it-q8.litertlm` from
+[`litert-community/gemma-3-270m-it`](https://huggingface.co/litert-community/gemma-3-270m-it),
+although the 1B model is preferred for accuracy.
 
-On a memory-constrained device, the compatible generic
-`gemma3-270m-it-q8.litertlm` file from
-[`litert-community/gemma-3-270m-it`](https://huggingface.co/litert-community/gemma-3-270m-it)
-is about 290 MiB. It trades model capacity for a smaller footprint; the 1B INT4
-artifact remains the recommended choice when ranking accuracy is the priority.
+1. In **V7 IME settings**, open the Gemma model page.
+2. Sign in to Hugging Face, accept the Gemma terms, open **Files and
+   versions**, and download `gemma3-1b-it-int4.litertlm`.
+3. Tap **Choose downloaded .litertlm file** and select the download.
+4. Wait for copying to finish, choose the number of candidates to rescore
+   (2–100, default 50), and enable experimental reranking.
 
-To download in a browser:
-
-1. Open **V7 IME settings** and tap **Open Gemma 3 1B IT download page**.
-2. Sign in to Hugging Face and accept the Gemma terms shown by the repository.
-3. Open **Files and versions** and download
-   `gemma3-1b-it-int4.litertlm`.
-4. Return to V7 IME settings, tap **Choose downloaded .litertlm file**, and
-   select that file in Android's document picker.
-5. Wait for the status to show the installed name and size, then check
-   **Enable experimental reranking**.
-
-The same artifact can be downloaded on a computer after accepting the terms in
-a browser:
+Command-line download, after accepting the terms in a browser:
 
 ```sh
 python -m pip install --upgrade huggingface_hub
@@ -45,180 +35,140 @@ hf download litert-community/Gemma3-1B-IT \
   gemma3-1b-it-int4.litertlm --local-dir .
 ```
 
-Copy the resulting file to the Android device and select it in Settings. Model
-access and use remain subject to the
-[`gemma` license and terms](https://ai.google.dev/gemma/terms). The APK does not
-redistribute the weights.
+The app atomically copies the selected file to
+`noBackupFilesDir/experimental-reranker/model.litertlm`. This preserves model
+access when the document provider disappears and excludes the weights from
+Android backup. App-data export does not include the model. The APK does not
+redistribute Gemma weights; their use remains subject to the
+[`gemma` terms](https://ai.google.dev/gemma/terms).
 
-Android copies the selected document atomically to
-`noBackupFilesDir/experimental-reranker/model.litertlm`. The private copy makes
-runtime access independent of document-provider availability and deliberately
-keeps the roughly 557 MiB file out of Android backup. Allow enough free space
-for both the downloaded source and the private copy while installing. V7 app
-data export does not include this model.
-
-## Data flow and failure policy
+## Scoring data path
 
 ```text
 WebUI islands
-    -> JNI/Rust/KenLM: generate and rank 100 candidates
-    -> Android Java: reconstruct the first 8 candidate sentences
-    -> LiteRT-LM GPU/CPU / Gemma 3 1B IT: return candidate IDs in quality order
-    -> Android Java: validate IDs, reorder the original candidate arrays
-    -> WebUI
+  -> JNI/Rust/KenLM generates 100 candidates
+  -> Rust finds the selected top-K candidates' complete shared prefix (possibly empty)
+  -> native LiteRT-LM prefills that prefix once (shared KV state)
+  -> one batched scoring call evaluates every candidate continuation
+  -> Rust sorts by mean token log-likelihood, stably breaking ties by KenLM
+  -> WebUI receives the complete reordered array and displays at most five
 ```
 
-The ML stage is implemented in `AndroidCandidateReranker` and runs through
-Google’s Android-native LiteRT-LM 0.15.0 API. There is no Retrofit client, HTTP
-request, remote service, or reranker code in Rust. Candidate text and model
-output remain inside the IME process.
+This is scoring, not prompted generation. LiteRT-LM returns accumulated token
+log-likelihood and token count for every continuation; Rust divides the former
+by the latter so short candidates do not win merely because they contain fewer
+tokens. Gemma is authoritative within the rescored pool—KenLM scores are not
+blended back in. Candidates below the selected depth retain their relative
+order. The WebUI remains capped at five visible candidates regardless of the
+scoring depth.
 
-## Responsiveness, progress, and cancellation
+All LiteRT ownership is in `inference-rs/src/litert_reranker.rs`. There is no
+LiteRT Kotlin/Java engine, Retrofit client, HTTP request, prompt parser, or
+generated candidate-ID list. Android Java supplies settings and private paths
+through JNI and reports native loading/ranking/backend state.
 
-Experimental reranking always uses the asynchronous Android bridge. The
-KenLM-only path may use the fast synchronous bridge, but a LiteRT model load or
-generation must never run inside a blocking `JavascriptInterface` return. The
-WebUI therefore keeps the raw composition visible and accepts new chords while
-an indeterminate progress bar reports one of these stages:
+## KV reuse, batching, GPU, and responsiveness
 
-- **Loading KenLM model · typing active**;
-- **Loading Android ML model · typing active**;
-- **Reranking 8 candidates · typing active**;
-- **Reranker ready**; or
-- **Reranker error · KenLM fallback**.
+For each candidate set, Rust creates one isolated scoring session, prefills the
+longest complete-word prefix once, then branches the whole selected pool in a
+single `RunTextScoring` batch. LiteRT-LM's session KV cache therefore avoids
+reprocessing shared sentence context while isolation prevents previous
+candidate sets from contaminating later inference. The engine and compiled
+kernel cache remain process-wide and are preloaded on a background executor
+when the IME starts, when the feature is enabled, and after model replacement.
 
-On failure, the workbench also shows the concrete LiteRT error while continuing
-with KenLM candidates, so a bad or unsupported model is diagnosable without
-making the keyboard unusable.
+The app packages the pinned LiteRT-LM C shared library and its official GPU,
+OpenCL, and WebGPU accelerator libraries for `arm64-v8a` and `x86_64`.
+Decode-only top-K sampler plugins are deliberately omitted because rescoring
+does not sample tokens, saving about 44 MiB of uncompressed APK payload.
+The manifest advertises optional Vulkan compute/OpenGL ES support and permits
+optional vendor `libOpenCL.so`/`libvndksupport.so` access. Rust tries the GPU
+backend first. A GPU that cannot initialize or score is discarded and that
+batch is retried once with LiteRT-LM's parallel CPU backend. A 32-bit device
+continues to use KenLM but cannot enable this native reranker.
 
-The original implementation incorrectly reused `requestInferenceSync` after
-enabling LiteRT. Although Android invokes that bridge method off the UI thread,
-JavaScript waits synchronously for its return. Model initialization and token
-generation consequently prevented the same WebView execution context from
-handling the next keyboard event, making the keyboard appear frozen.
+Reranking uses the asynchronous Android bridge. Composition and keyboard input
+remain active while an indeterminate progress indicator distinguishes loading,
+ranking, ready, and fail-open error states. A newer chord requests cancellation
+of an obsolete native session. A load or score error is retained for diagnosis
+but returns the original KenLM JSON, so the experimental feature cannot make
+the keyboard unavailable.
 
-Each candidate set is ranked in one listwise model call rather than eight serial
-calls. Android tries LiteRT-LM's GPU backend first and requests its optional
-OpenCL vendor libraries. If GPU initialization is unsupported by the device or
-model, it falls back to CPU automatically; the ready label reports `GPU` or
-`CPU`. The fallback receives up to four worker threads (bounded by the device's
-available processors), so CPU kernels execute in parallel without creating
-duplicate 557 MiB engines. If another chord arrives during generation,
-Android calls `Conversation.cancelProcess()`: obsolete work stops, queued stale
-requests are discarded, and only the newest composition proceeds. A cold engine
-initialization is allowed to finish once because cancelling and reloading it
-would increase latency and memory churn.
+## Root cause
 
-The prompt asks for natural Vietnamese grammar, meaning, and longer-range
-coherence. It labels each candidate with an integer, treats its text as
-untrusted data, uses greedy decoding, and asks for all eight IDs in quality
-order. Before serialization, Android factors the longest shared prefix and
-suffix out of the eight strings and sends each differing middle once. Shared
-sentence context is therefore prefetched once per batch instead of repeated
-eight times. Each shared region and alternative has a bounded head/tail sample.
-Candidates 9 through 100 are never sent to Gemma and keep their original
-relative order.
+The original reranker asked an instruction-tuned model to *generate an ordinal
+list* after reading eight alternatives. That output was not a probability or
+naturalness score. It spent decode work producing IDs, could copy input order,
+required constrained-output parsing, and provided no proof that candidate text
+affected the final order. Managed LiteRT execution also sat outside the Rust
+inference pipeline, complicating cancellation and making synchronous WebView
+calls appear to freeze the keyboard during cold loading.
 
-Gemma is authoritative inside that top-eight pool: KenLM scores are not blended
-back into the result after a valid model answer. To prevent the model from
-merely copying KenLM's input order, the batch is presented in a deterministic
-content-derived shuffle while every row retains its original candidate ID.
-LiteRT-LM constrained decoding permits only a compact eight-ID array, and the
-parser requires every in-range ID exactly once before applying it. A complete
-non-identity Gemma order therefore becomes the returned top-eight order. An
-incomplete, duplicate, or malformed answer is shown as a reranker error and
-keeps KenLM only as the documented fail-open path; it is no longer reported as
-a successful rerank.
+The former progress poller ran only while a typing request was outstanding, so
+background preload could remain visually stuck on an old state. It now remains
+active for either loading or scoring and stops when both are idle. Native
+cancellation also protects the active session's lifetime while the cancel call
+uses it, preventing a completion/cancellation race from reaching a freed
+session. A cancellation epoch closes the other timing window: an obsolete
+request that is still finishing KenLM cannot begin Gemma work after a newer
+chord arrives.
 
-The enabled engine is preloaded on a dedicated background executor when the IME
-service starts, and also immediately after the setting is enabled. This moves
-GPU/CPU initialization and compilation ahead of the first chord when Android
-has enough lead time. Installing or replacing a model while the option is
-enabled also queues a preload of the new model. The process-level engine and
-writable compilation cache remain reusable across requests.
+KenLM itself is a fast 3-gram model and necessarily sees only short local
+history. The replacement keeps KenLM for enumeration and its inexpensive first
+pass, then uses the causal LM's actual token likelihood over broader context.
+One prefix prefill and one multi-candidate batch remove repeated work, and
+length normalization gives the raw scoring function a meaningful comparison.
 
-LiteRT-LM 0.15's public Android API has neither a batch-of-independent-prompts
-entry point nor an export/clone/reset operation for a prefetched KV-cache
-prefix. A `Conversation` retains its prior turns, so reusing one would append
-old candidate batches and model answers, increasing work and contaminating the
-next rank. V7 instead uses one listwise batch per request and a fresh isolated
-conversation. Prefix factoring provides the safe available prefill saving;
-the conversation's normal KV cache is still used within that generation.
-The most recent fully validated `(model, factored batch)` order is also cached;
-an identical recomposition applies that Gemma order directly without opening a
-new conversation. The cache is cleared when the model changes or the feature is
-disabled.
+## Model choice and limitations
 
-Reranking is fail-open. A missing model, disabled preference, invalid native
-response, unsupported ABI, LiteRT load/generation failure, or malformed model
-answer leaves the complete KenLM response unchanged. Failures are logged but
-do not change the core inference model's ready/error state.
+Gemma 3 1B IT was selected because it has a portable INT4 `.litertlm` artifact,
+multilingual coverage including Vietnamese, and a practical mobile footprint.
+Gemini Nano's foreground-app restriction is unsuitable for an IME; MediaPipe's
+generic text classifier needs a purpose-trained naturalness label model;
+PhoBERT pseudo-likelihood needs many masked forward passes; and BGE rerankers
+score query-document relevance rather than unconditional sentence naturalness.
 
-## Root cause and model research
+Gemma remains experimental: language-model likelihood is a useful naturalness
+signal, not a guarantee of the intended meaning. Representative Vietnamese
+evaluation should measure top-1 accuracy, reciprocal rank, cold/warm latency,
+memory, thermal load, and battery impact against the KenLM baseline. Increasing
+top-K improves coverage but increases the score tensor, KV branching cost, and
+latency.
 
-The original Android path returned KenLM's beam order directly. KenLM is an
-efficient 3-gram model, so its score sees only short local token history. It
-cannot reliably distinguish candidates that are locally plausible but differ
-in sentence-level grammar, semantics, or discourse coherence. The added stage
-lets a substantially broader pretrained language model make that final
-comparison without changing deterministic V7 candidate generation.
+## Native build and license
 
-The off-the-shelf options considered were:
+The build pins LiteRT-LM 0.15.0 commit
+`2117fc4314670e00047bc8469783f02a68c33f0c`, fetches its official accelerator
+libraries with Git LFS, and builds `//c:litert-lm` for Android with Bazel. A
+narrow carried patch removes an erroneous single-target guard and sizes the
+decoded-ID tensor from the C API's `num_targets`; LiteRT-LM's existing
+`Tasks::Score` implementation and tests already support multi-target batches.
 
-| Option | Decision |
-| --- | --- |
-| [Gemma 3 1B IT](https://ai.google.dev/gemma/docs/core/model_card_3) through [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM) | Selected. It is instruction-tuned, supports more than 140 languages, has a 32K-token context at this size, and has a ready portable INT4 `.litertlm` artifact. It offers a stronger accuracy starting point than the smaller 270M variant. |
-| [Gemini Nano Prompt API](https://developers.google.com/ml-kit/genai/prompt/android/get-started) | Rejected for this IME path. Its documented background-use restriction requires the calling app to be the top foreground application; while typing, the editor app rather than the IME package owns that position. Device availability is also narrower. |
-| [MediaPipe Text Classifier](https://developers.google.com/edge/mediapipe/solutions/text/text_classifier/android) | Rejected. It returns categories from a trained classifier (the example model is sentiment), not open-ended comparative sentence quality. |
-| [PhoBERT base v2](https://huggingface.co/vinai/phobert-base-v2) | Rejected for the initial Android implementation. It is a Vietnamese masked model that requires word segmentation and many pseudo-likelihood forward passes to score each complete candidate. |
-| [BGE reranker v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) | Rejected. It is a query-document relevance cross-encoder, not a sentence-naturalness model, and its 0.6B footprint is larger. |
+Required build tools are JDK 21, Go (to obtain pinned Bazelisk 1.26.0), Git
+LFS, Android NDK, Rust/cargo-ndk, Node, and Gradle. The native dependency graph
+uses substantial temporary disk space. `LITERT_LM_BAZEL_ROOT` may point its
+Bazel output tree at a larger volume:
 
-Gemma 3 1B IT is a practical first model, not proof of an accuracy gain on a
-particular V7 corpus. The feature is labeled experimental because quality must
-be measured on representative Vietnamese candidate sets and because generative
-listwise ranking can occasionally be unstable. The deterministic parser and
-fail-open policy contain that instability. A future evaluation should record
-top-1 accuracy, mean reciprocal rank, cold/warm latency, memory, and battery
-cost against the unchanged KenLM baseline.
+```sh
+ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" \
+LITERT_LM_BAZEL_ROOT=/path/with/space/litert-lm-bazel \
+  gradle -p ime-android assembleDebug
+```
 
-## Runtime and build constraints
+The GitHub build workflows reclaim their ephemeral runner's unused Docker,
+.NET, GHC, and Boost payloads before this build; they do not remove Android,
+Java, Node, Rust, Gradle, repository, model, or signing data.
 
-LiteRT-LM 0.15.0's Android AAR contains `arm64-v8a` and `x86_64` native
-libraries and is built as Java 21 bytecode. The Android build and both GitHub
-Actions workflows therefore use JDK 21. A 32-bit-only device can still use the
-normal KenLM IME, but experimental reranking fails open because LiteRT-LM has no
-matching native library in this artifact.
-
-The engine prefers GPU and otherwise uses up to four CPU workers. A GPU that
-initializes but fails during constrained generation is rejected for the
-installed model and the same batch is retried once on CPU. The engine uses a
-2,048-token cache limit (sufficient for the bounded factored batch while
-reducing KV allocation), a 32-token answer limit, temperature 0, a writable
-compilation cache, and a process-level model cache. LiteRT-LM's
-[Android API guide](https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md)
-documents the optional OpenCL manifest entries and CPU/GPU/NPU backends. Its
-[published Gemma 3 1B measurements](https://github.com/google-ai-edge/LiteRT-LM#supported-models-and-performance)
-show that GPU primarily accelerates long prompt prefill; decode speed can remain
-similar. NPU is not selected automatically because its native runtime remains
-vendor-specific rather than one broadly deployable application backend.
-LiteRT-LM documents that
-initialization can take up to roughly ten seconds; generation adds further
-per-request latency. This mode is intentionally opt-in and may be unsuitable
-for interactive typing on slower devices.
-
-The LiteRT-LM runtime is Apache-2.0. Its `LICENSE` and
-`THIRD_PARTY_NOTICE.txt` are extracted from the pinned Maven AAR and bundled in
-the APK under `assets/third-party/litert-lm/`. The separately downloaded Gemma
-weights retain the Gemma terms and are neither bundled in the APK nor included
-in Corresponding Source.
+LiteRT-LM is Apache-2.0. Its pinned `LICENSE` is bundled under
+`assets/third-party/litert-lm/`; upstream does not publish a
+`THIRD_PARTY_NOTICE.txt` at this revision. The source revision, build scripts,
+and batch patch are included in Corresponding Source.
 
 ## Verification
 
-`CandidateRerankProtocolTest` covers prompt escaping, malformed and partial
-answers, duplicate/out-of-range IDs, strict full-order application, shared
-context factoring, shuffled presentation, stable fallback order, and the
-eight-candidate cap. Android unit tests exercise the integration's compile-time LiteRT API
-contract without downloading gated model weights. A real-device acceptance
-test should install the generic model, compare enabled/disabled ordering, turn
-the feature off after a successful load to verify release, and test airplane
-mode to confirm that no network access is required.
+Automated checks cover the WebUI's five-item render cap, Java settings and
+lifecycle compilation, all Android unit tests, cross-compilation of the native
+scorer for all four Android Rust targets, and the signed APK build. Real-device
+acceptance must additionally compare enabled/disabled ordering, verify GPU and
+CPU labels, type during loading/ranking, replace/disable the model, and operate
+in airplane mode.

@@ -13,6 +13,10 @@ final class ImePreferences {
     private static final String RERANKER_MODEL_ID = "reranker_model_id";
     private static final String RERANKER_MODEL_NAME = "reranker_model_name";
     private static final String RERANKER_MODEL_SIZE = "reranker_model_size";
+    private static final String RERANKER_TOP_K = "reranker_top_k";
+    static final int DEFAULT_RERANKER_TOP_K = 50;
+    static final int MIN_RERANKER_TOP_K = 2;
+    static final int MAX_RERANKER_TOP_K = 100;
 
     private ImePreferences() {
     }
@@ -55,6 +59,22 @@ final class ImePreferences {
 
     static long getRerankerModelSize(Context context) {
         return get(context).getLong(RERANKER_MODEL_SIZE, -1L);
+    }
+
+    static int getRerankerTopK(Context context) {
+        int value = get(context).getInt(
+                RERANKER_TOP_K,
+                DEFAULT_RERANKER_TOP_K
+        );
+        return Math.max(MIN_RERANKER_TOP_K, Math.min(MAX_RERANKER_TOP_K, value));
+    }
+
+    static void setRerankerTopK(Context context, int topK) {
+        int value = Math.max(
+                MIN_RERANKER_TOP_K,
+                Math.min(MAX_RERANKER_TOP_K, topK)
+        );
+        get(context).edit().putInt(RERANKER_TOP_K, value).apply();
     }
 
     static void setRerankerModel(

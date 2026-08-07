@@ -16,12 +16,13 @@ Dictionary keyboard selection remained broken because Android can retain the las
 
 ## Experimental Android ML reranking
 
-The Android IME can optionally rerank KenLM's first 8 candidates with a
-user-installed Gemma 3 1B IT model through the native Android LiteRT-LM
-runtime before any result reaches the WebUI. It is disabled by default,
-on-device, Android-owned, deterministic at the decoding/protocol boundary, and
-fail-open to the original 100-candidate KenLM order. It does not add a Retrofit
-or other network client and does not move reranker inference into Rust.
+The Android IME can optionally rescore a configurable 2–100 leading KenLM
+candidates with a user-installed Gemma 3 1B IT model. Rust calls LiteRT-LM's
+native C scoring API and orders by normalized token log-likelihood before any
+result reaches the WebUI, which still displays only five. It is disabled by
+default, fully on-device, and fail-open to the original KenLM order. There is
+no Kotlin LiteRT engine, prompted ordinal generation, Retrofit, or network
+client.
 
 KenLM's 3-gram score sees short local context and previously flowed straight to
 the app, so locally plausible but sentence-level-incoherent candidates could
@@ -30,18 +31,16 @@ ranking limitation without changing V7 enumeration. Download, research,
 storage, licensing, latency, ABI, and validation details are documented in
 [`ime-android/docs/experimental-reranking.md`](ime-android/docs/experimental-reranking.md).
 
-LiteRT loading and generation run asynchronously so the WebView can continue
+LiteRT loading and scoring run asynchronously so the WebView can continue
 receiving keyboard events. The composition stays visible with an indeterminate
 progress bar and explicit loading/ranking/fallback state. New chords cancel an
 obsolete ranking. The single model prefers supported device GPUs and falls back
 to bounded parallel CPU workers; the app never duplicates the large model
 merely to rank requests concurrently.
 
-The opt-in model starts loading when the IME service starts, before the first
-chord. Each request sends the top eight candidates as one listwise batch and
-factors their shared prefix and suffix out of the alternatives, so repeated
-sentence context is processed once. LiteRT-LM 0.15 exposes no safe reusable
-prefix-KV snapshot or batch-of-prompts API; conversations remain isolated to
-avoid accumulating stale candidates, while the engine and compiled cache stay
-warm across requests. The last validated identical batch also reuses its Gemma
-order without another generation.
+The opt-in model starts loading when the IME service starts. Each request
+prefills the candidates' complete shared prefix once into an isolated KV cache,
+then scores every selected continuation in one native batch. Gemma replaces
+KenLM's order inside that pool; lower candidates stay stable. The app packages
+official 64-bit GPU/OpenCL/WebGPU accelerators, prefers GPU, and retries on the
+parallel CPU backend when necessary.

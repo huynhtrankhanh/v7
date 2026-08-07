@@ -4,6 +4,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-feature
+        android:name="android.hardware.vulkan.compute"
+        android:required="false" />
+    <uses-feature
+        android:glEsVersion="0x00030001"
+        android:required="false" />
 
     <application
         android:allowBackup="false"
