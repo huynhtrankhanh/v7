@@ -106,7 +106,7 @@ tasks.register("prepareLiteRtLm", Exec) {
     inputs.files(
             rootProject.file("LITERT_LM_REVISION"),
             rootProject.file("scripts/prepare-litert-lm.sh"),
-            rootProject.file("patches/litert-lm-batched-text-scoring.patch")
+            rootProject.file("patches/litert-lm-build.patch")
     )
     outputs.dir liteRtLmRoot
 }
@@ -122,7 +122,7 @@ tasks.register("buildLiteRtLm", Exec) {
     inputs.files(
             rootProject.file("LITERT_LM_REVISION"),
             rootProject.file("scripts/build-litert-lm.sh"),
-            rootProject.file("patches/litert-lm-batched-text-scoring.patch")
+            rootProject.file("patches/litert-lm-build.patch")
     )
     outputs.files(
             generatedNativeLibraries.map { it.file("arm64-v8a/liblitert-lm.so") },

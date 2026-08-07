@@ -17,5 +17,5 @@ git -C "$destination" reset --hard "$revision"
 git -C "$destination" clean -fdx
 git -C "$destination" lfs pull --include='prebuilt/android_arm64/**,prebuilt/android_x86_64/**'
 git -C "$destination" apply \
-  "$script_dir/../patches/litert-lm-batched-text-scoring.patch"
+  "$script_dir/../patches/litert-lm-build.patch"
 printf '%s\n' "$revision" > "$destination/.v7-prepared-revision"

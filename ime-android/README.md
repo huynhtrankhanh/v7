@@ -21,19 +21,20 @@ imports.
   an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
-- An optional experimental Android ML stage can rerank the first 8 of KenLM's
-  100 candidates with user-installed Gemma 3 1B IT through LiteRT-LM. It runs
-  in Android Java after JNI and before the WebUI callback; it has no Rust or
-  Retrofit implementation and fails open to the original KenLM order.
+- An optional experimental native ML stage can rescore a configurable 2–100
+  leading KenLM candidates with user-installed Gemma 3 1B IT through
+  LiteRT-LM. Rust owns scoring and reordering inside JNI; there is no managed
+  LiteRT or Retrofit implementation, and failures preserve KenLM order.
 - LiteRT requests use the non-blocking Android bridge. The raw composition and
   an indeterminate load/rerank progress bar remain live while the model works;
   a new chord cancels obsolete generation. Compatible devices use LiteRT-LM GPU
   acceleration first; unsupported devices fall back to bounded parallel CPU
   kernels rather than duplicate model instances.
-- The enabled model preloads when the IME service starts. Eight candidates are
-  sent in one listwise batch with shared prefix/suffix context factored once;
-  the persistent engine and compilation cache are reused between isolated
-  conversations.
+- The enabled model preloads when the IME service starts. Every selected
+  candidate uses an isolated one-target session so fixed batch-size-1 models
+  remain safe. Only the configured top-K prefix is reordered; later candidates
+  retain their KenLM positions. The engine and compilation cache persist across
+  requests.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.

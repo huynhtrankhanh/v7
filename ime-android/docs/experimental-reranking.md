@@ -48,8 +48,8 @@ redistribute Gemma weights; their use remains subject to the
 WebUI islands
   -> JNI/Rust/KenLM generates 100 candidates
   -> Rust finds the selected top-K candidates' complete shared prefix (possibly empty)
-  -> native LiteRT-LM prefills that prefix once (shared KV state)
-  -> one batched scoring call evaluates every candidate continuation
+  -> one isolated LiteRT-LM session prefills that prefix for each candidate
+  -> each session scores exactly one continuation (the upstream-safe batch size)
   -> Rust sorts by mean token log-likelihood, stably breaking ties by KenLM
   -> WebUI receives the complete reordered array and displays at most five
 ```
@@ -60,22 +60,26 @@ by the latter so short candidates do not win merely because they contain fewer
 tokens. Gemma is authoritative within the rescored pool—KenLM scores are not
 blended back in. Candidates below the selected depth retain their relative
 order. The WebUI remains capped at five visible candidates regardless of the
-scoring depth.
+scoring depth. If top-K is below five, only that shorter prefix is reordered;
+the remaining visible candidates keep their original KenLM positions.
 
 All LiteRT ownership is in `inference-rs/src/litert_reranker.rs`. There is no
 LiteRT Kotlin/Java engine, Retrofit client, HTTP request, prompt parser, or
 generated candidate-ID list. Android Java supplies settings and private paths
 through JNI and reports native loading/ranking/backend state.
 
-## KV reuse, batching, GPU, and responsiveness
+## Batch-size safety, isolation, GPU, and responsiveness
 
-For each candidate set, Rust creates one isolated scoring session, prefills the
-longest complete-word prefix once, then branches the whole selected pool in a
-single `RunTextScoring` batch. LiteRT-LM's session KV cache therefore avoids
-reprocessing shared sentence context while isolation prevents previous
-candidate sets from contaminating later inference. The engine and compiled
-kernel cache remain process-wide and are preloaded on a background executor
-when the IME starts, when the feature is enabled, and after model replacement.
+LiteRT-LM 0.15 explicitly supports one target per `RunTextScoring` call. Rust
+therefore creates an isolated session for each candidate, prefills the common
+complete-word prefix into that session, and scores exactly one continuation.
+This is correct for fixed batch-size-1 models as well as models whose tensors
+could support larger batches. A session is never reused for another candidate:
+scoring advances its KV/executor state, so reuse would incorrectly condition a
+later candidate on an earlier one. The model engine and compiled-kernel cache
+remain process-wide and preload on a background executor, but prefix prefill is
+intentionally repeated per candidate until upstream provides a safe KV clone
+or multi-target API.
 
 The app packages the pinned LiteRT-LM C shared library and its official GPU,
 OpenCL, and WebGPU accelerator libraries for `arm64-v8a` and `x86_64`.
@@ -84,7 +88,7 @@ does not sample tokens, saving about 44 MiB of uncompressed APK payload.
 The manifest advertises optional Vulkan compute/OpenGL ES support and permits
 optional vendor `libOpenCL.so`/`libvndksupport.so` access. Rust tries the GPU
 backend first. A GPU that cannot initialize or score is discarded and that
-batch is retried once with LiteRT-LM's parallel CPU backend. A 32-bit device
+candidate set is retried once with LiteRT-LM's parallel CPU backend. A 32-bit device
 continues to use KenLM but cannot enable this native reranker.
 
 Reranking uses the asynchronous Android bridge. Composition and keyboard input
@@ -116,8 +120,15 @@ chord arrives.
 KenLM itself is a fast 3-gram model and necessarily sees only short local
 history. The replacement keeps KenLM for enumeration and its inexpensive first
 pass, then uses the causal LM's actual token likelihood over broader context.
-One prefix prefill and one multi-candidate batch remove repeated work, and
-length normalization gives the raw scoring function a meaningful comparison.
+Length normalization gives the raw scoring function a meaningful comparison.
+
+An intermediate implementation removed LiteRT-LM's single-target guard and
+passed all selected candidates to `Tasks::Score`. That was unsafe: internal
+code contains batch-oriented loops, but the public session contract and many
+mobile model tensors remain fixed at batch size 1. Buffer resizing cannot make
+those model tensors batch-capable. The current implementation follows the
+public one-target contract and isolates every candidate, trading speed for
+correctness on all compatible models.
 
 ## Model choice and limitations
 
@@ -132,17 +143,17 @@ Gemma remains experimental: language-model likelihood is a useful naturalness
 signal, not a guarantee of the intended meaning. Representative Vietnamese
 evaluation should measure top-1 accuracy, reciprocal rank, cold/warm latency,
 memory, thermal load, and battery impact against the KenLM baseline. Increasing
-top-K improves coverage but increases the score tensor, KV branching cost, and
-latency.
+top-K improves coverage but increases latency approximately linearly because
+each candidate uses an isolated scoring session.
 
 ## Native build and license
 
 The build pins LiteRT-LM 0.15.0 commit
 `2117fc4314670e00047bc8469783f02a68c33f0c`, fetches its official accelerator
 libraries with Git LFS, and builds `//c:litert-lm` for Android with Bazel. A
-narrow carried patch removes an erroneous single-target guard and sizes the
-decoded-ID tensor from the C API's `num_targets`; LiteRT-LM's existing
-`Tasks::Score` implementation and tests already support multi-target batches.
+narrow build patch replaces an unavailable zlib.net archive URL with the same
+immutable official zlib 1.3.1 GitHub archive and its verified checksum. V7 does
+not patch or bypass LiteRT-LM's single-target scoring guard.
 
 Required build tools are JDK 21, Go (to obtain pinned Bazelisk 1.26.0), Git
 LFS, Android NDK, Rust/cargo-ndk, Node, and Gradle. The native dependency graph
@@ -162,7 +173,7 @@ Java, Node, Rust, Gradle, repository, model, or signing data.
 LiteRT-LM is Apache-2.0. Its pinned `LICENSE` is bundled under
 `assets/third-party/litert-lm/`; upstream does not publish a
 `THIRD_PARTY_NOTICE.txt` at this revision. The source revision, build scripts,
-and batch patch are included in Corresponding Source.
+and build patch are included in Corresponding Source.
 
 ## Verification
 

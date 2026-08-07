@@ -38,9 +38,11 @@ obsolete ranking. The single model prefers supported device GPUs and falls back
 to bounded parallel CPU workers; the app never duplicates the large model
 merely to rank requests concurrently.
 
-The opt-in model starts loading when the IME service starts. Each request
-prefills the candidates' complete shared prefix once into an isolated KV cache,
-then scores every selected continuation in one native batch. Gemma replaces
-KenLM's order inside that pool; lower candidates stay stable. The app packages
+The opt-in model starts loading when the IME service starts. Each selected
+candidate gets an isolated native scoring session that prefills the common
+prefix and scores exactly one continuation, honoring LiteRT-LM's batch-size-1
+contract on every compatible model. Gemma replaces KenLM's order only inside
+the configured top-K pool; lower candidates—including visible candidates when
+top-K is below five—stay in their original KenLM positions. The app packages
 official 64-bit GPU/OpenCL/WebGPU accelerators, prefers GPU, and retries on the
 parallel CPU backend when necessary.

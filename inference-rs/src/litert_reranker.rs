@@ -310,6 +310,13 @@ pub fn rerank_json(response_body: &str, config: &Config<'_>) -> Result<String> {
         Err(error) => return Err(error),
     };
 
+    apply_scored_prefix(candidates, &scores);
+    mark_ready(&guard);
+    Ok(response.to_string())
+}
+
+fn apply_scored_prefix(candidates: &mut [Value], scores: &[f32]) {
+    let count = scores.len().min(candidates.len());
     let mut order: Vec<usize> = (0..count).collect();
     order.sort_by(|left, right| {
         scores[*right]
@@ -321,8 +328,6 @@ pub fn rerank_json(response_body: &str, config: &Config<'_>) -> Result<String> {
     for (destination, source) in order.into_iter().enumerate() {
         candidates[destination] = original[source].clone();
     }
-    mark_ready(&guard);
-    Ok(response.to_string())
 }
 
 fn mark_ready(engine: &Option<CachedEngine>) {
@@ -409,6 +414,25 @@ fn score(
     update_status("ranking", "", &engine.backend);
     let prefix_len = shared_prefix_boundary(texts);
     let prefix = &texts[0][..prefix_len];
+    let mut scores = Vec::with_capacity(texts.len());
+    for (index, text) in texts.iter().enumerate() {
+        if cancellation_epoch() != config.cancellation_epoch {
+            anyhow::bail!("LiteRT-LM scoring request was superseded");
+        }
+        scores.push(
+            score_one(engine, config, prefix, &text[prefix_len..])
+                .with_context(|| format!("Unable to score candidate {index}"))?,
+        );
+    }
+    Ok(scores)
+}
+
+fn score_one(
+    engine: &mut CachedEngine,
+    config: &Config<'_>,
+    prefix: &str,
+    suffix: &str,
+) -> Result<f32> {
     let prefix_input =
         unsafe { (engine.api.input_create)(0, prefix.as_ptr().cast(), prefix.len()) };
     if prefix_input.is_null() {
@@ -451,41 +475,28 @@ fn score(
         if prefill_status != 0 {
             anyhow::bail!("LiteRT-LM shared-prefix prefill failed ({prefill_status})");
         }
-        let suffixes = texts
-            .iter()
-            .map(|text| CString::new(&text[prefix_len..]))
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let suffix_ptrs: Vec<*const c_char> = suffixes.iter().map(|value| value.as_ptr()).collect();
-        let responses = unsafe {
-            (engine.api.run_scoring)(session, suffix_ptrs.as_ptr(), suffix_ptrs.len(), true)
-        };
+        let suffix = CString::new(suffix)?;
+        let suffix_ptrs = [suffix.as_ptr()];
+        let responses = unsafe { (engine.api.run_scoring)(session, suffix_ptrs.as_ptr(), 1, true) };
         if responses.is_null() {
-            anyhow::bail!("LiteRT-LM batched text scoring returned no response");
+            anyhow::bail!("LiteRT-LM single-target scoring returned no response");
         }
         let scores_result = (|| {
             let count = unsafe { (engine.api.responses_count)(responses) };
-            if count as usize != texts.len() {
-                anyhow::bail!(
-                    "LiteRT-LM returned {count} scores for {} candidates",
-                    texts.len()
-                );
+            if count != 1 {
+                anyhow::bail!("LiteRT-LM returned {count} scores for one candidate");
             }
-            let mut scores = Vec::with_capacity(texts.len());
-            for index in 0..count {
-                let has_score = unsafe { (engine.api.responses_has_score)(responses, index) };
-                let has_length =
-                    unsafe { (engine.api.responses_has_token_length)(responses, index) };
-                if !has_score || !has_length {
-                    anyhow::bail!("LiteRT-LM omitted score metadata for candidate {index}");
-                }
-                let total = unsafe { (engine.api.responses_score)(responses, index) };
-                let tokens = unsafe { (engine.api.responses_token_length)(responses, index) };
-                if !total.is_finite() || tokens <= 0 {
-                    anyhow::bail!("LiteRT-LM returned an invalid score for candidate {index}");
-                }
-                scores.push(total / tokens as f32);
+            let has_score = unsafe { (engine.api.responses_has_score)(responses, 0) };
+            let has_length = unsafe { (engine.api.responses_has_token_length)(responses, 0) };
+            if !has_score || !has_length {
+                anyhow::bail!("LiteRT-LM omitted score metadata");
             }
-            Ok(scores)
+            let total = unsafe { (engine.api.responses_score)(responses, 0) };
+            let tokens = unsafe { (engine.api.responses_token_length)(responses, 0) };
+            if !total.is_finite() || tokens <= 0 {
+                anyhow::bail!("LiteRT-LM returned an invalid score");
+            }
+            Ok(total / tokens as f32)
         })();
         unsafe { (engine.api.responses_delete)(responses) };
         scores_result
@@ -542,7 +553,30 @@ pub fn record_error(error: &anyhow::Error) {
 
 #[cfg(test)]
 mod tests {
-    use super::shared_prefix_boundary;
+    use super::{apply_scored_prefix, shared_prefix_boundary};
+    use serde_json::json;
+
+    #[test]
+    fn reranking_a_short_prefix_never_moves_the_visible_tail() {
+        let mut candidates = vec![
+            json!(["a"]),
+            json!(["b"]),
+            json!(["c"]),
+            json!(["d"]),
+            json!(["e"]),
+        ];
+        apply_scored_prefix(&mut candidates, &[0.1, 0.9]);
+        assert_eq!(
+            candidates,
+            vec![
+                json!(["b"]),
+                json!(["a"]),
+                json!(["c"]),
+                json!(["d"]),
+                json!(["e"])
+            ]
+        );
+    }
 
     #[test]
     fn shared_prefix_stops_at_complete_word() {
