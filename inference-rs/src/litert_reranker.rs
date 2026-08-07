@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use libloading::Library;
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::ffi::{c_char, c_int, c_void, CString};
+use std::ffi::{c_char, c_int, c_void, CStr, CString};
 use std::path::Path;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering as AtomicOrdering};
@@ -18,10 +18,12 @@ type SettingsSetBool = unsafe extern "C" fn(*mut c_void, bool);
 type SettingsSetString = unsafe extern "C" fn(*mut c_void, *const c_char);
 type EngineCreate = unsafe extern "C" fn(*const c_void) -> *mut c_void;
 type EngineDelete = unsafe extern "C" fn(*mut c_void);
+type GetLastError = unsafe extern "C" fn() -> *const c_char;
 type SessionConfigCreate = unsafe extern "C" fn() -> *mut c_void;
 type SessionConfigDelete = unsafe extern "C" fn(*mut c_void);
 type SessionConfigSetBool = unsafe extern "C" fn(*mut c_void, bool);
 type SessionCreate = unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void;
+type SessionClone = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
 type SessionDelete = unsafe extern "C" fn(*mut c_void);
 type SessionCancel = unsafe extern "C" fn(*mut c_void);
 type InputCreate = unsafe extern "C" fn(c_int, *const c_void, usize) -> *mut c_void;
@@ -46,10 +48,12 @@ struct Api {
     settings_set_ringbuffer: SettingsSetBool,
     engine_create: EngineCreate,
     engine_delete: EngineDelete,
+    get_last_error: GetLastError,
     session_config_create: SessionConfigCreate,
     session_config_delete: SessionConfigDelete,
     session_config_set_apply_template: SessionConfigSetBool,
     session_create: SessionCreate,
+    session_clone: SessionClone,
     session_delete: SessionDelete,
     session_cancel: SessionCancel,
     input_create: InputCreate,
@@ -110,6 +114,7 @@ impl Api {
             ),
             engine_create: symbol!("litert_lm_engine_create", EngineCreate),
             engine_delete: symbol!("litert_lm_engine_delete", EngineDelete),
+            get_last_error: symbol!("litert_lm_v7_get_last_error", GetLastError),
             session_config_create: symbol!("litert_lm_session_config_create", SessionConfigCreate),
             session_config_delete: symbol!("litert_lm_session_config_delete", SessionConfigDelete),
             session_config_set_apply_template: symbol!(
@@ -117,6 +122,7 @@ impl Api {
                 SessionConfigSetBool
             ),
             session_create: symbol!("litert_lm_engine_create_session", SessionCreate),
+            session_clone: symbol!("litert_lm_session_clone", SessionClone),
             session_delete: symbol!("litert_lm_session_delete", SessionDelete),
             session_cancel: symbol!("litert_lm_session_cancel_process", SessionCancel),
             input_create: symbol!("litert_lm_input_data_create", InputCreate),
@@ -163,6 +169,9 @@ struct Status {
     state: String,
     error: String,
     backend: String,
+    warning: String,
+    completed: usize,
+    total: usize,
 }
 
 static ENGINE: OnceLock<Mutex<Option<CachedEngine>>> = OnceLock::new();
@@ -181,6 +190,30 @@ fn update_status(state: &str, error: &str, backend: &str) {
         value.state = state.to_owned();
         value.error = error.to_owned();
         value.backend = backend.to_owned();
+        value.completed = 0;
+        value.total = 0;
+    }
+}
+
+fn update_ranking_progress(completed: usize, total: usize, backend: &str) {
+    if let Ok(mut value) = status().lock() {
+        value.state = "ranking".to_owned();
+        value.error.clear();
+        value.backend = backend.to_owned();
+        value.completed = completed.min(total);
+        value.total = total;
+    }
+}
+
+fn set_backend_warning(warning: String) {
+    if let Ok(mut value) = status().lock() {
+        value.warning = warning;
+    }
+}
+
+fn clear_backend_warning() {
+    if let Ok(mut value) = status().lock() {
+        value.warning.clear();
     }
 }
 
@@ -200,7 +233,10 @@ pub fn status_json(enabled: bool, has_model: bool) -> String {
     serde_json::json!({
         "state": state,
         "error": value.as_ref().map(|value| value.error.as_str()).unwrap_or(""),
-        "backend": value.as_ref().map(|value| value.backend.as_str()).unwrap_or("")
+        "backend": value.as_ref().map(|value| value.backend.as_str()).unwrap_or(""),
+        "warning": value.as_ref().map(|value| value.warning.as_str()).unwrap_or(""),
+        "completed": value.as_ref().map(|value| value.completed).unwrap_or(0),
+        "total": value.as_ref().map(|value| value.total).unwrap_or(0)
     })
     .to_string()
 }
@@ -241,6 +277,7 @@ pub struct Config<'a> {
 pub fn preload(config: &Config<'_>) -> Result<()> {
     if !config.enabled {
         *ENGINE.get_or_init(|| Mutex::new(None)).lock().unwrap() = None;
+        clear_backend_warning();
         update_status("disabled", "", "");
         return Ok(());
     }
@@ -249,13 +286,17 @@ pub fn preload(config: &Config<'_>) -> Result<()> {
         Ok(_) => Ok(()),
         Err(gpu_error) => {
             *guard = None;
-            ensure_engine(&mut guard, config, true)
-                .map(|_| ())
-                .map_err(|cpu_error| {
-                    anyhow::anyhow!(
-                        "GPU preload failed: {gpu_error}; CPU fallback failed: {cpu_error}"
-                    )
-                })
+            match ensure_engine(&mut guard, config, true) {
+                Ok(_) => {
+                    set_backend_warning(format!(
+                        "GPU initialization failed: {gpu_error}; using CPU"
+                    ));
+                    Ok(())
+                }
+                Err(cpu_error) => Err(anyhow::anyhow!(
+                    "GPU preload failed: {gpu_error}; CPU fallback failed: {cpu_error}"
+                )),
+            }
         }
     }
 }
@@ -295,7 +336,10 @@ pub fn rerank_json(response_body: &str, config: &Config<'_>) -> Result<String> {
         Err(gpu_error) if !using_cached_cpu => {
             *guard = None;
             match score(&mut guard, config, &texts, true) {
-                Ok(scores) => scores,
+                Ok(scores) => {
+                    set_backend_warning(format!("GPU scoring failed: {gpu_error}; using CPU"));
+                    scores
+                }
                 Err(_) if cancellation_epoch() != config.cancellation_epoch => {
                     mark_ready(&guard);
                     return Ok(response_body.to_owned());
@@ -357,6 +401,9 @@ fn ensure_engine<'a>(
     force_cpu: bool,
 ) -> Result<&'a mut CachedEngine> {
     let backend = if force_cpu { "cpu" } else { "gpu" };
+    if !force_cpu {
+        clear_backend_warning();
+    }
     let library_path = Path::new(config.library_dir).join("liblitert-lm.so");
     let library_path_text = library_path.to_string_lossy().into_owned();
     let reusable = slot.as_ref().is_some_and(|current| {
@@ -391,7 +438,8 @@ fn ensure_engine<'a>(
     let engine = unsafe { (api.engine_create)(settings) };
     unsafe { (api.settings_delete)(settings) };
     if engine.is_null() {
-        anyhow::bail!("LiteRT-LM could not initialize the {backend} backend");
+        let detail = last_error(&api);
+        anyhow::bail!("LiteRT-LM could not initialize the {backend} backend: {detail}");
     }
     *slot = Some(CachedEngine {
         api,
@@ -411,28 +459,9 @@ fn score(
     force_cpu: bool,
 ) -> Result<Vec<f32>> {
     let engine = ensure_engine(slot, config, force_cpu)?;
-    update_status("ranking", "", &engine.backend);
+    update_ranking_progress(0, texts.len(), &engine.backend);
     let prefix_len = shared_prefix_boundary(texts);
     let prefix = &texts[0][..prefix_len];
-    let mut scores = Vec::with_capacity(texts.len());
-    for (index, text) in texts.iter().enumerate() {
-        if cancellation_epoch() != config.cancellation_epoch {
-            anyhow::bail!("LiteRT-LM scoring request was superseded");
-        }
-        scores.push(
-            score_one(engine, config, prefix, &text[prefix_len..])
-                .with_context(|| format!("Unable to score candidate {index}"))?,
-        );
-    }
-    Ok(scores)
-}
-
-fn score_one(
-    engine: &mut CachedEngine,
-    config: &Config<'_>,
-    prefix: &str,
-    suffix: &str,
-) -> Result<f32> {
     let prefix_input =
         unsafe { (engine.api.input_create)(0, prefix.as_ptr().cast(), prefix.len()) };
     if prefix_input.is_null() {
@@ -444,75 +473,121 @@ fn score_one(
         anyhow::bail!("LiteRT-LM could not create a scoring session config");
     }
     unsafe { (engine.api.session_config_set_apply_template)(session_config, false) };
-    let session = unsafe { (engine.api.session_create)(engine.engine, session_config) };
+    let base_session = unsafe { (engine.api.session_create)(engine.engine, session_config) };
     unsafe { (engine.api.session_config_delete)(session_config) };
-    if session.is_null() {
+    if base_session.is_null() {
         unsafe { (engine.api.input_delete)(prefix_input) };
         anyhow::bail!("LiteRT-LM could not create a scoring session");
     }
-    let cancelled_before_start = {
-        let _lifetime = ACTIVE_SESSION_LIFETIME
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if cancellation_epoch() != config.cancellation_epoch {
-            true
-        } else {
-            ACTIVE_SESSION.store(session, AtomicOrdering::Release);
-            false
-        }
-    };
+    let cancelled_before_start = !activate_session(base_session, config.cancellation_epoch);
     if cancelled_before_start {
         unsafe {
             (engine.api.input_delete)(prefix_input);
-            (engine.api.session_delete)(session);
+            (engine.api.session_delete)(base_session);
         }
         anyhow::bail!("LiteRT-LM scoring request was superseded");
     }
 
     let result = (|| {
         let inputs = [prefix_input as *const c_void];
-        let prefill_status = unsafe { (engine.api.run_prefill)(session, inputs.as_ptr(), 1) };
+        let prefill_status = unsafe { (engine.api.run_prefill)(base_session, inputs.as_ptr(), 1) };
         if prefill_status != 0 {
             anyhow::bail!("LiteRT-LM shared-prefix prefill failed ({prefill_status})");
         }
-        let suffix = CString::new(suffix)?;
-        let suffix_ptrs = [suffix.as_ptr()];
-        let responses = unsafe { (engine.api.run_scoring)(session, suffix_ptrs.as_ptr(), 1, true) };
-        if responses.is_null() {
-            anyhow::bail!("LiteRT-LM single-target scoring returned no response");
+        let mut scores = Vec::with_capacity(texts.len());
+        for (index, text) in texts.iter().enumerate() {
+            if cancellation_epoch() != config.cancellation_epoch {
+                anyhow::bail!("LiteRT-LM scoring request was superseded");
+            }
+            if !activate_session(base_session, config.cancellation_epoch) {
+                anyhow::bail!("LiteRT-LM scoring request was superseded");
+            }
+            let cloned_session = unsafe { (engine.api.session_clone)(base_session) };
+            if cloned_session.is_null() {
+                anyhow::bail!(
+                    "LiteRT-LM could not clone the prefetched scoring session: {}",
+                    last_error(&engine.api)
+                );
+            }
+            if !activate_session(cloned_session, config.cancellation_epoch) {
+                unsafe { (engine.api.session_delete)(cloned_session) };
+                anyhow::bail!("LiteRT-LM scoring request was superseded");
+            }
+            let score = score_one(engine, cloned_session, &text[prefix_len..])
+                .with_context(|| format!("Unable to score candidate {index}"));
+            clear_active_session();
+            unsafe { (engine.api.session_delete)(cloned_session) };
+            scores.push(score?);
+            update_ranking_progress(scores.len(), texts.len(), &engine.backend);
         }
-        let scores_result = (|| {
-            let count = unsafe { (engine.api.responses_count)(responses) };
-            if count != 1 {
-                anyhow::bail!("LiteRT-LM returned {count} scores for one candidate");
-            }
-            let has_score = unsafe { (engine.api.responses_has_score)(responses, 0) };
-            let has_length = unsafe { (engine.api.responses_has_token_length)(responses, 0) };
-            if !has_score || !has_length {
-                anyhow::bail!("LiteRT-LM omitted score metadata");
-            }
-            let total = unsafe { (engine.api.responses_score)(responses, 0) };
-            let tokens = unsafe { (engine.api.responses_token_length)(responses, 0) };
-            if !total.is_finite() || tokens <= 0 {
-                anyhow::bail!("LiteRT-LM returned an invalid score");
-            }
-            Ok(total / tokens as f32)
-        })();
-        unsafe { (engine.api.responses_delete)(responses) };
-        scores_result
+        Ok(scores)
     })();
 
-    {
-        let _lifetime = ACTIVE_SESSION_LIFETIME
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        ACTIVE_SESSION.store(ptr::null_mut(), AtomicOrdering::Release);
-    }
+    clear_active_session();
     unsafe {
         (engine.api.input_delete)(prefix_input);
-        (engine.api.session_delete)(session);
+        (engine.api.session_delete)(base_session);
     }
     result
+}
+
+fn score_one(engine: &CachedEngine, session: *mut c_void, suffix: &str) -> Result<f32> {
+    let suffix = CString::new(suffix)?;
+    let suffix_ptrs = [suffix.as_ptr()];
+    let responses = unsafe { (engine.api.run_scoring)(session, suffix_ptrs.as_ptr(), 1, true) };
+    if responses.is_null() {
+        anyhow::bail!("LiteRT-LM single-target scoring returned no response");
+    }
+    let score_result = (|| {
+        let count = unsafe { (engine.api.responses_count)(responses) };
+        if count != 1 {
+            anyhow::bail!("LiteRT-LM returned {count} scores for one candidate");
+        }
+        let has_score = unsafe { (engine.api.responses_has_score)(responses, 0) };
+        let has_length = unsafe { (engine.api.responses_has_token_length)(responses, 0) };
+        if !has_score || !has_length {
+            anyhow::bail!("LiteRT-LM omitted score metadata");
+        }
+        let total = unsafe { (engine.api.responses_score)(responses, 0) };
+        let tokens = unsafe { (engine.api.responses_token_length)(responses, 0) };
+        if !total.is_finite() || tokens <= 0 {
+            anyhow::bail!("LiteRT-LM returned an invalid score");
+        }
+        Ok(total / tokens as f32)
+    })();
+    unsafe { (engine.api.responses_delete)(responses) };
+    score_result
+}
+
+fn activate_session(session: *mut c_void, expected_epoch: usize) -> bool {
+    let _lifetime = ACTIVE_SESSION_LIFETIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if cancellation_epoch() != expected_epoch {
+        return false;
+    }
+    ACTIVE_SESSION.store(session, AtomicOrdering::Release);
+    true
+}
+
+fn clear_active_session() {
+    let _lifetime = ACTIVE_SESSION_LIFETIME
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ACTIVE_SESSION.store(ptr::null_mut(), AtomicOrdering::Release);
+}
+
+fn last_error(api: &Api) -> String {
+    let error = unsafe { (api.get_last_error)() };
+    if error.is_null() {
+        return "no native error detail was provided".to_owned();
+    }
+    let detail = unsafe { CStr::from_ptr(error) }.to_string_lossy();
+    if detail.is_empty() {
+        "no native error detail was provided".to_owned()
+    } else {
+        detail.into_owned()
+    }
 }
 
 fn shared_prefix_boundary(texts: &[String]) -> usize {

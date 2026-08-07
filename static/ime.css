@@ -196,6 +196,12 @@ button {
   width: 45%;
 }
 
+.ime-inference-progress.determinate::after {
+  animation: none;
+  transform: none;
+  width: var(--ime-inference-progress, 0%);
+}
+
 @keyframes ime-inference-progress {
   from {
     transform: translateX(-110%);
