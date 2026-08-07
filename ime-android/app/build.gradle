@@ -1,5 +1,11 @@
 plugins { id "com.android.application" }
 
+def liteRtLmVersion = "0.15.0"
+
+configurations {
+    liteRtLmNotices
+}
+
 def suppliedVersionName = providers.gradleProperty("v7ImeVersion")
         .orElse("1.0.0")
         .get()
@@ -14,6 +20,11 @@ def suppliedSigningStore = System.getenv("SIGNING_STORE_FILE")
 android {
     namespace "com.huynhtrankhanh.v7ime"
     compileSdk 35
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
 
     defaultConfig {
         applicationId "com.huynhtrankhanh.v7ime"
@@ -30,6 +41,7 @@ android {
                     "generated/strippedPloverWeb"
             )
             assets.srcDir layout.buildDirectory.dir("generated/sourceArchive")
+            assets.srcDir layout.buildDirectory.dir("generated/liteRtLmNotices")
             jniLibs.srcDir layout.buildDirectory.dir("generated/nativeJniLibs")
         }
     }
@@ -70,6 +82,28 @@ def cargoTargetDirectory = layout.buildDirectory.dir("rust-target")
 def generatedSourceArchive = layout.buildDirectory.file(
         "generated/sourceArchive/v7-ime-source.zip"
 )
+def generatedLiteRtLmNotices = layout.buildDirectory.dir(
+        "generated/liteRtLmNotices/third-party/litert-lm"
+)
+def liteRtLmNoticeTrees = configurations.liteRtLmNotices.elements.map {
+    elements -> elements.collect { element -> zipTree(element.asFile) }
+}
+
+tasks.register("extractLiteRtLmNotices", Sync) {
+    from(liteRtLmNoticeTrees) {
+        include "LICENSE"
+        include "THIRD_PARTY_NOTICE.txt"
+        filePermissions {
+            user {
+                read = true
+                write = true
+            }
+            group.read = true
+            other.read = true
+        }
+    }
+    into generatedLiteRtLmNotices
+}
 
 tasks.register("buildWebUi", Exec) {
     workingDir webRoot
@@ -221,6 +255,7 @@ tasks.register("buildSourceArchive", Exec) {
 }
 
 tasks.named("preBuild").configure {
+    dependsOn "extractLiteRtLmNotices"
     dependsOn "syncWebUi"
     dependsOn "buildStrippedPloverWeb"
     dependsOn "buildNativeInference"
@@ -228,6 +263,12 @@ tasks.named("preBuild").configure {
 }
 
 dependencies {
+    implementation "com.google.ai.edge.litertlm:litertlm-android:${liteRtLmVersion}"
+    liteRtLmNotices(
+            "com.google.ai.edge.litertlm:litertlm-android:${liteRtLmVersion}"
+    ) {
+        transitive = false
+    }
     implementation "androidx.javascriptengine:javascriptengine:1.1.0"
     implementation "androidx.webkit:webkit:1.15.0"
     implementation "androidx.work:work-runtime:2.11.2"

@@ -11,6 +11,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -27,8 +28,15 @@ public class SettingsActivity extends Activity {
     private static final int SAVE_SOURCE_REQUEST = 2;
     private static final int SAVE_APP_DATA_REQUEST = 3;
     private static final int CHOOSE_APP_DATA_REQUEST = 4;
+    private static final int CHOOSE_RERANKER_MODEL_REQUEST = 5;
+    private static final String RERANKER_MODEL_PAGE =
+            "https://huggingface.co/litert-community/Gemma3-1B-IT";
 
     private TextView modelStatus;
+    private TextView rerankerModelStatus;
+    private CheckBox enableExperimentalReranker;
+    private Button chooseRerankerModel;
+    private boolean updatingRerankerControls;
     private Button exportAppData;
     private Button importAppData;
     private static final ExecutorService IO_EXECUTOR =
@@ -41,7 +49,13 @@ public class SettingsActivity extends Activity {
         setTitle(R.string.settings_title);
 
         modelStatus = findViewById(R.id.model_status);
+        rerankerModelStatus = findViewById(R.id.reranker_model_status);
+        enableExperimentalReranker = findViewById(
+                R.id.enable_experimental_reranker
+        );
+        chooseRerankerModel = findViewById(R.id.choose_reranker_model);
         Button chooseModel = findViewById(R.id.choose_model);
+        Button openRerankerModelPage = findViewById(R.id.open_reranker_model_page);
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         exportAppData = findViewById(R.id.export_app_data);
         importAppData = findViewById(R.id.import_app_data);
@@ -50,8 +64,35 @@ public class SettingsActivity extends Activity {
         Button choose = findViewById(R.id.choose_keyboard);
 
         updateModelStatus();
+        updateRerankerStatus();
 
         chooseModel.setOnClickListener(view -> chooseModel());
+        openRerankerModelPage.setOnClickListener(view -> startActivity(
+                new Intent(Intent.ACTION_VIEW, Uri.parse(RERANKER_MODEL_PAGE))
+        ));
+        chooseRerankerModel.setOnClickListener(view -> chooseRerankerModel());
+        enableExperimentalReranker.setOnCheckedChangeListener((button, checked) -> {
+            if (updatingRerankerControls) {
+                return;
+            }
+            if (checked && !RerankerModelStore.hasModel(this)) {
+                updatingRerankerControls = true;
+                button.setChecked(false);
+                updatingRerankerControls = false;
+                Toast.makeText(
+                        this,
+                        R.string.reranker_model_required,
+                        Toast.LENGTH_LONG
+                ).show();
+                return;
+            }
+            ImePreferences.setExperimentalRerankerEnabled(this, checked);
+            if (!checked) {
+                IO_EXECUTOR.execute(
+                        () -> AndroidCandidateReranker.releaseIfUnavailable(this)
+                );
+            }
+        });
         manageDictionaries.setOnClickListener(view -> startActivity(
                 new Intent(this, DictionaryManagementActivity.class)
         ));
@@ -79,6 +120,17 @@ public class SettingsActivity extends Activity {
                 )
                 .setType("application/octet-stream");
         startActivityForResult(intent, CHOOSE_MODEL_REQUEST);
+    }
+
+    private void chooseRerankerModel() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                )
+                .setType("application/octet-stream");
+        startActivityForResult(intent, CHOOSE_RERANKER_MODEL_REQUEST);
     }
 
     private void chooseSourceDestination() {
@@ -124,6 +176,8 @@ public class SettingsActivity extends Activity {
                 Toast.makeText(this, R.string.model_permission_failed, Toast.LENGTH_LONG)
                         .show();
             }
+        } else if (requestCode == CHOOSE_RERANKER_MODEL_REQUEST) {
+            installRerankerModel(uri);
         } else if (requestCode == SAVE_SOURCE_REQUEST) {
             saveSourceArchive(uri);
         } else if (requestCode == SAVE_APP_DATA_REQUEST) {
@@ -139,6 +193,88 @@ public class SettingsActivity extends Activity {
                     )
                     .show();
         }
+    }
+
+    private void installRerankerModel(Uri uri) {
+        try {
+            getContentResolver().takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+            );
+        } catch (SecurityException ignored) {
+            // The private copy does not depend on a retained provider grant.
+        }
+        setRerankerBusy(true);
+        IO_EXECUTOR.execute(() -> {
+            try {
+                RerankerModelStore.InstalledModel installed =
+                        RerankerModelStore.install(this, uri);
+                String modelId = uri + ":" + installed.size + ":" + System.nanoTime();
+                ImePreferences.setRerankerModel(
+                        this,
+                        uri,
+                        modelId,
+                        installed.displayName,
+                        installed.size
+                );
+                runOnUiThread(() -> {
+                    setRerankerBusy(false);
+                    updateRerankerStatus();
+                    Toast.makeText(
+                            this,
+                            R.string.reranker_model_selected,
+                            Toast.LENGTH_LONG
+                    ).show();
+                });
+            } catch (IOException error) {
+                runOnUiThread(() -> {
+                    setRerankerBusy(false);
+                    updateRerankerStatus();
+                    Toast.makeText(
+                            this,
+                            getString(
+                                    R.string.reranker_model_install_failed,
+                                    messageFor(error)
+                            ),
+                            Toast.LENGTH_LONG
+                    ).show();
+                });
+            }
+        });
+    }
+
+    private void setRerankerBusy(boolean busy) {
+        chooseRerankerModel.setEnabled(!busy);
+        enableExperimentalReranker.setEnabled(!busy);
+        if (busy) {
+            rerankerModelStatus.setText(R.string.reranker_model_copying);
+        }
+    }
+
+    private void updateRerankerStatus() {
+        boolean hasModel = RerankerModelStore.hasModel(this);
+        boolean requested = ImePreferences.isExperimentalRerankerEnabled(this);
+        boolean enabled = requested && hasModel;
+        if (!hasModel && requested) {
+            ImePreferences.setExperimentalRerankerEnabled(this, false);
+        }
+        updatingRerankerControls = true;
+        enableExperimentalReranker.setChecked(enabled);
+        updatingRerankerControls = false;
+        if (!hasModel) {
+            rerankerModelStatus.setText(R.string.no_reranker_model_selected);
+            return;
+        }
+        String name = ImePreferences.getRerankerModelName(this);
+        if (TextUtils.isEmpty(name)) {
+            name = "model.litertlm";
+        }
+        long size = ImePreferences.getRerankerModelSize(this);
+        rerankerModelStatus.setText(
+                size < 0
+                        ? name
+                        : getString(R.string.model_status_with_size, name, formatBytes(size))
+        );
     }
 
     private void updateModelStatus() {

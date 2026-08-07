@@ -853,6 +853,23 @@ public class V7ImeService extends InputMethodService {
             Log.e(LOG_TAG, "Local inference failed", error);
         }
 
+        if (errorMessage.isEmpty()) {
+            try {
+                responseBody = AndroidCandidateReranker.rerankIfEnabled(
+                        this,
+                        responseBody
+                );
+            } catch (Exception | LinkageError rerankerError) {
+                // Experimental ML must never make the core IME unavailable.
+                Log.w(
+                        LOG_TAG,
+                        "Experimental Android candidate reranking failed; "
+                                + "keeping the KenLM order",
+                        rerankerError
+                );
+            }
+        }
+
         if (latestInferenceRequestId.get() == requestId) {
             inferenceModelError = errorMessage;
             publishInferenceModelState(

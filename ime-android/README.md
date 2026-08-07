@@ -21,6 +21,10 @@ imports.
   an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
+- An optional experimental Android ML stage can rerank the first 50 of KenLM's
+  100 candidates with user-installed Gemma 3 1B IT through LiteRT-LM. It runs
+  in Android Java after JNI and before the WebUI callback; it has no Rust or
+  Retrofit implementation and fails open to the original KenLM order.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
@@ -92,6 +96,9 @@ keyboard settings. The native settings activity includes:
 
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
+- an off-by-default experimental LiteRT-LM reranker toggle, a direct link to
+  the gated Gemma download, and a `.litertlm` installer that makes an atomic
+  private no-backup copy;
 - a full-screen Stripped Plover dictionary manager opened from settings,
   reusing a phone-friendly browser UI without an Activity action bar or
   nesting editable fields inside the IME;
@@ -116,6 +123,10 @@ See [Bundled Stripped Plover runtime](docs/bundled-stripped-plover.md) for the
 pinned external-source build, separate engine WebView, background JavaScript
 sandbox, typechecked Node compatibility surface, native SQLite implementation,
 and artifact licensing boundary.
+
+See [Experimental on-device candidate reranking](docs/experimental-reranking.md)
+for model-download instructions, the Android-only data path, model-selection
+research, failure policy, performance caveats, licensing, and validation.
 
 The bundled Android distribution, including the APK and its Stripped Plover
 runtime, is conveyed as a combined work under GPL-3.0-or-later. The APK bundles
@@ -158,10 +169,12 @@ While Stripped Plover is active, the composition interface collapses to a
 
 ## Build
 
-The Android build invokes the root WebUI build, fetches and browser-bundles the
+The Android build uses JDK 21 because the pinned LiteRT-LM Android artifact is
+published as Java 21 bytecode. It invokes the root WebUI build, fetches and
+browser-bundles the
 pinned Stripped Plover revision, compiles Rust/KenLM for Android, and creates
 the source ZIP asset. Install the root JavaScript dependencies, Rust 1.88,
-`cargo-ndk`, Android NDK 27.2.12479018, and Gradle 8.9:
+`cargo-ndk`, JDK 21, Android NDK 27.2.12479018, and Gradle 8.9:
 
 ```sh
 npm ci
