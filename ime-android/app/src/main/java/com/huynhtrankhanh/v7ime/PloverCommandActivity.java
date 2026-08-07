@@ -10,13 +10,13 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -41,6 +41,9 @@ public class PloverCommandActivity extends Activity {
     private FrameLayout rootView;
     private ScrollView scrollView;
     private final List<View> focusOrder = new ArrayList<>();
+    private final List<RadioButton> dictionaryChoices = new ArrayList<>();
+    private final List<String> writableDictionaries = new ArrayList<>();
+    private RadioGroup dictionaryGroup;
     private int commandGeneration = 0;
 
     @Override
@@ -78,6 +81,9 @@ public class PloverCommandActivity extends Activity {
         commandGeneration += 1;
         content.removeAllViews();
         focusOrder.clear();
+        dictionaryChoices.clear();
+        writableDictionaries.clear();
+        dictionaryGroup = null;
 
         String action = intent.getAction();
         String argument = intent.getStringExtra(EXTRA_ARGUMENT);
@@ -106,6 +112,11 @@ public class PloverCommandActivity extends Activity {
                     && event.getRepeatCount() == 0) {
                 moveFocus(event.isShiftPressed());
             }
+            return true;
+        }
+        if (event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() == 0
+                && selectDictionaryByShortcut(event)) {
             return true;
         }
         return super.dispatchKeyEvent(event);
@@ -212,37 +223,16 @@ public class PloverCommandActivity extends Activity {
         }
 
         TextView dictionaryLabel = addLabel(R.string.dictionary_label);
-        Spinner dictionaries = new Spinner(this);
-        registerFocusable(dictionaries);
-        content.addView(dictionaries, matchWrap());
+        dictionaryGroup = new RadioGroup(this);
+        dictionaryGroup.setId(View.generateViewId());
+        dictionaryGroup.setOrientation(RadioGroup.VERTICAL);
+        dictionaryLabel.setLabelFor(dictionaryGroup.getId());
+        content.addView(dictionaryGroup, matchWrap());
         TextView status = addStatus();
         Button add = addButton(R.string.add_translation_action);
         add.setEnabled(false);
         addCloseButton();
 
-        List<String> writableDictionaries = new ArrayList<>();
-        List<String> dictionaryLabels = new ArrayList<>();
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                this,
-                android.R.layout.simple_spinner_dropdown_item,
-                dictionaryLabels
-        );
-        dictionaries.setAdapter(adapter);
-        dictionaries.setOnKeyListener((view, keyCode, event) -> {
-            if (event.getAction() != KeyEvent.ACTION_DOWN
-                    || event.getRepeatCount() != 0) {
-                return false;
-            }
-            int index = DictionarySelectionShortcut.indexFor(
-                    keyCode,
-                    writableDictionaries.size()
-            );
-            if (index < 0) {
-                return false;
-            }
-            dictionaries.setSelection(index);
-            return true;
-        });
         status.setText(R.string.loading_dictionaries);
         request("get_dictionary_state", new JSONObject(), (result, error) -> {
             if (!error.isEmpty()) {
@@ -257,15 +247,12 @@ public class PloverCommandActivity extends Activity {
                     String identifier = dictionary.optString("identifier", "");
                     if (!identifier.isEmpty()) {
                         writableDictionaries.add(identifier);
-                        dictionaryLabels.add(
-                                writableDictionaries.size() + ". " + identifier
-                        );
                     }
                 }
             }
-            adapter.notifyDataSetChanged();
+            populateDictionaryChoices(status);
             boolean available = !writableDictionaries.isEmpty();
-            dictionaries.setEnabled(available);
+            dictionaryGroup.setEnabled(available);
             dictionaryLabel.setEnabled(available);
             add.setEnabled(available);
             status.setText(
@@ -282,7 +269,7 @@ public class PloverCommandActivity extends Activity {
                 status.setText(R.string.translation_fields_required);
                 return;
             }
-            int selectedPosition = dictionaries.getSelectedItemPosition();
+            int selectedPosition = selectedDictionaryIndex();
             if (selectedPosition < 0
                     || selectedPosition >= writableDictionaries.size()) {
                 status.setText(R.string.no_writable_dictionaries);
@@ -422,8 +409,10 @@ public class PloverCommandActivity extends Activity {
     }
 
     private EditText addField(int labelText, int hintText, int inputType) {
-        addLabel(labelText);
         EditText field = new EditText(this);
+        field.setId(View.generateViewId());
+        TextView label = addLabel(labelText);
+        label.setLabelFor(field.getId());
         field.setHint(hintText);
         field.setInputType(inputType);
         registerFocusable(field);
@@ -470,8 +459,69 @@ public class PloverCommandActivity extends Activity {
         TextView status = new TextView(this);
         status.setPadding(0, dp(14), 0, dp(8));
         status.setTextIsSelectable(true);
+        status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        registerFocusable(status);
         content.addView(status, matchWrap());
         return status;
+    }
+
+    private void populateDictionaryChoices(View focusSuccessor) {
+        if (dictionaryGroup == null) {
+            return;
+        }
+        dictionaryGroup.removeAllViews();
+        dictionaryChoices.clear();
+        for (int index = 0; index < writableDictionaries.size(); index++) {
+            RadioButton choice = new RadioButton(this);
+            choice.setId(View.generateViewId());
+            choice.setText((index + 1) + ". " + writableDictionaries.get(index));
+            choice.setContentDescription(getString(
+                    R.string.dictionary_choice_description,
+                    index + 1,
+                    writableDictionaries.get(index)
+            ));
+            dictionaryGroup.addView(choice, matchWrap());
+            registerFocusableBefore(choice, focusSuccessor);
+            dictionaryChoices.add(choice);
+        }
+        if (!dictionaryChoices.isEmpty()) {
+            dictionaryChoices.get(0).setChecked(true);
+        }
+    }
+
+    private int selectedDictionaryIndex() {
+        if (dictionaryGroup == null) {
+            return -1;
+        }
+        int checkedId = dictionaryGroup.getCheckedRadioButtonId();
+        for (int index = 0; index < dictionaryChoices.size(); index++) {
+            if (dictionaryChoices.get(index).getId() == checkedId) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private boolean selectDictionaryByShortcut(KeyEvent event) {
+        if (dictionaryChoices.isEmpty()) {
+            return false;
+        }
+        View focused = getCurrentFocus();
+        boolean focusIsDictionary = focused instanceof RadioButton
+                && dictionaryChoices.contains(focused);
+        int index = DictionarySelectionShortcut.indexFor(
+                event.getKeyCode(),
+                dictionaryChoices.size(),
+                focusIsDictionary || event.isAltPressed()
+        );
+        if (index < 0) {
+            return false;
+        }
+        RadioButton choice = dictionaryChoices.get(index);
+        choice.setChecked(true);
+        choice.requestFocus();
+        revealFocusedView(choice);
+        return true;
     }
 
     private Button addButton(int text) {
@@ -489,6 +539,14 @@ public class PloverCommandActivity extends Activity {
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         focusOrder.add(view);
+        return view;
+    }
+
+    private <T extends View> T registerFocusableBefore(T view, View successor) {
+        registerFocusable(view);
+        focusOrder.remove(view);
+        int successorIndex = focusOrder.indexOf(successor);
+        focusOrder.add(successorIndex < 0 ? focusOrder.size() : successorIndex, view);
         return view;
     }
 

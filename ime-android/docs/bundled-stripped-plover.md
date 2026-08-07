@@ -50,11 +50,19 @@ pulled underneath the modal. The transient dialog appears over the application
 that currently owns the editor and disappears completely when closed.
 
 Hardware-keyboard users can cycle every enabled command control with Tab and
-Shift-Tab, including wraparound, while disabled controls are skipped. Focus
-starts in the first editable field, focused controls are scrolled into view,
-Enter retains the existing submit behavior, and Escape closes the dialog.
+Shift-Tab, including the selectable result/status region and wraparound, while
+disabled controls are skipped. Focus starts in the first editable field,
+focused controls are scrolled into view, Enter retains the existing submit
+behavior, and Escape closes the dialog.
 These rules are implemented natively so they remain consistent when the soft
-keyboard is hidden.
+keyboard is hidden. Writable dictionaries are visible numbered radio choices;
+bare number keys select one while the choice list has focus, and Alt plus that
+number selects it from anywhere in the form.
+
+Caps Lock follows the physical keyboard's current lock state throughout these
+flows. Candidate selection preserves the casing assigned when each piece of
+output was produced; the lock state of the later selection action does not
+retroactively uppercase an existing candidate or older fixed text.
 
 Dictionary imports use that separation to outlive the management screen. A
 WorkManager foreground task owns the loading notification and staged source.

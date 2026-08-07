@@ -52,6 +52,7 @@
     <string name="outline_label">Outline</string>
     <string name="outline_hint">Chord one or more strokes</string>
     <string name="dictionary_label">Dictionary</string>
+    <string name="dictionary_choice_description">Dictionary %1$d: %2$s. Press Alt plus %1$d from anywhere in this dialog to select it.</string>
     <string name="add_translation_action">Add translation</string>
     <string name="loading_dictionaries">Loading writable dictionaries…</string>
     <string name="choose_dictionary_and_add">Choose the destination dictionary.</string>

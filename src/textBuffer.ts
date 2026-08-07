@@ -13,6 +13,7 @@ export interface Island {
   plover?: boolean;
   ploverPreedit?: boolean;
   capitalize?: boolean;
+  uppercase?: boolean;
 }
 
 export interface BufferSnapshot {

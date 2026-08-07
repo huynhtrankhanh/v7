@@ -107,7 +107,7 @@ The demo uses a QWERTY-to-Steno mapping:
 
 ### Literal Uppercase
 - `Shift + [Letter]`: Appends the uppercase letter literally as a Capital Island. Spacing is determined by the spacing rules (e.g. no space if previous was capital).
-- `Caps Lock`: Capitalizes the next inferred V7 island. The instruction stays on the island so previews, alternatives, piecemeal display, and candidate selection agree.
+- `Caps Lock`: While the keyboard's current Caps Lock state is on, every cased character produced by the steno pipeline is uppercase—not only inferred V7 islands. The state captured with each physical key event applies to direct syllables, Emily output, Stripped Plover output, previews, alternatives, and piecemeal edits. Choosing a candidate preserves the casing already attached to its output; the Caps Lock state of the selection action never retroactively uppercases older candidate or fixed text.
 
 ### Punctuation
 Standard steno chords for punctuation:

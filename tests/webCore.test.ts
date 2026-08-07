@@ -250,6 +250,33 @@ describe("webCore candidate selection", () => {
     );
   });
 
+  test("uppercases every inferred V7 character for active Caps Lock", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
+      createIsland("vietnamese", "ko0", true, { uppercase: true }),
+    ];
+
+    expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
+      "TRỜI MÀ KHÔNG",
+    );
+    expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
+      createIsland("vietnamese", "TRỜI MÀ KHÔNG"),
+    ]);
+  });
+
+  test("candidate selection preserves older fixed text casing", () => {
+    const islands = [
+      createIsland("vietnamese", "fixed words"),
+      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
+    ];
+    const candidates = [["fixed words ", "trời mà", ""]];
+
+    expect(renderVisibleText(islands, candidates)).toBe("fixed words TRỜI MÀ");
+    expect(selectCandidateIslands(candidates, 0, islands)).toEqual([
+      createIsland("vietnamese", "fixed words TRỜI MÀ"),
+    ]);
+  });
+
   test("returns joined selected candidate text", () => {
     const candidates = [
       ["xin ", "chào"],
@@ -847,6 +874,19 @@ describe("webCore piecemeal syllable edit", () => {
     expect(replacePiecemealSyllable(islands, target!, "trời")).toEqual([
       createIsland("vietnamese", "Trời"),
       createIsland("vietnamese", "ma1", true, { capitalize: false }),
+    ]);
+  });
+
+  test("keeps every syllable uppercase in Caps Lock piecemeal replacement", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
+    ];
+    const target = findPiecemealSyllableTargets(islands)[0];
+    expect(target).toBeDefined();
+
+    expect(replacePiecemealSyllable(islands, target!, "mà")).toEqual([
+      createIsland("vietnamese", "tro2", true, { uppercase: true }),
+      createIsland("vietnamese", "MÀ"),
     ]);
   });
 });
