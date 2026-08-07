@@ -74,6 +74,7 @@ public class V7ImeService extends InputMethodService {
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
     private boolean rawOutlineMode = false;
+    private boolean plainTextMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
@@ -157,7 +158,12 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
-        rawOutlineMode = isRawOutlineEditor(attribute);
+        PloverCommandEditorMode.Mode editorMode =
+                PloverCommandEditorMode.fromPrivateImeOptions(
+                        attribute == null ? null : attribute.privateImeOptions
+                );
+        rawOutlineMode = editorMode == PloverCommandEditorMode.Mode.RAW_OUTLINE;
+        plainTextMode = editorMode == PloverCommandEditorMode.Mode.PLAIN_TEXT;
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
@@ -167,14 +173,15 @@ public class V7ImeService extends InputMethodService {
         editorPassedHardwareKeys.clear();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
-        publishRawOutlineModeState();
+        publishEditorModeState();
     }
 
     @Override
     public void onFinishInput() {
         clearPreeditSession();
         rawOutlineMode = false;
-        publishRawOutlineModeState();
+        plainTextMode = false;
+        publishEditorModeState();
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
         editorPassedHardwareKeys.clear();
@@ -317,7 +324,7 @@ public class V7ImeService extends InputMethodService {
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
-                        stenoModeEnabled || rawOutlineMode,
+                        (stenoModeEnabled && !plainTextMode) || rawOutlineMode,
                         event.getKeyCode(),
                         event.getAction(),
                         event.getRepeatCount()
@@ -333,7 +340,7 @@ public class V7ImeService extends InputMethodService {
                 && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if (!stenoModeEnabled && !rawOutlineMode) {
+        if ((!stenoModeEnabled || plainTextMode) && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 editorPassedHardwareKeys.add(event.getKeyCode());
@@ -386,6 +393,13 @@ public class V7ImeService extends InputMethodService {
             return false;
         } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
             finishCurrentPreedit();
+        } else if (action
+                == HardwareKeyActionResolver.Action.FINISH_PREEDIT_AND_INSERT_SPACE) {
+            finishCurrentPreedit();
+            InputConnection connection = getCurrentInputConnection();
+            if (connection != null) {
+                connection.commitText(" ", 1);
+            }
         }
         return true;
     }
@@ -731,11 +745,13 @@ public class V7ImeService extends InputMethodService {
         );
     }
 
-    private void publishRawOutlineModeState() {
+    private void publishEditorModeState() {
         evaluateJavascript(
-                "window.handleAndroidRawOutlineModeChanged"
-                        + " && window.handleAndroidRawOutlineModeChanged("
+                "window.handleAndroidEditorModeChanged"
+                        + " && window.handleAndroidEditorModeChanged("
                         + rawOutlineMode
+                        + ","
+                        + plainTextMode
                         + ")"
         );
     }
@@ -756,20 +772,6 @@ public class V7ImeService extends InputMethodService {
         if (deletionLength > 0) {
             connection.deleteSurroundingText(deletionLength, 0);
         }
-    }
-
-    private boolean isRawOutlineEditor(EditorInfo editorInfo) {
-        if (editorInfo == null || editorInfo.privateImeOptions == null) {
-            return false;
-        }
-        for (String option : editorInfo.privateImeOptions.split(",")) {
-            if (PloverCommandActivity.RAW_OUTLINE_IME_OPTION.equals(
-                    option.trim()
-            )) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private void handlePloverEvent(String eventBody) {
@@ -1031,7 +1033,7 @@ public class V7ImeService extends InputMethodService {
             if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
-            if (!stenoModeEnabled) {
+            if (!stenoModeEnabled || plainTextMode) {
                 return false;
             }
             return super.dispatchKeyEvent(event);
@@ -1094,6 +1096,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public boolean isRawOutlineMode() {
             return rawOutlineMode;
+        }
+
+        @JavascriptInterface
+        public boolean isPlainTextMode() {
+            return plainTextMode;
         }
 
         @JavascriptInterface

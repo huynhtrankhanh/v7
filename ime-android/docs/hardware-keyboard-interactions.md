@@ -15,6 +15,8 @@ including across editor changes.
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Pass both keys through normally |
 | `[` down                     | Finalize the current PREEDIT and start a clean composing session | Pass `[` through normally       |
 | `[` repeat/up                | Consume without finalizing again                                 | Pass through normally           |
+| `'` down                     | Finalize the current PREEDIT and insert one space                | Pass `'` through normally       |
+| `'` repeat/up                | Consume without inserting another space                          | Pass through normally           |
 | `Caps Lock`                  | Uppercase all steno output while the current lock state is on    | Pass through to the editor      |
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Pass through to the editor      |
 
@@ -51,12 +53,16 @@ user opens the input-method picker with `Q+A` but cancels it, the current
 PREEDIT remains active; selecting another IME causes the normal Android
 input-finish lifecycle to finalize it.
 
+Pressing apostrophe performs the same PREEDIT finalization and then commits a
+single ordinary space through Android's input connection. Key repeat and key-up
+are consumed, so one press produces exactly one separator.
+
 ## Event-routing order
 
 Android native key handling runs before WebView dispatch:
 
 1. track the native `Ctrl+Shift` mode chord and toggle only after its release;
-2. while in STENO, resolve and consume `[`;
+2. while in STENO, resolve and consume `[` and apostrophe PREEDIT actions;
 3. while in normal typing mode, pass all other events back to the editor;
 4. while in STENO, forward captured steno keys to the WebUI;
 5. carry the current native Caps Lock state with every event and uppercase
@@ -76,8 +82,10 @@ The native lookup stroke field and add-translation outline field request
 textbox as one `/`-delimited outline. A lone `*` chord is reserved for undo: it
 removes the most recent in-progress stroke, or removes the last delimited
 stroke before the textbox cursor when the in-progress buffer is already empty.
-It is never appended as a literal stroke in this mode. Translation fields do
-not request raw-outline handling and retain ordinary input behavior.
+It is never appended as a literal stroke in this mode. Translation and
+lookup-text fields explicitly request plain-text mode: physical keys pass
+directly to the native editor, and a previously active Stripped Plover mode is
+temporarily suppressed without changing the user's persistent mode selection.
 
 ## Native form submission
 
@@ -104,6 +112,11 @@ wraparound; disabled controls are skipped and newly focused controls are
 scrolled into view. Labels are linked to their fields and changing status text
 is exposed as a polite accessibility announcement. `Escape` closes the dialog.
 Enter keeps the submission behavior described above.
+
+The dialog requests the IME surface when its first field receives focus and
+keeps it visible while focus moves between controls. It resizes around that
+surface instead of initially hiding it, and touching outside the dialog does
+not silently discard the form.
 
 Writable dictionaries are shown as numbered radio choices rather than hidden
 behind a Spinner. With a choice focused, number-row or numpad keys `1` through

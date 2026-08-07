@@ -35,8 +35,13 @@ imports.
 - The lookup stroke and add-translation outline fields mark their editor
   context for raw outline capture. V7 then joins physical steno chords with `/`
   and collapses to a labeled 48 dp **Raw outline mode** bar. A lone `*` chord
-  removes the latest slash-delimited stroke from the textbox. Focusing a
-  translation field restores ordinary V7/Emily/Stripped Plover input.
+  removes the latest slash-delimited stroke from the textbox. Translation and
+  lookup-text fields enter an explicit plain-text mode, pass physical keys
+  directly to the editor, and temporarily suppress an active Stripped Plover
+  mode.
+- Native command dialogs request the IME surface as soon as their first editor
+  is focused, retain it during keyboard navigation, and do not close from an
+  accidental outside touch.
 - Enter submits the active native lookup or add-translation form through the
   editor action advertised by each field.
 - Moving the cursor or changing editors finishes the active composition and
@@ -59,7 +64,8 @@ imports.
   layout is parsed, preventing placeholder and full-height layout flicker.
 - While STENO capture is active, the physical Q+A chord opens Android's input
   method picker. The `[` key commits the current PREEDIT and starts a clean
-  composing session; it does not delete the committed text.
+  composing session; it does not delete the committed text. The apostrophe key
+  commits the current PREEDIT and inserts one space.
 - Every physical event carries Android's current Caps Lock state into the
   WebUI. While that state is on, all cased characters produced anywhere in the
   steno pipeline are uppercase, including direct and inferred V7, Emily,

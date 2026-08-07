@@ -10,7 +10,8 @@ final class HardwareKeyActionResolver {
         PASS_THROUGH,
         CONSUME,
         TOGGLE_STENO,
-        FINISH_PREEDIT
+        FINISH_PREEDIT,
+        FINISH_PREEDIT_AND_INSERT_SPACE
     }
 
     private final Set<Integer> pressedControlKeys = new HashSet<>();
@@ -33,6 +34,13 @@ final class HardwareKeyActionResolver {
         if (stenoModeEnabled && keyCode == KeyEvent.KEYCODE_LEFT_BRACKET) {
             if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
                 return Action.FINISH_PREEDIT;
+            }
+            return Action.CONSUME;
+        }
+
+        if (stenoModeEnabled && keyCode == KeyEvent.KEYCODE_APOSTROPHE) {
+            if (action == KeyEvent.ACTION_DOWN && repeatCount == 0) {
+                return Action.FINISH_PREEDIT_AND_INSERT_SPACE;
             }
             return Action.CONSUME;
         }

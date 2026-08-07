@@ -375,6 +375,7 @@ interface AndroidImeBridge {
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
   isPloverPaused?(): boolean;
+  isPlainTextMode?(): boolean;
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
   changeInputMethod(): void;
@@ -418,6 +419,7 @@ document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
+let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
 let keyboardCapsLockActive = false;
 if (androidIme) {
@@ -2011,7 +2013,7 @@ async function handleChord(stroke: string): Promise<void> {
     return;
   }
 
-  if (strippedPlover.enabled) {
+  if (strippedPlover.enabled && !androidPlainTextMode) {
     await handlePloverStroke(stroke, { oneShot: false });
     return;
   }
@@ -2281,7 +2283,7 @@ async function handleChord(stroke: string): Promise<void> {
     return;
   }
 
-  if (strippedPlover.available) {
+  if (strippedPlover.available && !androidPlainTextMode) {
     await handlePloverStroke(stroke, { oneShot: true });
     return;
   }
@@ -2613,7 +2615,7 @@ function updateDisplay(): void {
   document.body.classList.toggle(
     "android-normal-typing",
     strippedDisplay.enabled &&
-      !androidStenoModeEnabled &&
+      (!androidStenoModeEnabled || androidPlainTextMode) &&
       !androidRawOutlineMode,
   );
   document.body.classList.toggle(
@@ -2624,7 +2626,7 @@ function updateDisplay(): void {
   if (modeTitle && strippedDisplay.enabled) {
     modeTitle.textContent = androidRawOutlineMode
       ? "Raw outline mode"
-      : androidStenoModeEnabled
+      : androidStenoModeEnabled && !androidPlainTextMode
         ? "Compose"
         : "Normal typing";
   }
@@ -2633,6 +2635,7 @@ function updateDisplay(): void {
     strippedDisplay.enabled &&
       androidStenoModeEnabled &&
       !androidRawOutlineMode &&
+      !androidPlainTextMode &&
       strippedPlover.enabled,
   );
   if (inferenceError) {
@@ -2907,7 +2910,7 @@ document.addEventListener("keydown", (e) => {
 
   if (e.repeat) return;
 
-  const ploverActive = strippedPlover.enabled;
+  const ploverActive = strippedPlover.enabled && !androidPlainTextMode;
 
   // Handle Literal Uppercase (Shift + Letter) and literal numbers as capitals (only when Plover is disabled)
   if (!ploverActive && e.key.length === 1) {
@@ -3388,7 +3391,10 @@ declare global {
       errorMessage: string,
     ) => void;
     handleAndroidPloverPaused?: (paused: boolean) => void;
-    handleAndroidRawOutlineModeChanged?: (enabled: boolean) => void;
+    handleAndroidEditorModeChanged?: (
+      rawOutline: boolean,
+      plainText: boolean,
+    ) => void;
     handleAndroidStenoModeChanged?: (enabled: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
@@ -3569,8 +3575,9 @@ window.handleAndroidStenoModeChanged = (enabled) => {
   updateDisplay();
 };
 
-window.handleAndroidRawOutlineModeChanged = (enabled) => {
-  androidRawOutlineMode = enabled;
+window.handleAndroidEditorModeChanged = (rawOutline, plainText) => {
+  androidRawOutlineMode = rawOutline;
+  androidPlainTextMode = plainText;
   clearPressedQwertyKeys();
   updateDisplay();
 };

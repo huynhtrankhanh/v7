@@ -41,7 +41,7 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@style/AppTheme.CommandDialog"
-            android:windowSoftInputMode="stateAlwaysHidden|adjustResize" />
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize" />
 
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"

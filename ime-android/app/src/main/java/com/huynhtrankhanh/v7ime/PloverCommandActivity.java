@@ -10,6 +10,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -33,9 +34,6 @@ public class PloverCommandActivity extends Activity {
     static final String ACTION_ADD_TRANSLATION =
             "com.huynhtrankhanh.v7ime.action.PLOVER_ADD_TRANSLATION";
     static final String EXTRA_ARGUMENT = "plover_argument";
-    static final String RAW_OUTLINE_IME_OPTION =
-            "com.huynhtrankhanh.v7ime.RAW_OUTLINE";
-
     private final AtomicInteger requestIds = new AtomicInteger(1);
     private LinearLayout content;
     private FrameLayout rootView;
@@ -65,6 +63,7 @@ public class PloverCommandActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
         setContentView(rootView);
+        setFinishOnTouchOutside(false);
         BundledStrippedPloverRuntime.get(this).attachTo(rootView);
 
         renderCommand(getIntent());
@@ -146,6 +145,7 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
+        configurePlainTextField(translation);
         if (looksLikeOutline(argument)) {
             stroke.setText(argument);
         } else {
@@ -216,6 +216,7 @@ public class PloverCommandActivity extends Activity {
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                         | InputType.TYPE_TEXT_FLAG_MULTI_LINE
         );
+        configurePlainTextField(translation);
         translation.setMinLines(2);
         translation.setGravity(Gravity.TOP | Gravity.START);
         if (!argument.trim().isEmpty()) {
@@ -421,8 +422,16 @@ public class PloverCommandActivity extends Activity {
     }
 
     private void configureRawOutlineField(EditText field) {
-        field.setPrivateImeOptions(RAW_OUTLINE_IME_OPTION);
+        field.setPrivateImeOptions(
+                PloverCommandEditorMode.RAW_OUTLINE_IME_OPTION
+        );
         field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+    }
+
+    private void configurePlainTextField(EditText field) {
+        field.setPrivateImeOptions(
+                PloverCommandEditorMode.PLAIN_TEXT_IME_OPTION
+        );
     }
 
     private void submitOnEnter(EditText field, Button submit) {
@@ -560,6 +569,7 @@ public class PloverCommandActivity extends Activity {
             field.requestFocus();
             field.setSelection(field.getText().length());
             revealFocusedView(field);
+            showKeyboard(field);
         });
     }
 
@@ -585,6 +595,20 @@ public class PloverCommandActivity extends Activity {
             View candidate = focusOrder.get(nextIndex);
             candidate.requestFocus();
             revealFocusedView(candidate);
+            if (candidate instanceof EditText) {
+                showKeyboard(candidate);
+            }
+        }
+    }
+
+    private void showKeyboard(View field) {
+        InputMethodManager inputMethodManager =
+                getSystemService(InputMethodManager.class);
+        if (inputMethodManager != null) {
+            inputMethodManager.showSoftInput(
+                    field,
+                    InputMethodManager.SHOW_IMPLICIT
+            );
         }
     }
 

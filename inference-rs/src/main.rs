@@ -391,6 +391,36 @@ fn purify(text: &str) -> Vec<String> {
     cleaned.split_whitespace().map(|s| s.to_string()).collect()
 }
 
+#[derive(Debug, PartialEq)]
+enum FixedContextEvent {
+    Word(String),
+    SentenceEnd,
+}
+
+fn fixed_text_context_events(text: &str) -> Vec<FixedContextEvent> {
+    let mut events = Vec::new();
+    let mut chunk_start = 0;
+
+    for (byte_index, character) in text.char_indices() {
+        if !matches!(character, '.' | '!' | '?') {
+            continue;
+        }
+        events.extend(
+            purify(&text[chunk_start..byte_index])
+                .into_iter()
+                .map(FixedContextEvent::Word),
+        );
+        events.push(FixedContextEvent::SentenceEnd);
+        chunk_start = byte_index + character.len_utf8();
+    }
+    events.extend(
+        purify(&text[chunk_start..])
+            .into_iter()
+            .map(FixedContextEvent::Word),
+    );
+    events
+}
+
 fn normalize_rime_start_char(c: char) -> char {
     let base = c.nfd().find(|ch| !is_combining_mark(*ch)).unwrap_or(c);
     match base {
@@ -410,7 +440,7 @@ struct SyllableSlot {
 }
 
 fn is_supported_punct(c: char) -> bool {
-    matches!(c, '.' | '!' | ',' | ';' | ':')
+    matches!(c, '.' | '!' | '?' | ',' | ';' | ':')
 }
 
 fn is_punct_str(s: &str) -> bool {
@@ -798,12 +828,19 @@ fn perform_inference(
             current_states =
                 beam_search_v7_island(&templates, tokenizer, model, beam_width, &current_states);
         } else {
-            let purified_words = purify(segment);
+            let context_events = fixed_text_context_events(segment);
             for state in &mut current_states {
-                for word in &purified_words {
-                    let (lm_score, new_state) = model.score(&state.state, word);
-                    state.score += lm_score;
-                    state.state = new_state;
+                for event in &context_events {
+                    match event {
+                        FixedContextEvent::Word(word) => {
+                            let (lm_score, new_state) = model.score(&state.state, word);
+                            state.score += lm_score;
+                            state.state = new_state;
+                        }
+                        FixedContextEvent::SentenceEnd => {
+                            state.state = model.begin_sentence_state();
+                        }
+                    }
                 }
                 state.history.push(vec![Arc::from(segment.as_str())]);
             }
@@ -838,7 +875,10 @@ fn perform_inference(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_v7_segment, uses_strict_alternating_island_mode, Tokenizer};
+    use super::{
+        fixed_text_context_events, is_v7_segment, uses_strict_alternating_island_mode,
+        FixedContextEvent, Tokenizer,
+    };
 
     #[test]
     fn detects_parseable_v7_segment() {
@@ -863,6 +903,35 @@ mod tests {
             &non_strict,
             &tokenizer
         ));
+    }
+
+    #[test]
+    fn sentence_endings_split_fixed_text_language_model_context() {
+        assert_eq!(
+            fixed_text_context_events("Trước? Sau! Cuối. Mới, tiếp"),
+            vec![
+                FixedContextEvent::Word("trước".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::Word("sau".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::Word("cuối".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::Word("mới".to_string()),
+                FixedContextEvent::Word("tiếp".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn repeated_sentence_endings_each_reset_context() {
+        assert_eq!(
+            fixed_text_context_events("Thật?!"),
+            vec![
+                FixedContextEvent::Word("thật".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::SentenceEnd,
+            ]
+        );
     }
 }
 
