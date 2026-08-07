@@ -556,8 +556,15 @@ function splitV7IslandForReplacement(
   const before = island.value.slice(0, target.start);
   const after = island.value.slice(target.end);
   if (before) pieces.push({ ...island, value: before });
-  pieces.push(createIsland("vietnamese", replacement));
-  if (after) pieces.push({ ...island, value: after });
+  pieces.push(
+    createIsland(
+      "vietnamese",
+      target.syllableIndex === 0
+        ? applyIslandCapitalization(island, replacement)
+        : replacement,
+    ),
+  );
+  if (after) pieces.push({ ...island, value: after, capitalize: false });
   return pieces;
 }
 
@@ -631,7 +638,17 @@ export function renderCandidateText(
   topCandidate: string[],
 ): string {
   if (usesFullAlternatingCandidateShape(islands, topCandidate)) {
-    return topCandidate.join("");
+    const islandByCandidateIndex = new Map(
+      getV7CandidateSlots(islands).map((slot) => [
+        slot.fullCandidateIndex,
+        islands[slot.islandIndex],
+      ]),
+    );
+    return topCandidate
+      .map((part, index) =>
+        applyIslandCapitalization(islandByCandidateIndex.get(index), part),
+      )
+      .join("");
   }
 
   let text = "";
@@ -643,7 +660,10 @@ export function renderCandidateText(
       text += " ";
     }
     text += curr.isV7
-      ? (topCandidate[v7PartIndex++] ?? `[${curr.value}]`)
+      ? applyIslandCapitalization(
+          curr,
+          topCandidate[v7PartIndex++] ?? `[${curr.value}]`,
+        )
       : curr.value;
   }
   return text;
@@ -857,7 +877,10 @@ function renderCandidateWithV7Parts(
     }
 
     if (curr.isV7) {
-      const partText = candidate[v7PartIndex++] ?? `[${curr.value}]`;
+      const partText = applyIslandCapitalization(
+        curr,
+        candidate[v7PartIndex++] ?? `[${curr.value}]`,
+      );
       const start = text.length;
       text += partText;
       parts.push({
@@ -882,10 +905,13 @@ function renderFullShapeCandidateWithV7Parts(
   let text = "";
 
   for (let i = 0; i < candidate.length; i++) {
-    const partText = candidate[i] ?? "";
+    const slot = slotByCandidateIndex.get(i);
+    const partText = applyIslandCapitalization(
+      slot ? islands[slot.islandIndex] : undefined,
+      candidate[i] ?? "",
+    );
     const start = text.length;
     text += partText;
-    const slot = slotByCandidateIndex.get(i);
     if (slot) {
       parts.push({
         tokens: tokenizeDiffText(partText, start),
@@ -1303,10 +1329,21 @@ function mapInferredPartsToV7Islands(
       ? topCandidate[slot.fullCandidateIndex]
       : topCandidate[v7Index];
     if (inferred) {
-      mapped.set(slot.islandIndex, inferred);
+      mapped.set(
+        slot.islandIndex,
+        applyIslandCapitalization(islands[slot.islandIndex], inferred),
+      );
     }
   }
   return mapped;
+}
+
+function applyIslandCapitalization(
+  island: Island | undefined,
+  value: string,
+): string {
+  if (!island?.capitalize || value.length === 0) return value;
+  return value.charAt(0).toLocaleUpperCase("vi") + value.slice(1);
 }
 
 function getV7CandidateSlots(

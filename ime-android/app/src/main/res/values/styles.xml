@@ -14,6 +14,7 @@
     <style name="AppTheme.CommandDialog" parent="android:style/Theme.Material.Light.Dialog.Alert">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#3157D5</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowMinWidthMajor">88%</item>
         <item name="android:windowMinWidthMinor">94%</item>
     </style>

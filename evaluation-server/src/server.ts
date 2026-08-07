@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  DEFAULT_INFERENCE_TIMEOUT_MS,
   DockerSandboxSession,
   SandboxError,
   verifySandboxAssets,
@@ -49,7 +50,7 @@ const limits: SandboxLimits = {
   outputBytes: parsePositiveInt("EVALUATION_OUTPUT_BYTES", 1024 * 1024),
   inferenceTimeoutMs: parsePositiveInt(
     "EVALUATION_INFERENCE_TIMEOUT_MS",
-    2_000,
+    DEFAULT_INFERENCE_TIMEOUT_MS,
   ),
 };
 if (!Number.isFinite(limits.cpus) || limits.cpus <= 0)

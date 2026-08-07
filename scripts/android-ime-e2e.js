@@ -79,16 +79,16 @@ async function androidChord(page, keys) {
 
 async function applyRequestedImeHeight(page) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const requestedHeight = await page.evaluate(() => window.__androidHeight);
-    const viewport = page.viewport();
-    if (viewport.height === requestedHeight) return requestedHeight;
-    await page.setViewport({ ...viewport, height: requestedHeight });
     await page.evaluate(
       () =>
         new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         ),
     );
+    const requestedHeight = await page.evaluate(() => window.__androidHeight);
+    const viewport = page.viewport();
+    if (viewport.height === requestedHeight) return requestedHeight;
+    await page.setViewport({ ...viewport, height: requestedHeight });
   }
   return page.evaluate(() => window.__androidHeight);
 }
@@ -429,11 +429,33 @@ async function main() {
       `Modified hardware keys leaked into V7 handling: ${JSON.stringify(modifiedKeyState)}`,
     );
 
+    await page.evaluate(() => {
+      window.handleAndroidKeyEvent(
+        "keydown",
+        "CapsLock",
+        "CapsLock",
+        false,
+        false,
+        false,
+        false,
+        false,
+      );
+      window.handleAndroidKeyEvent(
+        "keyup",
+        "CapsLock",
+        "CapsLock",
+        false,
+        false,
+        false,
+        false,
+        false,
+      );
+    });
     await androidChord(page, ["c", " ", "m"]);
     await page.waitForFunction(
       () =>
         window.__androidInferenceBodies.length === 1 &&
-        window.__androidPreedits.at(-1).text === "alpha beta keep delta omega",
+        window.__androidPreedits.at(-1).text === "Alpha beta keep delta omega",
     );
     await page.waitForFunction(
       (emptyHeight) => window.__androidHeight > emptyHeight,
@@ -472,8 +494,8 @@ async function main() {
       "Inference request did not use the V7 island protocol",
     );
     assert(
-      bridgeState.preedit.text === "alpha beta keep delta omega",
-      "Candidate text was not mirrored to Android composing text",
+      bridgeState.preedit.text === "Alpha beta keep delta omega",
+      "Caps Lock capitalization was not mirrored to Android composing text",
     );
     assert(
       bridgeState.preedit.grammarSections.length === 2,

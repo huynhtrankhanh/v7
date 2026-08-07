@@ -12,6 +12,7 @@ export interface Island {
   explicitSpacing?: boolean;
   plover?: boolean;
   ploverPreedit?: boolean;
+  capitalize?: boolean;
 }
 
 export interface BufferSnapshot {

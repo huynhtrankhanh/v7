@@ -2109,7 +2109,11 @@ async function handleChord(stroke: string): Promise<void> {
     if (v7Code) {
       piecemealCursorIndex = null;
       saveState();
-      buffer.appendIsland(createIsland("vietnamese", v7Code, true));
+      const capitalize = state.pendingCapitalization;
+      state.pendingCapitalization = false;
+      buffer.appendIsland(
+        createIsland("vietnamese", v7Code, true, { capitalize }),
+      );
       runInference();
       return;
     }
@@ -2865,6 +2869,16 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
     }
     return; // Let other keys pass to textarea
+  }
+
+  if (!strippedPlover.enabled && e.key === "CapsLock") {
+    if (!e.repeat) {
+      saveState();
+      state.pendingCapitalization = true;
+      updateDisplay();
+    }
+    e.preventDefault();
+    return;
   }
 
   if (e.repeat) return;

@@ -1,5 +1,12 @@
 import { evaluateCorpus } from "../evaluation-server/src/evaluationService";
-import type { InferenceSession } from "../evaluation-server/src/dockerSandbox";
+import {
+  DEFAULT_INFERENCE_TIMEOUT_MS,
+  type InferenceSession,
+} from "../evaluation-server/src/dockerSandbox";
+
+test("allows realistic model startup and large-corpus inference latency", () => {
+  expect(DEFAULT_INFERENCE_TIMEOUT_MS).toBe(30_000);
+});
 
 test("returns causal metrics without the artifact-size field", async () => {
   const session: InferenceSession = {

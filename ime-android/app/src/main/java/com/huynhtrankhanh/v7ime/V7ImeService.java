@@ -40,6 +40,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class V7ImeService extends InputMethodService {
     private static final String LOG_TAG = "V7Ime";
+    private static final GenerationOwnership<V7ImeService> SERVICE_OWNERSHIP =
+            new GenerationOwnership<>();
     private static final int DEFAULT_KEYBOARD_HEIGHT_DP = 160;
     private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
@@ -58,6 +60,9 @@ public class V7ImeService extends InputMethodService {
     private String preeditGrammarSectionsJson = "[]";
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
     private final AtomicInteger inputGeneration = new AtomicInteger();
+    private final GenerationOwnership<WebView> inputViewOwnership =
+            new GenerationOwnership<>();
+    private int serviceGeneration;
     private final AtomicInteger latestInferenceRequestId = new AtomicInteger(-1);
     // The native engine is process-wide, so retain its readiness across IME
     // service recreation and keyboard switching. Android can still reclaim
@@ -70,18 +75,27 @@ public class V7ImeService extends InputMethodService {
     private boolean stenoModeEnabled = true;
     private boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
-            paused -> evaluateJavascript(
-                    "window.handleAndroidPloverPaused"
-                            + " && window.handleAndroidPloverPaused("
-                            + paused
-                            + ")"
-            );
+            paused -> {
+                if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
+                    evaluateJavascript(
+                            "window.handleAndroidPloverPaused"
+                                    + " && window.handleAndroidPloverPaused("
+                                    + paused
+                                    + ")"
+                    );
+                }
+            };
     private final BundledStrippedPloverRuntime.EventListener ploverEventListener =
-            this::handlePloverEvent;
+            event -> {
+                if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
+                    handlePloverEvent(event);
+                }
+            };
 
     @Override
     public void onCreate() {
         super.onCreate();
+        serviceGeneration = SERVICE_OWNERSHIP.claim(this);
         rememberKeyboardConfiguration(getResources().getConfiguration());
         BundledStrippedPloverRuntime runtime =
                 BundledStrippedPloverRuntime.get(this);
@@ -91,20 +105,42 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public View onCreateInputView() {
+        if (inputContainer != null) {
+            BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
+        }
         if (webView != null) {
+            webView.stopLoading();
+            webView.removeJavascriptInterface("AndroidIme");
             webView.destroy();
         }
         inputContainer = new FrameLayout(this);
         webView = new ImeWebView();
+        int viewGeneration = inputViewOwnership.claim(webView);
         inputContainer.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
         ));
         BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
-        configureWebView(webView);
+        configureWebView(webView, viewGeneration);
         webView.loadUrl("file:///android_asset/ime.html");
         warmInferenceModel();
         return inputContainer;
+    }
+
+    @Override
+    public void onStartInputView(EditorInfo info, boolean restarting) {
+        super.onStartInputView(info, restarting);
+        if (inputContainer != null) {
+            BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
+        }
+    }
+
+    @Override
+    public void onFinishInputView(boolean finishingInput) {
+        if (inputContainer != null) {
+            BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
+        }
+        super.onFinishInputView(finishingInput);
     }
 
     @Override
@@ -218,6 +254,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        SERVICE_OWNERSHIP.release(this, serviceGeneration);
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
@@ -257,7 +294,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
-    private void configureWebView(WebView view) {
+    private void configureWebView(WebView view, int viewGeneration) {
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -265,7 +302,10 @@ public class V7ImeService extends InputMethodService {
         settings.setAllowContentAccess(false);
         view.setWebViewClient(new WebViewClient());
         view.setWebChromeClient(new WebChromeClient());
-        view.addJavascriptInterface(new AndroidBridge(), "AndroidIme");
+        view.addJavascriptInterface(
+                new AndroidBridge(view, viewGeneration),
+                "AndroidIme"
+        );
         view.setFocusable(true);
         view.setFocusableInTouchMode(true);
         view.requestFocus();
@@ -466,6 +506,7 @@ public class V7ImeService extends InputMethodService {
                 || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
                 || keyCode == KeyEvent.KEYCODE_META_LEFT
                 || keyCode == KeyEvent.KEYCODE_META_RIGHT
+                || keyCode == KeyEvent.KEYCODE_CAPS_LOCK
                 || keyCode == KeyEvent.KEYCODE_ESCAPE;
     }
 
@@ -485,6 +526,8 @@ public class V7ImeService extends InputMethodService {
             case KeyEvent.KEYCODE_META_LEFT:
             case KeyEvent.KEYCODE_META_RIGHT:
                 return "Meta";
+            case KeyEvent.KEYCODE_CAPS_LOCK:
+                return "CapsLock";
             case KeyEvent.KEYCODE_ESCAPE:
                 return "Escape";
             default:
@@ -524,6 +567,8 @@ public class V7ImeService extends InputMethodService {
                 return "MetaLeft";
             case KeyEvent.KEYCODE_META_RIGHT:
                 return "MetaRight";
+            case KeyEvent.KEYCODE_CAPS_LOCK:
+                return "CapsLock";
             case KeyEvent.KEYCODE_ESCAPE:
                 return "Escape";
             default:
@@ -1004,6 +1049,19 @@ public class V7ImeService extends InputMethodService {
     }
 
     private class AndroidBridge {
+        private final WebView owner;
+        private final int ownerGeneration;
+
+        AndroidBridge(WebView owner, int ownerGeneration) {
+            this.owner = owner;
+            this.ownerGeneration = ownerGeneration;
+        }
+
+        private boolean isCurrentInputView() {
+            return owner == webView
+                    && inputViewOwnership.isCurrent(owner, ownerGeneration);
+        }
+
         @JavascriptInterface
         public boolean hasPloverConfiguration() {
             return true;
@@ -1038,11 +1096,11 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public void setKeyboardHeight(final int heightDp) {
-            if (webView == null) {
+            if (!isCurrentInputView()) {
                 return;
             }
-            webView.post(() -> {
-                if (inputContainer == null) {
+            owner.post(() -> {
+                if (!isCurrentInputView() || inputContainer == null) {
                     return;
                 }
                 int requestedHeightPx = Math.max(
@@ -1067,15 +1125,15 @@ public class V7ImeService extends InputMethodService {
                     inputContainer.setLayoutParams(containerParams);
                 }
                 inputContainer.setMinimumHeight(targetHeightPx);
-                ViewGroup.LayoutParams webViewParams = webView.getLayoutParams();
+                ViewGroup.LayoutParams webViewParams = owner.getLayoutParams();
                 if (webViewParams != null
                         && webViewParams.height
                                 != FrameLayout.LayoutParams.MATCH_PARENT) {
                     webViewParams.height =
                             FrameLayout.LayoutParams.MATCH_PARENT;
-                    webView.setLayoutParams(webViewParams);
+                    owner.setLayoutParams(webViewParams);
                 }
-                webView.requestLayout();
+                owner.requestLayout();
                 inputContainer.requestLayout();
                 if (getWindow() != null
                         && getWindow().getWindow() != null) {
@@ -1086,54 +1144,69 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public void setPreeditText(String text, String grammarSectionsJson) {
+            if (!isCurrentInputView()) {
+                return;
+            }
             String normalized = text == null ? "" : text;
             String normalizedGrammarSections = grammarSectionsJson == null
                     ? "[]"
                     : grammarSectionsJson;
             int generation = inputGeneration.get();
-            if (webView != null) {
-                webView.post(() -> {
-                    if (generation == inputGeneration.get()) {
-                        applyPreeditText(
-                                normalized,
-                                normalizedGrammarSections
-                        );
-                    }
-                });
-            }
+            owner.post(() -> {
+                if (isCurrentInputView()
+                        && generation == inputGeneration.get()) {
+                    applyPreeditText(
+                            normalized,
+                            normalizedGrammarSections
+                    );
+                }
+            });
         }
 
         @JavascriptInterface
         public void undoRawOutlineStroke() {
-            int generation = inputGeneration.get();
-            if (webView != null) {
-                webView.post(() -> {
-                    if (generation == inputGeneration.get()) {
-                        undoCommittedRawOutlineStroke();
-                    }
-                });
+            if (!isCurrentInputView()) {
+                return;
             }
+            int generation = inputGeneration.get();
+            owner.post(() -> {
+                if (isCurrentInputView()
+                        && generation == inputGeneration.get()) {
+                    undoCommittedRawOutlineStroke();
+                }
+            });
         }
 
         @JavascriptInterface
         public void requestInference(String body, int requestId) {
-            V7ImeService.this.requestInference(body, requestId);
+            if (isCurrentInputView()) {
+                V7ImeService.this.requestInference(body, requestId);
+            }
         }
 
         @JavascriptInterface
         public String requestInferenceSync(String body, int requestId) {
+            if (!isCurrentInputView()) {
+                return "{\"statusCode\":409,\"responseBody\":\"\","
+                        + "\"errorMessage\":\"Stale input view\"}";
+            }
             return V7ImeService.this.requestInferenceSync(body, requestId);
         }
 
         @JavascriptInterface
         public void requestPlover(String body, int requestId) {
-            V7ImeService.this.requestPlover(body, requestId);
+            if (isCurrentInputView()) {
+                V7ImeService.this.requestPlover(body, requestId);
+            }
         }
 
         @JavascriptInterface
         public void changeInputMethod() {
-            if (webView != null) {
-                webView.post(() -> {
+            if (isCurrentInputView()) {
+                owner.post(() -> {
+                    if (!isCurrentInputView()) {
+                        return;
+                    }
                     InputMethodManager manager = (InputMethodManager)
                             getSystemService(INPUT_METHOD_SERVICE);
                     if (manager != null) {

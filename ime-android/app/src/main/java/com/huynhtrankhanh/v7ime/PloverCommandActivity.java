@@ -1,6 +1,7 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.text.InputType;
@@ -40,6 +41,7 @@ public class PloverCommandActivity extends Activity {
     private FrameLayout rootView;
     private ScrollView scrollView;
     private final List<View> focusOrder = new ArrayList<>();
+    private int commandGeneration = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -62,13 +64,30 @@ public class PloverCommandActivity extends Activity {
         setContentView(rootView);
         BundledStrippedPloverRuntime.get(this).attachTo(rootView);
 
-        String action = getIntent().getAction();
-        String argument = getIntent().getStringExtra(EXTRA_ARGUMENT);
+        renderCommand(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        renderCommand(intent);
+    }
+
+    private void renderCommand(Intent intent) {
+        commandGeneration += 1;
+        content.removeAllViews();
+        focusOrder.clear();
+
+        String action = intent.getAction();
+        String argument = intent.getStringExtra(EXTRA_ARGUMENT);
         if (ACTION_ADD_TRANSLATION.equals(action)) {
             setTitle(R.string.add_translation_title);
+            addDialogTitle(R.string.add_translation_title);
             showAddTranslation(argument == null ? "" : argument);
         } else {
             setTitle(R.string.lookup_entries_title);
+            addDialogTitle(R.string.lookup_entries_title);
             showLookup(argument == null ? "" : argument);
         }
     }
@@ -202,12 +221,28 @@ public class PloverCommandActivity extends Activity {
         addCloseButton();
 
         List<String> writableDictionaries = new ArrayList<>();
+        List<String> dictionaryLabels = new ArrayList<>();
         ArrayAdapter<String> adapter = new ArrayAdapter<>(
                 this,
                 android.R.layout.simple_spinner_dropdown_item,
-                writableDictionaries
+                dictionaryLabels
         );
         dictionaries.setAdapter(adapter);
+        dictionaries.setOnKeyListener((view, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN
+                    || event.getRepeatCount() != 0) {
+                return false;
+            }
+            int index = DictionarySelectionShortcut.indexFor(
+                    keyCode,
+                    writableDictionaries.size()
+            );
+            if (index < 0) {
+                return false;
+            }
+            dictionaries.setSelection(index);
+            return true;
+        });
         status.setText(R.string.loading_dictionaries);
         request("get_dictionary_state", new JSONObject(), (result, error) -> {
             if (!error.isEmpty()) {
@@ -222,6 +257,9 @@ public class PloverCommandActivity extends Activity {
                     String identifier = dictionary.optString("identifier", "");
                     if (!identifier.isEmpty()) {
                         writableDictionaries.add(identifier);
+                        dictionaryLabels.add(
+                                writableDictionaries.size() + ". " + identifier
+                        );
                     }
                 }
             }
@@ -244,16 +282,18 @@ public class PloverCommandActivity extends Activity {
                 status.setText(R.string.translation_fields_required);
                 return;
             }
-            Object selected = dictionaries.getSelectedItem();
-            if (selected == null) {
+            int selectedPosition = dictionaries.getSelectedItemPosition();
+            if (selectedPosition < 0
+                    || selectedPosition >= writableDictionaries.size()) {
                 status.setText(R.string.no_writable_dictionaries);
                 return;
             }
+            String selected = writableDictionaries.get(selectedPosition);
             add.setEnabled(false);
             status.setText(R.string.adding_translation);
             JSONObject params = new JSONObject();
             try {
-                params.put("name", selected.toString());
+                params.put("name", selected);
                 params.put("stroke", stroke);
                 params.put("translation", output);
             } catch (Exception error) {
@@ -270,7 +310,7 @@ public class PloverCommandActivity extends Activity {
                 status.setText(getString(
                         R.string.translation_added,
                         stroke,
-                        selected.toString()
+                        selected
                 ));
             });
         });
@@ -319,6 +359,7 @@ public class PloverCommandActivity extends Activity {
             String method,
             JSONObject params,
             ResultCallback callback) {
+        int generation = commandGeneration;
         int id = requestIds.getAndIncrement();
         JSONObject request = new JSONObject();
         try {
@@ -332,6 +373,9 @@ public class PloverCommandActivity extends Activity {
         BundledStrippedPloverRuntime.get(this).request(
                 request.toString(),
                 (responseBody, transportError) -> runOnUiThread(() -> {
+                    if (generation != commandGeneration || isFinishing()) {
+                        return;
+                    }
                     if (!transportError.isEmpty()) {
                         callback.onResult(new JSONObject(), transportError);
                         return;
@@ -366,6 +410,15 @@ public class PloverCommandActivity extends Activity {
         description.setText(text);
         description.setPadding(0, 0, 0, dp(12));
         content.addView(description, matchWrap());
+    }
+
+    private void addDialogTitle(int text) {
+        TextView title = new TextView(this);
+        title.setText(text);
+        title.setTextAppearance(android.R.style.TextAppearance_Material_Headline);
+        title.setSingleLine(false);
+        title.setPadding(0, 0, 0, dp(12));
+        content.addView(title, matchWrap());
     }
 
     private EditText addField(int labelText, int hintText, int inputType) {
@@ -440,7 +493,12 @@ public class PloverCommandActivity extends Activity {
     }
 
     private void focusInitially(EditText field) {
+        int generation = commandGeneration;
         field.post(() -> {
+            if (generation != commandGeneration
+                    || !field.isAttachedToWindow()) {
+                return;
+            }
             field.requestFocus();
             field.setSelection(field.getText().length());
             revealFocusedView(field);

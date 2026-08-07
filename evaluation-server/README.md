@@ -135,12 +135,14 @@ Configuration:
 | `EVALUATION_CPUS`                 |                         `0.5` | Container CPU quota                      |
 | `EVALUATION_PIDS`                 |                          `64` | Container PID ceiling                    |
 | `EVALUATION_OUTPUT_BYTES`         |                     `1048576` | One-response stdout and total stderr cap |
-| `EVALUATION_INFERENCE_TIMEOUT_MS` |                        `2000` | Deadline for one response                |
+| `EVALUATION_INFERENCE_TIMEOUT_MS` |                       `30000` | Deadline for one response                |
 
 There is intentionally no whole-corpus deadline. The
 `EVALUATION_INFERENCE_TIMEOUT_MS` timer resets for each request/response pair;
 a timeout kills the submission container and records a hard `TIMEOUT` in the
-causal metrics.
+causal metrics. The 30-second default accommodates model startup and normal
+tail latency across large corpora without allowing a hung response to occupy a
+sandbox indefinitely.
 
 Do not publish the service without authentication, TLS, request-rate limiting,
 and restricted access to its internal logs.
@@ -153,7 +155,6 @@ the repository root, and start the host server with that corpus:
 
 ```sh
 EVALUATION_CORPUS_PATH='evaluation-server/example-corpus.txt' \
-EVALUATION_INFERENCE_TIMEOUT_MS=30000 \
 npm run start:evaluation-server
 ```
 
@@ -166,8 +167,8 @@ curl --fail-with-body \
   http://localhost:3002/evaluate
 ```
 
-The first request includes process/model initialization, so this example uses
-a longer per-inference limit. Every later inference receives a fresh 30-second
+The first request includes process/model initialization, so the default allows
+30 seconds per inference. Every later inference receives a fresh 30-second
 deadline as well. The full bundled corpus remains the default whenever
 `EVALUATION_CORPUS_PATH` is unset. Corpus selection is server configuration,
 not part of the submission request.

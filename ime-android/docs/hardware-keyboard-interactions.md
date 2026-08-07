@@ -15,6 +15,7 @@ including across editor changes.
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Pass both keys through normally |
 | `[` down                     | Finalize the current PREEDIT and start a clean composing session | Pass `[` through normally       |
 | `[` repeat/up                | Consume without finalizing again                                 | Pass through normally           |
+| `Caps Lock`                  | Capitalize the next inferred V7 island                           | Pass through to the editor      |
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
@@ -58,7 +59,9 @@ Android native key handling runs before WebView dispatch:
 2. while in STENO, resolve and consume `[`;
 3. while in normal typing mode, pass all other events back to the editor;
 4. while in STENO, forward captured steno keys to the WebUI;
-5. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
+5. carry a one-shot Caps Lock instruction on the next V7 island so every
+   rendered candidate and the selected text use the same capitalization;
+6. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.
@@ -83,13 +86,21 @@ routing and ordinary software keyboards reach the same editor-action listener.
 
 ## Native command-dialog navigation
 
-Stripped Plover lookup and add-translation commands open as transient native
-dialog activities above the application containing the current editor. They
-use an empty task affinity and a dedicated excluded, no-history task, so an
-already open V7 Settings task is not brought forward behind the dialog.
+Stripped Plover lookup and add-translation commands open as one reusable
+transient native dialog activity above the application containing the current
+editor. It uses an empty task affinity and a dedicated excluded, no-history
+task, so an already open V7 Settings task is not brought forward behind the
+dialog. A later command refreshes that activity in place; it cannot leave old
+dialog tasks behind for Android to resurface. The full, wrapping title is part
+of the dialog content rather than a truncating platform title bar.
 
 Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
 and backward through the editable fields, dictionary selector, primary action,
 and Close button with wraparound; disabled controls are skipped and newly
 focused controls are scrolled into view. `Escape` closes the dialog. Enter
 keeps the submission behavior described above.
+
+Writable dictionaries are numbered in the add-translation picker. With the
+picker focused, number-row or numpad keys `1` through `9` select the matching
+visible dictionary directly; arrow keys and normal Spinner navigation remain
+available.
