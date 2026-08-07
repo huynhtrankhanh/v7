@@ -162,7 +162,6 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
-        configurePlainTextField(translation);
         if (looksLikeOutline(argument)) {
             stroke.setText(argument);
         } else {
@@ -233,7 +232,6 @@ public class PloverCommandActivity extends Activity {
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                         | InputType.TYPE_TEXT_FLAG_MULTI_LINE
         );
-        configurePlainTextField(translation);
         translation.setMinLines(2);
         translation.setGravity(Gravity.TOP | Gravity.START);
         if (!argument.trim().isEmpty()) {
@@ -448,12 +446,6 @@ public class PloverCommandActivity extends Activity {
                 PloverCommandEditorMode.RAW_OUTLINE_IME_OPTION
         );
         field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-    }
-
-    private void configurePlainTextField(EditText field) {
-        field.setPrivateImeOptions(
-                PloverCommandEditorMode.PLAIN_TEXT_IME_OPTION
-        );
     }
 
     private void submitOnEnter(EditText field, Button submit) {

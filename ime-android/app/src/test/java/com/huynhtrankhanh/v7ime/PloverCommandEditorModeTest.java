@@ -13,13 +13,6 @@ public class PloverCommandEditorModeTest {
                         PloverCommandEditorMode.RAW_OUTLINE_IME_OPTION
                 )
         );
-        assertEquals(
-                PloverCommandEditorMode.Mode.PLAIN_TEXT,
-                PloverCommandEditorMode.fromPrivateImeOptions(
-                        "unrelated, "
-                                + PloverCommandEditorMode.PLAIN_TEXT_IME_OPTION
-                )
-        );
     }
 
     @Test

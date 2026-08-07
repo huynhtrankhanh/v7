@@ -21,7 +21,7 @@ imports.
   an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
-- An optional experimental Android ML stage can rerank the first 50 of KenLM's
+- An optional experimental Android ML stage can rerank the first 8 of KenLM's
   100 candidates with user-installed Gemma 3 1B IT through LiteRT-LM. It runs
   in Android Java after JNI and before the WebUI callback; it has no Rust or
   Retrofit implementation and fails open to the original KenLM order.
@@ -30,6 +30,10 @@ imports.
   a new chord cancels obsolete generation. Compatible devices use LiteRT-LM GPU
   acceleration first; unsupported devices fall back to bounded parallel CPU
   kernels rather than duplicate model instances.
+- The enabled model preloads when the IME service starts. Eight candidates are
+  sent in one listwise batch with shared prefix/suffix context factored once;
+  the persistent engine and compilation cache are reused between isolated
+  conversations.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
@@ -45,15 +49,15 @@ imports.
   context for raw outline capture. V7 then joins physical steno chords with `/`
   and collapses to a labeled 48 dp **Raw outline mode** bar. A lone `*` chord
   removes the latest slash-delimited stroke from the textbox. Translation and
-  lookup-text fields enter an explicit plain-text mode, pass physical keys
-  directly to the editor, and temporarily suppress an active Stripped Plover
-  mode.
+  lookup-text fields use standard V7 and preserve the user's current
+  STENO/Normal selection, including the Ctrl+Shift toggle.
 - Native command dialogs request the IME surface as soon as their first editor
   is focused, retain it during keyboard navigation, and do not close from an
   accidental outside touch.
-- Add-translation uses one-tap, 48 dp dictionary choices; hardware keys return
-  to the native activity while those controls have focus. Outline Enter advances
-  to translation, and translation Enter submits.
+- Add-translation uses one-tap, 48 dp dictionary choices; dialog navigation
+  keys return to the native activity while those controls have focus, without
+  consuming V7's Ctrl+Shift toggle or changing its saved mode. Outline Enter
+  advances to translation, and translation Enter submits.
 - Moving the cursor or changing editors finishes the active composition and
   clears the WebUI buffer, so already-entered text remains in the editor while a
   new composing session starts cleanly.

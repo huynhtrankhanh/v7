@@ -20,7 +20,7 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `lm.binary`: Trained binary language model — **generated artifact**, not in the repository.
 
 The Android IME also has an off-by-default, fully on-device LiteRT-LM stage
-that can rerank KenLM's first 50 candidates with a user-installed Gemma 3 1B
+that can rerank KenLM's first 8 candidates with a user-installed Gemma 3 1B
 IT model before results reach the keyboard WebUI. See the
 [experimental reranker guide](ime-android/docs/experimental-reranking.md) for
 the exact gated model download, Android Settings flow, research rationale,

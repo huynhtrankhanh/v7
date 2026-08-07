@@ -62,8 +62,8 @@ data export does not include this model.
 ```text
 WebUI islands
     -> JNI/Rust/KenLM: generate and rank 100 candidates
-    -> Android Java: reconstruct the first 50 candidate sentences
-    -> LiteRT-LM CPU / Gemma 3 1B IT: return candidate IDs in quality order
+    -> Android Java: reconstruct the first 8 candidate sentences
+    -> LiteRT-LM GPU/CPU / Gemma 3 1B IT: return candidate IDs in quality order
     -> Android Java: validate IDs, reorder the original candidate arrays
     -> WebUI
 ```
@@ -83,7 +83,7 @@ an indeterminate progress bar reports one of these stages:
 
 - **Loading KenLM model · typing active**;
 - **Loading Android ML model · typing active**;
-- **Reranking 50 candidates · typing active**;
+- **Reranking 8 candidates · typing active**;
 - **Reranker ready**; or
 - **Reranker error · KenLM fallback**.
 
@@ -97,7 +97,7 @@ JavaScript waits synchronously for its return. Model initialization and token
 generation consequently prevented the same WebView execution context from
 handling the next keyboard event, making the keyboard appear frozen.
 
-Each candidate set is ranked in one listwise model call rather than 50 serial
+Each candidate set is ranked in one listwise model call rather than eight serial
 calls. Android tries LiteRT-LM's GPU backend first and requests its optional
 OpenCL vendor libraries. If GPU initialization is unsupported by the device or
 model, it falls back to CPU automatically; the ready label reports `GPU` or
@@ -109,14 +109,45 @@ requests are discarded, and only the newest composition proceeds. A cold engine
 initialization is allowed to finish once because cancelling and reloading it
 would increase latency and memory churn.
 
-The prompt asks for natural Vietnamese grammar, word choice, meaning, and
-longer-range coherence. It labels each candidate with an integer, treats its
-text as untrusted data, caps each reconstructed string to a bounded head/tail
-sample, uses greedy decoding, and asks for only the best 10 in-range unique IDs
-from the 50-way comparison. Avoiding generation of the remaining 40 IDs reduces
-interactive decode latency; omitted IDs are appended in their original KenLM
-order. Candidates 51 through 100 are never sent to Gemma and keep their original
+The prompt asks for natural Vietnamese grammar, meaning, and longer-range
+coherence. It labels each candidate with an integer, treats its text as
+untrusted data, uses greedy decoding, and asks for all eight IDs in quality
+order. Before serialization, Android factors the longest shared prefix and
+suffix out of the eight strings and sends each differing middle once. Shared
+sentence context is therefore prefetched once per batch instead of repeated
+eight times. Each shared region and alternative has a bounded head/tail sample.
+Candidates 9 through 100 are never sent to Gemma and keep their original
 relative order.
+
+Gemma is authoritative inside that top-eight pool: KenLM scores are not blended
+back into the result after a valid model answer. To prevent the model from
+merely copying KenLM's input order, the batch is presented in a deterministic
+content-derived shuffle while every row retains its original candidate ID.
+LiteRT-LM constrained decoding permits only a compact eight-ID array, and the
+parser requires every in-range ID exactly once before applying it. A complete
+non-identity Gemma order therefore becomes the returned top-eight order. An
+incomplete, duplicate, or malformed answer is shown as a reranker error and
+keeps KenLM only as the documented fail-open path; it is no longer reported as
+a successful rerank.
+
+The enabled engine is preloaded on a dedicated background executor when the IME
+service starts, and also immediately after the setting is enabled. This moves
+GPU/CPU initialization and compilation ahead of the first chord when Android
+has enough lead time. Installing or replacing a model while the option is
+enabled also queues a preload of the new model. The process-level engine and
+writable compilation cache remain reusable across requests.
+
+LiteRT-LM 0.15's public Android API has neither a batch-of-independent-prompts
+entry point nor an export/clone/reset operation for a prefetched KV-cache
+prefix. A `Conversation` retains its prior turns, so reusing one would append
+old candidate batches and model answers, increasing work and contaminating the
+next rank. V7 instead uses one listwise batch per request and a fresh isolated
+conversation. Prefix factoring provides the safe available prefill saving;
+the conversation's normal KV cache is still used within that generation.
+The most recent fully validated `(model, factored batch)` order is also cached;
+an identical recomposition applies that Gemma order directly without opening a
+new conversation. The cache is cleared when the model changes or the feature is
+disabled.
 
 Reranking is fail-open. A missing model, disabled preference, invalid native
 response, unsupported ABI, LiteRT load/generation failure, or malformed model
@@ -158,8 +189,11 @@ Actions workflows therefore use JDK 21. A 32-bit-only device can still use the
 normal KenLM IME, but experimental reranking fails open because LiteRT-LM has no
 matching native library in this artifact.
 
-The engine prefers GPU and otherwise uses up to four CPU workers. It uses an
-8,192-token cache limit, a 64-token answer limit, temperature 0, a writable
+The engine prefers GPU and otherwise uses up to four CPU workers. A GPU that
+initializes but fails during constrained generation is rejected for the
+installed model and the same batch is retried once on CPU. The engine uses a
+2,048-token cache limit (sufficient for the bounded factored batch while
+reducing KV allocation), a 32-token answer limit, temperature 0, a writable
 compilation cache, and a process-level model cache. LiteRT-LM's
 [Android API guide](https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md)
 documents the optional OpenCL manifest entries and CPU/GPU/NPU backends. Its
@@ -181,8 +215,9 @@ in Corresponding Source.
 ## Verification
 
 `CandidateRerankProtocolTest` covers prompt escaping, malformed and partial
-answers, duplicate/out-of-range IDs, stable fallback order, and the 50-candidate
-cap. Android unit tests exercise the integration's compile-time LiteRT API
+answers, duplicate/out-of-range IDs, strict full-order application, shared
+context factoring, shuffled presentation, stable fallback order, and the
+eight-candidate cap. Android unit tests exercise the integration's compile-time LiteRT API
 contract without downloading gated model weights. A real-device acceptance
 test should install the generic model, compare enabled/disabled ordering, turn
 the feature off after a successful load to verify release, and test airplane

@@ -2625,7 +2625,7 @@ function updateInferenceStatusUI(): void {
       ? "Loading KenLM model… · typing active"
       : loadingReranker
         ? "Loading Android ML model… · typing active"
-        : "Reranking 50 candidates… · typing active";
+        : "Reranking 8 candidates… · typing active";
     status.className = "ime-mode-detail reranking";
     status.title = "";
     return;
@@ -2635,7 +2635,7 @@ function updateInferenceStatusUI(): void {
       missing: "Reranker model missing · KenLM active",
       not_loaded: "Reranker waiting · KenLM active",
       loading: "Loading Android ML model…",
-      ranking: "Reranking 50 candidates…",
+      ranking: "Reranking 8 candidates…",
       ready: rerankerBackend
         ? `Reranker ready · ${rerankerBackend.toUpperCase()}`
         : "Reranker ready",

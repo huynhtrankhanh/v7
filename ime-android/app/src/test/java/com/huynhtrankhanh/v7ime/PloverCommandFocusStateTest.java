@@ -1,5 +1,7 @@
 package com.huynhtrankhanh.v7ime;
 
+import android.view.KeyEvent;
+
 import org.junit.After;
 import org.junit.Test;
 
@@ -15,9 +17,24 @@ public class PloverCommandFocusStateTest {
     @Test
     public void routesHardwareKeysToNativeFocusedControls() {
         PloverCommandFocusState.setNativeControlFocused(true);
-        assertTrue(PloverCommandFocusState.shouldPassHardwareKeysToActivity());
+        assertTrue(PloverCommandFocusState.isNativeControlFocused());
+        assertTrue(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_TAB
+        ));
+        assertTrue(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_1
+        ));
+        assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_CTRL_LEFT
+        ));
+        assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_SHIFT_RIGHT
+        ));
 
         PloverCommandFocusState.setNativeControlFocused(false);
-        assertFalse(PloverCommandFocusState.shouldPassHardwareKeysToActivity());
+        assertFalse(PloverCommandFocusState.isNativeControlFocused());
+        assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_TAB
+        ));
     }
 }

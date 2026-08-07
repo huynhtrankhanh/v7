@@ -87,11 +87,13 @@ public class SettingsActivity extends Activity {
                 return;
             }
             ImePreferences.setExperimentalRerankerEnabled(this, checked);
-            if (!checked) {
-                IO_EXECUTOR.execute(
-                        () -> AndroidCandidateReranker.releaseIfUnavailable(this)
-                );
-            }
+            IO_EXECUTOR.execute(() -> {
+                if (checked) {
+                    AndroidCandidateReranker.preloadIfEnabled(this);
+                } else {
+                    AndroidCandidateReranker.releaseIfUnavailable(this);
+                }
+            });
         });
         manageDictionaries.setOnClickListener(view -> startActivity(
                 new Intent(this, DictionaryManagementActivity.class)
@@ -226,6 +228,11 @@ public class SettingsActivity extends Activity {
                             Toast.LENGTH_LONG
                     ).show();
                 });
+                if (ImePreferences.isExperimentalRerankerEnabled(this)) {
+                    IO_EXECUTOR.execute(
+                            () -> AndroidCandidateReranker.preloadIfEnabled(this)
+                    );
+                }
             } catch (IOException error) {
                 runOnUiThread(() -> {
                     setRerankerBusy(false);

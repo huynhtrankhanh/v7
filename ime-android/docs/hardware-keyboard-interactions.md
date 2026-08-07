@@ -83,9 +83,9 @@ textbox as one `/`-delimited outline. A lone `*` chord is reserved for undo: it
 removes the most recent in-progress stroke, or removes the last delimited
 stroke before the textbox cursor when the in-progress buffer is already empty.
 It is never appended as a literal stroke in this mode. Translation and
-lookup-text fields explicitly request plain-text mode: physical keys pass
-directly to the native editor, and a previously active Stripped Plover mode is
-temporarily suppressed without changing the user's persistent mode selection.
+lookup-text fields do not request a private mode: they use standard V7 and
+preserve the user's current STENO/Normal selection. Ctrl+Shift therefore keeps
+working in those fields instead of being suppressed by a forced Normal mode.
 
 ## Native form submission
 
@@ -125,5 +125,7 @@ tap both checks and focuses it. With a choice focused, number-row or numpad keys
 `Alt+9` provide the same access from anywhere in the dialog without stealing
 ordinary digits from the translation field; arrow-key radio navigation remains
 available. When a non-editor control owns focus, the IME explicitly passes
-hardware keys back to the activity instead of retaining the previous outline
-editor's steno-routing contract.
+dialog-navigation keys back to the activity instead of retaining the previous
+outline editor's steno-routing contract. Ctrl and Shift remain with the IME so
+the ordinary Ctrl+Shift mode toggle works; returning to an editor restores that
+editor's Raw-outline or standard-V7 routing without changing the saved mode.

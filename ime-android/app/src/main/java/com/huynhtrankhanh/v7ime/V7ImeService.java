@@ -46,6 +46,8 @@ public class V7ImeService extends InputMethodService {
     private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService rerankerWarmupExecutor =
+            Executors.newSingleThreadExecutor();
     private final KeyboardVisibilityController keyboardVisibilityController =
             new KeyboardVisibilityController();
     private final HardwareKeyActionResolver hardwareKeyActionResolver =
@@ -74,7 +76,6 @@ public class V7ImeService extends InputMethodService {
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
     private boolean rawOutlineMode = false;
-    private boolean plainTextMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
@@ -102,6 +103,7 @@ public class V7ImeService extends InputMethodService {
                 BundledStrippedPloverRuntime.get(this);
         runtime.addStateListener(ploverStateListener);
         runtime.addEventListener(ploverEventListener);
+        warmExperimentalReranker();
     }
 
     @Override
@@ -163,7 +165,6 @@ public class V7ImeService extends InputMethodService {
                         attribute == null ? null : attribute.privateImeOptions
                 );
         rawOutlineMode = editorMode == PloverCommandEditorMode.Mode.RAW_OUTLINE;
-        plainTextMode = editorMode == PloverCommandEditorMode.Mode.PLAIN_TEXT;
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
@@ -180,7 +181,6 @@ public class V7ImeService extends InputMethodService {
     public void onFinishInput() {
         clearPreeditSession();
         rawOutlineMode = false;
-        plainTextMode = false;
         publishEditorModeState();
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
@@ -265,6 +265,7 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
+        rerankerWarmupExecutor.shutdownNow();
         BundledStrippedPloverRuntime runtime =
                 BundledStrippedPloverRuntime.get(this);
         runtime.removeStateListener(ploverStateListener);
@@ -322,7 +323,9 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
-        if (PloverCommandFocusState.shouldPassHardwareKeysToActivity()) {
+        if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                event.getKeyCode()
+        )) {
             hardwareKeyActionResolver.reset();
             webCapturedHardwareKeys.clear();
             editorPassedHardwareKeys.clear();
@@ -330,7 +333,7 @@ public class V7ImeService extends InputMethodService {
         }
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
-                        (stenoModeEnabled && !plainTextMode) || rawOutlineMode,
+                        stenoModeEnabled || rawOutlineMode,
                         event.getKeyCode(),
                         event.getAction(),
                         event.getRepeatCount()
@@ -346,7 +349,7 @@ public class V7ImeService extends InputMethodService {
                 && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if ((!stenoModeEnabled || plainTextMode) && !rawOutlineMode) {
+        if (!stenoModeEnabled && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 editorPassedHardwareKeys.add(event.getKeyCode());
@@ -389,7 +392,8 @@ public class V7ImeService extends InputMethodService {
         lastKeyEventSignature = signature;
 
         if (action == HardwareKeyActionResolver.Action.TOGGLE_STENO) {
-            if (rawOutlineMode) {
+            if (rawOutlineMode
+                    && !PloverCommandFocusState.isNativeControlFocused()) {
                 return true;
             }
             editorPassedHardwareKeys.remove(event.getKeyCode());
@@ -757,7 +761,7 @@ public class V7ImeService extends InputMethodService {
                         + " && window.handleAndroidEditorModeChanged("
                         + rawOutlineMode
                         + ","
-                        + plainTextMode
+                        + false
                         + ")"
         );
     }
@@ -859,7 +863,8 @@ public class V7ImeService extends InputMethodService {
             Log.e(LOG_TAG, "Local inference failed", error);
         }
 
-        if (errorMessage.isEmpty()) {
+        if (errorMessage.isEmpty()
+                && latestInferenceRequestId.get() == requestId) {
             try {
                 responseBody = AndroidCandidateReranker.rerankIfEnabled(
                         this,
@@ -968,6 +973,12 @@ public class V7ImeService extends InputMethodService {
         });
     }
 
+    private void warmExperimentalReranker() {
+        rerankerWarmupExecutor.execute(
+                () -> AndroidCandidateReranker.preloadIfEnabled(this)
+        );
+    }
+
     private String getCurrentInferenceModelId() {
         Uri modelUri = ImePreferences.getModelUri(this);
         return modelUri == null ? "" : modelUri.toString();
@@ -1058,7 +1069,7 @@ public class V7ImeService extends InputMethodService {
             if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
-            if (!stenoModeEnabled || plainTextMode) {
+            if (!stenoModeEnabled) {
                 return false;
             }
             return super.dispatchKeyEvent(event);
@@ -1125,7 +1136,7 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public boolean isPlainTextMode() {
-            return plainTextMode;
+            return false;
         }
 
         @JavascriptInterface

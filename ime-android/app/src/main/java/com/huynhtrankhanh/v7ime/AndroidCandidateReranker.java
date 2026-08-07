@@ -9,6 +9,7 @@ import com.google.ai.edge.litertlm.ConversationConfig;
 import com.google.ai.edge.litertlm.Engine;
 import com.google.ai.edge.litertlm.EngineConfig;
 import com.google.ai.edge.litertlm.Message;
+import com.google.ai.edge.litertlm.ResponseFormat;
 import com.google.ai.edge.litertlm.SamplerConfig;
 import com.google.ai.edge.litertlm.ThinkingConfig;
 
@@ -25,8 +26,8 @@ import java.util.concurrent.atomic.AtomicLong;
 final class AndroidCandidateReranker {
     private static final String LOG_TAG = "V7Reranker";
     private static final Object ENGINE_LOCK = new Object();
-    private static final int MAX_CONTEXT_TOKENS = 8192;
-    private static final int MAX_OUTPUT_TOKENS = 64;
+    private static final int MAX_CONTEXT_TOKENS = 2048;
+    private static final int MAX_OUTPUT_TOKENS = 32;
     private static final int CPU_THREADS = RerankerExecutionPolicy.cpuThreadCount(
             Runtime.getRuntime().availableProcessors()
     );
@@ -35,11 +36,34 @@ final class AndroidCandidateReranker {
     private static Engine engine;
     private static volatile Conversation activeConversation;
     private static String loadedModelId = "";
+    private static String gpuRejectedModelId = "";
     private static volatile String loadedBackend = "";
     private static volatile String state = "disabled";
     private static volatile String lastError = "";
+    private static String cachedModelId = "";
+    private static String cachedPrompt = "";
+    private static List<Integer> cachedOrder = Collections.emptyList();
 
     private AndroidCandidateReranker() {
+    }
+
+    static void preloadIfEnabled(Context context) {
+        if (!ImePreferences.isExperimentalRerankerEnabled(context)
+                || !RerankerModelStore.hasModel(context)) {
+            releaseIfUnavailable(context);
+            return;
+        }
+        synchronized (ENGINE_LOCK) {
+            try {
+                getOrLoadEngine(context);
+                state = "ready";
+                lastError = "";
+            } catch (Exception | LinkageError error) {
+                setFailure(error);
+                closeEngine();
+                Log.w(LOG_TAG, "LiteRT-LM background preload failed", error);
+            }
+        }
     }
 
     static String rerankIfEnabled(Context context, String responseBody) throws Exception {
@@ -73,52 +97,96 @@ final class AndroidCandidateReranker {
             candidateTexts.add(text.toString());
         }
 
-        String modelOutput;
+        String modelOutput = null;
+        List<Integer> order = null;
+        String prompt = CandidateRerankProtocol.buildPrompt(candidateTexts);
+        long cancellationGeneration = CANCELLATION_GENERATION.get();
         synchronized (ENGINE_LOCK) {
-            Engine current = getOrLoadEngine(context);
-            state = "ranking";
-            long cancellationGeneration = CANCELLATION_GENERATION.get();
-            ConversationConfig config = new ConversationConfig(
-                    null,
-                    Collections.emptyList(),
-                    Collections.emptyList(),
-                    new SamplerConfig(1, 1.0, 0.0, 0),
-                    false,
-                    Collections.emptyList(),
-                    Collections.emptyMap(),
-                    null,
-                    false,
-                    MAX_OUTPUT_TOKENS,
-                    new ThinkingConfig(false, 0),
-                    false
-            );
-            try {
-                try (Conversation conversation = current.createConversation(config)) {
-                    activeConversation = conversation;
-                    try {
-                        Message answer = conversation.sendMessage(
-                                CandidateRerankProtocol.buildPrompt(candidateTexts)
-                        );
-                        modelOutput = answer.toString();
-                    } finally {
-                        if (activeConversation == conversation) {
-                            activeConversation = null;
-                        }
-                    }
-                }
-            } catch (Exception | LinkageError error) {
+            String modelId = ImePreferences.getRerankerModelId(context);
+            if (modelId.equals(cachedModelId) && prompt.equals(cachedPrompt)) {
+                order = new ArrayList<>(cachedOrder);
+                state = "ready";
+                lastError = "";
+            }
+            if (order == null) {
+                Engine current = getOrLoadEngine(context);
                 if (cancellationGeneration != CANCELLATION_GENERATION.get()) {
-                    state = "ready";
-                    lastError = "";
                     return responseBody;
                 }
-                setFailure(error);
-                closeEngine();
-                throw error;
+                state = "ranking";
+                try {
+                    modelOutput = generateOrder(current, prompt, rerankCount);
+                } catch (Exception | LinkageError error) {
+                    if (cancellationGeneration != CANCELLATION_GENERATION.get()) {
+                        state = "ready";
+                        lastError = "";
+                        return responseBody;
+                    }
+                    if (!"gpu".equals(loadedBackend)) {
+                        setFailure(error);
+                        closeEngine();
+                        throw error;
+                    }
+                    gpuRejectedModelId = loadedModelId;
+                    Log.w(
+                            LOG_TAG,
+                            "LiteRT-LM GPU generation failed; retrying on CPU",
+                            error
+                    );
+                    closeEngine();
+                    try {
+                        current = getOrLoadEngine(context);
+                        if (cancellationGeneration
+                                != CANCELLATION_GENERATION.get()) {
+                            return responseBody;
+                        }
+                        state = "ranking";
+                        modelOutput = generateOrder(current, prompt, rerankCount);
+                    } catch (Exception | LinkageError cpuError) {
+                        if (cancellationGeneration
+                                != CANCELLATION_GENERATION.get()) {
+                            state = "ready";
+                            lastError = "";
+                            return responseBody;
+                        }
+                        cpuError.addSuppressed(error);
+                        setFailure(cpuError);
+                        closeEngine();
+                        throw cpuError;
+                    }
+                }
             }
         }
 
-        List<Integer> order = CandidateRerankProtocol.parseOrder(modelOutput, rerankCount);
+        if (cancellationGeneration != CANCELLATION_GENERATION.get()) {
+            return responseBody;
+        }
+        if (order == null) {
+            try {
+                order = CandidateRerankProtocol.parseCompleteOrder(
+                        modelOutput,
+                        rerankCount
+                );
+            } catch (IllegalArgumentException protocolError) {
+                setFailure(protocolError);
+                Log.w(
+                        LOG_TAG,
+                        "Gemma returned no complete candidate order; keeping KenLM",
+                        protocolError
+                );
+                return responseBody;
+            }
+            synchronized (ENGINE_LOCK) {
+                if (ImePreferences.getRerankerModelId(context).equals(
+                        loadedModelId
+                )) {
+                    cachedModelId = loadedModelId;
+                    cachedPrompt = prompt;
+                    cachedOrder = new ArrayList<>(order);
+                }
+            }
+        }
+        Log.d(LOG_TAG, "Applying Gemma candidate order " + order);
         List<Object> originalCandidates = new ArrayList<>(candidates.length());
         for (int index = 0; index < candidates.length(); index++) {
             originalCandidates.add(candidates.get(index));
@@ -136,6 +204,50 @@ final class AndroidCandidateReranker {
         return response.toString();
     }
 
+    private static String generateOrder(
+            Engine current,
+            String prompt,
+            int rerankCount) throws Exception {
+        ConversationConfig config = new ConversationConfig(
+                null,
+                Collections.emptyList(),
+                Collections.emptyList(),
+                new SamplerConfig(1, 1.0, 0.0, 0),
+                false,
+                Collections.emptyList(),
+                Collections.emptyMap(),
+                null,
+                false,
+                MAX_OUTPUT_TOKENS,
+                new ThinkingConfig(false, 0),
+                true
+        );
+        try (Conversation conversation = current.createConversation(config)) {
+            activeConversation = conversation;
+            try {
+                Message answer = conversation.sendMessage(
+                        prompt,
+                        Collections.emptyMap(),
+                        null,
+                        null,
+                        null,
+                        null,
+                        new ThinkingConfig(false, 0),
+                        ResponseFormat.regex(
+                                CandidateRerankProtocol.responseRegex(
+                                        rerankCount
+                                )
+                        )
+                );
+                return answer.toString();
+            } finally {
+                if (activeConversation == conversation) {
+                    activeConversation = null;
+                }
+            }
+        }
+    }
+
     private static Engine getOrLoadEngine(Context context) throws Exception {
         String modelId = ImePreferences.getRerankerModelId(context);
         File model = RerankerModelStore.getModelFile(context);
@@ -145,13 +257,22 @@ final class AndroidCandidateReranker {
         if (engine != null && modelId.equals(loadedModelId)) {
             return engine;
         }
+        if (!modelId.equals(cachedModelId)) {
+            clearCachedOrder();
+        }
         closeEngine();
         state = "loading";
         lastError = "";
         Engine replacement;
         try {
+            if (modelId.equals(gpuRejectedModelId)) {
+                throw new IllegalStateException(
+                        "GPU was rejected earlier for this installed model"
+                );
+            }
             replacement = initializeEngine(context, model, new Backend.GPU(), "gpu");
         } catch (Exception | LinkageError gpuError) {
+            gpuRejectedModelId = modelId;
             Log.w(
                     LOG_TAG,
                     "LiteRT-LM GPU unavailable; falling back to CPU",
@@ -212,6 +333,7 @@ final class AndroidCandidateReranker {
                     ? "missing"
                     : "disabled";
             lastError = "";
+            clearCachedOrder();
         }
     }
 
@@ -241,11 +363,11 @@ final class AndroidCandidateReranker {
     }
 
     static void cancelActiveRanking() {
+        CANCELLATION_GENERATION.incrementAndGet();
         Conversation active = activeConversation;
         if (active == null) {
             return;
         }
-        CANCELLATION_GENERATION.incrementAndGet();
         try {
             active.cancelProcess();
         } catch (Exception | LinkageError ignored) {
@@ -268,5 +390,11 @@ final class AndroidCandidateReranker {
         }
         loadedModelId = "";
         loadedBackend = "";
+    }
+
+    private static void clearCachedOrder() {
+        cachedModelId = "";
+        cachedPrompt = "";
+        cachedOrder = Collections.emptyList();
     }
 }
