@@ -19,6 +19,13 @@ This project implements a high-performance Vietnamese text prediction engine usi
 *   `Dockerfile` / `docker-compose.yml`: Multi-stage Docker build and compose configuration.
 *   `lm.binary`: Trained binary language model — **generated artifact**, not in the repository.
 
+The Android IME also has an off-by-default, fully on-device LiteRT-LM stage
+that can rerank KenLM's first 50 candidates with a user-installed Gemma 3 1B
+IT model before results reach the keyboard WebUI. See the
+[experimental reranker guide](ime-android/docs/experimental-reranking.md) for
+the exact gated model download, Android Settings flow, research rationale,
+failure behavior, and performance/licensing constraints.
+
 ## Docker Support
 
 Docker is the recommended way to build and run the project. The `docker-compose.yml` defines four services:

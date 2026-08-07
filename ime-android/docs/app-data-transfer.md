@@ -16,6 +16,12 @@ The selected `lm.binary` language model is not included. V7 does not copy that
 file into app-private storage; Android retains permission to the external
 document selected by the user. Choose the model again on a new device.
 
+The optional experimental `.litertlm` reranker model is also excluded. Unlike
+KenLM, V7 stages that large file in private no-backup storage for reliable
+runtime access, but it is model material rather than Stripped Plover database
+state. Download and install it again on a new device by following the
+[reranker model instructions](experimental-reranking.md).
+
 ## Export
 
 Tap **Export all app data** and choose a destination through Android's Storage
