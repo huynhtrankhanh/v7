@@ -379,9 +379,7 @@ interface AndroidImeBridge {
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
   changeInputMethod(): void;
-  requestInference(body: string, requestId: number): void;
-  requestInferenceSync?: (body: string, requestId: number) => string;
-  shouldUseAsyncInference?(): boolean;
+  requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
@@ -428,16 +426,8 @@ if (androidIme) {
 }
 let androidInferenceRequestId = 1;
 let inferenceRunGeneration = 0;
-let androidInferenceInProgress = false;
 let lastRequestedAndroidKeyboardHeight = 0;
 let lastExpandedAndroidKeyboardHeight = 160;
-const androidInferencePending = new Map<
-  number,
-  {
-    resolve: (value: unknown) => void;
-    reject: (reason: Error) => void;
-  }
->();
 let androidPloverRequestId = 1;
 const ANDROID_PLOVER_REQUEST_TIMEOUT_MS = 180_000;
 const androidPloverPending = new Map<
@@ -2299,7 +2289,6 @@ async function runInference() {
   const hasV7 = state.islands.some((i) => i.isV7);
   if (!hasV7) {
     inferenceRunGeneration += 1;
-    setAndroidInferenceInProgress(false);
     abortInferenceRequest(true);
     state.candidates = [];
     inferenceErrorMessage =
@@ -2314,15 +2303,8 @@ async function runInference() {
   const runGeneration = ++inferenceRunGeneration;
   const controller = hasAbortController ? new AbortController() : null;
   inferenceAbortController = controller;
-  const usesAsyncAndroidInference =
-    !!androidIme && !canUseSynchronousAndroidInference();
-  if (usesAsyncAndroidInference) {
-    setAndroidInferenceInProgress(true);
-  }
-
-  // Candidates from the previous buffer are no longer valid while this request
-  // is in flight. The synchronous Android path can avoid flashing raw V7, while
-  // asynchronous inference keeps the raw composition visible and editable.
+  // Candidates from the previous buffer are no longer valid. Avoid flashing
+  // raw V7 while the synchronous Android bridge produces their replacements.
   state.candidates = [];
   if (!shouldDeferAndroidInferenceRender()) {
     updateDisplay();
@@ -2353,9 +2335,6 @@ async function runInference() {
       // A newer inference request has started; discard this response.
       return;
     }
-    if (runGeneration === inferenceRunGeneration) {
-      setAndroidInferenceInProgress(false);
-    }
     state.candidates = getInferenceCandidates(data);
     inferenceErrorMessage = "";
     updateDisplay();
@@ -2369,9 +2348,6 @@ async function runInference() {
     state.candidates = [];
     updateDisplay();
   } finally {
-    if (runGeneration === inferenceRunGeneration) {
-      setAndroidInferenceInProgress(false);
-    }
     if (controller && controller === inferenceAbortController) {
       // Only clear if this is still the latest inference request.
       inferenceAbortController = null;
@@ -2379,18 +2355,8 @@ async function runInference() {
   }
 }
 
-function setAndroidInferenceInProgress(inProgress: boolean): void {
-  if (androidInferenceInProgress === inProgress) return;
-  androidInferenceInProgress = inProgress;
-  updateInferenceStatusUI();
-}
-
 function shouldDeferAndroidInferenceRender(): boolean {
-  return (
-    !!androidIme &&
-    inferenceModelState === "ready" &&
-    canUseSynchronousAndroidInference()
-  );
+  return !!androidIme && inferenceModelState === "ready";
 }
 
 function hasOsPassthroughModifier(event: KeyboardEvent): boolean {
@@ -2600,21 +2566,8 @@ function setupImeControls(): void {
 
 function updateInferenceStatusUI(): void {
   const status = document.getElementById("inference-status");
-  const progress = document.getElementById("inference-progress");
   if (!status || !androidIme) return;
   updateInferenceErrorUI();
-  if (progress) {
-    progress.hidden = !androidInferenceInProgress;
-  }
-  if (androidInferenceInProgress) {
-    status.textContent =
-      inferenceModelState === "loading"
-        ? "Loading KenLM model… · typing active"
-        : "Running inference… · typing active";
-    status.className = "ime-mode-detail loading";
-    status.title = "";
-    return;
-  }
   const labels: Record<string, string> = {
     missing: "Model missing",
     not_loaded: "Model not loaded",
@@ -3425,12 +3378,6 @@ declare global {
     clearPreeditFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
-    handleAndroidInferenceResponse?: (
-      requestId: number,
-      statusCode: number,
-      responseBody: string,
-      errorMessage: string,
-    ) => void;
     handleAndroidPloverResponse?: (
       requestId: number,
       responseBody: string,
@@ -3461,64 +3408,38 @@ function requestAndroidInference(
   body: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    if (!androidIme) {
-      reject(new Error("Android IME bridge is unavailable"));
-      return;
-    }
+  if (!androidIme) {
+    return Promise.reject(new Error("Android IME bridge is unavailable"));
+  }
+  if (signal?.aborted) {
+    return Promise.reject(
+      new DOMException("Inference request was aborted", "AbortError"),
+    );
+  }
 
-    const requestId = androidInferenceRequestId++;
-    const abort = () => {
-      androidInferencePending.delete(requestId);
-      reject(new DOMException("Inference request was aborted", "AbortError"));
-    };
-    if (signal?.aborted) {
-      abort();
-      return;
-    }
-
-    try {
-      if (canUseSynchronousAndroidInference()) {
-        const response = JSON.parse(
-          androidIme.requestInferenceSync!(body, requestId),
-        );
-        if (response.errorMessage) {
-          reject(new Error(String(response.errorMessage)));
-          return;
-        }
-        const statusCode = Number(response.statusCode ?? 0);
-        if (statusCode < 200 || statusCode >= 300) {
-          reject(
-            new Error(
-              `Local inference returned status ${statusCode}${
-                response.responseBody ? `: ${response.responseBody}` : ""
-              }`,
-            ),
-          );
-          return;
-        }
-        resolve(JSON.parse(String(response.responseBody ?? "")));
-        return;
-      }
-
-      androidInferencePending.set(requestId, { resolve, reject });
-      signal?.addEventListener("abort", abort, { once: true });
-      androidIme.requestInference(body, requestId);
-    } catch (error) {
-      androidInferencePending.delete(requestId);
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
-}
-
-function canUseSynchronousAndroidInference(): boolean {
-  if (!androidIme?.requestInferenceSync) return false;
   try {
-    return androidIme.shouldUseAsyncInference?.() !== true;
-  } catch {
-    // A bridge-version mismatch must not push expensive inference back onto
-    // the WebView's blocking JavascriptInterface call.
-    return false;
+    const requestId = androidInferenceRequestId++;
+    const response = JSON.parse(
+      androidIme.requestInferenceSync(body, requestId),
+    );
+    if (response.errorMessage) {
+      return Promise.reject(new Error(String(response.errorMessage)));
+    }
+    const statusCode = Number(response.statusCode ?? 0);
+    if (statusCode < 200 || statusCode >= 300) {
+      return Promise.reject(
+        new Error(
+          `Local inference returned status ${statusCode}${
+            response.responseBody ? `: ${response.responseBody}` : ""
+          }`,
+        ),
+      );
+    }
+    return Promise.resolve(JSON.parse(String(response.responseBody ?? "")));
+  } catch (error) {
+    return Promise.reject(
+      error instanceof Error ? error : new Error(String(error)),
+    );
   }
 }
 
@@ -3549,37 +3470,6 @@ function requestAndroidPlover(
     }
   });
 }
-
-window.handleAndroidInferenceResponse = (
-  requestId,
-  statusCode,
-  responseBody,
-  errorMessage,
-) => {
-  const pending = androidInferencePending.get(requestId);
-  if (!pending) return;
-  androidInferencePending.delete(requestId);
-
-  if (errorMessage) {
-    pending.reject(new Error(errorMessage));
-    return;
-  }
-  if (statusCode < 200 || statusCode >= 300) {
-    pending.reject(
-      new Error(
-        `Local inference returned status ${statusCode}${
-          responseBody ? `: ${responseBody}` : ""
-        }`,
-      ),
-    );
-    return;
-  }
-  try {
-    pending.resolve(JSON.parse(responseBody));
-  } catch {
-    pending.reject(new Error("Local inference returned invalid JSON"));
-  }
-};
 
 window.handleAndroidInferenceState = (modelState) => {
   inferenceModelState = modelState;

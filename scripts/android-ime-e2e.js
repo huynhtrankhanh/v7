@@ -161,40 +161,34 @@ async function main() {
         undoRawOutlineStroke() {
           window.__androidRawOutlineUndos += 1;
         },
-        requestInference(body, requestId) {
+        requestInferenceSync(body) {
+          window.__androidSyncInferenceCalls += 1;
           window.__androidInferenceBodies.push(JSON.parse(body));
-          window.__androidModelState = "loading";
-          window.handleAndroidInferenceState("loading");
-          setTimeout(() => {
-            if (window.__androidInferenceError) {
-              window.__androidModelState = "error";
-              window.handleAndroidInferenceState("error");
-              window.handleAndroidInferenceResponse(
-                requestId,
-                0,
-                "",
-                window.__androidInferenceError,
-              );
-              return;
-            }
-            window.__androidModelState = "ready";
-            window.handleAndroidInferenceState("ready");
-            window.handleAndroidInferenceResponse(
-              requestId,
-              200,
-              JSON.stringify(
-                window.__androidInferenceResponse || {
-                  candidates: [
-                    ["alpha beta keep delta omega"],
-                    ["alpha x keep delta omega"],
-                    ["alpha beta keep y omega"],
-                    ["alpha x keep y omega"],
-                  ],
-                },
-              ),
-              "",
-            );
-          }, window.__androidInferenceDelay);
+          if (window.__androidInferenceError) {
+            window.__androidModelState = "error";
+            window.handleAndroidInferenceState("error");
+            return JSON.stringify({
+              statusCode: 0,
+              responseBody: "",
+              errorMessage: window.__androidInferenceError,
+            });
+          }
+          window.__androidModelState = "ready";
+          window.handleAndroidInferenceState("ready");
+          return JSON.stringify({
+            statusCode: 200,
+            responseBody: JSON.stringify(
+              window.__androidInferenceResponse || {
+                candidates: [
+                  ["alpha beta keep delta omega"],
+                  ["alpha x keep delta omega"],
+                  ["alpha beta keep y omega"],
+                  ["alpha x keep y omega"],
+                ],
+              },
+            ),
+            errorMessage: "",
+          });
         },
         requestPlover(body, requestId) {
           const request = JSON.parse(body);
@@ -580,35 +574,6 @@ async function main() {
     );
 
     await page.evaluate(() => {
-      window.AndroidIme.requestInferenceSync = (body) => {
-        window.__androidSyncInferenceCalls += 1;
-        window.__androidInferenceBodies.push(JSON.parse(body));
-        if (window.__androidInferenceError) {
-          window.__androidModelState = "error";
-          window.handleAndroidInferenceState("error");
-          return JSON.stringify({
-            statusCode: 0,
-            responseBody: "",
-            errorMessage: window.__androidInferenceError,
-          });
-        }
-        window.__androidModelState = "ready";
-        window.handleAndroidInferenceState("ready");
-        return JSON.stringify({
-          statusCode: 200,
-          responseBody: JSON.stringify(
-            window.__androidInferenceResponse || {
-              candidates: [
-                ["alpha beta keep delta omega"],
-                ["alpha x keep delta omega"],
-                ["alpha beta keep y omega"],
-                ["alpha x keep y omega"],
-              ],
-            },
-          ),
-          errorMessage: "",
-        });
-      };
       window.__androidInferenceDelay = 200;
       window.__androidInferenceResponse = {
         candidates: [["ready pending result"]],

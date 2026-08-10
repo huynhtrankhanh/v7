@@ -155,42 +155,6 @@ button {
   color: var(--ime-plover);
 }
 
-.ime-inference-progress {
-  background: rgba(245, 189, 79, 0.24);
-  border-radius: 999px;
-  display: inline-block;
-  height: 3px;
-  overflow: hidden;
-  position: relative;
-  width: 42px;
-}
-
-.ime-inference-progress[hidden] {
-  display: none;
-}
-
-.ime-inference-progress::after {
-  background: var(--ime-plover);
-  border-radius: inherit;
-  content: "";
-  height: 100%;
-  left: 0;
-  position: absolute;
-  top: 0;
-  transform: translateX(60%);
-  width: 45%;
-}
-
-@keyframes ime-inference-progress {
-  from {
-    transform: translateX(-110%);
-  }
-
-  to {
-    transform: translateX(245%);
-  }
-}
-
 #inference-status.ready {
   color: var(--ime-accent);
 }
@@ -592,10 +556,6 @@ body.android-raw-outline .ime-plover-state {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ime-inference-progress::after {
-    animation: ime-inference-progress 900ms ease-in-out infinite;
-  }
-
   #cursor {
     animation: ime-cursor 1.1s steps(1, end) infinite;
   }
