@@ -3324,8 +3324,7 @@ function setupPloverControls(): void {
           sort: "alphabetic",
         });
         const expectedTranslation =
-          lookup.entries?.[0]?.stroke === stroke &&
-          typeof lookup.entries[0].translation === "string"
+          typeof lookup.entries?.[0]?.translation === "string"
             ? lookup.entries[0].translation
             : null;
         if (expectedTranslation === null) {

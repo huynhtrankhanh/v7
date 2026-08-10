@@ -226,6 +226,28 @@ async function main() {
         },
         query(sql, parametersJson = "[]") {
           const parameters = JSON.parse(parametersJson);
+          const exactEntryFilter = (entry) =>
+            entry.dictionary === parameters[0] &&
+            entry.stroke.toLocaleLowerCase() ===
+              String(parameters[1]).toLocaleLowerCase();
+          if (
+            /COUNT\(\*\).*WHERE dictionary = \? AND stroke = \? COLLATE NOCASE/is.test(
+              sql,
+            )
+          ) {
+            return JSON.stringify([
+              { count: window.__sqliteEntries.filter(exactEntryFilter).length },
+            ]);
+          }
+          if (
+            /SELECT dictionary, stroke, translation.*WHERE dictionary = \? AND stroke = \? COLLATE NOCASE/is.test(
+              sql,
+            )
+          ) {
+            return JSON.stringify(
+              window.__sqliteEntries.filter(exactEntryFilter).slice(0, 10),
+            );
+          }
           if (
             /SELECT COUNT\(\*\) AS count FROM entries WHERE dictionary = \?/i.test(
               sql,
@@ -274,6 +296,27 @@ async function main() {
               stroke,
               translation,
             });
+            return JSON.stringify({ changes: 1, lastInsertRowid: 1 });
+          } else if (/INSERT OR IGNORE INTO entries/i.test(sql)) {
+            const [dictionary, stroke, translation] = parameters;
+            const exists = window.__sqliteEntries.some(
+              (entry) =>
+                entry.dictionary === dictionary && entry.stroke === stroke,
+            );
+            if (!exists) {
+              window.__sqliteEntries.push({ dictionary, stroke, translation });
+            }
+            return JSON.stringify({ changes: exists ? 0 : 1 });
+          } else if (/UPDATE entries SET translation = \?/i.test(sql)) {
+            const [translation, dictionary, stroke, expected] = parameters;
+            const entry = window.__sqliteEntries.find(
+              (candidate) =>
+                candidate.dictionary === dictionary &&
+                candidate.stroke === stroke &&
+                candidate.translation === expected,
+            );
+            if (entry) entry.translation = translation;
+            return JSON.stringify({ changes: entry ? 1 : 0 });
           } else if (/DELETE FROM entries WHERE dictionary = \?/i.test(sql)) {
             window.__sqliteEntries = window.__sqliteEntries.filter(
               (entry) => entry.dictionary !== parameters[0],
@@ -316,9 +359,29 @@ async function main() {
     const eventImport = await requestRuntime(page, 8, "import_dictionary", {
       name: "host-events.json",
       type: "json",
-      data: { TEFT: "{PLOVER:LOOKUP:test}" },
+      data: {
+        TEFT: "{PLOVER:LOOKUP:test}",
+        ST: "case-insensitive-exact-match",
+      },
       merge: false,
     });
+    const exactSearch = await requestRuntime(page, 17, "search_entries", {
+      dictionary: "host-events.json",
+      stroke: "st",
+      match: "exact",
+      page: 1,
+      page_size: 10,
+      sort: "alphabetic",
+    });
+    if (
+      exactSearch.entries?.length !== 1 ||
+      exactSearch.entries[0].stroke !== "ST" ||
+      exactSearch.entries[0].translation !== "case-insensitive-exact-match"
+    ) {
+      throw new Error(
+        `bundled runtime did not perform a case-insensitive exact search: ${JSON.stringify(exactSearch)}`,
+      );
+    }
     const addConflict = await requestRuntime(page, 12, "add_entry_safely", {
       name: "host-events.json",
       stroke: "TEFT",

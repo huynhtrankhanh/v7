@@ -256,7 +256,7 @@ async function main() {
               results.search_entries.entries = [
                 {
                   dictionary: request.params.dictionary,
-                  stroke: request.params.stroke,
+                  stroke: request.params.stroke.toUpperCase(),
                   translation: "test",
                 },
               ];
@@ -1089,7 +1089,7 @@ async function main() {
       document.querySelector("#plover-entry-stroke").value = "";
       document.querySelector("#plover-entry-translation").value = "";
     });
-    await page.type("#plover-entry-stroke", "T*");
+    await page.type("#plover-entry-stroke", "t*");
     await page.type("#plover-entry-translation", "entry");
     await page.click("#plover-entry-add");
     await page.waitForFunction(() =>
@@ -1097,7 +1097,7 @@ async function main() {
         (request) =>
           request.method === "add_entry_safely" &&
           request.params.name === "main.json" &&
-          request.params.stroke === "T*" &&
+          request.params.stroke === "t*" &&
           request.params.translation === "entry",
       ),
     );
@@ -1105,15 +1105,23 @@ async function main() {
       document.querySelector("#plover-entry-translation").value = "updated";
     });
     await page.click("#plover-entry-update");
-    await page.waitForFunction(() =>
-      window.__androidPloverBodies.some(
-        (request) =>
-          request.method === "replace_entry" &&
-          request.params.name === "main.json" &&
-          request.params.stroke === "T*" &&
-          request.params.translation === "updated" &&
-          request.params.expected_translation === "test",
-      ),
+    await page.waitForFunction(
+      () =>
+        window.__androidPloverBodies.some(
+          (request) =>
+            request.method === "search_entries" &&
+            request.params.dictionary === "main.json" &&
+            request.params.stroke === "t*" &&
+            request.params.match === "exact",
+        ) &&
+        window.__androidPloverBodies.some(
+          (request) =>
+            request.method === "replace_entry" &&
+            request.params.name === "main.json" &&
+            request.params.stroke === "t*" &&
+            request.params.translation === "updated" &&
+            request.params.expected_translation === "test",
+        ),
     );
     await page.click("#plover-entry-remove");
     await page.waitForFunction(() =>
@@ -1121,8 +1129,17 @@ async function main() {
         (request) =>
           request.method === "remove_entry" &&
           request.params.name === "main.json" &&
-          request.params.stroke === "T*",
+          request.params.stroke === "t*",
       ),
+    );
+    assert(
+      await page.evaluate(() =>
+        window.__androidPloverBodies.every(
+          (request) =>
+            request.method !== "add_entry" && request.method !== "update_entry",
+        ),
+      ),
+      "Android dictionary management fell back to an unsafe mutation RPC",
     );
 
     await page.click("#plover-tab-lookup");
