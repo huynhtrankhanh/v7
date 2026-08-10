@@ -46,8 +46,6 @@ public class V7ImeService extends InputMethodService {
     private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
-    private final ExecutorService rerankerWarmupExecutor =
-            Executors.newSingleThreadExecutor();
     private final KeyboardVisibilityController keyboardVisibilityController =
             new KeyboardVisibilityController();
     private final HardwareKeyActionResolver hardwareKeyActionResolver =
@@ -103,7 +101,6 @@ public class V7ImeService extends InputMethodService {
                 BundledStrippedPloverRuntime.get(this);
         runtime.addStateListener(ploverStateListener);
         runtime.addEventListener(ploverEventListener);
-        warmExperimentalReranker();
     }
 
     @Override
@@ -265,7 +262,6 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
-        rerankerWarmupExecutor.shutdownNow();
         BundledStrippedPloverRuntime runtime =
                 BundledStrippedPloverRuntime.get(this);
         runtime.removeStateListener(ploverStateListener);
@@ -879,25 +875,6 @@ public class V7ImeService extends InputMethodService {
         );
     }
 
-    private void requestInference(String requestBody, int requestId) {
-        latestInferenceRequestId.set(requestId);
-        NativeInference.cancelReranker();
-        inferenceExecutor.execute(() -> {
-            if (latestInferenceRequestId.get() != requestId) {
-                return;
-            }
-            InferenceResult result = runNativeInference(requestBody, requestId);
-            String script = "window.handleAndroidInferenceResponse"
-                    + " && window.handleAndroidInferenceResponse("
-                    + requestId + ","
-                    + result.statusCode + ","
-                    + JSONObject.quote(result.responseBody) + ","
-                    + JSONObject.quote(result.errorMessage)
-                    + ")";
-            evaluateJavascript(script);
-        });
-    }
-
     private String requestInferenceSync(String requestBody, int requestId) {
         InferenceResult result = runNativeInference(requestBody, requestId);
         JSONObject response = new JSONObject();
@@ -952,12 +929,6 @@ public class V7ImeService extends InputMethodService {
                 }
             }
         });
-    }
-
-    private void warmExperimentalReranker() {
-        rerankerWarmupExecutor.execute(
-                () -> NativeInference.preloadReranker(this)
-        );
     }
 
     private String getCurrentInferenceModelId() {
@@ -1204,74 +1175,12 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void requestInference(String body, int requestId) {
-            if (isCurrentInputView()) {
-                V7ImeService.this.requestInference(body, requestId);
-            }
-        }
-
-        @JavascriptInterface
         public String requestInferenceSync(String body, int requestId) {
             if (!isCurrentInputView()) {
                 return "{\"statusCode\":409,\"responseBody\":\"\","
                         + "\"errorMessage\":\"Stale input view\"}";
             }
             return V7ImeService.this.requestInferenceSync(body, requestId);
-        }
-
-        @JavascriptInterface
-        public boolean shouldUseAsyncInference() {
-            return isCurrentInputView()
-                    && ImePreferences.isExperimentalRerankerEnabled(
-                            V7ImeService.this
-                    );
-        }
-
-        @JavascriptInterface
-        public String getExperimentalRerankerState() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerState(V7ImeService.this)
-                    : "disabled";
-        }
-
-        @JavascriptInterface
-        public String getExperimentalRerankerError() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerError(V7ImeService.this)
-                    : "";
-        }
-
-        @JavascriptInterface
-        public String getExperimentalRerankerBackend() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerBackend(V7ImeService.this)
-                    : "";
-        }
-
-        @JavascriptInterface
-        public String getExperimentalRerankerWarning() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerWarning(V7ImeService.this)
-                    : "";
-        }
-
-        @JavascriptInterface
-        public int getExperimentalRerankerCompleted() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerCompleted(V7ImeService.this)
-                    : 0;
-        }
-
-        @JavascriptInterface
-        public int getExperimentalRerankerTotal() {
-            return isCurrentInputView()
-                    ? NativeInference.getRerankerTotal(V7ImeService.this)
-                    : 0;
-        }
-
-        @JavascriptInterface
-        public int getExperimentalRerankerTopK() {
-            return ImePreferences.getRerankerTopK(V7ImeService.this);
         }
 
         @JavascriptInterface

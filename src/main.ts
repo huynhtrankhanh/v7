@@ -365,8 +365,6 @@ const state: AppState = {
 };
 let isRawMode = false;
 let inferenceErrorMessage = "";
-let rerankerErrorMessage = "";
-let rerankerWarningMessage = "";
 let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
   enabled: false,
   copyAllowed: false,
@@ -384,13 +382,6 @@ interface AndroidImeBridge {
   requestInference(body: string, requestId: number): void;
   requestInferenceSync?: (body: string, requestId: number) => string;
   shouldUseAsyncInference?(): boolean;
-  getExperimentalRerankerState?(): string;
-  getExperimentalRerankerError?(): string;
-  getExperimentalRerankerBackend?(): string;
-  getExperimentalRerankerWarning?(): string;
-  getExperimentalRerankerTopK?(): number;
-  getExperimentalRerankerCompleted?(): number;
-  getExperimentalRerankerTotal?(): number;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
   setKeyboardHeight(heightDp: number): void;
@@ -438,7 +429,6 @@ if (androidIme) {
 let androidInferenceRequestId = 1;
 let inferenceRunGeneration = 0;
 let androidInferenceInProgress = false;
-let inferenceProgressTimer: number | null = null;
 let lastRequestedAndroidKeyboardHeight = 0;
 let lastExpandedAndroidKeyboardHeight = 160;
 const androidInferencePending = new Map<
@@ -2331,9 +2321,8 @@ async function runInference() {
   }
 
   // Candidates from the previous buffer are no longer valid while this request
-  // is in flight. The fast KenLM-only Android path can avoid flashing raw V7.
-  // Experimental LiteRT reranking is asynchronous and deliberately keeps the
-  // raw composition visible and editable while the progress indicator runs.
+  // is in flight. The synchronous Android path can avoid flashing raw V7, while
+  // asynchronous inference keeps the raw composition visible and editable.
   state.candidates = [];
   if (!shouldDeferAndroidInferenceRender()) {
     updateDisplay();
@@ -2588,18 +2577,12 @@ function toggleKeyboardLayout(): void {
 function updateInferenceErrorUI(): void {
   const inferenceError = document.getElementById("inference-error");
   if (!inferenceError) return;
-  const visibleError =
-    inferenceErrorMessage || rerankerErrorMessage || rerankerWarningMessage;
-  inferenceError.hidden = visibleError === "";
+  inferenceError.hidden = inferenceErrorMessage === "";
   inferenceError.textContent = inferenceErrorMessage
     ? isTrainerEmbedded
       ? `Không lấy được các cách viết: ${inferenceErrorMessage}`
       : `Inference error: ${inferenceErrorMessage}`
-    : rerankerErrorMessage
-      ? `Reranker error (KenLM fallback): ${rerankerErrorMessage}`
-      : rerankerWarningMessage
-        ? `Reranker backend warning: ${rerankerWarningMessage}`
-        : "";
+    : "";
 }
 
 function setupImeControls(): void {
@@ -2619,91 +2602,17 @@ function updateInferenceStatusUI(): void {
   const status = document.getElementById("inference-status");
   const progress = document.getElementById("inference-progress");
   if (!status || !androidIme) return;
-  let rerankerState = "disabled";
-  let rerankerError = "";
-  let rerankerBackend = "";
-  let rerankerWarning = "";
-  let rerankerTopK = 50;
-  let rerankerCompleted = 0;
-  let rerankerTotal = 0;
-  try {
-    rerankerState = androidIme.getExperimentalRerankerState?.() ?? "disabled";
-    rerankerError = androidIme.getExperimentalRerankerError?.() ?? "";
-    rerankerBackend = androidIme.getExperimentalRerankerBackend?.() ?? "";
-    rerankerWarning = androidIme.getExperimentalRerankerWarning?.() ?? "";
-    rerankerTopK = androidIme.getExperimentalRerankerTopK?.() ?? 50;
-    rerankerCompleted = androidIme.getExperimentalRerankerCompleted?.() ?? 0;
-    rerankerTotal = androidIme.getExperimentalRerankerTotal?.() ?? 0;
-  } catch {
-    // Older native bridges have only the core inference status.
-  }
-  rerankerErrorMessage = rerankerState === "error" ? rerankerError : "";
-  rerankerWarningMessage = rerankerWarning;
   updateInferenceErrorUI();
-  const backendLabel = rerankerBackend
-    ? ` · ${rerankerBackend.toUpperCase()}`
-    : "";
-  const rerankerBusy =
-    rerankerState === "loading" || rerankerState === "ranking";
-  const shouldPoll = androidInferenceInProgress || rerankerBusy;
-  if (shouldPoll && inferenceProgressTimer === null) {
-    inferenceProgressTimer = window.setInterval(updateInferenceStatusUI, 250);
-  } else if (!shouldPoll && inferenceProgressTimer !== null) {
-    window.clearInterval(inferenceProgressTimer);
-    inferenceProgressTimer = null;
-  }
   if (progress) {
-    progress.hidden = !shouldPoll;
-    const hasRankingProgress = rerankerState === "ranking" && rerankerTotal > 0;
-    progress.classList.toggle("determinate", hasRankingProgress);
-    if (hasRankingProgress) {
-      progress.style.setProperty(
-        "--ime-inference-progress",
-        `${Math.min(100, (rerankerCompleted / rerankerTotal) * 100)}%`,
-      );
-      progress.setAttribute("aria-valuemin", "0");
-      progress.setAttribute("aria-valuemax", String(rerankerTotal));
-      progress.setAttribute("aria-valuenow", String(rerankerCompleted));
-    } else {
-      progress.style.removeProperty("--ime-inference-progress");
-      progress.removeAttribute("aria-valuemin");
-      progress.removeAttribute("aria-valuemax");
-      progress.removeAttribute("aria-valuenow");
-    }
+    progress.hidden = !androidInferenceInProgress;
   }
   if (androidInferenceInProgress) {
-    const loadingCoreModel = inferenceModelState === "loading";
-    const loadingReranker =
-      rerankerState === "not_loaded" || rerankerState === "loading";
-    status.textContent = loadingCoreModel
-      ? "Loading KenLM model… · typing active"
-      : loadingReranker
-        ? `Loading Android ML model${backendLabel}… · typing active`
-        : rerankerTotal > 0
-          ? `Reranking ${rerankerCompleted}/${rerankerTotal}${backendLabel}… · typing active`
-          : `Reranking ${rerankerTopK}${backendLabel}… · typing active`;
-    status.className = "ime-mode-detail reranking";
-    status.title = "";
-    return;
-  }
-  if (rerankerState !== "disabled") {
-    const rerankerLabels: Record<string, string> = {
-      missing: "Reranker model missing · KenLM active",
-      not_loaded: "Reranker waiting · KenLM active",
-      loading: `Loading Android ML model${backendLabel}…`,
-      ranking:
-        rerankerTotal > 0
-          ? `Reranking ${rerankerCompleted}/${rerankerTotal}${backendLabel}…`
-          : `Reranking ${rerankerTopK}${backendLabel}…`,
-      ready: rerankerBackend
-        ? `Reranker ready · ${rerankerBackend.toUpperCase()}`
-        : "Reranker ready",
-      error: "Reranker error · KenLM fallback",
-    };
     status.textContent =
-      rerankerLabels[rerankerState] ?? `Reranker ${rerankerState}`;
-    status.className = `ime-mode-detail reranker-${rerankerState}`;
-    status.title = rerankerError || rerankerWarning;
+      inferenceModelState === "loading"
+        ? "Loading KenLM model… · typing active"
+        : "Running inference… · typing active";
+    status.className = "ime-mode-detail loading";
+    status.title = "";
     return;
   }
   const labels: Record<string, string> = {

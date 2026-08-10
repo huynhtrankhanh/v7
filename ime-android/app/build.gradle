@@ -35,7 +35,6 @@ android {
                     "generated/strippedPloverWeb"
             )
             assets.srcDir layout.buildDirectory.dir("generated/sourceArchive")
-            assets.srcDir layout.buildDirectory.dir("generated/liteRtLmNotices")
             jniLibs.srcDir layout.buildDirectory.dir("generated/nativeJniLibs")
         }
     }
@@ -67,8 +66,6 @@ def generatedStrippedPloverAssets = layout.buildDirectory.dir(
         "generated/strippedPloverWeb"
 )
 def kenlmRoot = layout.buildDirectory.dir("kenlm")
-def liteRtLmRoot = layout.buildDirectory.dir("litert-lm")
-def liteRtLmTools = layout.buildDirectory.dir("litert-lm-tools")
 def strippedPloverRoot = layout.buildDirectory.dir("stripped-plover")
 def strippedPloverTypecheck = layout.buildDirectory.dir(
         "stripped-plover-android-typecheck"
@@ -78,58 +75,6 @@ def cargoTargetDirectory = layout.buildDirectory.dir("rust-target")
 def generatedSourceArchive = layout.buildDirectory.file(
         "generated/sourceArchive/v7-ime-source.zip"
 )
-def generatedLiteRtLmNotices = layout.buildDirectory.dir(
-        "generated/liteRtLmNotices/third-party/litert-lm"
-)
-tasks.register("extractLiteRtLmNotices", Sync) {
-    dependsOn "prepareLiteRtLm"
-    from(liteRtLmRoot) {
-        include "LICENSE"
-        filePermissions {
-            user {
-                read = true
-                write = true
-            }
-            group.read = true
-            other.read = true
-        }
-    }
-    into generatedLiteRtLmNotices
-}
-
-tasks.register("prepareLiteRtLm", Exec) {
-    commandLine(
-            rootProject.file("scripts/prepare-litert-lm.sh"),
-            liteRtLmRoot.get().asFile,
-            rootProject.file("LITERT_LM_REVISION")
-    )
-    inputs.files(
-            rootProject.file("LITERT_LM_REVISION"),
-            rootProject.file("scripts/prepare-litert-lm.sh"),
-            rootProject.file("patches/litert-lm-build.patch")
-    )
-    outputs.dir liteRtLmRoot
-}
-
-tasks.register("buildLiteRtLm", Exec) {
-    dependsOn "prepareLiteRtLm"
-    commandLine(
-            rootProject.file("scripts/build-litert-lm.sh"),
-            liteRtLmRoot.get().asFile,
-            generatedNativeLibraries.get().asFile,
-            liteRtLmTools.get().asFile
-    )
-    inputs.files(
-            rootProject.file("LITERT_LM_REVISION"),
-            rootProject.file("scripts/build-litert-lm.sh"),
-            rootProject.file("patches/litert-lm-build.patch")
-    )
-    outputs.files(
-            generatedNativeLibraries.map { it.file("arm64-v8a/liblitert-lm.so") },
-            generatedNativeLibraries.map { it.file("x86_64/liblitert-lm.so") }
-    )
-}
-
 tasks.register("buildWebUi", Exec) {
     workingDir webRoot
     commandLine "npm", "run", "build"
@@ -224,7 +169,6 @@ tasks.register("buildStrippedPloverWeb", Exec) {
 
 tasks.register("buildNativeInference", Exec) {
     dependsOn "prepareKenlm"
-    dependsOn "buildLiteRtLm"
     commandLine(
             rootProject.file("scripts/build-native.sh"),
             webRoot,
@@ -248,7 +192,6 @@ tasks.register("buildNativeInference", Exec) {
 
 tasks.register("buildSourceArchive", Exec) {
     dependsOn "prepareKenlm"
-    dependsOn "prepareLiteRtLm"
     dependsOn "prepareStrippedPlover"
     commandLine(
             rootProject.file("scripts/make-source-archive.sh"),
@@ -282,7 +225,6 @@ tasks.register("buildSourceArchive", Exec) {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn "extractLiteRtLmNotices"
     dependsOn "syncWebUi"
     dependsOn "buildStrippedPloverWeb"
     dependsOn "buildNativeInference"
