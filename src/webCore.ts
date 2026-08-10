@@ -239,6 +239,11 @@ export class KeyboardStrokeTracker {
   private heldKeys = new Set<string>();
   private strokeKeys = new Set<string>();
 
+  reset(): void {
+    this.heldKeys.clear();
+    this.strokeKeys.clear();
+  }
+
   keyDown(
     key: string,
     options: { includeInStroke?: boolean } = {},

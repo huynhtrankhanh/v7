@@ -175,6 +175,23 @@ describe("webCore keyboard input", () => {
     expect(tracker.keyUp("p")).toBe("SAT");
   });
 
+  test("reset discards a partial stroke and allows the next stroke", () => {
+    const tracker = new KeyboardStrokeTracker();
+    tracker.keyDown("q");
+    tracker.reset();
+    tracker.keyDown("a");
+    expect(tracker.keyUp("a")).toBe("S");
+  });
+
+  test("key releases from before a reset do not emit a stale stroke", () => {
+    const tracker = new KeyboardStrokeTracker();
+    tracker.keyDown("q");
+    tracker.keyDown("w");
+    tracker.reset();
+    expect(tracker.keyUp("q")).toBeNull();
+    expect(tracker.keyUp("w")).toBeNull();
+  });
+
   test("defines the on-screen keyboard as QWERTY rows", () => {
     const rows = qwertyKeyboardLayout.map((row) => row.map((key) => key.key));
 
