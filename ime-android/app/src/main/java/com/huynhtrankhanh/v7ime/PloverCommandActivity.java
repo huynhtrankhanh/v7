@@ -95,6 +95,18 @@ public class PloverCommandActivity extends Activity {
         );
     }
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        PloverCommandFocusState.setCommandActivityActive(true);
+    }
+
+    @Override
+    protected void onStop() {
+        PloverCommandFocusState.setCommandActivityActive(false);
+        super.onStop();
+    }
+
     private void renderCommand(Intent intent) {
         commandGeneration += 1;
         content.removeAllViews();
@@ -118,7 +130,11 @@ public class PloverCommandActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE
+                && !event.isShiftPressed()
+                && !event.isCtrlPressed()
+                && !event.isAltPressed()
+                && !event.isMetaPressed()) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && event.getRepeatCount() == 0) {
                 finish();
@@ -345,10 +361,12 @@ public class PloverCommandActivity extends Activity {
                 void run() {
                     status.setText(R.string.adding_translation);
                     revealFocusedView(status);
-                    request("add_entry", params, (result, error) -> {
+                    request("replace_entry", params, (result, error) -> {
                         submitting[0] = false;
                         if (!error.isEmpty()) {
                             status.setText(error);
+                        } else if (result.optBoolean("conflict", false)) {
+                            status.setText(R.string.translation_changed_before_replace);
                         } else {
                             completedSubmission[0] = submissionSignature(
                                     outline, translation
@@ -363,20 +381,7 @@ public class PloverCommandActivity extends Activity {
                 }
             }
             Mutation mutation = new Mutation();
-            JSONObject search = new JSONObject();
-            try {
-                search.put("stroke", stroke);
-                search.put("dictionary", selected);
-                search.put("match", "prefix");
-                search.put("page", 1);
-                search.put("page_size", 100);
-            } catch (Exception error) {
-                submitting[0] = false;
-                status.setText(messageFor(error));
-                updateAddEnabled.run();
-                return;
-            }
-            request("search_entries", search, (result, error) -> {
+            request("add_entry_safely", params, (result, error) -> {
                 if (!error.isEmpty()) {
                     submitting[0] = false;
                     status.setText(error);
@@ -384,9 +389,26 @@ public class PloverCommandActivity extends Activity {
                     updateAddEnabled.run();
                     return;
                 }
-                String existing = existingTranslation(result, stroke, selected);
-                if (existing == null) {
-                    mutation.run();
+                if (!result.optBoolean("conflict", false)) {
+                    submitting[0] = false;
+                    completedSubmission[0] = submissionSignature(
+                            outline, translation
+                    );
+                    status.setText(getString(
+                            R.string.translation_added,
+                            result.optString("stroke", stroke), selected
+                    ));
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
+                    return;
+                }
+                String existing = result.optString("existing_translation", "");
+                try {
+                    params.put("expected_translation", existing);
+                } catch (Exception error) {
+                    submitting[0] = false;
+                    status.setText(messageFor(error));
+                    updateAddEnabled.run();
                     return;
                 }
                 if (existing.equals(output)) {
@@ -639,7 +661,6 @@ public class PloverCommandActivity extends Activity {
         dictionaryGroup.removeAllViews();
         dictionaryChoices.clear();
         for (int index = 0; index < writableDictionaries.size(); index++) {
-            final int choiceIndex = index;
             RadioButton choice = new RadioButton(this);
             choice.setId(View.generateViewId());
             choice.setText((index + 1) + ". " + writableDictionaries.get(index));
@@ -651,7 +672,6 @@ public class PloverCommandActivity extends Activity {
             choice.setMinHeight(dp(48));
             choice.setPadding(dp(12), dp(8), dp(12), dp(8));
             dictionaryGroup.addView(choice, matchWrap());
-            registerFocusableBefore(choice, focusSuccessor);
             dictionaryChoices.add(choice);
             choice.setOnClickListener(view -> {
                 dictionaryGroup.check(choice.getId());
@@ -664,6 +684,9 @@ public class PloverCommandActivity extends Activity {
                     revealFocusedView(view);
                 }
             });
+        }
+        if (!dictionaryChoices.isEmpty()) {
+            registerFocusableBefore(dictionaryChoices.get(0), focusSuccessor);
         }
     }
 
@@ -753,6 +776,9 @@ public class PloverCommandActivity extends Activity {
             return;
         }
         View current = getCurrentFocus();
+        if (dictionaryChoices.contains(current) && !dictionaryChoices.isEmpty()) {
+            current = dictionaryChoices.get(0);
+        }
         int currentIndex = focusOrder.indexOf(current);
         boolean[] eligible = new boolean[focusOrder.size()];
         for (int index = 0; index < focusOrder.size(); index++) {
@@ -768,6 +794,13 @@ public class PloverCommandActivity extends Activity {
         );
         if (nextIndex >= 0) {
             View candidate = focusOrder.get(nextIndex);
+            if (!dictionaryChoices.isEmpty()
+                    && candidate == dictionaryChoices.get(0)) {
+                int selected = selectedDictionaryIndex();
+                if (selected >= 0) {
+                    candidate = dictionaryChoices.get(selected);
+                }
+            }
             candidate.requestFocus();
             revealFocusedView(candidate);
             if (candidate instanceof EditText) {
@@ -832,20 +865,6 @@ public class PloverCommandActivity extends Activity {
                 ? writableDictionaries.get(selected) : "";
         return outline.getText().toString().trim() + "\u0000"
                 + translation.getText().toString() + "\u0000" + dictionary;
-    }
-
-    private static String existingTranslation(
-            JSONObject result, String stroke, String dictionary) {
-        JSONArray entries = result.optJSONArray("entries");
-        for (int index = 0; entries != null && index < entries.length(); index++) {
-            JSONObject entry = entries.optJSONObject(index);
-            if (entry != null
-                    && stroke.equalsIgnoreCase(entry.optString("stroke", ""))
-                    && dictionary.equals(entry.optString("dictionary", ""))) {
-                return entry.optString("translation", "");
-            }
-        }
-        return null;
     }
 
     private interface ResultCallback {

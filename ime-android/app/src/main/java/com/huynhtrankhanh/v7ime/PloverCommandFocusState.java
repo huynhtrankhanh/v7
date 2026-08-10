@@ -9,6 +9,7 @@ import android.view.KeyEvent;
  */
 final class PloverCommandFocusState {
     private static volatile boolean nativeControlFocused;
+    private static volatile boolean commandActivityActive;
 
     private PloverCommandFocusState() {
     }
@@ -17,13 +18,11 @@ final class PloverCommandFocusState {
         nativeControlFocused = focused;
     }
 
+    static void setCommandActivityActive(boolean active) {
+        commandActivityActive = active;
+    }
+
     static boolean shouldPassHardwareKeyToActivity(int keyCode) {
-        // Escape belongs to the command window even while one of its editors
-        // has an InputConnection. Otherwise raw-outline capture can consume it
-        // before Activity.dispatchKeyEvent has a chance to close the window.
-        if (keyCode == KeyEvent.KEYCODE_ESCAPE) {
-            return true;
-        }
         if (!nativeControlFocused) {
             return false;
         }
@@ -33,6 +32,20 @@ final class PloverCommandFocusState {
                 && keyCode != KeyEvent.KEYCODE_CTRL_RIGHT
                 && keyCode != KeyEvent.KEYCODE_SHIFT_LEFT
                 && keyCode != KeyEvent.KEYCODE_SHIFT_RIGHT;
+    }
+
+    static boolean shouldPassHardwareKeyToActivity(KeyEvent event) {
+        // Unmodified Escape belongs to the command window even while one of
+        // its editors has an InputConnection. Outside that window Escape must
+        // retain its ordinary WebUI/raw-mode behavior.
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE) {
+            return commandActivityActive
+                    && !event.isShiftPressed()
+                    && !event.isCtrlPressed()
+                    && !event.isAltPressed()
+                    && !event.isMetaPressed();
+        }
+        return shouldPassHardwareKeyToActivity(event.getKeyCode());
     }
 
     static boolean isNativeControlFocused() {

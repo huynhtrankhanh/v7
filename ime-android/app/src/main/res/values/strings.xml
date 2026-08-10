@@ -66,6 +66,7 @@
     <string name="replace_translation_message">%1$s already exists in %2$s.\n\nExisting: %3$s\n\nNew: %4$s\n\nReplacing cannot be undone.</string>
     <string name="replace_translation">Replace translation</string>
     <string name="translation_not_replaced">Existing translation was not replaced.</string>
+    <string name="translation_changed_before_replace">The existing translation changed before replacement. Review it and try again.</string>
     <string name="plover_request_failed">Stripped Plover request failed.</string>
     <string name="close">Close</string>
 </resources>

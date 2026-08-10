@@ -63,6 +63,10 @@ fs.writeFileSync(
 );
 
 const stagedEngine = path.join(stagedSource, "engine.ts");
+fs.writeFileSync(
+  stagedEngine,
+  transformEngine(fs.readFileSync(stagedEngine, "utf8")),
+);
 const productionFiles = collectProductionGraph(stagedEngine);
 const nodeApis = new Set();
 const processProperties = new Set();
@@ -274,6 +278,84 @@ function transformPythonDictionary(source) {
     ),
     ["@v7/python-wasm-browser"],
     "Python browser runtime import",
+  );
+}
+
+function transformEngine(source) {
+  const dispatchNeedle = `        case 'add_entry':
+          result = this.addEntry(params);
+          break;`;
+  const dispatchReplacement = `${dispatchNeedle}
+        case 'add_entry_safely':
+          result = this.addEntrySafely(params);
+          break;
+        case 'replace_entry':
+          result = this.replaceEntrySafely(params);
+          break;`;
+  const methodNeedle = `  private addEntry(params: Record<string, unknown>): Record<string, unknown> {`;
+  const safeMethod = `  private addEntrySafely(params: Record<string, unknown>): Record<string, unknown> {
+    const stroke = params.stroke as string;
+    const translation = params.translation as string;
+    const name = params.name as string | undefined;
+    if (!stroke || !translation) {
+      throw new Error('Both stroke and translation are required');
+    }
+    const strokeTuple = normalizeSteno(stroke, false);
+    const selected = name ? this.dictionaries.get(name) : this.dictionaries.firstWithEntries();
+    if (!selected) {
+      throw new Error(\`Dictionary not found: \${name}\`);
+    }
+    if (!(selected instanceof StenoDictionary)) {
+      throw new Error(\`Dictionary does not expose concrete entries: \${name}\`);
+    }
+    const existing = selected.get(strokeTuple);
+    if (existing !== null) {
+      return {
+        status: 'conflict',
+        conflict: true,
+        stroke: strokeTuple.join('/'),
+        existing_translation: existing,
+      };
+    }
+    selected.set(strokeTuple, translation);
+    return { status: 'ok', conflict: false, stroke: strokeTuple.join('/'), translation };
+  }
+
+  private replaceEntrySafely(params: Record<string, unknown>): Record<string, unknown> {
+    const stroke = params.stroke as string;
+    const translation = params.translation as string;
+    const expected = params.expected_translation;
+    const name = params.name as string | undefined;
+    if (!stroke || !translation || typeof expected !== 'string') {
+      throw new Error('Stroke, translation, and expected translation are required');
+    }
+    const strokeTuple = normalizeSteno(stroke, false);
+    const selected = name ? this.dictionaries.get(name) : this.dictionaries.firstWithEntries();
+    if (!selected) {
+      throw new Error(\`Dictionary not found: \${name}\`);
+    }
+    if (!(selected instanceof StenoDictionary)) {
+      throw new Error(\`Dictionary does not expose concrete entries: \${name}\`);
+    }
+    const existing = selected.get(strokeTuple);
+    if (existing !== expected) {
+      return { status: 'conflict', conflict: true, stroke: strokeTuple.join('/') };
+    }
+    selected.set(strokeTuple, translation);
+    return { status: 'ok', conflict: false, stroke: strokeTuple.join('/'), translation };
+  }
+
+${methodNeedle}`;
+  return assertTransforms(
+    source
+      .replace(dispatchNeedle, dispatchReplacement)
+      .replace(methodNeedle, safeMethod),
+    [
+      "case 'add_entry_safely':",
+      "private addEntrySafely(",
+      "private replaceEntrySafely(",
+    ],
+    "atomic safe-add RPC",
   );
 }
 

@@ -129,6 +129,11 @@ final class SandboxedDictionaryImporter {
         database.beginTransaction();
         try {
             ExistingDictionary existing = findDictionary(database, name);
+            if (existing != null && !canImportJsonOver(existing.type)) {
+                throw new IllegalStateException(
+                        "Dictionary does not expose concrete entries: " + name
+                );
+            }
             if (existing == null) {
                 database.execSQL(
                         "INSERT INTO dictionaries "
@@ -245,12 +250,13 @@ final class SandboxedDictionaryImporter {
             SQLiteDatabase database,
             String name) {
         try (Cursor cursor = database.rawQuery(
-                "SELECT priority FROM dictionaries WHERE name = ?",
+                "SELECT type, priority FROM dictionaries WHERE name = ?",
                 new String[]{name}
         )) {
             if (!cursor.moveToFirst()) return null;
             return new ExistingDictionary(
-                    cursor.isNull(0) ? 0 : cursor.getInt(0)
+                    cursor.getString(0),
+                    cursor.isNull(1) ? 0 : cursor.getInt(1)
             );
         }
     }
@@ -262,6 +268,10 @@ final class SandboxedDictionaryImporter {
         )) {
             return cursor.moveToFirst() ? cursor.getInt(0) : 1;
         }
+    }
+
+    static boolean canImportJsonOver(String existingType) {
+        return "json".equals(existingType);
     }
 
     private static int countEntries(SQLiteDatabase database, String name) {
@@ -322,9 +332,11 @@ final class SandboxedDictionaryImporter {
     }
 
     private static final class ExistingDictionary {
+        final String type;
         final int priority;
 
-        ExistingDictionary(int priority) {
+        ExistingDictionary(String type, int priority) {
+            this.type = type;
             this.priority = priority;
         }
     }
