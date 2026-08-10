@@ -59,8 +59,15 @@ struct Tokenizer {
     sorted_consonant_keys: Vec<String>,
     // Flattened structure to improve cache locality and reduce pointer chasing
     candidates_index: HashMap<(String, char, i32), Vec<Arc<str>>>,
-    lexical_pair_index:
-        HashMap<((String, char, i32), (String, char, i32)), Vec<(Arc<str>, Arc<str>)>>,
+    lexical_pair_index: HashMap<((String, char, i32), (String, char, i32)), Vec<LexicalPair>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LexicalPair {
+    display_left: Arc<str>,
+    display_right: Arc<str>,
+    lm_left: Arc<str>,
+    lm_right: Arc<str>,
 }
 
 fn structured_onset<'a>(c: &'a str, v: &str) -> &'a str {
@@ -377,7 +384,7 @@ fn build_lexical_pair_index(
     candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
     source: &str,
     exact_line_entries: bool,
-) -> HashMap<((String, char, i32), (String, char, i32)), Vec<(Arc<str>, Arc<str>)>> {
+) -> HashMap<((String, char, i32), (String, char, i32)), Vec<LexicalPair>> {
     let mut codes_by_word: HashMap<&str, Vec<&(String, char, i32)>> = HashMap::new();
     for (code, words) in candidates_index {
         for word in words {
@@ -392,6 +399,17 @@ fn build_lexical_pair_index(
         if exact_line_entries && words.len() != 2 {
             continue;
         }
+        let display_words = line
+            .split_whitespace()
+            .map(|word| word.nfc().collect::<String>())
+            .collect::<Vec<_>>();
+        if display_words.len() != 2
+            || display_words
+                .iter()
+                .any(|word| !word.chars().all(char::is_alphabetic))
+        {
+            continue;
+        }
         for pair in words.windows(2) {
             let (Some(left_codes), Some(right_codes)) = (
                 codes_by_word.get(pair[0].as_str()),
@@ -404,7 +422,12 @@ fn build_lexical_pair_index(
                     let bucket = result
                         .entry(((*left_code).clone(), (*right_code).clone()))
                         .or_insert_with(Vec::new);
-                    let lexical_pair = (Arc::from(pair[0].as_str()), Arc::from(pair[1].as_str()));
+                    let lexical_pair = LexicalPair {
+                        display_left: Arc::from(display_words[0].as_str()),
+                        display_right: Arc::from(display_words[1].as_str()),
+                        lm_left: Arc::from(pair[0].as_str()),
+                        lm_right: Arc::from(pair[1].as_str()),
+                    };
                     if !bucket.contains(&lexical_pair) {
                         bucket.push(lexical_pair);
                     }
@@ -429,21 +452,23 @@ fn validate_bundled_lexical_dictionary(
     for (index, raw_line) in source.lines().enumerate() {
         let line_number = index + 1;
         let normalized = raw_line.nfc().collect::<String>();
-        if raw_line != raw_line.trim()
-            || normalized != raw_line
-            || raw_line.to_lowercase() != raw_line
-        {
-            anyhow::bail!(
-                "bundled lexical dictionary line {line_number} must be trimmed, NFC, and lowercase"
-            );
+        if raw_line != raw_line.trim() || normalized != raw_line {
+            anyhow::bail!("bundled lexical dictionary line {line_number} must be trimmed and NFC");
         }
         let words = purify(raw_line);
-        if words.len() != 2 || words.join(" ") != raw_line {
+        let display_words = raw_line.split(' ').collect::<Vec<_>>();
+        if words.len() != 2
+            || display_words.len() != 2
+            || display_words
+                .iter()
+                .any(|word| !word.chars().all(char::is_alphabetic))
+        {
             anyhow::bail!(
                 "bundled lexical dictionary line {line_number} must contain exactly two normalized words"
             );
         }
-        if !seen.insert(raw_line) {
+        let normalized_key = words.join(" ");
+        if !seen.insert(normalized_key) {
             anyhow::bail!("duplicate bundled lexical dictionary entry on line {line_number}");
         }
         for word in words {
@@ -926,11 +951,11 @@ fn beam_search_dictionary_island(
     };
     let mut results = Vec::with_capacity(incoming_states.len() * pairs.len());
     for incoming in incoming_states {
-        for (left, right) in pairs {
-            let (left_score, left_state) = model.score(&incoming.state, left);
-            let (right_score, right_state) = model.score(&left_state, right);
+        for pair in pairs {
+            let (left_score, left_state) = model.score(&incoming.state, &pair.lm_left);
+            let (right_score, right_state) = model.score(&left_state, &pair.lm_right);
             let mut history = incoming.history.clone();
-            history.push(vec![left.clone(), right.clone()]);
+            history.push(vec![pair.display_left.clone(), pair.display_right.clone()]);
             results.push(IslandState {
                 score: incoming.score + left_score + right_score,
                 state: right_state,
@@ -1158,6 +1183,22 @@ mod tests {
     }
 
     #[test]
+    fn fixed_context_preserves_only_purified_lm_tokens() {
+        assert_eq!(
+            fixed_text_context_events("TÔI gặp Việt Nam!!!"),
+            vec![
+                FixedContextEvent::Word("tôi".to_string()),
+                FixedContextEvent::Word("gặp".to_string()),
+                FixedContextEvent::Word("việt".to_string()),
+                FixedContextEvent::Word("nam".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::SentenceEnd,
+            ]
+        );
+    }
+
+    #[test]
     fn repeated_sentence_endings_each_reset_context() {
         assert_eq!(
             fixed_text_context_events("Thật?!"),
@@ -1177,9 +1218,9 @@ mod tests {
             let left_candidates = tokenizer.candidates_index.get(left_code).unwrap();
             let right_candidates = tokenizer.candidates_index.get(right_code).unwrap();
             assert!(!pairs.is_empty());
-            for (left, right) in pairs {
-                assert!(left_candidates.contains(left));
-                assert!(right_candidates.contains(right));
+            for pair in pairs {
+                assert!(left_candidates.contains(&pair.lm_left));
+                assert!(right_candidates.contains(&pair.lm_right));
             }
         }
     }
@@ -1199,19 +1240,30 @@ mod tests {
         );
         assert_eq!(lf, crlf);
         assert!(!lf.is_empty());
-        assert!(lf.values().flatten().all(|(left, right)| {
+        assert!(lf.values().flatten().all(|pair| {
             matches!(
-                (left.as_ref(), right.as_ref()),
+                (pair.lm_left.as_ref(), pair.lm_right.as_ref()),
                 ("trời", "mưa") | ("hôm", "nay")
             )
         }));
     }
 
     #[test]
+    fn lexical_pair_keeps_display_case_separate_from_lm_tokens() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        let index = build_lexical_pair_index(&tokenizer.candidates_index, "Việt Nam\n", true);
+        let pair = index.values().flatten().next().expect("pair is indexed");
+        assert_eq!(pair.display_left.as_ref(), "Việt");
+        assert_eq!(pair.display_right.as_ref(), "Nam");
+        assert_eq!(pair.lm_left.as_ref(), "việt");
+        assert_eq!(pair.lm_right.as_ref(), "nam");
+    }
+
+    #[test]
     fn bundled_dictionary_validation_rejects_noncanonical_and_duplicate_lines() {
         let tokenizer = Tokenizer::new().expect("tokenizer should load");
         assert!(
-            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, "Hôm nay\n").is_err()
+            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, " hôm nay\n").is_err()
         );
         assert!(validate_bundled_lexical_dictionary(
             &tokenizer.candidates_index,

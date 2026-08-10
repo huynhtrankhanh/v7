@@ -13,13 +13,25 @@ describe("bundled two-syllable lexical dictionary", () => {
       if (index === source.split("\n").length - 1 && line === "") continue;
       expect(line).toBe(line.trim());
       expect(line).toBe(line.normalize("NFC"));
-      expect(line).toBe(line.toLocaleLowerCase("vi"));
       const words = line.split(" ");
       expect(words).toHaveLength(2);
-      expect(words.every((word) => getV7Code(word) !== undefined)).toBe(true);
-      expect(seen.has(line)).toBe(false);
-      seen.add(line);
+      expect(
+        words.every(
+          (word) => getV7Code(word.toLocaleLowerCase("vi")) !== undefined,
+        ),
+      ).toBe(true);
+      const lookupKey = line.toLocaleLowerCase("vi");
+      expect(seen.has(lookupKey)).toBe(false);
+      seen.add(lookupKey);
     }
     expect(seen.size).toBeGreaterThan(0);
+  });
+
+  test("preserves intentional display capitalization", () => {
+    const source = readFileSync(
+      resolve(__dirname, "../data/two_syllable_dictionary.txt"),
+      "utf8",
+    );
+    expect(source.split(/\r?\n/u)).toContain("Việt Nam");
   });
 });
