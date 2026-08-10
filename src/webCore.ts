@@ -337,15 +337,15 @@ export function renderVisibleTextSegments(
           ),
         );
       } else {
+        const unresolvedPrefix =
+          curr.v7Mode === "dictionary" ? "[dictionary miss: " : "[";
         segments.push(
           ...renderIslandWithPiecemealTargets(
-            curr.v7Mode === "dictionary"
-              ? `[dictionary miss: ${curr.value}]`
-              : `[${curr.value}]`,
+            `${unresolvedPrefix}${curr.value}]`,
             curr,
             i,
             targetIds,
-            1,
+            unresolvedPrefix.length,
           ),
         );
       }

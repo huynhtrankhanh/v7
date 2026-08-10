@@ -145,4 +145,26 @@ describe("inference inconvenience evaluator", () => {
     expect(modes).toEqual(["compositional", "dictionary"]);
     expect(result).toMatchObject({ coveredPairs: 1, misses: 0, top1: 1 });
   });
+
+  test("extracts only the current replacement for later dictionary pairs", async () => {
+    const result = await evaluateDictionaryMode(
+      "hôm nay trời mưa",
+      async (request) => {
+        const fixed = request.islands[0];
+        const v7 = request.islands[1];
+        const prefix = fixed.kind === "fixed" ? fixed.text : "";
+        const replacement =
+          v7.kind === "v7" && v7.code === "tro2mu0" ? "trời mưa" : "hôm nay";
+        return {
+          candidates: [[prefix, replacement, ""]],
+          dictionaryBucketSizes: [7],
+        };
+      },
+    );
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1]).toMatchObject({
+      dictionaryTop1: true,
+      dictionaryBucketSize: 7,
+    });
+  });
 });

@@ -360,8 +360,8 @@ impl Tokenizer {
 
         let lexical_pair_index = build_lexical_pair_index(
             &candidates_index,
-            include_str!("../../evaluation-server/corpus/default.txt"),
-            false,
+            include_str!("../../data/two_syllable_dictionary.txt"),
+            true,
         );
         Ok(Tokenizer {
             valid_consonants_map,
@@ -372,7 +372,7 @@ impl Tokenizer {
     }
 }
 
-/// Build the closed lexical-pair dictionary from the bundled, reviewed corpus.
+/// Build the closed lexical-pair dictionary from a dedicated pair-per-line file.
 /// Only pairs whose two words are both exactly V7-representable are retained.
 fn build_lexical_pair_index(
     candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
@@ -1209,6 +1209,11 @@ struct InferRequest {
 #[derive(Serialize)]
 struct InferResponse {
     candidates: Vec<Vec<String>>,
+    #[serde(
+        rename = "dictionaryBucketSizes",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    dictionary_bucket_sizes: Vec<usize>,
 }
 
 #[derive(Deserialize)]
@@ -1229,16 +1234,26 @@ async fn infer_handler(
     Json(payload): Json<InferRequest>,
 ) -> Json<InferResponse> {
     if payload.is_empty() {
-        return Json(InferResponse { candidates: vec![] });
+        return Json(InferResponse {
+            candidates: vec![],
+            dictionary_bucket_sizes: vec![],
+        });
     }
 
+    let dictionary_bucket_sizes = payload.dictionary_bucket_sizes(&state.tokenizer);
     let result = payload.perform(&state.tokenizer, &state.model, 100);
 
     match result {
-        Ok(candidates) => Json(InferResponse { candidates }),
+        Ok(candidates) => Json(InferResponse {
+            candidates,
+            dictionary_bucket_sizes,
+        }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
-            Json(InferResponse { candidates: vec![] })
+            Json(InferResponse {
+                candidates: vec![],
+                dictionary_bucket_sizes: vec![],
+            })
         }
     }
 }
@@ -1388,6 +1403,39 @@ impl InferRequest {
             .collect::<Result<Vec<_>>>()?;
         perform_typed_inference(&segments, tokenizer, model, beam_width)
     }
+
+    fn dictionary_bucket_sizes(&self, tokenizer: &Tokenizer) -> Vec<usize> {
+        self.islands
+            .iter()
+            .filter_map(|island| {
+                let InferIsland::Typed(TypedInferIsland::V7 {
+                    code,
+                    mode: V7Mode::Dictionary,
+                }) = island
+                else {
+                    return None;
+                };
+                let templates = parse_v7_string(code, tokenizer).ok()?;
+                if templates.len() != 2 {
+                    return Some(0);
+                }
+                let key = |template: &PartialSyllableTemplate| {
+                    (
+                        template.consonant.clone(),
+                        normalize_rime_start_char(template.rime_first_letter),
+                        template.tone,
+                    )
+                };
+                Some(
+                    tokenizer
+                        .lexical_pair_index
+                        .get(&(key(&templates[0]), key(&templates[1])))
+                        .map(Vec::len)
+                        .unwrap_or(0),
+                )
+            })
+            .collect()
+    }
 }
 
 pub(crate) struct EmbeddedInference {
@@ -1419,7 +1467,10 @@ impl EmbeddedInference {
         } else {
             payload.perform(&self.tokenizer, &self.model, 100)?
         };
-        Ok(serde_json::to_string(&InferResponse { candidates })?)
+        Ok(serde_json::to_string(&InferResponse {
+            candidates,
+            dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&self.tokenizer),
+        })?)
     }
 
     #[cfg(target_os = "android")]
@@ -1427,8 +1478,8 @@ impl EmbeddedInference {
         self.tokenizer.lexical_pair_index = if source.is_empty() {
             build_lexical_pair_index(
                 &self.tokenizer.candidates_index,
-                include_str!("../../evaluation-server/corpus/default.txt"),
-                false,
+                include_str!("../../data/two_syllable_dictionary.txt"),
+                true,
             )
         } else {
             build_lexical_pair_index(&self.tokenizer.candidates_index, source, true)
@@ -1455,13 +1506,24 @@ async fn main() -> Result<()> {
         let mut stdout = std::io::BufWriter::new(std::io::stdout().lock());
         for line in stdin.lock().lines() {
             let line = line?;
-            let islands: Vec<String> = serde_json::from_str(&line)?;
-            let candidates = if islands.is_empty() {
-                vec![]
+            if let Ok(islands) = serde_json::from_str::<Vec<String>>(&line) {
+                let candidates = if islands.is_empty() {
+                    vec![]
+                } else {
+                    perform_inference(&islands, &tokenizer, &model, 100)?
+                };
+                serde_json::to_writer(&mut stdout, &candidates)?;
             } else {
-                perform_inference(&islands, &tokenizer, &model, 100)?
-            };
-            serde_json::to_writer(&mut stdout, &candidates)?;
+                let payload: InferRequest = serde_json::from_str(&line)?;
+                let candidates = payload.perform(&tokenizer, &model, 100)?;
+                serde_json::to_writer(
+                    &mut stdout,
+                    &InferResponse {
+                        candidates,
+                        dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&tokenizer),
+                    },
+                )?;
+            }
             stdout.write_all(b"\n")?;
             stdout.flush()?;
         }

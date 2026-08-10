@@ -10,6 +10,8 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 
 final class NativeInference {
+    private static String cachedDictionaryUri = null;
+    private static String cachedDictionarySource = "";
     static {
         System.loadLibrary("inference_rs");
     }
@@ -25,6 +27,9 @@ final class NativeInference {
             );
         }
 
+        Uri dictionaryUri = ImePreferences.getDictionaryModeUri(context);
+        String dictionarySource = getDictionarySource(context, dictionaryUri);
+
         ParcelFileDescriptor descriptor = context.getContentResolver()
                 .openFileDescriptor(modelUri, "r");
         if (descriptor == null) {
@@ -37,10 +42,6 @@ final class NativeInference {
         } finally {
             descriptor.close();
         }
-        Uri dictionaryUri = ImePreferences.getDictionaryModeUri(context);
-        String dictionarySource = dictionaryUri == null
-                ? ""
-                : readDictionary(context, dictionaryUri);
         return inferNative(
                 fd,
                 modelUri.toString(),
@@ -50,6 +51,23 @@ final class NativeInference {
                 dictionarySource,
                 requestBody
         );
+    }
+
+    static synchronized void invalidateDictionaryCache() {
+        cachedDictionaryUri = null;
+        cachedDictionarySource = "";
+    }
+
+    private static synchronized String getDictionarySource(
+            Context context,
+            Uri uri
+    ) throws IOException {
+        String id = uri == null ? "" : uri.toString();
+        if (id.equals(cachedDictionaryUri)) return cachedDictionarySource;
+        String source = uri == null ? "" : readDictionary(context, uri);
+        cachedDictionaryUri = id;
+        cachedDictionarySource = source;
+        return source;
     }
 
     private static String readDictionary(Context context, Uri uri) throws IOException {

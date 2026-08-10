@@ -11,7 +11,16 @@ export type TypedInferenceIsland =
 export type TypedInferenceFunction = (request: {
   version: 2;
   islands: TypedInferenceIsland[];
-}) => InferenceResponse | Promise<InferenceResponse>;
+}) =>
+  | InferenceResponse
+  | { candidates: InferenceResponse; dictionaryBucketSizes?: readonly number[] }
+  | Promise<
+      | InferenceResponse
+      | {
+          candidates: InferenceResponse;
+          dictionaryBucketSizes?: readonly number[];
+        }
+    >;
 
 export interface DictionaryEvaluationStep {
   sourceText: string;
@@ -461,16 +470,30 @@ export async function evaluateDictionaryMode(
         { kind: "fixed" as const, text: "" },
       ],
     });
-    const [compositional, dictionary] = await Promise.all([
+    const [compositionalResponse, dictionaryResponse] = await Promise.all([
       inference(request("compositional")),
       inference(request("dictionary")),
     ]);
+    const responseCandidates = (
+      response:
+        | InferenceResponse
+        | {
+            candidates: InferenceResponse;
+            dictionaryBucketSizes?: readonly number[];
+          },
+    ): InferenceResponse =>
+      "candidates" in response ? response.candidates : response;
+    const legacyRequest = [
+      text.slice(0, island.sourceStart),
+      island.v7Code,
+      "",
+    ];
     const normalizedCandidates = (response: InferenceResponse) =>
       response.map((candidate) =>
-        getSyllables(
-          typeof candidate === "string" ? candidate : candidate.join(""),
-        ),
+        getSyllables(candidateReplacement(candidate, legacyRequest)),
       );
+    const compositional = responseCandidates(compositionalResponse);
+    const dictionary = responseCandidates(dictionaryResponse);
     const compositionalCandidates = normalizedCandidates(compositional);
     const dictionaryCandidates = normalizedCandidates(dictionary);
     const exact = (candidate: readonly string[] | undefined) =>
@@ -479,7 +502,11 @@ export async function evaluateDictionaryMode(
     steps.push({
       sourceText: island.sourceText,
       v7Code: island.v7Code,
-      dictionaryBucketSize: dictionaryCandidates.length,
+      dictionaryBucketSize:
+        "dictionaryBucketSizes" in dictionaryResponse
+          ? (dictionaryResponse.dictionaryBucketSizes?.[0] ??
+            dictionaryCandidates.length)
+          : dictionaryCandidates.length,
       dictionaryMiss: dictionaryCandidates.length === 0,
       compositionalTop1: exact(compositionalCandidates[0]),
       dictionaryTop1: exact(dictionaryCandidates[0]),

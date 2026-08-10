@@ -147,6 +147,7 @@ public class SettingsActivity extends Activity {
                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                 );
                 ImePreferences.setDictionaryModeUri(this, uri);
+                NativeInference.invalidateDictionaryCache();
                 updateDictionaryModeStatus();
                 Toast.makeText(
                         this,

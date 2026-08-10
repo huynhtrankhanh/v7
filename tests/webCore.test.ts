@@ -242,6 +242,11 @@ describe("webCore candidate selection", () => {
       }),
     ];
     expect(renderVisibleText(islands, [])).toBe("[dictionary miss: tro2ma1]");
+    expect(
+      renderVisibleTextSegments(islands, [])
+        .filter((segment) => segment.piecemealNumber !== undefined)
+        .map((segment) => segment.text),
+    ).toEqual(["tro2", "ma1"]);
   });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [
