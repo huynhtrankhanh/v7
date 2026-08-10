@@ -62,6 +62,7 @@ public class V7ImeService extends InputMethodService {
     private final AtomicInteger inputGeneration = new AtomicInteger();
     private final GenerationOwnership<WebView> inputViewOwnership =
             new GenerationOwnership<>();
+    private int inputViewGeneration;
     private int serviceGeneration;
     private final AtomicInteger latestInferenceRequestId = new AtomicInteger(-1);
     // The native engine is process-wide, so retain its readiness across IME
@@ -116,6 +117,7 @@ public class V7ImeService extends InputMethodService {
         inputContainer = new FrameLayout(this);
         webView = new ImeWebView();
         int viewGeneration = inputViewOwnership.claim(webView);
+        inputViewGeneration = viewGeneration;
         inputContainer.addView(webView, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -169,6 +171,7 @@ public class V7ImeService extends InputMethodService {
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
         editorPassedHardwareKeys.clear();
+        resetHardwareKeyboardStateInWebView();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
         publishEditorModeState();
@@ -182,6 +185,7 @@ public class V7ImeService extends InputMethodService {
         hardwareKeyActionResolver.reset();
         webCapturedHardwareKeys.clear();
         editorPassedHardwareKeys.clear();
+        resetHardwareKeyboardStateInWebView();
         keyboardVisibilityController.finishInput();
         super.onFinishInput();
     }
@@ -320,6 +324,7 @@ public class V7ImeService extends InputMethodService {
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(event)) {
+            resetHardwareKeyboardStateInWebView();
             hardwareKeyActionResolver.reset();
             webCapturedHardwareKeys.clear();
             editorPassedHardwareKeys.clear();
@@ -827,14 +832,38 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void evaluateJavascript(String script) {
-        if (webView == null) {
+        WebView target = webView;
+        int targetGeneration = inputViewGeneration;
+        if (target == null) {
             return;
         }
-        webView.post(() -> {
-            if (webView != null) {
-                webView.evaluateJavascript(script, null);
+        target.post(() -> {
+            if (inputViewOwnership.isCurrent(target, targetGeneration)) {
+                target.evaluateJavascript(script, null);
             }
         });
+    }
+
+    private void resetHardwareKeyboardStateInWebView() {
+        WebView target = webView;
+        int targetGeneration = inputViewGeneration;
+        if (target == null) {
+            return;
+        }
+        Runnable reset = () -> {
+            if (inputViewOwnership.isCurrent(target, targetGeneration)) {
+                target.evaluateJavascript(
+                        "window.resetHardwareKeyboardStateFromAndroid"
+                                + " && window.resetHardwareKeyboardStateFromAndroid()",
+                        null
+                );
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            reset.run();
+        } else {
+            target.post(reset);
+        }
     }
 
     private InferenceResult runNativeInference(String requestBody, int requestId) {

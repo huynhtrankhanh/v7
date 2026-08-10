@@ -2585,10 +2585,12 @@ function trackQwertyKey(event: KeyboardEvent, isPressed: boolean): void {
   updateKeyboardLayout();
 }
 
-function clearPressedQwertyKeys(): void {
-  if (pressedQwertyKeys.size === 0) return;
-  pressedQwertyKeys.clear();
-  updateKeyboardLayout();
+function resetHardwareKeyboardState(): void {
+  keyboardStrokeTracker.reset();
+  if (pressedQwertyKeys.size !== 0) {
+    pressedQwertyKeys.clear();
+    updateKeyboardLayout();
+  }
 }
 
 function updateDisplay(): void {
@@ -2839,7 +2841,7 @@ document.addEventListener("keydown", (e) => {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-    clearPressedQwertyKeys();
+    resetHardwareKeyboardState();
     if (!e.repeat) {
       toggleKeyboardLayout();
     }
@@ -2849,7 +2851,7 @@ document.addEventListener("keydown", (e) => {
 
   // Global Shortcuts
   if (e.ctrlKey && e.key === "c") {
-    clearPressedQwertyKeys();
+    resetHardwareKeyboardState();
     // Copy entire buffer if nothing selected
     if (
       (!strippedDisplay.enabled || strippedDisplay.copyAllowed) &&
@@ -2868,7 +2870,7 @@ document.addEventListener("keydown", (e) => {
   }
 
   if (hasOsPassthroughModifier(e)) {
-    clearPressedQwertyKeys();
+    resetHardwareKeyboardState();
     return;
   }
 
@@ -2957,7 +2959,7 @@ document.addEventListener("keyup", (e) => {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
   if (hasOsPassthroughModifier(e)) {
-    clearPressedQwertyKeys();
+    resetHardwareKeyboardState();
     return;
   }
 
@@ -2977,10 +2979,10 @@ document.addEventListener("keyup", (e) => {
   }
 });
 
-window.addEventListener("blur", clearPressedQwertyKeys);
+window.addEventListener("blur", resetHardwareKeyboardState);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    clearPressedQwertyKeys();
+    resetHardwareKeyboardState();
   }
 });
 
@@ -3417,6 +3419,7 @@ declare global {
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
     clearPreeditFromAndroid?: () => void;
+    resetHardwareKeyboardStateFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
     handleAndroidPloverResponse?: (
@@ -3559,14 +3562,14 @@ window.handleAndroidPloverPaused = (paused) => {
 
 window.handleAndroidStenoModeChanged = (enabled) => {
   androidStenoModeEnabled = enabled;
-  clearPressedQwertyKeys();
+  resetHardwareKeyboardState();
   updateDisplay();
 };
 
 window.handleAndroidEditorModeChanged = (rawOutline, plainText) => {
   androidRawOutlineMode = rawOutline;
   androidPlainTextMode = plainText;
-  clearPressedQwertyKeys();
+  resetHardwareKeyboardState();
   updateDisplay();
 };
 
@@ -3690,6 +3693,7 @@ window.addEventListener("resize", () => {
 });
 
 window.clearPreeditFromAndroid = () => {
+  resetHardwareKeyboardState();
   abortInferenceRequest(true);
   strippedPlover.requestId += 1;
   strippedPlover.preeditIndex = null;
@@ -3708,6 +3712,8 @@ window.clearPreeditFromAndroid = () => {
   isRawMode = false;
   updateDisplay();
 };
+
+window.resetHardwareKeyboardStateFromAndroid = resetHardwareKeyboardState;
 
 window.handleAndroidKeyEvent = (
   action,
