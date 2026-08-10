@@ -16,7 +16,8 @@ final class NativeFormSubmit {
                 || actionId == EditorInfo.IME_ACTION_SEND) {
             return true;
         }
-        return keyCode == KeyEvent.KEYCODE_ENTER
+        return (keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER)
                 && keyAction == KeyEvent.ACTION_DOWN;
     }
 }

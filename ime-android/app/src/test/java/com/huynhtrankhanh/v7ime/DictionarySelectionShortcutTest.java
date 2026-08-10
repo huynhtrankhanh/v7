@@ -35,4 +35,19 @@ public class DictionarySelectionShortcutTest {
                 false
         ));
     }
+
+    @Test
+    public void validatesShortcutModifierGrammar() {
+        assertEquals(0, DictionarySelectionShortcut.indexFor(
+                new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_1), 5, true
+        ));
+        assertEquals(-1, DictionarySelectionShortcut.indexFor(
+                new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_1,
+                        0, KeyEvent.META_CTRL_ON), 5, true
+        ));
+        assertEquals(0, DictionarySelectionShortcut.indexFor(
+                new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_1,
+                        0, KeyEvent.META_ALT_ON), 5, false
+        ));
+    }
 }

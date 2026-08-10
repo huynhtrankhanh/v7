@@ -26,4 +26,17 @@ final class DictionarySelectionShortcut {
         int index = number - 1;
         return index < itemCount ? index : -1;
     }
+
+    static int indexFor(KeyEvent event, int itemCount, boolean focusIsDictionary) {
+        boolean altOnly = event.isAltPressed()
+                && !event.isCtrlPressed()
+                && !event.isMetaPressed()
+                && !event.isShiftPressed();
+        boolean plainInGroup = focusIsDictionary
+                && !event.isAltPressed()
+                && !event.isCtrlPressed()
+                && !event.isMetaPressed()
+                && !event.isShiftPressed();
+        return indexFor(event.getKeyCode(), itemCount, altOnly || plainInGroup);
+    }
 }

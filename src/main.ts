@@ -55,7 +55,7 @@ interface PloverDictionary {
   identifier: string;
   path?: string;
   entries?: number;
-  readonly?: boolean;
+  type: "json" | "python";
   enabled: boolean;
 }
 
@@ -580,7 +580,7 @@ function getDictionarySignature(dictionaries: PloverDictionary[]): string {
       identifier: dict.identifier || "",
       path: dict.path || "",
       entries: dict.entries ?? 0,
-      readonly: !!dict.readonly,
+      type: dict.type,
       enabled: !!dict.enabled,
     })),
   );
@@ -1069,7 +1069,9 @@ function updatePloverDictionarySelects() {
   const searchSelectEl = document.getElementById(
     "plover-entry-search-dict",
   ) as HTMLSelectElement | null;
-  const availableDictionaries = ploverDictionaries;
+  const availableDictionaries = ploverDictionaries.filter(
+    (dict) => dict.type === "json",
+  );
 
   if (editSelectEl) {
     const previousValue = editSelectEl.value || "";
@@ -1087,9 +1089,7 @@ function updatePloverDictionarySelects() {
     for (const dict of availableDictionaries) {
       const option = document.createElement("option");
       option.value = dict.identifier;
-      option.textContent = dict.readonly
-        ? `${dict.identifier} (read-only)`
-        : dict.identifier;
+      option.textContent = dict.identifier;
       if (dict.identifier === previousValue) {
         option.selected = true;
         selectedValueFound = true;
@@ -1140,7 +1140,7 @@ function updateEntryControls() {
   const selectedDict = selectedId
     ? ploverDictionaries.find((dict) => dict.identifier === selectedId)
     : null;
-  const canEdit = !!selectedDict && !selectedDict.readonly;
+  const canEdit = selectedDict?.type === "json";
   const shouldEnable = strippedPlover.available && canEdit;
   addButton.disabled = !shouldEnable;
   updateButton.disabled = !shouldEnable;
@@ -1153,8 +1153,8 @@ function updateEntryControls() {
         ? "No dictionaries available."
         : "Select a dictionary to edit entries.",
     );
-  } else if (selectedDict.readonly) {
-    setEntryMessage("Selected dictionary is read-only.");
+  } else if (selectedDict.type !== "json") {
+    setEntryMessage("Python dictionaries do not expose concrete entries.");
   } else {
     setEntryMessage("");
   }
@@ -1639,12 +1639,6 @@ function renderPloverDictionaries() {
       : "plover-badge disabled";
     enabledBadge.textContent = dict.enabled ? "enabled" : "disabled";
     title.appendChild(enabledBadge);
-    if (dict.readonly) {
-      const readonlyBadge = document.createElement("span");
-      readonlyBadge.className = "plover-badge";
-      readonlyBadge.textContent = "read-only";
-      title.appendChild(readonlyBadge);
-    }
     info.appendChild(title);
 
     const meta = document.createElement("div");
@@ -1657,12 +1651,14 @@ function renderPloverDictionaries() {
     const entriesButton = document.createElement("button");
     entriesButton.type = "button";
     entriesButton.className = "plover-dictionary-entries";
-    entriesButton.textContent = dict.readonly
-      ? "View entries"
-      : "View / edit entries";
-    entriesButton.addEventListener("click", () => {
-      openDictionaryEntries(dict);
-    });
+    entriesButton.textContent =
+      dict.type === "json" ? "View / edit entries" : "Code-backed dictionary";
+    entriesButton.disabled = dict.type !== "json";
+    if (dict.type === "json") {
+      entriesButton.addEventListener("click", () =>
+        openDictionaryEntries(dict),
+      );
+    }
     const actionSelect = document.createElement("select");
     actionSelect.setAttribute("aria-label", `Actions for ${dict.identifier}`);
     actionSelect.appendChild(createDictionaryActionOption("", "Actions"));
@@ -1684,12 +1680,8 @@ function renderPloverDictionaries() {
       ),
     );
     actionSelect.appendChild(createDictionaryActionOption("export", "Export"));
-    actionSelect.appendChild(
-      createDictionaryActionOption("rename", "Rename", !!dict.readonly),
-    );
-    actionSelect.appendChild(
-      createDictionaryActionOption("delete", "Delete", !!dict.readonly),
-    );
+    actionSelect.appendChild(createDictionaryActionOption("rename", "Rename"));
+    actionSelect.appendChild(createDictionaryActionOption("delete", "Delete"));
     actionSelect.addEventListener("change", () => {
       const action = actionSelect.value as DictionaryAction | "";
       if (!action) return;
@@ -3284,8 +3276,8 @@ function setupPloverControls(): void {
     const selectedDict = ploverDictionaries.find(
       (dict) => dict.identifier === name,
     );
-    if (selectedDict?.readonly) {
-      setEntryMessage("Selected dictionary is read-only.");
+    if (selectedDict?.type !== "json") {
+      setEntryMessage("Python dictionaries do not expose concrete entries.");
       return;
     }
     if (!stroke) {

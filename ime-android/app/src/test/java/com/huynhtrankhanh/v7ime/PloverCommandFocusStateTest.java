@@ -37,4 +37,12 @@ public class PloverCommandFocusStateTest {
                 KeyEvent.KEYCODE_TAB
         ));
     }
+
+    @Test
+    public void routesEscapeToActivityEvenWhileEditorOwnsFocus() {
+        PloverCommandFocusState.setNativeControlFocused(false);
+        assertTrue(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                KeyEvent.KEYCODE_ESCAPE
+        ));
+    }
 }

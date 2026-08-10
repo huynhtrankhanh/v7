@@ -18,6 +18,12 @@ final class PloverCommandFocusState {
     }
 
     static boolean shouldPassHardwareKeyToActivity(int keyCode) {
+        // Escape belongs to the command window even while one of its editors
+        // has an InputConnection. Otherwise raw-outline capture can consume it
+        // before Activity.dispatchKeyEvent has a chance to close the window.
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            return true;
+        }
         if (!nativeControlFocused) {
             return false;
         }
