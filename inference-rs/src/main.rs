@@ -358,7 +358,11 @@ impl Tokenizer {
         let mut sorted_consonant_keys: Vec<String> = valid_consonants_map.keys().cloned().collect();
         sorted_consonant_keys.sort_by(|a, b| b.len().cmp(&a.len()));
 
-        let lexical_pair_index = build_lexical_pair_index(&candidates_index);
+        let lexical_pair_index = build_lexical_pair_index(
+            &candidates_index,
+            include_str!("../../evaluation-server/corpus/default.txt"),
+            false,
+        );
         Ok(Tokenizer {
             valid_consonants_map,
             sorted_consonant_keys,
@@ -372,6 +376,8 @@ impl Tokenizer {
 /// Only pairs whose two words are both exactly V7-representable are retained.
 fn build_lexical_pair_index(
     candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
+    source: &str,
+    exact_line_entries: bool,
 ) -> HashMap<((String, char, i32), (String, char, i32)), Vec<(Arc<str>, Arc<str>)>> {
     let mut codes_by_word: HashMap<&str, Vec<&(String, char, i32)>> = HashMap::new();
     for (code, words) in candidates_index {
@@ -380,8 +386,13 @@ fn build_lexical_pair_index(
         }
     }
     let mut result = HashMap::new();
-    for line in include_str!("../../evaluation-server/corpus/default.txt").lines() {
+    for line in source.lines() {
         let words = purify(line);
+        // User dictionaries are newline-delimited lexical entries. Requiring
+        // exactly two words prevents accidental pairs spanning prose columns.
+        if exact_line_entries && words.len() != 2 {
+            continue;
+        }
         for pair in words.windows(2) {
             let (Some(left_codes), Some(right_codes)) = (
                 codes_by_word.get(pair[0].as_str()),
@@ -1055,8 +1066,8 @@ fn perform_inference(
 #[cfg(test)]
 mod tests {
     use super::{
-        fixed_text_context_events, is_v7_segment, uses_strict_alternating_island_mode,
-        FixedContextEvent, Tokenizer,
+        build_lexical_pair_index, fixed_text_context_events, is_v7_segment,
+        uses_strict_alternating_island_mode, FixedContextEvent, Tokenizer,
     };
 
     #[test]
@@ -1126,6 +1137,29 @@ mod tests {
                 assert!(right_candidates.contains(right));
             }
         }
+    }
+
+    #[test]
+    fn txt_lexical_dictionary_accepts_lf_and_crlf() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        let lf = build_lexical_pair_index(
+            &tokenizer.candidates_index,
+            "trời mưa\nhôm nay\ninvalid three words\n",
+            true,
+        );
+        let crlf = build_lexical_pair_index(
+            &tokenizer.candidates_index,
+            "trời mưa\r\nhôm nay\r\ninvalid three words\r\n",
+            true,
+        );
+        assert_eq!(lf, crlf);
+        assert!(!lf.is_empty());
+        assert!(lf.values().flatten().all(|(left, right)| {
+            matches!(
+                (left.as_ref(), right.as_ref()),
+                ("trời", "mưa") | ("hôm", "nay")
+            )
+        }));
     }
 }
 
@@ -1386,6 +1420,19 @@ impl EmbeddedInference {
             payload.perform(&self.tokenizer, &self.model, 100)?
         };
         Ok(serde_json::to_string(&InferResponse { candidates })?)
+    }
+
+    #[cfg(target_os = "android")]
+    pub(crate) fn set_lexical_dictionary(&mut self, source: &str) {
+        self.tokenizer.lexical_pair_index = if source.is_empty() {
+            build_lexical_pair_index(
+                &self.tokenizer.candidates_index,
+                include_str!("../../evaluation-server/corpus/default.txt"),
+                false,
+            )
+        } else {
+            build_lexical_pair_index(&self.tokenizer.candidates_index, source, true)
+        };
     }
 }
 

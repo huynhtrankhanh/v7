@@ -5,6 +5,9 @@ import android.net.Uri;
 import android.os.ParcelFileDescriptor;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 
 final class NativeInference {
     static {
@@ -34,12 +37,44 @@ final class NativeInference {
         } finally {
             descriptor.close();
         }
-        return inferNative(fd, modelUri.toString(), requestBody);
+        Uri dictionaryUri = ImePreferences.getDictionaryModeUri(context);
+        String dictionarySource = dictionaryUri == null
+                ? ""
+                : readDictionary(context, dictionaryUri);
+        return inferNative(
+                fd,
+                modelUri.toString(),
+                dictionaryUri == null
+                        ? ""
+                        : dictionaryUri + ":" + dictionarySource.hashCode(),
+                dictionarySource,
+                requestBody
+        );
+    }
+
+    private static String readDictionary(Context context, Uri uri) throws IOException {
+        try (InputStream input = context.getContentResolver().openInputStream(uri)) {
+            if (input == null) throw new IOException("The selected dictionary is unavailable");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[16 * 1024];
+            int count;
+            int total = 0;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > 8 * 1024 * 1024) {
+                    throw new IOException("The dictionary TXT file exceeds 8 MiB");
+                }
+                output.write(buffer, 0, count);
+            }
+            return output.toString(StandardCharsets.UTF_8.name());
+        }
     }
 
     private static native String inferNative(
             int modelFd,
             String modelId,
+            String dictionaryId,
+            String dictionarySource,
             String requestBody
     );
 }

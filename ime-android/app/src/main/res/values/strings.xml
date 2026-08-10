@@ -8,6 +8,11 @@
     <string name="model_selected">Language model selected</string>
     <string name="model_permission_failed">Android could not retain access to that file. Choose it from a local Storage Access Framework provider.</string>
     <string name="model_status_with_size">%1$s (%2$s)</string>
+    <string name="dictionary_mode_heading">Two-syllable dictionary mode</string>
+    <string name="dictionary_mode_description">Choose a UTF-8 TXT file with one two-word lexical entry per line. Both LF and CRLF line endings are supported. Invalid or non-V7 lines are ignored.</string>
+    <string name="dictionary_mode_bundled">Using the bundled lexical dictionary</string>
+    <string name="choose_dictionary_mode">Choose dictionary TXT file</string>
+    <string name="dictionary_mode_selected">Dictionary-mode TXT file selected</string>
     <string name="plover_heading">Bundled Stripped Plover</string>
     <string name="plover_description">Stripped Plover runs locally in an isolated WebView. Durable imports use Android\'s out-of-process JavaScript sandbox and the app\'s private SQLite database.</string>
     <string name="open_source_heading">Open-source licenses and source</string>

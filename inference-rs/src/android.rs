@@ -12,6 +12,7 @@ use std::sync::{Mutex, OnceLock};
 
 struct CachedInference {
     model_id: String,
+    dictionary_id: String,
     engine: EmbeddedInference,
 }
 
@@ -54,6 +55,8 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
     _class: JClass,
     model_fd: jint,
     model_id: JString,
+    dictionary_id: JString,
+    dictionary_source: JString,
     request_body: JString,
 ) -> jstring {
     let result = (|| -> anyhow::Result<String> {
@@ -62,6 +65,8 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
         }
         let model_fd = OwnedFd(model_fd);
         let model_id = java_string(&mut env, &model_id)?;
+        let dictionary_id = java_string(&mut env, &dictionary_id)?;
+        let dictionary_source = java_string(&mut env, &dictionary_source)?;
         let request_body = java_string(&mut env, &request_body)?;
         let cache = INFERENCE.get_or_init(|| Mutex::new(None));
         let mut guard = cache
@@ -73,12 +78,25 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
             .map(|cached| cached.model_id != model_id)
             .unwrap_or(true);
         if needs_load {
-            let engine = EmbeddedInference::from_fd(model_fd.0, &model_id).map_err(|error| {
+            let mut engine = EmbeddedInference::from_fd(model_fd.0, &model_id).map_err(|error| {
                 anyhow::anyhow!(
                     "Unable to memory-map the selected lm.binary file. The document provider must expose a seekable, mappable descriptor; the model is not copied: {error}"
                 )
             })?;
-            *guard = Some(CachedInference { model_id, engine });
+            if !dictionary_id.is_empty() {
+                engine.set_lexical_dictionary(&dictionary_source);
+            }
+            *guard = Some(CachedInference {
+                model_id,
+                dictionary_id,
+                engine,
+            });
+        } else if guard.as_ref().map(|cached| cached.dictionary_id.as_str())
+            != Some(dictionary_id.as_str())
+        {
+            let cached = guard.as_mut().expect("inference cache was initialized");
+            cached.engine.set_lexical_dictionary(&dictionary_source);
+            cached.dictionary_id = dictionary_id;
         }
 
         guard

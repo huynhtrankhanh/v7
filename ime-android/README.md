@@ -21,6 +21,9 @@ imports.
   an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
+- Settings can replace the bundled two-syllable lexical dictionary with a
+  persistently selected UTF-8 `.txt` document. Each LF- or CRLF-delimited line
+  must contain exactly two words; malformed and non-V7 entries are ignored.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
