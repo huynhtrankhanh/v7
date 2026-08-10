@@ -507,7 +507,9 @@ fn remove_diacritics(text: &str) -> String {
 fn purify(text: &str) -> Vec<String> {
     static NON_LETTER_RE: OnceLock<Regex> = OnceLock::new();
     let non_letter_re = NON_LETTER_RE.get_or_init(|| Regex::new(r"[^\p{L}\s]").unwrap());
-    let lower = text.to_lowercase();
+    // Compose combining marks before punctuation filtering so canonically
+    // equivalent NFC/NFD Vietnamese produces identical LM tokens.
+    let lower = text.nfc().collect::<String>().to_lowercase();
     let cleaned = non_letter_re.replace_all(&lower, " ");
     cleaned.split_whitespace().map(|s| s.to_string()).collect()
 }
@@ -1135,10 +1137,11 @@ fn perform_inference(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_lexical_pair_index, fixed_text_context_events, is_v7_segment,
+        build_lexical_pair_index, fixed_text_context_events, is_v7_segment, purify,
         uses_strict_alternating_island_mode, validate_bundled_lexical_dictionary,
         FixedContextEvent, Tokenizer,
     };
+    use unicode_normalization::UnicodeNormalization;
 
     #[test]
     fn detects_parseable_v7_segment() {
@@ -1196,6 +1199,14 @@ mod tests {
                 FixedContextEvent::SentenceEnd,
             ]
         );
+    }
+
+    #[test]
+    fn purification_is_identical_for_nfc_and_nfd_vietnamese() {
+        let nfc = "TÔI gặp Việt Nam!!!";
+        let nfd = nfc.nfd().collect::<String>();
+        assert_eq!(purify(nfc), purify(&nfd));
+        assert_eq!(purify(&nfd), vec!["tôi", "gặp", "việt", "nam"]);
     }
 
     #[test]

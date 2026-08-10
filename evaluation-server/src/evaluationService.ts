@@ -23,8 +23,9 @@ export interface CausalMetrics {
   dictionaryTop1: number;
   dictionaryTop5: number;
   compositionalInteractionCost: number;
-  dictionaryInteractionCost: number;
-  dictionaryInteractionCostDelta: number;
+  dictionaryInteractionCost: number | null;
+  dictionaryInteractionCostDelta: number | null;
+  coveredPairsDictionaryInteractionCost: number;
 }
 
 export async function evaluateCorpus(
@@ -46,8 +47,9 @@ export async function evaluateCorpus(
   let dictionaryTop1 = 0;
   let dictionaryTop5 = 0;
   let compositionalInteractionCost = 0;
-  let dictionaryInteractionCost = 0;
-  let dictionaryInteractionCostDelta = 0;
+  let dictionaryInteractionCost: number | null = 0;
+  let dictionaryInteractionCostDelta: number | null = 0;
+  let coveredPairsDictionaryInteractionCost = 0;
   for (const text of corpus) {
     const dictionary = await evaluateDictionaryMode(text, async (request) => {
       const result = await session.infer(request);
@@ -69,8 +71,18 @@ export async function evaluateCorpus(
     dictionaryTop1 += dictionary.top1;
     dictionaryTop5 += dictionary.top5;
     compositionalInteractionCost += dictionary.compositionalInteractionCost;
-    dictionaryInteractionCost += dictionary.dictionaryInteractionCost;
-    dictionaryInteractionCostDelta += dictionary.interactionCostDelta;
+    dictionaryInteractionCost =
+      dictionaryInteractionCost === null ||
+      dictionary.dictionaryInteractionCost === null
+        ? null
+        : dictionaryInteractionCost + dictionary.dictionaryInteractionCost;
+    dictionaryInteractionCostDelta =
+      dictionaryInteractionCostDelta === null ||
+      dictionary.interactionCostDelta === null
+        ? null
+        : dictionaryInteractionCostDelta + dictionary.interactionCostDelta;
+    coveredPairsDictionaryInteractionCost +=
+      dictionary.coveredPairsDictionaryInteractionCost;
   }
 
   // objective[10] is artifactBytes and is intentionally not returned or logged.
@@ -92,5 +104,6 @@ export async function evaluateCorpus(
     compositionalInteractionCost,
     dictionaryInteractionCost,
     dictionaryInteractionCostDelta,
+    coveredPairsDictionaryInteractionCost,
   };
 }

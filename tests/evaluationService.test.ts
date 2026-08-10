@@ -33,6 +33,7 @@ test("returns causal metrics without the artifact-size field", async () => {
     compositionalInteractionCost: 1,
     dictionaryInteractionCost: 1,
     dictionaryInteractionCostDelta: 0,
+    coveredPairsDictionaryInteractionCost: 1,
   });
   expect(metrics).not.toHaveProperty("artifactBytes");
   expect(session.infer).toHaveBeenCalledTimes(9);

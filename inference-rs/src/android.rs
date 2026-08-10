@@ -83,16 +83,21 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
                     "Unable to memory-map the selected lm.binary file. The document provider must expose a seekable, mappable descriptor; the model is not copied: {error}"
                 )
             })?;
-            if !dictionary_id.is_empty() {
+            if !dictionary_id.is_empty() && dictionary_id != "__unchanged__" {
                 engine.set_lexical_dictionary(Some(&dictionary_source));
             }
             *guard = Some(CachedInference {
                 model_id,
-                dictionary_id,
+                dictionary_id: if dictionary_id == "__unchanged__" {
+                    String::new()
+                } else {
+                    dictionary_id
+                },
                 engine,
             });
-        } else if guard.as_ref().map(|cached| cached.dictionary_id.as_str())
-            != Some(dictionary_id.as_str())
+        } else if dictionary_id != "__unchanged__"
+            && guard.as_ref().map(|cached| cached.dictionary_id.as_str())
+                != Some(dictionary_id.as_str())
         {
             let cached = guard.as_mut().expect("inference cache was initialized");
             cached

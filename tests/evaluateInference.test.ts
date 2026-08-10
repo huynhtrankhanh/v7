@@ -171,4 +171,19 @@ describe("inference inconvenience evaluator", () => {
       interactionCostDelta: 0,
     });
   });
+
+  test("marks aggregate interaction cost incomplete on dictionary miss", async () => {
+    const result = await evaluateDictionaryMode("trời mưa", async (request) => {
+      const v7 = request.islands[1];
+      return v7.kind === "v7" && v7.mode === "dictionary"
+        ? { candidates: [], dictionaryBucketSizes: [0] }
+        : [["", "trời mưa", ""]];
+    });
+    expect(result).toMatchObject({
+      misses: 1,
+      dictionaryInteractionCost: null,
+      interactionCostDelta: null,
+      coveredPairsDictionaryInteractionCost: 0,
+    });
+  });
 });

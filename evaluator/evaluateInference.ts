@@ -42,8 +42,11 @@ export interface DictionaryEvaluationResult {
   top1: number;
   top5: number;
   compositionalInteractionCost: number;
-  dictionaryInteractionCost: number;
-  interactionCostDelta: number;
+  /** Null when any evaluated pair missed; never treats a miss as free. */
+  dictionaryInteractionCost: number | null;
+  interactionCostDelta: number | null;
+  /** Cost over covered pairs only, explicitly excluding misses. */
+  coveredPairsDictionaryInteractionCost: number;
   steps: DictionaryEvaluationStep[];
 }
 
@@ -553,12 +556,24 @@ export async function evaluateDictionaryMode(
       (total, step) => total + step.compositionalInteractionCost,
       0,
     ),
-    dictionaryInteractionCost: steps.reduce(
+    dictionaryInteractionCost: steps.some(
+      (step) => step.dictionaryInteractionCost === null,
+    )
+      ? null
+      : steps.reduce(
+          (total, step) => total + (step.dictionaryInteractionCost ?? 0),
+          0,
+        ),
+    interactionCostDelta: steps.some(
+      (step) => step.interactionCostDelta === null,
+    )
+      ? null
+      : steps.reduce(
+          (total, step) => total + (step.interactionCostDelta ?? 0),
+          0,
+        ),
+    coveredPairsDictionaryInteractionCost: steps.reduce(
       (total, step) => total + (step.dictionaryInteractionCost ?? 0),
-      0,
-    ),
-    interactionCostDelta: steps.reduce(
-      (total, step) => total + (step.interactionCostDelta ?? 0),
       0,
     ),
     steps,
