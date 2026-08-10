@@ -342,6 +342,8 @@ public class PloverCommandActivity extends Activity {
                 return;
             }
             String selected = writableDictionaries.get(selectedPosition);
+            String submittedSignature = stroke + "\u0000"
+                    + output + "\u0000" + selected;
             submitting[0] = true;
             updateAddEnabled.run();
             status.setText(R.string.checking_existing_translation);
@@ -368,9 +370,7 @@ public class PloverCommandActivity extends Activity {
                         } else if (result.optBoolean("conflict", false)) {
                             status.setText(R.string.translation_changed_before_replace);
                         } else {
-                            completedSubmission[0] = submissionSignature(
-                                    outline, translation
-                            );
+                            completedSubmission[0] = submittedSignature;
                             status.setText(getString(
                                     R.string.translation_added, stroke, selected
                             ));
@@ -391,9 +391,7 @@ public class PloverCommandActivity extends Activity {
                 }
                 if (!result.optBoolean("conflict", false)) {
                     submitting[0] = false;
-                    completedSubmission[0] = submissionSignature(
-                            outline, translation
-                    );
+                    completedSubmission[0] = submittedSignature;
                     status.setText(getString(
                             R.string.translation_added,
                             result.optString("stroke", stroke), selected
@@ -413,9 +411,7 @@ public class PloverCommandActivity extends Activity {
                 }
                 if (existing.equals(output)) {
                     submitting[0] = false;
-                    completedSubmission[0] = submissionSignature(
-                            outline, translation
-                    );
+                    completedSubmission[0] = submittedSignature;
                     status.setText(getString(
                             R.string.translation_already_exists, stroke, selected
                     ));
