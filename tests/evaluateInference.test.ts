@@ -165,6 +165,10 @@ describe("inference inconvenience evaluator", () => {
     expect(result.steps[1]).toMatchObject({
       dictionaryTop1: true,
       dictionaryBucketSize: 7,
+      compositionalTop5: true,
+      compositionalInteractionCost: 1,
+      dictionaryInteractionCost: 1,
+      interactionCostDelta: 0,
     });
   });
 });

@@ -11,6 +11,7 @@ export interface Island {
   value: string;
   isV7?: boolean;
   v7Mode?: V7Mode;
+  dictionaryBucketSize?: number;
   leftSpace?: boolean;
   rightSpace?: boolean;
   explicitSpacing?: boolean;

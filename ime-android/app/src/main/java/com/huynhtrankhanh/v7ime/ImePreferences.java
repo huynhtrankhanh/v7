@@ -34,4 +34,8 @@ final class ImePreferences {
         get(context).edit().putString(DICTIONARY_URI, uri.toString()).apply();
     }
 
+    static void clearDictionaryModeUri(Context context) {
+        get(context).edit().remove(DICTIONARY_URI).apply();
+    }
+
 }

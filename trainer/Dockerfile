@@ -13,6 +13,7 @@ WORKDIR /app/trainer
 COPY trainer/package.json ./
 COPY trainer/src ./src
 COPY trainer/public ./public
+COPY data /app/data
 COPY --from=webui /app/static /app/static
 
 RUN mkdir -p /data && chown -R node:node /data /app/trainer

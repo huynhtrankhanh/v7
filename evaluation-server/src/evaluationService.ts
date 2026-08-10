@@ -22,6 +22,9 @@ export interface CausalMetrics {
   dictionaryMisses: number;
   dictionaryTop1: number;
   dictionaryTop5: number;
+  compositionalInteractionCost: number;
+  dictionaryInteractionCost: number;
+  dictionaryInteractionCostDelta: number;
 }
 
 export async function evaluateCorpus(
@@ -42,6 +45,9 @@ export async function evaluateCorpus(
   let dictionaryMisses = 0;
   let dictionaryTop1 = 0;
   let dictionaryTop5 = 0;
+  let compositionalInteractionCost = 0;
+  let dictionaryInteractionCost = 0;
+  let dictionaryInteractionCostDelta = 0;
   for (const text of corpus) {
     const dictionary = await evaluateDictionaryMode(text, async (request) => {
       const result = await session.infer(request);
@@ -62,6 +68,9 @@ export async function evaluateCorpus(
     dictionaryMisses += dictionary.misses;
     dictionaryTop1 += dictionary.top1;
     dictionaryTop5 += dictionary.top5;
+    compositionalInteractionCost += dictionary.compositionalInteractionCost;
+    dictionaryInteractionCost += dictionary.dictionaryInteractionCost;
+    dictionaryInteractionCostDelta += dictionary.interactionCostDelta;
   }
 
   // objective[10] is artifactBytes and is intentionally not returned or logged.
@@ -80,5 +89,8 @@ export async function evaluateCorpus(
     dictionaryMisses,
     dictionaryTop1,
     dictionaryTop5,
+    compositionalInteractionCost,
+    dictionaryInteractionCost,
+    dictionaryInteractionCostDelta,
   };
 }

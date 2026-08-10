@@ -28,8 +28,12 @@ export interface DictionaryEvaluationStep {
   dictionaryBucketSize: number;
   dictionaryMiss: boolean;
   compositionalTop1: boolean;
+  compositionalTop5: boolean;
   dictionaryTop1: boolean;
   dictionaryTop5: boolean;
+  compositionalInteractionCost: number;
+  dictionaryInteractionCost: number | null;
+  interactionCostDelta: number | null;
 }
 
 export interface DictionaryEvaluationResult {
@@ -37,6 +41,9 @@ export interface DictionaryEvaluationResult {
   misses: number;
   top1: number;
   top5: number;
+  compositionalInteractionCost: number;
+  dictionaryInteractionCost: number;
+  interactionCostDelta: number;
   steps: DictionaryEvaluationStep[];
 }
 
@@ -499,6 +506,25 @@ export async function evaluateDictionaryMode(
     const exact = (candidate: readonly string[] | undefined) =>
       candidate !== undefined &&
       sameSyllables(candidate, island.targetSyllables);
+    const interactionCost = (
+      predictions: readonly string[][],
+    ): number | null => {
+      if (predictions.length === 0) return null;
+      const exactIndex = predictions.slice(0, 5).findIndex(exact);
+      const correctionCost =
+        exactIndex === 0
+          ? 0
+          : exactIndex > 0
+            ? DEFAULT_WEIGHTS.candidateSelection
+            : getPiecemealCorrectionCost(
+                island.targetSyllables,
+                predictions[0],
+                DEFAULT_WEIGHTS,
+              );
+      return DEFAULT_WEIGHTS.v7Entry + correctionCost;
+    };
+    const compositionalCost = interactionCost(compositionalCandidates) ?? 0;
+    const dictionaryCost = interactionCost(dictionaryCandidates);
     steps.push({
       sourceText: island.sourceText,
       v7Code: island.v7Code,
@@ -509,8 +535,13 @@ export async function evaluateDictionaryMode(
           : dictionaryCandidates.length,
       dictionaryMiss: dictionaryCandidates.length === 0,
       compositionalTop1: exact(compositionalCandidates[0]),
+      compositionalTop5: compositionalCandidates.slice(0, 5).some(exact),
       dictionaryTop1: exact(dictionaryCandidates[0]),
       dictionaryTop5: dictionaryCandidates.slice(0, 5).some(exact),
+      compositionalInteractionCost: compositionalCost,
+      dictionaryInteractionCost: dictionaryCost,
+      interactionCostDelta:
+        dictionaryCost === null ? null : dictionaryCost - compositionalCost,
     });
   }
   return {
@@ -518,6 +549,18 @@ export async function evaluateDictionaryMode(
     misses: steps.filter((step) => step.dictionaryMiss).length,
     top1: steps.filter((step) => step.dictionaryTop1).length,
     top5: steps.filter((step) => step.dictionaryTop5).length,
+    compositionalInteractionCost: steps.reduce(
+      (total, step) => total + step.compositionalInteractionCost,
+      0,
+    ),
+    dictionaryInteractionCost: steps.reduce(
+      (total, step) => total + (step.dictionaryInteractionCost ?? 0),
+      0,
+    ),
+    interactionCostDelta: steps.reduce(
+      (total, step) => total + (step.interactionCostDelta ?? 0),
+      0,
+    ),
     steps,
   };
 }

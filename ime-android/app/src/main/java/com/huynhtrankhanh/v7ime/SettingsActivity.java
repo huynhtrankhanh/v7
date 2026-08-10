@@ -45,6 +45,7 @@ public class SettingsActivity extends Activity {
         dictionaryModeStatus = findViewById(R.id.dictionary_mode_status);
         Button chooseModel = findViewById(R.id.choose_model);
         Button chooseDictionaryMode = findViewById(R.id.choose_dictionary_mode);
+        Button useBundledDictionary = findViewById(R.id.use_bundled_dictionary);
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         exportAppData = findViewById(R.id.export_app_data);
         importAppData = findViewById(R.id.import_app_data);
@@ -56,6 +57,7 @@ public class SettingsActivity extends Activity {
         updateDictionaryModeStatus();
         chooseModel.setOnClickListener(view -> chooseModel());
         chooseDictionaryMode.setOnClickListener(view -> chooseDictionaryMode());
+        useBundledDictionary.setOnClickListener(view -> useBundledDictionary());
         manageDictionaries.setOnClickListener(view -> startActivity(
                 new Intent(this, DictionaryManagementActivity.class)
         ));
@@ -94,6 +96,13 @@ public class SettingsActivity extends Activity {
                 )
                 .setType("text/plain");
         startActivityForResult(intent, CHOOSE_DICTIONARY_MODE_REQUEST);
+    }
+
+    private void useBundledDictionary() {
+        ImePreferences.clearDictionaryModeUri(this);
+        NativeInference.invalidateDictionaryCache();
+        updateDictionaryModeStatus();
+        Toast.makeText(this, R.string.dictionary_mode_bundled, Toast.LENGTH_SHORT).show();
     }
 
     private void chooseSourceDestination() {

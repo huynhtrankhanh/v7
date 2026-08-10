@@ -287,7 +287,7 @@ export function renderVisibleText(
     }
     if (curr.isV7) {
       text +=
-        curr.v7Mode === "dictionary"
+        curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
           ? `[dictionary miss: ${curr.value}]`
           : `[${curr.value}]`;
     } else {
@@ -338,7 +338,9 @@ export function renderVisibleTextSegments(
         );
       } else {
         const unresolvedPrefix =
-          curr.v7Mode === "dictionary" ? "[dictionary miss: " : "[";
+          curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
+            ? "[dictionary miss: "
+            : "[";
         segments.push(
           ...renderIslandWithPiecemealTargets(
             `${unresolvedPrefix}${curr.value}]`,

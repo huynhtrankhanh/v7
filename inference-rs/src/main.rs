@@ -358,11 +358,10 @@ impl Tokenizer {
         let mut sorted_consonant_keys: Vec<String> = valid_consonants_map.keys().cloned().collect();
         sorted_consonant_keys.sort_by(|a, b| b.len().cmp(&a.len()));
 
-        let lexical_pair_index = build_lexical_pair_index(
-            &candidates_index,
-            include_str!("../../data/two_syllable_dictionary.txt"),
-            true,
-        );
+        let bundled_dictionary = include_str!("../../data/two_syllable_dictionary.txt");
+        validate_bundled_lexical_dictionary(&candidates_index, bundled_dictionary)?;
+        let lexical_pair_index =
+            build_lexical_pair_index(&candidates_index, bundled_dictionary, true);
         Ok(Tokenizer {
             valid_consonants_map,
             sorted_consonant_keys,
@@ -414,6 +413,51 @@ fn build_lexical_pair_index(
         }
     }
     result
+}
+
+fn validate_bundled_lexical_dictionary(
+    candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
+    source: &str,
+) -> Result<()> {
+    let mut codes_by_word: HashMap<&str, usize> = HashMap::new();
+    for words in candidates_index.values() {
+        for word in words {
+            *codes_by_word.entry(word.as_ref()).or_default() += 1;
+        }
+    }
+    let mut seen = HashSet::new();
+    for (index, raw_line) in source.lines().enumerate() {
+        let line_number = index + 1;
+        let normalized = raw_line.nfc().collect::<String>();
+        if raw_line != raw_line.trim()
+            || normalized != raw_line
+            || raw_line.to_lowercase() != raw_line
+        {
+            anyhow::bail!(
+                "bundled lexical dictionary line {line_number} must be trimmed, NFC, and lowercase"
+            );
+        }
+        let words = purify(raw_line);
+        if words.len() != 2 || words.join(" ") != raw_line {
+            anyhow::bail!(
+                "bundled lexical dictionary line {line_number} must contain exactly two normalized words"
+            );
+        }
+        if !seen.insert(raw_line) {
+            anyhow::bail!("duplicate bundled lexical dictionary entry on line {line_number}");
+        }
+        for word in words {
+            if codes_by_word.get(word.as_str()).copied().unwrap_or(0) != 1 {
+                anyhow::bail!(
+                    "bundled lexical dictionary line {line_number} contains a word without exactly one canonical V7 code: {word}"
+                );
+            }
+        }
+    }
+    if seen.is_empty() {
+        anyhow::bail!("bundled lexical dictionary must not be empty");
+    }
+    Ok(())
 }
 
 fn is_combining_mark(c: char) -> bool {
@@ -1067,7 +1111,8 @@ fn perform_inference(
 mod tests {
     use super::{
         build_lexical_pair_index, fixed_text_context_events, is_v7_segment,
-        uses_strict_alternating_island_mode, FixedContextEvent, Tokenizer,
+        uses_strict_alternating_island_mode, validate_bundled_lexical_dictionary,
+        FixedContextEvent, Tokenizer,
     };
 
     #[test]
@@ -1160,6 +1205,23 @@ mod tests {
                 ("trời", "mưa") | ("hôm", "nay")
             )
         }));
+    }
+
+    #[test]
+    fn bundled_dictionary_validation_rejects_noncanonical_and_duplicate_lines() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        assert!(
+            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, "Hôm nay\n").is_err()
+        );
+        assert!(validate_bundled_lexical_dictionary(
+            &tokenizer.candidates_index,
+            "hôm nay\nhôm nay\n"
+        )
+        .is_err());
+        assert!(
+            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, "hôm nay mai\n")
+                .is_err()
+        );
     }
 }
 
@@ -1474,15 +1536,19 @@ impl EmbeddedInference {
     }
 
     #[cfg(target_os = "android")]
-    pub(crate) fn set_lexical_dictionary(&mut self, source: &str) {
-        self.tokenizer.lexical_pair_index = if source.is_empty() {
+    pub(crate) fn set_lexical_dictionary(&mut self, source: Option<&str>) {
+        self.tokenizer.lexical_pair_index = if source.is_none() {
             build_lexical_pair_index(
                 &self.tokenizer.candidates_index,
                 include_str!("../../data/two_syllable_dictionary.txt"),
                 true,
             )
         } else {
-            build_lexical_pair_index(&self.tokenizer.candidates_index, source, true)
+            build_lexical_pair_index(
+                &self.tokenizer.candidates_index,
+                source.expect("custom dictionary source is present"),
+                true,
+            )
         };
     }
 }

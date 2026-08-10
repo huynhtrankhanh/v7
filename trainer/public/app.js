@@ -741,7 +741,7 @@ function renderSentencePractice(payload) {
           <p class="instruction">${escapeHtml(card.note)}</p>
           <div class="sentence-target">${escapeHtml(card.target)}</div>
           <div class="stroke-hint">
-            <span id="stroke-value" class="stroke-text">${escapeHtml(firstPair ? `ordinary: ${firstPair.stroke} · dictionary: ${firstPair.dictionaryStroke}` : "")}</span>
+            <span id="stroke-value" class="stroke-text">${escapeHtml(firstPair ? pairStrokeHint(firstPair) : "")}</span>
             <button id="show-hint" class="link-button" hidden>Hiện gợi ý</button>
           </div>
           <iframe
@@ -794,12 +794,18 @@ function comparableWords(value) {
   ).join(" ");
 }
 
+function pairStrokeHint(pair) {
+  return pair.dictionaryStroke
+    ? `ordinary: ${pair.stroke} · dictionary: ${pair.dictionaryStroke}`
+    : `ordinary: ${pair.stroke}`;
+}
+
 function updateSentenceHint(text) {
   const words = String(text).match(/[\p{L}\p{M}]+/gu)?.length ?? 0;
   const pair = currentPayload.card.pairs[Math.floor(words / 2)];
   const hint = document.getElementById("stroke-value");
   if (pair) {
-    hint.textContent = `${pair.words} · ordinary: ${pair.stroke} · dictionary: ${pair.dictionaryStroke}`;
+    hint.textContent = `${pair.words} · ${pairStrokeHint(pair)}`;
     document.getElementById("feedback").textContent =
       `Một cách nhanh để viết “${pair.words}” là bấm ${pair.stroke}. Bạn vẫn có thể gõ từng tiếng.`;
   } else {

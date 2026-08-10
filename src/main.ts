@@ -2234,6 +2234,13 @@ async function runInference() {
   // Candidates from the previous buffer are no longer valid. Avoid flashing
   // raw V7 while the synchronous Android bridge produces their replacements.
   state.candidates = [];
+  buffer.setIslands(
+    state.islands.map((island) => {
+      if (island.v7Mode !== "dictionary") return island;
+      const { dictionaryBucketSize: _stale, ...pendingIsland } = island;
+      return pendingIsland;
+    }),
+  );
   if (!shouldDeferAndroidInferenceRender()) {
     updateDisplay();
   }
@@ -2264,6 +2271,18 @@ async function runInference() {
       return;
     }
     state.candidates = getInferenceCandidates(data);
+    const bucketSizes = getDictionaryBucketSizes(data);
+    let dictionaryIndex = 0;
+    buffer.setIslands(
+      state.islands.map((island) =>
+        island.v7Mode === "dictionary"
+          ? {
+              ...island,
+              dictionaryBucketSize: bucketSizes[dictionaryIndex++],
+            }
+          : island,
+      ),
+    );
     inferenceErrorMessage = "";
     updateDisplay();
   } catch (e) {
@@ -2307,6 +2326,20 @@ function getInferenceCandidates(data: unknown): string[][] {
     throw new Error("Inference response is missing valid candidates");
   }
   return candidates;
+}
+
+function getDictionaryBucketSizes(data: unknown): number[] {
+  if (!data || typeof data !== "object") return [];
+  const sizes = (data as { dictionaryBucketSizes?: unknown })
+    .dictionaryBucketSizes;
+  if (sizes === undefined) return [];
+  if (
+    !Array.isArray(sizes) ||
+    !sizes.every((size) => Number.isSafeInteger(size) && size >= 0)
+  ) {
+    throw new Error("Inference response has invalid dictionary bucket sizes");
+  }
+  return sizes as number[];
 }
 
 type SelectCandidateOptions = {

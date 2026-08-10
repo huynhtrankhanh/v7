@@ -239,6 +239,7 @@ describe("webCore candidate selection", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true, {
         v7Mode: "dictionary",
+        dictionaryBucketSize: 0,
       }),
     ];
     expect(renderVisibleText(islands, [])).toBe("[dictionary miss: tro2ma1]");
@@ -247,6 +248,14 @@ describe("webCore candidate selection", () => {
         .filter((segment) => segment.piecemealNumber !== undefined)
         .map((segment) => segment.text),
     ).toEqual(["tro2", "ma1"]);
+  });
+  test("does not report a dictionary miss before bucket lookup completes", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+      }),
+    ];
+    expect(renderVisibleText(islands, [])).toBe("[tro2ma1]");
   });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [

@@ -91,6 +91,9 @@ test("every sentence pair has a generated physical V7 hint", () => {
       });
       assert.ok(pair.stroke.includes("*"), `${sentence.id}: ${pair.words}`);
       assert.ok(pair.keys.includes("Space"), `${sentence.id}: ${pair.words}`);
+      if (pair.dictionaryStroke !== null) {
+        assert.notEqual(pair.dictionaryStroke, pair.stroke);
+      }
     }
   }
 });

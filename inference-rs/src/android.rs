@@ -84,7 +84,7 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
                 )
             })?;
             if !dictionary_id.is_empty() {
-                engine.set_lexical_dictionary(&dictionary_source);
+                engine.set_lexical_dictionary(Some(&dictionary_source));
             }
             *guard = Some(CachedInference {
                 model_id,
@@ -95,7 +95,13 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
             != Some(dictionary_id.as_str())
         {
             let cached = guard.as_mut().expect("inference cache was initialized");
-            cached.engine.set_lexical_dictionary(&dictionary_source);
+            cached
+                .engine
+                .set_lexical_dictionary(if dictionary_id.is_empty() {
+                    None
+                } else {
+                    Some(&dictionary_source)
+                });
             cached.dictionary_id = dictionary_id;
         }
 

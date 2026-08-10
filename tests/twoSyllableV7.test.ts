@@ -3,6 +3,8 @@ import {
   decodeDictionaryModeStroke,
   dictionaryStrokeForCanonicalStroke,
 } from "../src/twoSyllableV7";
+import { decodeV7PermittedSyllableStroke } from "../src/vietnameseSyllables";
+import { getCandidateSelectionMatch } from "../src/candidateSelection";
 
 describe("two-syllable V7 dictionary mode", () => {
   test.each([
@@ -37,6 +39,37 @@ describe("two-syllable V7 dictionary mode", () => {
     const rightVowels = ["", "Z", "U", "E", "EU"];
     const targets = new Set<string>();
     let sources = 0;
+    let distanceTwo = 0;
+    let distanceThree = 0;
+    const reservedExactStrokes = new Set([
+      "#",
+      "#S",
+      "#S-",
+      "*",
+      "S-P",
+      "TP-PL",
+      "KW-BG",
+      "KW-PL",
+      "TP-BG",
+      "T",
+      "T-",
+      "P",
+      "P-",
+      "H",
+      "H-",
+      "TK",
+      "TK-",
+      "PW",
+      "PW-",
+      "HR",
+      "HR-",
+      "K",
+      "K-",
+      "W",
+      "W-",
+      "R",
+      "R-",
+    ]);
     for (const leftConsonant of consonantValues)
       for (let leftTone = 0; leftTone < 8; leftTone += 1)
         for (const leftVowel of leftVowels)
@@ -68,10 +101,52 @@ describe("two-syllable V7 dictionary mode", () => {
                   throw new Error(
                     `round-trip failed for ${source} via ${target}`,
                   );
+                if (decodeCanonicalTwoSyllableStroke(target) !== null)
+                  throw new Error(
+                    `dictionary target is ordinary V7: ${target}`,
+                  );
+                if (decodeV7PermittedSyllableStroke(target) !== null)
+                  throw new Error(
+                    `dictionary target is single-syllable V7: ${target}`,
+                  );
+                if (
+                  reservedExactStrokes.has(target) ||
+                  /^[#]?WH[AO]*[*-]?[EU]*[FRPBLG]*[TS]*$/.test(target)
+                )
+                  throw new Error(
+                    `dictionary target hits reserved grammar: ${target}`,
+                  );
+                const candidateMatch = getCandidateSelectionMatch(target);
+                if (
+                  candidateMatch !== null &&
+                  (candidateMatch.syllableStroke === null ||
+                    decodeV7PermittedSyllableStroke(
+                      candidateMatch.syllableStroke,
+                    ) !== null)
+                )
+                  throw new Error(
+                    `dictionary target is candidate selection: ${target}`,
+                  );
+                const keySet = (stroke: string) =>
+                  new Set(stroke.replace(/[-*]/g, "").split(""));
+                const sourceKeys = keySet(source);
+                const targetKeys = keySet(target);
+                const distance =
+                  [...sourceKeys].filter((key) => !targetKeys.has(key)).length +
+                  [...targetKeys].filter((key) => !sourceKeys.has(key)).length +
+                  Number(source.includes("*") !== target.includes("*"));
+                if (distance === 2) distanceTwo += 1;
+                else if (distance === 3) distanceThree += 1;
+                else
+                  throw new Error(
+                    `unexpected key distance ${distance}: ${source}`,
+                  );
                 targets.add(target!);
                 sources += 1;
               }
     expect(sources).toBe(1_000_000);
     expect(targets.size).toBe(sources);
+    expect(distanceTwo).toBe(840_000);
+    expect(distanceThree).toBe(160_000);
   }, 120_000);
 });
