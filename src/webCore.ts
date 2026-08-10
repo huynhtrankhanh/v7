@@ -558,9 +558,11 @@ function splitV7IslandForReplacement(
   replacement: string,
 ): Island[] {
   const pieces: Island[] = [];
+  const residualMode =
+    island.v7Mode === "dictionary" ? { v7Mode: "compositional" as const } : {};
   const before = island.value.slice(0, target.start);
   const after = island.value.slice(target.end);
-  if (before) pieces.push({ ...island, value: before });
+  if (before) pieces.push({ ...island, value: before, ...residualMode });
   pieces.push(
     createIsland(
       "vietnamese",
@@ -569,7 +571,13 @@ function splitV7IslandForReplacement(
         : replacement,
     ),
   );
-  if (after) pieces.push({ ...island, value: after, capitalize: false });
+  if (after)
+    pieces.push({
+      ...island,
+      value: after,
+      capitalize: false,
+      ...residualMode,
+    });
   return pieces;
 }
 

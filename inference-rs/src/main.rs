@@ -951,8 +951,31 @@ struct AppState {
 const PLOVER_STATUS_CACHE_SECONDS: u64 = 2;
 
 #[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum TypedInferIsland {
+    Fixed { text: String },
+    V7 { code: String, mode: V7Mode },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum V7Mode {
+    Compositional,
+    Dictionary,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum InferIsland {
+    Legacy(String),
+    Typed(TypedInferIsland),
+}
+
+#[derive(Deserialize)]
 struct InferRequest {
-    islands: Vec<String>,
+    #[serde(default)]
+    version: Option<u8>,
+    islands: Vec<InferIsland>,
 }
 
 #[derive(Serialize)]
@@ -981,7 +1004,8 @@ async fn infer_handler(
         return Json(InferResponse { candidates: vec![] });
     }
 
-    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
+    let islands = payload.legacy_islands();
+    let result = perform_inference(&islands, &state.tokenizer, &state.model, 100);
 
     match result {
         Ok(candidates) => Json(InferResponse { candidates }),
@@ -1091,6 +1115,17 @@ impl InferRequest {
     fn is_empty(&self) -> bool {
         self.islands.is_empty()
     }
+
+    fn legacy_islands(&self) -> Vec<String> {
+        self.islands
+            .iter()
+            .map(|island| match island {
+                InferIsland::Legacy(value) => value.clone(),
+                InferIsland::Typed(TypedInferIsland::Fixed { text }) => text.clone(),
+                InferIsland::Typed(TypedInferIsland::V7 { code, .. }) => code.clone(),
+            })
+            .collect()
+    }
 }
 
 pub(crate) struct EmbeddedInference {
@@ -1120,7 +1155,7 @@ impl EmbeddedInference {
         let candidates = if payload.is_empty() {
             vec![]
         } else {
-            perform_inference(&payload.islands, &self.tokenizer, &self.model, 100)?
+            perform_inference(&payload.legacy_islands(), &self.tokenizer, &self.model, 100)?
         };
         Ok(serde_json::to_string(&InferResponse { candidates })?)
     }

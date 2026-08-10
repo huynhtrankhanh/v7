@@ -242,11 +242,11 @@ describe("webCore candidate selection", () => {
     ];
 
     expect(convertIslandsForInference(islands)).toEqual([
-      "",
-      "tro2ma1",
-      " ",
-      "ko0",
-      "",
+      { kind: "fixed", text: "" },
+      { kind: "v7", code: "tro2ma1", mode: "compositional" },
+      { kind: "fixed", text: " " },
+      { kind: "v7", code: "ko0", mode: "compositional" },
+      { kind: "fixed", text: "" },
     ]);
     expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
       "Trời mà không",
@@ -696,7 +696,11 @@ describe("webCore piecemeal syllable edit", () => {
 
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
-    expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
+    expect(convertIslandsForInference(islands)).toEqual([
+      { kind: "fixed", text: "" },
+      { kind: "v7", code: "tro2ma1", mode: "compositional" },
+      { kind: "fixed", text: "" },
+    ]);
 
     expect(
       renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0),

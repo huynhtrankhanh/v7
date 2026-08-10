@@ -2,11 +2,15 @@ import { Rope } from "./rope";
 
 export type IslandType =
   "vietnamese" | "punctuation" | "capital" | "spacing" | "emily";
+export type V7Mode = "compositional" | "dictionary";
+export type InferenceIsland =
+  { kind: "fixed"; text: string } | { kind: "v7"; code: string; mode: V7Mode };
 
 export interface Island {
   type: IslandType;
   value: string;
   isV7?: boolean;
+  v7Mode?: V7Mode;
   leftSpace?: boolean;
   rightSpace?: boolean;
   explicitSpacing?: boolean;
@@ -71,8 +75,10 @@ export function shouldAddSpace(
   return false;
 }
 
-export function convertIslandsForInference(islands: Island[]): string[] {
-  const serverIslands: string[] = [];
+export function convertIslandsForInference(
+  islands: Island[],
+): InferenceIsland[] {
+  const serverIslands: InferenceIsland[] = [];
   let currentFixed = Rope.fromString("");
 
   for (let i = 0; i < islands.length; i++) {
@@ -84,9 +90,13 @@ export function convertIslandsForInference(islands: Island[]): string[] {
         currentFixed.append(" ");
       }
       const chunk = currentFixed.toString();
-      serverIslands.push(chunk);
+      serverIslands.push({ kind: "fixed", text: chunk });
       currentFixed = Rope.fromString("");
-      serverIslands.push(curr.value);
+      serverIslands.push({
+        kind: "v7",
+        code: curr.value,
+        mode: curr.v7Mode ?? "compositional",
+      });
     } else {
       const prev = i > 0 ? islands[i - 1] : null;
       if (prev && shouldAddSpace(prev, curr)) {
@@ -96,7 +106,7 @@ export function convertIslandsForInference(islands: Island[]): string[] {
     }
   }
 
-  serverIslands.push(currentFixed.toString());
+  serverIslands.push({ kind: "fixed", text: currentFixed.toString() });
   return serverIslands;
 }
 
