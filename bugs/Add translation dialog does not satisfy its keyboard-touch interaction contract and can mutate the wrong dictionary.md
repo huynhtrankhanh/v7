@@ -706,21 +706,6 @@ because several current failures depend on whether hardware events are intercept
 
 ---
 
-## Out of scope
-
-This issue is specifically about the V7 Android Add translation dialog interaction contract.
-
-It should not be conflated with the separately identified issues concerning:
-
-- removal of the `readonly` dictionary abstraction;
-- Stripped Plover numeric RTFCRE parser/serializer round-trip failures.
-
-Those require separate fixes.
-
-The `readonly` cleanup may change how V7 discovers dictionaries capable of concrete entry mutation, but it does not eliminate the interaction bugs described here.
-
----
-
 ## Acceptance criteria
 
 - Focusing or tabbing through a dictionary never selects it implicitly.
