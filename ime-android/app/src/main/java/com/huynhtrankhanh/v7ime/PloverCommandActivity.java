@@ -403,9 +403,9 @@ public class PloverCommandActivity extends Activity {
                 String existing = result.optString("existing_translation", "");
                 try {
                     params.put("expected_translation", existing);
-                } catch (Exception error) {
+                } catch (Exception exception) {
                     submitting[0] = false;
-                    status.setText(messageFor(error));
+                    status.setText(messageFor(exception));
                     updateAddEnabled.run();
                     return;
                 }
