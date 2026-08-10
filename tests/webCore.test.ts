@@ -235,6 +235,14 @@ describe("webCore keyboard input", () => {
 });
 
 describe("webCore candidate selection", () => {
+  test("renders an explicit lexical miss for unresolved dictionary islands", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+      }),
+    ];
+    expect(renderVisibleText(islands, [])).toBe("[dictionary miss: tro2ma1]");
+  });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
@@ -882,6 +890,22 @@ describe("webCore piecemeal syllable edit", () => {
     expect(next).toEqual([
       createIsland("vietnamese", "tro2", true),
       createIsland("vietnamese", "tôi"),
+    ]);
+  });
+
+  test("demotes dictionary remnants after piecemeal replacement", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+      }),
+    ];
+    const target = findPiecemealSyllableTargets(islands)[1];
+    expect(replacePiecemealSyllable(islands, target, "mà")).toEqual([
+      createIsland("vietnamese", "mà"),
+      createIsland("vietnamese", "ma1", true, {
+        capitalize: false,
+        v7Mode: "compositional",
+      }),
     ]);
   });
 

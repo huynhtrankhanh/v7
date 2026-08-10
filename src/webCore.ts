@@ -286,7 +286,10 @@ export function renderVisibleText(
       text += " ";
     }
     if (curr.isV7) {
-      text += `[${curr.value}]`;
+      text +=
+        curr.v7Mode === "dictionary"
+          ? `[dictionary miss: ${curr.value}]`
+          : `[${curr.value}]`;
     } else {
       text += curr.value;
     }
@@ -336,7 +339,9 @@ export function renderVisibleTextSegments(
       } else {
         segments.push(
           ...renderIslandWithPiecemealTargets(
-            `[${curr.value}]`,
+            curr.v7Mode === "dictionary"
+              ? `[dictionary miss: ${curr.value}]`
+              : `[${curr.value}]`,
             curr,
             i,
             targetIds,

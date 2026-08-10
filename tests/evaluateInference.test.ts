@@ -2,6 +2,7 @@ import {
   buildEvaluationIslands,
   evaluate,
   evaluateDetailed,
+  evaluateDictionaryMode,
   getPiecemealCorrectionCost,
   ILLEGAL,
   type InferenceFunction,
@@ -130,5 +131,18 @@ describe("inference inconvenience evaluator", () => {
     await expect(
       evaluate("trời mưa", async () => [["trời, mưa"]]),
     ).resolves.toBe(ILLEGAL);
+  });
+
+  test("compares typed dictionary and compositional pair requests", async () => {
+    const modes: string[] = [];
+    const result = await evaluateDictionaryMode("trời mưa", async (request) => {
+      const v7 = request.islands.find((island) => island.kind === "v7");
+      modes.push(v7?.kind === "v7" ? v7.mode : "missing");
+      return v7?.kind === "v7" && v7.mode === "dictionary"
+        ? [["", "trời mưa", ""]]
+        : [["", "trời mua", ""]];
+    });
+    expect(modes).toEqual(["compositional", "dictionary"]);
+    expect(result).toMatchObject({ coveredPairs: 1, misses: 0, top1: 1 });
   });
 });

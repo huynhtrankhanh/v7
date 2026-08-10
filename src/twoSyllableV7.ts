@@ -124,8 +124,10 @@ export function decodeDictionaryModeStroke(
     source = `${left}*${base}${right.includes("D") ? "" : "D"}${right.includes("Z") ? "" : "Z"}`;
   } else {
     if ((stroke.match(/-/g) ?? []).length > 1) return null;
-    const normalized = stroke.replace("-", "");
-    const corner = /^([#STKPWHR]*)(O?)(E?)([FRPBLGTS]*)DZ$/.exec(normalized);
+    const corner = stroke.includes("-")
+      ? /^([#STKPWHR]*)-()()([FRPBLGTS]*)DZ$/.exec(stroke)
+      : (/^([#STKPWHR]*)(O)(E?)([FRPBLGTS]*)DZ$/.exec(stroke) ??
+        /^([#STKPWHR]*)()(E)([FRPBLGTS]*)DZ$/.exec(stroke));
     if (
       !corner ||
       !ordered(corner[1], "#STKPWHR") ||

@@ -1,4 +1,4 @@
-import { strokeForV7Pair } from "./v7-stroke.mjs";
+import { dictionaryStrokeForV7Pair, strokeForV7Pair } from "./v7-stroke.mjs";
 
 const toneCharacters = {
   áắấéếíóốớúứý: 1,
@@ -78,6 +78,7 @@ function makeSentence(id, text, category) {
       words: `${words[index]} ${words[index + 1]}`,
       code,
       ...strokeForV7Pair(code),
+      dictionaryStroke: dictionaryStrokeForV7Pair(code),
     });
   }
   return {

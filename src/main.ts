@@ -2040,6 +2040,18 @@ async function handleChord(stroke: string): Promise<void> {
     : decodeCanonicalTwoSyllableStroke(stroke);
   const twoSyllableDecode = dictionaryDecode ?? ordinaryDecode;
   if (twoSyllableDecode) {
+    window.dispatchEvent(
+      new CustomEvent("v7-editor-interpretation", {
+        detail: {
+          stroke,
+          interpretation: dictionaryDecode
+            ? "dictionary-v7"
+            : "compositional-v7",
+          sourceV7Stroke: twoSyllableDecode.canonicalStroke,
+          sourceV7Code: twoSyllableDecode.v7Code,
+        },
+      }),
+    );
     piecemealCursorIndex = null;
     saveState();
     const uppercase = keyboardCapsLockActive;
@@ -2750,6 +2762,9 @@ function updateDisplay(): void {
         piecemealCursorIndex,
         inferencePending: inferenceAbortController !== null,
         inferenceError: inferenceErrorMessage,
+        v7Modes: state.islands
+          .filter((island) => island.isV7)
+          .map((island) => island.v7Mode ?? "compositional"),
       },
     }),
   );

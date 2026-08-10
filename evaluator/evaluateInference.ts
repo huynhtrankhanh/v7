@@ -5,6 +5,31 @@ export type InferenceResponse = readonly InferenceCandidate[];
 export type InferenceFunction = (
   request: string[],
 ) => InferenceResponse | Promise<InferenceResponse>;
+export type TypedInferenceIsland =
+  | { kind: "fixed"; text: string }
+  | { kind: "v7"; code: string; mode: "compositional" | "dictionary" };
+export type TypedInferenceFunction = (request: {
+  version: 2;
+  islands: TypedInferenceIsland[];
+}) => InferenceResponse | Promise<InferenceResponse>;
+
+export interface DictionaryEvaluationStep {
+  sourceText: string;
+  v7Code: string;
+  dictionaryBucketSize: number;
+  dictionaryMiss: boolean;
+  compositionalTop1: boolean;
+  dictionaryTop1: boolean;
+  dictionaryTop5: boolean;
+}
+
+export interface DictionaryEvaluationResult {
+  coveredPairs: number;
+  misses: number;
+  top1: number;
+  top5: number;
+  steps: DictionaryEvaluationStep[];
+}
 
 export interface EvaluationWeights {
   /** Enter one V7 island (normally one chord containing up to two syllables). */
@@ -414,6 +439,58 @@ export async function evaluateDetailed(
       0,
     ),
     fixedText: getFixedText(text, islands),
+    steps,
+  };
+}
+
+/** Compare lexical and compositional inference for each representable pair. */
+export async function evaluateDictionaryMode(
+  text: string,
+  inference: TypedInferenceFunction,
+): Promise<DictionaryEvaluationResult> {
+  const pairIslands = buildEvaluationIslands(text, 2).filter(
+    (island) => island.targetSyllables.length === 2,
+  );
+  const steps: DictionaryEvaluationStep[] = [];
+  for (const island of pairIslands) {
+    const request = (mode: "compositional" | "dictionary") => ({
+      version: 2 as const,
+      islands: [
+        { kind: "fixed" as const, text: text.slice(0, island.sourceStart) },
+        { kind: "v7" as const, code: island.v7Code, mode },
+        { kind: "fixed" as const, text: "" },
+      ],
+    });
+    const [compositional, dictionary] = await Promise.all([
+      inference(request("compositional")),
+      inference(request("dictionary")),
+    ]);
+    const normalizedCandidates = (response: InferenceResponse) =>
+      response.map((candidate) =>
+        getSyllables(
+          typeof candidate === "string" ? candidate : candidate.join(""),
+        ),
+      );
+    const compositionalCandidates = normalizedCandidates(compositional);
+    const dictionaryCandidates = normalizedCandidates(dictionary);
+    const exact = (candidate: readonly string[] | undefined) =>
+      candidate !== undefined &&
+      sameSyllables(candidate, island.targetSyllables);
+    steps.push({
+      sourceText: island.sourceText,
+      v7Code: island.v7Code,
+      dictionaryBucketSize: dictionaryCandidates.length,
+      dictionaryMiss: dictionaryCandidates.length === 0,
+      compositionalTop1: exact(compositionalCandidates[0]),
+      dictionaryTop1: exact(dictionaryCandidates[0]),
+      dictionaryTop5: dictionaryCandidates.slice(0, 5).some(exact),
+    });
+  }
+  return {
+    coveredPairs: steps.filter((step) => !step.dictionaryMiss).length,
+    misses: steps.filter((step) => step.dictionaryMiss).length,
+    top1: steps.filter((step) => step.dictionaryTop1).length,
+    top5: steps.filter((step) => step.dictionaryTop5).length,
     steps,
   };
 }
