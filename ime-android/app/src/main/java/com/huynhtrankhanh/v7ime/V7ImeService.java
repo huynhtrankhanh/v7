@@ -319,9 +319,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
-        if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(
-                event.getKeyCode()
-        )) {
+        if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(event)) {
             hardwareKeyActionResolver.reset();
             webCapturedHardwareKeys.clear();
             editorPassedHardwareKeys.clear();

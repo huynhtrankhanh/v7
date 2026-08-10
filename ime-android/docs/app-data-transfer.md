@@ -10,7 +10,7 @@ The database is the engine's complete persistent state. An export includes:
 
 - JSON and Python dictionaries;
 - every dictionary entry;
-- dictionary names, types, enabled/read-only states, and priority order.
+- dictionary names, types, enabled states, and priority order.
 
 The selected `lm.binary` language model is not included. V7 does not copy that
 file into app-private storage; Android retains permission to the external

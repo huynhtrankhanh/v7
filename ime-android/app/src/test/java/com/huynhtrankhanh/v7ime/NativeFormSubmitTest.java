@@ -17,6 +17,11 @@ public class NativeFormSubmitTest {
                 -1
         ));
         assertTrue(NativeFormSubmit.shouldSubmit(
+                EditorInfo.IME_ACTION_NONE,
+                KeyEvent.KEYCODE_NUMPAD_ENTER,
+                KeyEvent.ACTION_DOWN
+        ));
+        assertTrue(NativeFormSubmit.shouldSubmit(
                 EditorInfo.IME_ACTION_GO,
                 KeyEvent.KEYCODE_UNKNOWN,
                 -1

@@ -129,14 +129,16 @@ final class SandboxedDictionaryImporter {
         database.beginTransaction();
         try {
             ExistingDictionary existing = findDictionary(database, name);
-            if (existing != null && existing.readonly) {
-                throw new IllegalStateException("Dictionary is read-only: " + name);
+            if (existing != null && !canImportJsonOver(existing.type)) {
+                throw new IllegalStateException(
+                        "Dictionary does not expose concrete entries: " + name
+                );
             }
             if (existing == null) {
                 database.execSQL(
                         "INSERT INTO dictionaries "
-                                + "(name, type, enabled, readonly, priority, python_code) "
-                                + "VALUES (?, 'json', 1, 0, ?, NULL)",
+                                + "(name, type, enabled, priority, python_code) "
+                                + "VALUES (?, 'json', 1, ?, NULL)",
                         new Object[]{name, nextPriority(database)}
                 );
             }
@@ -198,8 +200,8 @@ final class SandboxedDictionaryImporter {
                     : existing.priority;
             database.execSQL(
                     "INSERT OR REPLACE INTO dictionaries "
-                            + "(name, type, enabled, readonly, priority, python_code) "
-                            + "VALUES (?, 'python', 1, 1, ?, ?)",
+                            + "(name, type, enabled, priority, python_code) "
+                            + "VALUES (?, 'python', 1, ?, ?)",
                     new Object[]{
                             name,
                             priority,
@@ -226,7 +228,7 @@ final class SandboxedDictionaryImporter {
         database.execSQL(
                 "CREATE TABLE IF NOT EXISTS dictionaries ("
                         + "name TEXT PRIMARY KEY, type TEXT NOT NULL, "
-                        + "enabled BOOLEAN DEFAULT 1, readonly BOOLEAN DEFAULT 0, "
+                        + "enabled BOOLEAN DEFAULT 1, "
                         + "priority INTEGER, python_code TEXT)"
         );
         database.execSQL(
@@ -248,12 +250,12 @@ final class SandboxedDictionaryImporter {
             SQLiteDatabase database,
             String name) {
         try (Cursor cursor = database.rawQuery(
-                "SELECT readonly, priority FROM dictionaries WHERE name = ?",
+                "SELECT type, priority FROM dictionaries WHERE name = ?",
                 new String[]{name}
         )) {
             if (!cursor.moveToFirst()) return null;
             return new ExistingDictionary(
-                    cursor.getInt(0) != 0,
+                    cursor.getString(0),
                     cursor.isNull(1) ? 0 : cursor.getInt(1)
             );
         }
@@ -266,6 +268,10 @@ final class SandboxedDictionaryImporter {
         )) {
             return cursor.moveToFirst() ? cursor.getInt(0) : 1;
         }
+    }
+
+    static boolean canImportJsonOver(String existingType) {
+        return "json".equals(existingType);
     }
 
     private static int countEntries(SQLiteDatabase database, String name) {
@@ -326,11 +332,11 @@ final class SandboxedDictionaryImporter {
     }
 
     private static final class ExistingDictionary {
-        final boolean readonly;
+        final String type;
         final int priority;
 
-        ExistingDictionary(boolean readonly, int priority) {
-            this.readonly = readonly;
+        ExistingDictionary(String type, int priority) {
+            this.type = type;
             this.priority = priority;
         }
     }

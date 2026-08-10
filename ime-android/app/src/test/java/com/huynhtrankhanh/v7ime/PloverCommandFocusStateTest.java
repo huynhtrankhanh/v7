@@ -12,6 +12,7 @@ public class PloverCommandFocusStateTest {
     @After
     public void reset() {
         PloverCommandFocusState.setNativeControlFocused(false);
+        PloverCommandFocusState.setCommandActivityActive(false);
     }
 
     @Test
@@ -35,6 +36,21 @@ public class PloverCommandFocusStateTest {
         assertFalse(PloverCommandFocusState.isNativeControlFocused());
         assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
                 KeyEvent.KEYCODE_TAB
+        ));
+    }
+
+    @Test
+    public void routesEscapeToActivityEvenWhileEditorOwnsFocus() {
+        PloverCommandFocusState.setNativeControlFocused(false);
+        KeyEvent escape = new KeyEvent(
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ESCAPE
+        );
+        assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(escape));
+        PloverCommandFocusState.setCommandActivityActive(true);
+        assertTrue(PloverCommandFocusState.shouldPassHardwareKeyToActivity(escape));
+        assertFalse(PloverCommandFocusState.shouldPassHardwareKeyToActivity(
+                new KeyEvent(0, 0, KeyEvent.ACTION_DOWN,
+                        KeyEvent.KEYCODE_ESCAPE, 0, KeyEvent.META_CTRL_ON)
         ));
     }
 }

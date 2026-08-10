@@ -91,7 +91,7 @@ handoff. Plover-bound strokes are ignored while paused, with guards on both
 the WebUI and native RPC sides, rather than being buffered and translated
 after the import.
 
-Python source is persisted as a read-only dictionary and then loaded by the
+Python source is persisted as a code-backed dictionary and then loaded by the
 regular Stripped Plover CPython/Wasm sandbox. AndroidX `JavaScriptIsolate` has no
 browser Worker or service-worker APIs, so it cannot safely impersonate that
 runtime. It is used for durable source transfer and import planning, never as a

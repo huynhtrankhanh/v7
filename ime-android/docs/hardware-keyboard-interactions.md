@@ -91,9 +91,9 @@ working in those fields instead of being suppressed by a forced Normal mode.
 
 Lookup fields treat Enter as form submission. In add-translation, the outline
 field advertises `IME_ACTION_NEXT` and moves to ordinary translation text; the
-translation field advertises `IME_ACTION_DONE` and adds the entry once a
-writable dictionary has loaded. V7's physical Enter routing and ordinary
-software keyboards therefore reach the same predictable editor actions.
+translation field is multiline, so Enter inserts a newline. `Ctrl+Enter` and
+`Ctrl+Numpad Enter` add the entry once the form is complete and a destination
+has been explicitly selected. The Add button remains reachable by keyboard.
 
 ## Native command-dialog navigation
 
@@ -106,12 +106,14 @@ dialog tasks behind for Android to resurface. The full, wrapping title is part
 of the dialog content rather than a truncating platform title bar.
 
 Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
-and backward through the editable fields, every visible dictionary choice,
-the selectable result/status region, the primary action, and Close button with
-wraparound; disabled controls are skipped and newly focused controls are
+and backward through the editable fields, the dictionary radio group as one
+tab stop, the selectable result/status region, the primary action, and Close
+button with wraparound. Arrow keys move and select within the radio group;
+disabled controls are skipped and newly focused controls are
 scrolled into view. Labels are linked to their fields and changing status text
 is exposed as a polite accessibility announcement. `Escape` closes the dialog.
-Enter keeps the submission behavior described above.
+Enter keeps the submission behavior described above. Only unmodified Escape is
+routed away from steno capture while the command activity is active.
 
 The dialog requests the IME surface when its first field receives focus and
 keeps it visible while focus moves between controls. It resizes around that

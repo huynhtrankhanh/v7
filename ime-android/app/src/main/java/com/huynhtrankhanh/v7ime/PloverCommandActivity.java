@@ -1,10 +1,13 @@
 package com.huynhtrankhanh.v7ime;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.text.InputType;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
@@ -92,6 +95,18 @@ public class PloverCommandActivity extends Activity {
         );
     }
 
+    @Override
+    protected void onStart() {
+        super.onStart();
+        PloverCommandFocusState.setCommandActivityActive(true);
+    }
+
+    @Override
+    protected void onStop() {
+        PloverCommandFocusState.setCommandActivityActive(false);
+        super.onStop();
+    }
+
     private void renderCommand(Intent intent) {
         commandGeneration += 1;
         content.removeAllViews();
@@ -115,14 +130,21 @@ public class PloverCommandActivity extends Activity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_ESCAPE
+                && !event.isShiftPressed()
+                && !event.isCtrlPressed()
+                && !event.isAltPressed()
+                && !event.isMetaPressed()) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && event.getRepeatCount() == 0) {
                 finish();
             }
             return true;
         }
-        if (event.getKeyCode() == KeyEvent.KEYCODE_TAB) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_TAB
+                && !event.isCtrlPressed()
+                && !event.isAltPressed()
+                && !event.isMetaPressed()) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && event.getRepeatCount() == 0) {
                 moveFocus(event.isShiftPressed());
@@ -248,6 +270,33 @@ public class PloverCommandActivity extends Activity {
         Button add = addButton(R.string.add_translation_action);
         add.setEnabled(false);
         addCloseButton();
+        final boolean[] dictionariesLoaded = {false};
+        final boolean[] submitting = {false};
+        final String[] completedSubmission = {""};
+
+        Runnable updateAddEnabled = () -> add.setEnabled(
+                dictionariesLoaded[0]
+                        && !submitting[0]
+                        && !outline.getText().toString().trim().isEmpty()
+                        && !translation.getText().toString().isEmpty()
+                        && selectedDictionaryIndex() >= 0
+                        && !submissionSignature(outline, translation).equals(
+                                completedSubmission[0]
+                        )
+        );
+        TextWatcher formWatcher = new TextWatcher() {
+            @Override public void beforeTextChanged(
+                    CharSequence value, int start, int count, int after) {}
+            @Override public void onTextChanged(
+                    CharSequence value, int start, int before, int count) {
+                updateAddEnabled.run();
+            }
+            @Override public void afterTextChanged(Editable value) {}
+        };
+        outline.addTextChangedListener(formWatcher);
+        translation.addTextChangedListener(formWatcher);
+        dictionaryGroup.setOnCheckedChangeListener((group, checkedId) ->
+                updateAddEnabled.run());
 
         status.setText(R.string.loading_dictionaries);
         request("get_dictionary_state", new JSONObject(), (result, error) -> {
@@ -259,7 +308,7 @@ public class PloverCommandActivity extends Activity {
             for (int index = 0; state != null && index < state.length(); index++) {
                 JSONObject dictionary = state.optJSONObject(index);
                 if (dictionary != null
-                        && !dictionary.optBoolean("readonly", true)) {
+                        && "json".equals(dictionary.optString("type", ""))) {
                     String identifier = dictionary.optString("identifier", "");
                     if (!identifier.isEmpty()) {
                         writableDictionaries.add(identifier);
@@ -270,7 +319,8 @@ public class PloverCommandActivity extends Activity {
             boolean available = !writableDictionaries.isEmpty();
             dictionaryGroup.setEnabled(available);
             dictionaryLabel.setEnabled(available);
-            add.setEnabled(available);
+            dictionariesLoaded[0] = available;
+            updateAddEnabled.run();
             status.setText(
                     available
                             ? R.string.choose_dictionary_and_add
@@ -292,8 +342,12 @@ public class PloverCommandActivity extends Activity {
                 return;
             }
             String selected = writableDictionaries.get(selectedPosition);
-            add.setEnabled(false);
-            status.setText(R.string.adding_translation);
+            String submittedSignature = stroke + "\u0000"
+                    + output + "\u0000" + selected;
+            submitting[0] = true;
+            updateAddEnabled.run();
+            status.setText(R.string.checking_existing_translation);
+            revealFocusedView(status);
             JSONObject params = new JSONObject();
             try {
                 params.put("name", selected);
@@ -301,24 +355,93 @@ public class PloverCommandActivity extends Activity {
                 params.put("translation", output);
             } catch (Exception error) {
                 status.setText(messageFor(error));
-                add.setEnabled(true);
+                submitting[0] = false;
+                updateAddEnabled.run();
                 return;
             }
-            request("add_entry", params, (result, error) -> {
-                add.setEnabled(true);
+            class Mutation {
+                void run() {
+                    status.setText(R.string.adding_translation);
+                    revealFocusedView(status);
+                    request("replace_entry", params, (result, error) -> {
+                        submitting[0] = false;
+                        if (!error.isEmpty()) {
+                            status.setText(error);
+                        } else if (result.optBoolean("conflict", false)) {
+                            status.setText(R.string.translation_changed_before_replace);
+                        } else {
+                            completedSubmission[0] = submittedSignature;
+                            status.setText(getString(
+                                    R.string.translation_added, stroke, selected
+                            ));
+                        }
+                        revealFocusedView(status);
+                        updateAddEnabled.run();
+                    });
+                }
+            }
+            Mutation mutation = new Mutation();
+            request("add_entry_safely", params, (result, error) -> {
                 if (!error.isEmpty()) {
+                    submitting[0] = false;
                     status.setText(error);
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
                     return;
                 }
-                status.setText(getString(
-                        R.string.translation_added,
-                        stroke,
-                        selected
-                ));
+                if (!result.optBoolean("conflict", false)) {
+                    submitting[0] = false;
+                    completedSubmission[0] = submittedSignature;
+                    status.setText(getString(
+                            R.string.translation_added,
+                            result.optString("stroke", stroke), selected
+                    ));
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
+                    return;
+                }
+                String existing = result.optString("existing_translation", "");
+                try {
+                    params.put("expected_translation", existing);
+                } catch (Exception error) {
+                    submitting[0] = false;
+                    status.setText(messageFor(error));
+                    updateAddEnabled.run();
+                    return;
+                }
+                if (existing.equals(output)) {
+                    submitting[0] = false;
+                    completedSubmission[0] = submittedSignature;
+                    status.setText(getString(
+                            R.string.translation_already_exists, stroke, selected
+                    ));
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
+                    return;
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.replace_translation_title)
+                        .setMessage(getString(
+                                R.string.replace_translation_message,
+                                stroke, selected, existing, output
+                        ))
+                        .setNegativeButton(R.string.cancel, (dialog, which) -> {
+                            submitting[0] = false;
+                            status.setText(R.string.translation_not_replaced);
+                            revealFocusedView(status);
+                            updateAddEnabled.run();
+                        })
+                        .setPositiveButton(R.string.replace_translation, (dialog, which) ->
+                                mutation.run())
+                        .setOnCancelListener(dialog -> {
+                            submitting[0] = false;
+                            updateAddEnabled.run();
+                        })
+                        .show();
             });
         });
         advanceOnEnter(outline, translation);
-        submitOnEnter(translation, add);
+        submitMultilineOnCtrlEnter(translation, add);
         focusInitially(outline);
     }
 
@@ -470,6 +593,24 @@ public class PloverCommandActivity extends Activity {
         });
     }
 
+    private void submitMultilineOnCtrlEnter(EditText field, Button submit) {
+        field.setImeOptions(EditorInfo.IME_ACTION_NONE
+                | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
+        field.setOnKeyListener((view, keyCode, event) -> {
+            boolean enter = keyCode == KeyEvent.KEYCODE_ENTER
+                    || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+            if (!enter || !event.isCtrlPressed()) {
+                return false;
+            }
+            if (event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0
+                    && submit.isEnabled()) {
+                submit.performClick();
+            }
+            return true;
+        });
+    }
+
     private void advanceOnEnter(EditText field, View next) {
         field.setImeOptions(
                 EditorInfo.IME_ACTION_NEXT
@@ -516,7 +657,6 @@ public class PloverCommandActivity extends Activity {
         dictionaryGroup.removeAllViews();
         dictionaryChoices.clear();
         for (int index = 0; index < writableDictionaries.size(); index++) {
-            final int choiceIndex = index;
             RadioButton choice = new RadioButton(this);
             choice.setId(View.generateViewId());
             choice.setText((index + 1) + ". " + writableDictionaries.get(index));
@@ -527,8 +667,11 @@ public class PloverCommandActivity extends Activity {
             ));
             choice.setMinHeight(dp(48));
             choice.setPadding(dp(12), dp(8), dp(12), dp(8));
+            // Every choice must be able to take focus after its touch click,
+            // even though only the first choice represents the group in the
+            // custom Tab order.
+            configureFocusable(choice);
             dictionaryGroup.addView(choice, matchWrap());
-            registerFocusableBefore(choice, focusSuccessor);
             dictionaryChoices.add(choice);
             choice.setOnClickListener(view -> {
                 dictionaryGroup.check(choice.getId());
@@ -538,13 +681,12 @@ public class PloverCommandActivity extends Activity {
             choice.setOnFocusChangeListener((view, hasFocus) -> {
                 if (hasFocus) {
                     PloverCommandFocusState.setNativeControlFocused(true);
-                    dictionaryGroup.check(dictionaryChoices.get(choiceIndex).getId());
                     revealFocusedView(view);
                 }
             });
         }
         if (!dictionaryChoices.isEmpty()) {
-            dictionaryChoices.get(0).setChecked(true);
+            registerFocusableBefore(dictionaryChoices.get(0), focusSuccessor);
         }
     }
 
@@ -569,9 +711,7 @@ public class PloverCommandActivity extends Activity {
         boolean focusIsDictionary = focused instanceof RadioButton
                 && dictionaryChoices.contains(focused);
         int index = DictionarySelectionShortcut.indexFor(
-                event.getKeyCode(),
-                dictionaryChoices.size(),
-                focusIsDictionary || event.isAltPressed()
+                event, dictionaryChoices.size(), focusIsDictionary
         );
         if (index < 0) {
             return false;
@@ -592,11 +732,7 @@ public class PloverCommandActivity extends Activity {
     }
 
     private <T extends View> T registerFocusable(T view) {
-        if (view.getId() == View.NO_ID) {
-            view.setId(View.generateViewId());
-        }
-        view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
+        configureFocusable(view);
         if (!(view instanceof EditText)) {
             view.setOnFocusChangeListener((focusedView, hasFocus) -> {
                 if (hasFocus) {
@@ -606,6 +742,15 @@ public class PloverCommandActivity extends Activity {
             });
         }
         focusOrder.add(view);
+        return view;
+    }
+
+    private <T extends View> T configureFocusable(T view) {
+        if (view.getId() == View.NO_ID) {
+            view.setId(View.generateViewId());
+        }
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
         return view;
     }
 
@@ -636,6 +781,9 @@ public class PloverCommandActivity extends Activity {
             return;
         }
         View current = getCurrentFocus();
+        if (dictionaryChoices.contains(current) && !dictionaryChoices.isEmpty()) {
+            current = dictionaryChoices.get(0);
+        }
         int currentIndex = focusOrder.indexOf(current);
         boolean[] eligible = new boolean[focusOrder.size()];
         for (int index = 0; index < focusOrder.size(); index++) {
@@ -651,6 +799,13 @@ public class PloverCommandActivity extends Activity {
         );
         if (nextIndex >= 0) {
             View candidate = focusOrder.get(nextIndex);
+            if (!dictionaryChoices.isEmpty()
+                    && candidate == dictionaryChoices.get(0)) {
+                int selected = selectedDictionaryIndex();
+                if (selected >= 0) {
+                    candidate = dictionaryChoices.get(selected);
+                }
+            }
             candidate.requestFocus();
             revealFocusedView(candidate);
             if (candidate instanceof EditText) {
@@ -707,6 +862,14 @@ public class PloverCommandActivity extends Activity {
         return message == null || message.isEmpty()
                 ? error.getClass().getSimpleName()
                 : message;
+    }
+
+    private String submissionSignature(EditText outline, EditText translation) {
+        int selected = selectedDictionaryIndex();
+        String dictionary = selected >= 0 && selected < writableDictionaries.size()
+                ? writableDictionaries.get(selected) : "";
+        return outline.getText().toString().trim() + "\u0000"
+                + translation.getText().toString() + "\u0000" + dictionary;
     }
 
     private interface ResultCallback {

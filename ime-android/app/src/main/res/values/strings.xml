@@ -59,7 +59,14 @@
     <string name="no_writable_dictionaries">No writable JSON dictionary is available. Create one in dictionary management first.</string>
     <string name="translation_fields_required">Enter both an outline and a translation.</string>
     <string name="adding_translation">Adding translation…</string>
+    <string name="checking_existing_translation">Checking for an existing translation…</string>
     <string name="translation_added">Added %1$s to %2$s.</string>
+    <string name="translation_already_exists">%1$s already has this translation in %2$s. Nothing was changed.</string>
+    <string name="replace_translation_title">Replace existing translation?</string>
+    <string name="replace_translation_message">%1$s already exists in %2$s.\n\nExisting: %3$s\n\nNew: %4$s\n\nReplacing cannot be undone.</string>
+    <string name="replace_translation">Replace translation</string>
+    <string name="translation_not_replaced">Existing translation was not replaced.</string>
+    <string name="translation_changed_before_replace">The existing translation changed before replacement. Review it and try again.</string>
     <string name="plover_request_failed">Stripped Plover request failed.</string>
     <string name="close">Close</string>
 </resources>
