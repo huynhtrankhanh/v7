@@ -671,6 +671,10 @@ public class PloverCommandActivity extends Activity {
             ));
             choice.setMinHeight(dp(48));
             choice.setPadding(dp(12), dp(8), dp(12), dp(8));
+            // Every choice must be able to take focus after its touch click,
+            // even though only the first choice represents the group in the
+            // custom Tab order.
+            configureFocusable(choice);
             dictionaryGroup.addView(choice, matchWrap());
             dictionaryChoices.add(choice);
             choice.setOnClickListener(view -> {
@@ -732,11 +736,7 @@ public class PloverCommandActivity extends Activity {
     }
 
     private <T extends View> T registerFocusable(T view) {
-        if (view.getId() == View.NO_ID) {
-            view.setId(View.generateViewId());
-        }
-        view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
+        configureFocusable(view);
         if (!(view instanceof EditText)) {
             view.setOnFocusChangeListener((focusedView, hasFocus) -> {
                 if (hasFocus) {
@@ -746,6 +746,15 @@ public class PloverCommandActivity extends Activity {
             });
         }
         focusOrder.add(view);
+        return view;
+    }
+
+    private <T extends View> T configureFocusable(T view) {
+        if (view.getId() == View.NO_ID) {
+            view.setId(View.generateViewId());
+        }
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
         return view;
     }
 
