@@ -44,62 +44,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="28dp"
-            android:text="@string/experimental_reranker_heading"
-            android:textAppearance="?android:attr/textAppearanceLarge"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="@string/experimental_reranker_description"
-            android:textAppearance="?android:attr/textAppearanceSmall" />
-
-        <TextView
-            android:id="@+id/reranker_model_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/no_reranker_model_selected"
-            android:textAppearance="?android:attr/textAppearanceSmall" />
-
-        <CheckBox
-            android:id="@+id/enable_experimental_reranker"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="@string/enable_experimental_reranker" />
-
-        <TextView
-            android:id="@+id/reranker_top_k_value"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/reranker_top_k_default"
-            android:textAppearance="?android:attr/textAppearanceSmall" />
-
-        <SeekBar
-            android:id="@+id/reranker_top_k"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:contentDescription="@string/reranker_top_k_description" />
-
-        <Button
-            android:id="@+id/open_reranker_model_page"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/open_reranker_model_page" />
-
-        <Button
-            android:id="@+id/choose_reranker_model"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/choose_reranker_model" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
             android:text="@string/plover_heading"
             android:textAppearance="?android:attr/textAppearanceLarge"
             android:textStyle="bold" />

@@ -21,22 +21,6 @@ imports.
   an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
-- An optional experimental native ML stage can rescore a configurable 2–100
-  leading KenLM candidates with user-installed Gemma 3 1B IT through
-  LiteRT-LM. Rust owns scoring and reordering inside JNI; there is no managed
-  LiteRT or Retrofit implementation, and failures preserve KenLM order.
-- LiteRT requests use the non-blocking Android bridge. The raw composition and
-  load/rerank progress remain live while the model works; candidate progress
-  and the actual GPU/CPU backend are reported. A new chord cancels obsolete
-  generation. Compatible devices use LiteRT-LM GPU
-  acceleration first; unsupported devices fall back to bounded parallel CPU
-  kernels rather than duplicate model instances.
-- The enabled model preloads when the IME service starts. One base session
-  prefills shared context, then its KV state is cloned into an isolated
-  one-target session per candidate so fixed batch-size-1 models remain safe
-  without repeating prefix work. Only the configured top-K prefix is reordered;
-  later candidates retain their KenLM positions. The engine and compilation
-  cache persist across requests.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
@@ -109,9 +93,6 @@ keyboard settings. The native settings activity includes:
 
 - a local `lm.binary` document selected with Android's Storage Access
   Framework;
-- an off-by-default experimental LiteRT-LM reranker toggle, a direct link to
-  the gated Gemma download, and a `.litertlm` installer that makes an atomic
-  private no-backup copy;
 - a full-screen Stripped Plover dictionary manager opened from settings,
   reusing a phone-friendly browser UI without an Activity action bar or
   nesting editable fields inside the IME;
@@ -137,9 +118,6 @@ pinned external-source build, separate engine WebView, background JavaScript
 sandbox, typechecked Node compatibility surface, native SQLite implementation,
 and artifact licensing boundary.
 
-See [Experimental on-device candidate reranking](docs/experimental-reranking.md)
-for model-download instructions, the Android-only data path, model-selection
-research, failure policy, performance caveats, licensing, and validation.
 
 The bundled Android distribution, including the APK and its Stripped Plover
 runtime, is conveyed as a combined work under GPL-3.0-or-later. The APK bundles
@@ -182,11 +160,10 @@ While Stripped Plover is active, the composition interface collapses to a
 
 ## Build
 
-The Android build uses JDK 21 and builds the pinned LiteRT-LM C API with
-Bazelisk/Bazel for 64-bit Android. It invokes the root WebUI build, fetches and browser-bundles the
+The Android build uses JDK 21. It invokes the root WebUI build, fetches and browser-bundles the
 pinned Stripped Plover revision, compiles Rust/KenLM for Android, and creates
 the source ZIP asset. Install the root JavaScript dependencies, Rust 1.88,
-`cargo-ndk`, JDK 21, Go, Git LFS, Android NDK 27.2.12479018, and Gradle:
+`cargo-ndk`, JDK 21, Android NDK 27.2.12479018, and Gradle:
 
 ```sh
 npm ci
@@ -195,7 +172,6 @@ rustup target add \
   x86_64-linux-android i686-linux-android
 cargo install cargo-ndk --version 4.1.2 --locked
 ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018" \
-LITERT_LM_BAZEL_ROOT=/path/with/at-least-15GiB-free \
   gradle -p ime-android assembleDebug
 ```
 

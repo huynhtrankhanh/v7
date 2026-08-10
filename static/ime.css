@@ -155,21 +155,6 @@ button {
   color: var(--ime-plover);
 }
 
-#inference-status.reranking,
-#inference-status.reranker-loading,
-#inference-status.reranker-ranking {
-  color: var(--ime-plover);
-}
-
-#inference-status.reranker-ready {
-  color: var(--ime-accent);
-}
-
-#inference-status.reranker-error,
-#inference-status.reranker-missing {
-  color: var(--ime-danger);
-}
-
 .ime-inference-progress {
   background: rgba(245, 189, 79, 0.24);
   border-radius: 999px;
@@ -194,12 +179,6 @@ button {
   top: 0;
   transform: translateX(60%);
   width: 45%;
-}
-
-.ime-inference-progress.determinate::after {
-  animation: none;
-  transform: none;
-  width: var(--ime-inference-progress, 0%);
 }
 
 @keyframes ime-inference-progress {
@@ -595,10 +574,6 @@ body.android-raw-outline .ime-plover-state {
   .ime-hardware-hint,
   #plover-status {
     display: none;
-  }
-
-  #inference-status.reranking {
-    display: inline;
   }
 
   .ime-toolbar {
