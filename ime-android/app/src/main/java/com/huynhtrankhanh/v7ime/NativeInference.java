@@ -76,12 +76,7 @@ final class NativeInference {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] buffer = new byte[16 * 1024];
             int count;
-            int total = 0;
             while ((count = input.read(buffer)) != -1) {
-                total += count;
-                if (total > 8 * 1024 * 1024) {
-                    throw new IOException("The dictionary TXT file exceeds 8 MiB");
-                }
                 output.write(buffer, 0, count);
             }
             return output.toString(StandardCharsets.UTF_8.name());
