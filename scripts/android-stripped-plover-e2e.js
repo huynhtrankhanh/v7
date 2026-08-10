@@ -319,6 +319,57 @@ async function main() {
       data: { TEFT: "{PLOVER:LOOKUP:test}" },
       merge: false,
     });
+    const addConflict = await requestRuntime(page, 12, "add_entry_safely", {
+      name: "host-events.json",
+      stroke: "TEFT",
+      translation: "must-not-overwrite",
+    });
+    if (
+      addConflict.conflict !== true ||
+      addConflict.existing_translation !== "{PLOVER:LOOKUP:test}"
+    ) {
+      throw new Error(
+        `safe add did not preserve the existing entry: ${JSON.stringify(addConflict)}`,
+      );
+    }
+    const safeAdd = await requestRuntime(page, 13, "add_entry_safely", {
+      name: "host-events.json",
+      stroke: "T*",
+      translation: "first",
+    });
+    if (safeAdd.conflict !== false) {
+      throw new Error(
+        `safe add unexpectedly conflicted: ${JSON.stringify(safeAdd)}`,
+      );
+    }
+    const replacement = await requestRuntime(page, 14, "replace_entry", {
+      name: "host-events.json",
+      stroke: "T*",
+      translation: "second",
+      expected_translation: "first",
+    });
+    if (replacement.conflict !== false) {
+      throw new Error(
+        `safe replacement failed: ${JSON.stringify(replacement)}`,
+      );
+    }
+    const staleReplacement = await requestRuntime(page, 15, "replace_entry", {
+      name: "host-events.json",
+      stroke: "T*",
+      translation: "stale-overwrite",
+      expected_translation: "first",
+    });
+    const replacementLookup = await requestRuntime(page, 16, "lookup", {
+      stroke: "T*",
+    });
+    if (
+      staleReplacement.conflict !== true ||
+      replacementLookup.translation !== "second"
+    ) {
+      throw new Error(
+        `stale replacement overwrote the newer value: ${JSON.stringify({ staleReplacement, replacementLookup })}`,
+      );
+    }
     const eventTranslation = await requestRuntime(page, 9, "translate", {
       stroke: "TEFT",
     });

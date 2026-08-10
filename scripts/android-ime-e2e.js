@@ -249,6 +249,18 @@ async function main() {
                 output: [{ type: "preedit", text: "plover word" }],
               },
             };
+            if (
+              request.method === "search_entries" &&
+              request.params?.match === "exact"
+            ) {
+              results.search_entries.entries = [
+                {
+                  dictionary: request.params.dictionary,
+                  stroke: request.params.stroke,
+                  translation: "test",
+                },
+              ];
+            }
             window.handleAndroidPloverResponse(
               requestId,
               JSON.stringify({
@@ -1083,7 +1095,7 @@ async function main() {
     await page.waitForFunction(() =>
       window.__androidPloverBodies.some(
         (request) =>
-          request.method === "add_entry" &&
+          request.method === "add_entry_safely" &&
           request.params.name === "main.json" &&
           request.params.stroke === "T*" &&
           request.params.translation === "entry",
@@ -1096,10 +1108,11 @@ async function main() {
     await page.waitForFunction(() =>
       window.__androidPloverBodies.some(
         (request) =>
-          request.method === "update_entry" &&
+          request.method === "replace_entry" &&
           request.params.name === "main.json" &&
           request.params.stroke === "T*" &&
-          request.params.translation === "updated",
+          request.params.translation === "updated" &&
+          request.params.expected_translation === "test",
       ),
     );
     await page.click("#plover-entry-remove");

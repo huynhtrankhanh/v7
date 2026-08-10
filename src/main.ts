@@ -35,6 +35,7 @@ import {
   isRetiredEmilyCapitalizationStroke,
 } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
+import { ploverProtocolErrorMessage } from "./ploverProtocol";
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
@@ -3291,13 +3292,62 @@ function setupPloverControls(): void {
           setEntryMessage("Provide a translation to add an entry.");
           return;
         }
-        await ploverRpc("add_entry", { ...params, translation });
+        const result = await ploverRpc("add_entry_safely", {
+          ...params,
+          translation,
+        });
+        if (
+          result &&
+          typeof result === "object" &&
+          "conflict" in result &&
+          result.conflict === true
+        ) {
+          const existing =
+            "existing_translation" in result &&
+            typeof result.existing_translation === "string"
+              ? ` Existing translation: ${result.existing_translation}`
+              : "";
+          setEntryMessage(`Entry already exists.${existing}`);
+          return;
+        }
       } else if (action === "update") {
         if (!translation) {
           setEntryMessage("Provide a translation to update an entry.");
           return;
         }
-        await ploverRpc("update_entry", { ...params, translation });
+        const lookup = await ploverRpc("search_entries", {
+          dictionary: name,
+          stroke,
+          match: "exact",
+          page: 1,
+          page_size: 1,
+          sort: "alphabetic",
+        });
+        const expectedTranslation =
+          lookup.entries?.[0]?.stroke === stroke &&
+          typeof lookup.entries[0].translation === "string"
+            ? lookup.entries[0].translation
+            : null;
+        if (expectedTranslation === null) {
+          setEntryMessage(`Entry not found: ${stroke}`);
+          return;
+        }
+        const result = await ploverRpc("replace_entry", {
+          ...params,
+          translation,
+          expected_translation: expectedTranslation,
+        });
+        if (
+          result &&
+          typeof result === "object" &&
+          "conflict" in result &&
+          result.conflict === true
+        ) {
+          setEntryMessage(
+            "Entry changed before it could be replaced. Refresh and try again.",
+          );
+          return;
+        }
       } else if (action === "remove") {
         await ploverRpc("remove_entry", params);
       }
@@ -3493,7 +3543,7 @@ window.handleAndroidPloverResponse = (
   try {
     const response = JSON.parse(responseBody);
     if (response.error) {
-      pending.reject(new Error(String(response.error)));
+      pending.reject(new Error(ploverProtocolErrorMessage(response.error)));
     } else {
       pending.resolve(response.result);
     }
