@@ -110,6 +110,7 @@ public class V7ImeService extends InputMethodService {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
         }
         if (webView != null) {
+            inputViewOwnership.release(webView, inputViewGeneration);
             webView.stopLoading();
             webView.removeJavascriptInterface("AndroidIme");
             webView.destroy();
@@ -132,6 +133,7 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        resetHardwareInputState();
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
@@ -139,6 +141,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onFinishInputView(boolean finishingInput) {
+        resetHardwareInputState();
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
         }
@@ -168,10 +171,7 @@ public class V7ImeService extends InputMethodService {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
         clearPreeditSession();
-        hardwareKeyActionResolver.reset();
-        webCapturedHardwareKeys.clear();
-        editorPassedHardwareKeys.clear();
-        resetHardwareKeyboardStateInWebView();
+        resetHardwareInputState();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
         publishEditorModeState();
@@ -182,10 +182,7 @@ public class V7ImeService extends InputMethodService {
         clearPreeditSession();
         rawOutlineMode = false;
         publishEditorModeState();
-        hardwareKeyActionResolver.reset();
-        webCapturedHardwareKeys.clear();
-        editorPassedHardwareKeys.clear();
-        resetHardwareKeyboardStateInWebView();
+        resetHardwareInputState();
         keyboardVisibilityController.finishInput();
         super.onFinishInput();
     }
@@ -275,6 +272,9 @@ public class V7ImeService extends InputMethodService {
             inputContainer = null;
         }
         if (webView != null) {
+            inputViewOwnership.release(webView, inputViewGeneration);
+            webView.stopLoading();
+            webView.removeJavascriptInterface("AndroidIme");
             webView.destroy();
             webView = null;
         }
@@ -324,10 +324,7 @@ public class V7ImeService extends InputMethodService {
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(event)) {
-            resetHardwareKeyboardStateInWebView();
-            hardwareKeyActionResolver.reset();
-            webCapturedHardwareKeys.clear();
-            editorPassedHardwareKeys.clear();
+            resetHardwareInputState();
             return false;
         }
         HardwareKeyActionResolver.Action hardwareAction =
@@ -864,6 +861,13 @@ public class V7ImeService extends InputMethodService {
         } else {
             target.post(reset);
         }
+    }
+
+    private void resetHardwareInputState() {
+        hardwareKeyActionResolver.reset();
+        webCapturedHardwareKeys.clear();
+        editorPassedHardwareKeys.clear();
+        resetHardwareKeyboardStateInWebView();
     }
 
     private InferenceResult runNativeInference(String requestBody, int requestId) {

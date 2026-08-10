@@ -470,6 +470,21 @@ async function main() {
       `Modified hardware keys leaked into V7 handling: ${JSON.stringify(modifiedKeyState)}`,
     );
 
+    await page.evaluate(() => {
+      window.handleAndroidKeyEvent(
+        "keydown",
+        "q",
+        "KeyQ",
+        false,
+        false,
+        false,
+        false,
+        false,
+      );
+      // Simulate Android invalidating key ownership while the matching keyup
+      // is routed elsewhere during an input-view or native-focus transition.
+      window.resetHardwareKeyboardStateFromAndroid();
+    });
     await androidChord(page, ["c", " ", "m"], { capsLock: true });
     await page.waitForFunction(
       () =>
