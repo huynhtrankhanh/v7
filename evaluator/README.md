@@ -1,5 +1,9 @@
 # Local inference inconvenience evaluator
 
+Dictionary interaction totals are `null` when any lexical bucket misses, so a
+miss is never counted as a zero-cost success. The separately named
+`coveredPairsDictionaryInteractionCost` metric covers only successful lookups.
+
 This is the fast **oracle-history local evaluator**. It is useful for legality,
 candidate-lattice diagnostics, and decoder iteration, but it is not a realistic
 typing-session model.

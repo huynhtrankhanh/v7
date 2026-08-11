@@ -286,7 +286,10 @@ export function renderVisibleText(
       text += " ";
     }
     if (curr.isV7) {
-      text += `[${curr.value}]`;
+      text +=
+        curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
+          ? `[dictionary miss: ${curr.value}]`
+          : `[${curr.value}]`;
     } else {
       text += curr.value;
     }
@@ -334,13 +337,17 @@ export function renderVisibleTextSegments(
           ),
         );
       } else {
+        const unresolvedPrefix =
+          curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
+            ? "[dictionary miss: "
+            : "[";
         segments.push(
           ...renderIslandWithPiecemealTargets(
-            `[${curr.value}]`,
+            `${unresolvedPrefix}${curr.value}]`,
             curr,
             i,
             targetIds,
-            1,
+            unresolvedPrefix.length,
           ),
         );
       }
@@ -558,9 +565,11 @@ function splitV7IslandForReplacement(
   replacement: string,
 ): Island[] {
   const pieces: Island[] = [];
+  const residualMode =
+    island.v7Mode === "dictionary" ? { v7Mode: "compositional" as const } : {};
   const before = island.value.slice(0, target.start);
   const after = island.value.slice(target.end);
-  if (before) pieces.push({ ...island, value: before });
+  if (before) pieces.push({ ...island, value: before, ...residualMode });
   pieces.push(
     createIsland(
       "vietnamese",
@@ -569,7 +578,13 @@ function splitV7IslandForReplacement(
         : replacement,
     ),
   );
-  if (after) pieces.push({ ...island, value: after, capitalize: false });
+  if (after)
+    pieces.push({
+      ...island,
+      value: after,
+      capitalize: false,
+      ...residualMode,
+    });
   return pieces;
 }
 

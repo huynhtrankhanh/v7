@@ -235,6 +235,28 @@ describe("webCore keyboard input", () => {
 });
 
 describe("webCore candidate selection", () => {
+  test("renders an explicit lexical miss for unresolved dictionary islands", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+        dictionaryBucketSize: 0,
+      }),
+    ];
+    expect(renderVisibleText(islands, [])).toBe("[dictionary miss: tro2ma1]");
+    expect(
+      renderVisibleTextSegments(islands, [])
+        .filter((segment) => segment.piecemealNumber !== undefined)
+        .map((segment) => segment.text),
+    ).toEqual(["tro2", "ma1"]);
+  });
+  test("does not report a dictionary miss before bucket lookup completes", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+      }),
+    ];
+    expect(renderVisibleText(islands, [])).toBe("[tro2ma1]");
+  });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
@@ -242,11 +264,11 @@ describe("webCore candidate selection", () => {
     ];
 
     expect(convertIslandsForInference(islands)).toEqual([
-      "",
-      "tro2ma1",
-      " ",
-      "ko0",
-      "",
+      { kind: "fixed", text: "" },
+      { kind: "v7", code: "tro2ma1", mode: "compositional" },
+      { kind: "fixed", text: " " },
+      { kind: "v7", code: "ko0", mode: "compositional" },
+      { kind: "fixed", text: "" },
     ]);
     expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
       "Trời mà không",
@@ -696,7 +718,11 @@ describe("webCore piecemeal syllable edit", () => {
 
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
     const islands = [createIsland("vietnamese", "tro2ma1", true)];
-    expect(convertIslandsForInference(islands)).toEqual(["", "tro2ma1", ""]);
+    expect(convertIslandsForInference(islands)).toEqual([
+      { kind: "fixed", text: "" },
+      { kind: "v7", code: "tro2ma1", mode: "compositional" },
+      { kind: "fixed", text: "" },
+    ]);
 
     expect(
       renderVisibleTextSegments(islands, [["", "trời mà", ""]], 0),
@@ -878,6 +904,22 @@ describe("webCore piecemeal syllable edit", () => {
     expect(next).toEqual([
       createIsland("vietnamese", "tro2", true),
       createIsland("vietnamese", "tôi"),
+    ]);
+  });
+
+  test("demotes dictionary remnants after piecemeal replacement", () => {
+    const islands = [
+      createIsland("vietnamese", "tro2ma1", true, {
+        v7Mode: "dictionary",
+      }),
+    ];
+    const target = findPiecemealSyllableTargets(islands)[1];
+    expect(replacePiecemealSyllable(islands, target, "mà")).toEqual([
+      createIsland("vietnamese", "mà"),
+      createIsland("vietnamese", "ma1", true, {
+        capitalize: false,
+        v7Mode: "compositional",
+      }),
     ]);
   });
 

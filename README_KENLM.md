@@ -1,5 +1,10 @@
 # KenLM Model Training
 
+Two-syllable dictionary mode is seeded exclusively from
+`data/two_syllable_dictionary.txt`, with one normalized lexical pair per line.
+The evaluation corpus is intentionally not used for dictionary buckets, which
+prevents benchmark leakage.
+
 This document describes how to train the KenLM language model used by the V7 inference engine.
 
 ## Overview

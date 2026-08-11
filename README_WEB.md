@@ -341,7 +341,7 @@ To enter a syllable with certainty:
 
 ## V7 Island Rules (Two-Syllable Islands)
 
-A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. **V7 mode is exclusively activated by holding down the `*` (Spacebar) key while entering the stroke.**
+A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. Ordinary, compositional V7 uses `*` (Spacebar). Dictionary mode carries the same two-syllable code but restricts inference to lexical dictionary pairs: flip both `D` and `Z` on the ordinary chord. When both vowels are `e` or `u`, use the symmetric starless forms `* → -DZ`, `*Z → EDZ`, `*D → ODZ`, and `*DZ → OEDZ`. Redundant `D` with left `A/O` and `Z` with right `E/U` are therefore dictionary forms, not ordinary aliases.
 
 **Structure:** `[Left Syllable]*[Right Syllable]`
 

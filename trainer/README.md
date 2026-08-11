@@ -1,5 +1,11 @@
 # V7 IME Trainer
 
+Two-syllable entry has compositional and dictionary interpretations. The
+dictionary chord preserves the pair code and requests lexical pairs; derive it
+by flipping `D` and `Z`. For `(e|u) × (e|u)`, use `* → -DZ`, `*Z → EDZ`,
+`*D → ODZ`, and `*DZ → OEDZ`. Lessons should show the derived pair rather than
+teach word-specific briefs.
+
 `trainer/` is a standalone user-training subsystem for the V7 IME. It has its
 own Node.js HTTP server, browser client, SQLite database, tests, container, and
 administrative account flow. It does not import code from `inference-rs` or

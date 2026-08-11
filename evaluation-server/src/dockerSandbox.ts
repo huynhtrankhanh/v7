@@ -19,7 +19,7 @@ export interface SandboxLimits {
 }
 
 export interface InferenceSession {
-  infer(request: string[]): Promise<unknown>;
+  infer(request: unknown): Promise<unknown>;
   close(): Promise<void>;
 }
 
@@ -233,7 +233,7 @@ export class DockerSandboxSession implements InferenceSession {
     void this.close();
   }
 
-  async infer(request: string[]): Promise<unknown> {
+  async infer(request: unknown): Promise<unknown> {
     if (this.terminalError) throw this.terminalError;
     if (!this.child || this.closed) {
       throw new SandboxError("EXECUTABLE_FAILED", "Executable is not running.");

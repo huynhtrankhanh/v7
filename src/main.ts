@@ -36,6 +36,10 @@ import {
 } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 import { ploverProtocolErrorMessage } from "./ploverProtocol";
+import {
+  decodeCanonicalTwoSyllableStroke,
+  decodeDictionaryModeStroke,
+} from "./twoSyllableV7";
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
@@ -97,40 +101,6 @@ type LoadingControl = HTMLButtonElement | HTMLSelectElement;
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
-
-const consonantIntMap: Record<number, string> = {};
-consonantIntMap[0] = "0";
-consonantIntMap[2 * 4 + 3] = "b";
-consonantIntMap[1 * 4 + 1] = "k";
-consonantIntMap[7 * 4 + 1] = "d";
-consonantIntMap[1 * 4 + 3] = "dd";
-consonantIntMap[3 * 4 + 0] = "ph";
-consonantIntMap[3 * 4 + 3] = "g";
-consonantIntMap[4 * 4 + 0] = "h";
-consonantIntMap[7 * 4 + 2] = "z";
-consonantIntMap[5 * 4 + 3] = "kh";
-consonantIntMap[4 * 4 + 3] = "l";
-consonantIntMap[6 * 4 + 0] = "m";
-consonantIntMap[7 * 4 + 0] = "n";
-consonantIntMap[7 * 4 + 3] = "nh";
-consonantIntMap[3 * 4 + 1] = "ng";
-consonantIntMap[2 * 4 + 0] = "p";
-consonantIntMap[4 * 4 + 1] = "r";
-consonantIntMap[3 * 4 + 2] = "s";
-consonantIntMap[1 * 4 + 0] = "t";
-consonantIntMap[5 * 4 + 0] = "th";
-consonantIntMap[5 * 4 + 1] = "tr";
-consonantIntMap[2 * 4 + 1] = "v";
-consonantIntMap[6 * 4 + 1] = "x";
-consonantIntMap[3] = "w";
-consonantIntMap[5 * 4 + 2] = "ch";
-
-const vowelIntMap: Record<number, string> = {
-  1: "a",
-  2: "o",
-  3: "i",
-  0: "e", // 0 can be e or u
-};
 
 // Emily symbols (subset mapping adapted from emily-symbols)
 const EMILY_ATTACHMENT_METHOD = "space";
@@ -285,59 +255,6 @@ function applyRetroactiveSpace(
     break;
   }
   return changed;
-}
-
-// --- V7 Decoding ---
-
-function remapTone(t: number): number {
-  if (t === 3) return 4;
-  if (t === 4) return 3;
-  if (t === 5) return 6;
-  if (t === 6) return 5;
-  return t;
-}
-
-function getV7FromStroke(stroke: string): string | null {
-  if (!stroke.includes("*")) return null;
-  const parts = stroke.split("*");
-
-  if (parts.length !== 2) return null;
-  const leftKeys = parts[0];
-  const rightSide = parts[1];
-
-  const hasSuffixD = rightSide.includes("D");
-  const hasSuffixZ = rightSide.includes("Z");
-  const rightKeys = rightSide.replace("D", "").replace("Z", "");
-
-  // Left Syllable
-  const lk = (k: string) => (leftKeys.includes(k) ? 1 : 0);
-  const cA =
-    lk("#") * 1 + lk("S") * 2 + lk("T") * 4 + lk("P") * 8 + lk("H") * 16;
-  const tA = lk("K") * 1 + lk("W") * 2 + lk("R") * 4;
-  const vA = lk("A") * 1 + lk("O") * 2;
-
-  const consA = consonantIntMap[cA];
-  if (consA === undefined) return null;
-  let vowelCharA = vowelIntMap[vA];
-  if (vA === 0) vowelCharA = hasSuffixD ? "u" : "e";
-
-  // Right Syllable
-  const rk = (k: string) => (rightKeys.includes(k) ? 1 : 0);
-  const vB = rk("U") * 1 + rk("E") * 2;
-  // F->C4, P->C3, L->C2, T->C0, S->C1
-  const cB =
-    rk("T") * 1 + rk("S") * 2 + rk("L") * 4 + rk("P") * 8 + rk("F") * 16;
-  // G->T0, B->T1, R->T2
-  const tB = rk("G") * 1 + rk("B") * 2 + rk("R") * 4;
-
-  const consB = consonantIntMap[cB];
-  if (consB === undefined) return null;
-  let vowelCharB = vowelIntMap[vB];
-  if (vB === 0) vowelCharB = hasSuffixZ ? "u" : "e";
-
-  return (
-    consA + vowelCharA + remapTone(tA) + consB + vowelCharB + remapTone(tB)
-  );
 }
 
 // --- App State ---
@@ -2116,21 +2033,39 @@ async function handleChord(stroke: string): Promise<void> {
     }
   }
 
-  // Two-syllable V7 decoding should outrank Emily for overlapping strokes.
-  if (stroke.includes("*")) {
-    const v7Code = getV7FromStroke(stroke);
-    if (v7Code) {
-      piecemealCursorIndex = null;
-      saveState();
-      const uppercase = keyboardCapsLockActive;
-      const capitalize = !uppercase && state.pendingCapitalization;
-      state.pendingCapitalization = false;
-      buffer.appendIsland(
-        createIsland("vietnamese", v7Code, true, { capitalize, uppercase }),
-      );
-      runInference();
-      return;
-    }
+  // Dictionary classification owns both starred aliases and the starless corner.
+  const dictionaryDecode = decodeDictionaryModeStroke(stroke);
+  const ordinaryDecode = dictionaryDecode
+    ? null
+    : decodeCanonicalTwoSyllableStroke(stroke);
+  const twoSyllableDecode = dictionaryDecode ?? ordinaryDecode;
+  if (twoSyllableDecode) {
+    window.dispatchEvent(
+      new CustomEvent("v7-editor-interpretation", {
+        detail: {
+          stroke,
+          interpretation: dictionaryDecode
+            ? "dictionary-v7"
+            : "compositional-v7",
+          sourceV7Stroke: twoSyllableDecode.canonicalStroke,
+          sourceV7Code: twoSyllableDecode.v7Code,
+        },
+      }),
+    );
+    piecemealCursorIndex = null;
+    saveState();
+    const uppercase = keyboardCapsLockActive;
+    const capitalize = !uppercase && state.pendingCapitalization;
+    state.pendingCapitalization = false;
+    buffer.appendIsland(
+      createIsland("vietnamese", twoSyllableDecode.v7Code, true, {
+        capitalize,
+        uppercase,
+        v7Mode: dictionaryDecode ? "dictionary" : "compositional",
+      }),
+    );
+    runInference();
+    return;
   }
 
   // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
@@ -2299,15 +2234,22 @@ async function runInference() {
   // Candidates from the previous buffer are no longer valid. Avoid flashing
   // raw V7 while the synchronous Android bridge produces their replacements.
   state.candidates = [];
+  buffer.setIslands(
+    state.islands.map((island) => {
+      if (island.v7Mode !== "dictionary") return island;
+      const { dictionaryBucketSize: _stale, ...pendingIsland } = island;
+      return pendingIsland;
+    }),
+  );
   if (!shouldDeferAndroidInferenceRender()) {
     updateDisplay();
   }
 
   try {
-    // Convert client islands to server format [Fixed, V7, Fixed...]
+    // Send the versioned protocol; mode is semantic data, not part of V7 code.
     const serverIslands = convertIslandsForInference(state.islands);
 
-    const requestBody = JSON.stringify({ islands: serverIslands });
+    const requestBody = JSON.stringify({ version: 2, islands: serverIslands });
     let data;
     if (androidIme) {
       data = await requestAndroidInference(requestBody, controller?.signal);
@@ -2329,6 +2271,18 @@ async function runInference() {
       return;
     }
     state.candidates = getInferenceCandidates(data);
+    const bucketSizes = getDictionaryBucketSizes(data);
+    let dictionaryIndex = 0;
+    buffer.setIslands(
+      state.islands.map((island) =>
+        island.v7Mode === "dictionary"
+          ? {
+              ...island,
+              dictionaryBucketSize: bucketSizes[dictionaryIndex++],
+            }
+          : island,
+      ),
+    );
     inferenceErrorMessage = "";
     updateDisplay();
   } catch (e) {
@@ -2372,6 +2326,20 @@ function getInferenceCandidates(data: unknown): string[][] {
     throw new Error("Inference response is missing valid candidates");
   }
   return candidates;
+}
+
+function getDictionaryBucketSizes(data: unknown): number[] {
+  if (!data || typeof data !== "object") return [];
+  const sizes = (data as { dictionaryBucketSizes?: unknown })
+    .dictionaryBucketSizes;
+  if (sizes === undefined) return [];
+  if (
+    !Array.isArray(sizes) ||
+    !sizes.every((size) => Number.isSafeInteger(size) && size >= 0)
+  ) {
+    throw new Error("Inference response has invalid dictionary bucket sizes");
+  }
+  return sizes as number[];
 }
 
 type SelectCandidateOptions = {
@@ -2827,6 +2795,9 @@ function updateDisplay(): void {
         piecemealCursorIndex,
         inferencePending: inferenceAbortController !== null,
         inferenceError: inferenceErrorMessage,
+        v7Modes: state.islands
+          .filter((island) => island.isV7)
+          .map((island) => island.v7Mode ?? "compositional"),
       },
     }),
   );

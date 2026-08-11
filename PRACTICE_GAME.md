@@ -1,5 +1,10 @@
 ## V7 Practice Game — Player Documentation (English)
 
+Dictionary-mode practice derives a lexical chord from its ordinary
+two-syllable chord by flipping `D` and `Z`. The special centers are
+`* → -DZ`, `*Z → EDZ`, `*D → ODZ`, and `*DZ → OEDZ`; this is a universal
+transform, not a set of word-specific briefs.
+
 This is a **60‑second speed game** to practice typing **Vietnamese syllables using “chords”** (pressing multiple keys at the same time, like stenography).
 
 You will see a **Vietnamese syllable** on the screen (example: `cá`, `quy`, `ngọt`). Your job is to press the **correct chord** on a physical keyboard. If correct, you gain **+1 point** and the game shows a new syllable. If wrong, you must try again (the syllable does not change).

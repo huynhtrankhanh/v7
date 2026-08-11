@@ -27,7 +27,9 @@ public class SettingsActivity extends Activity {
     private static final int SAVE_SOURCE_REQUEST = 2;
     private static final int SAVE_APP_DATA_REQUEST = 3;
     private static final int CHOOSE_APP_DATA_REQUEST = 4;
+    private static final int CHOOSE_DICTIONARY_MODE_REQUEST = 5;
     private TextView modelStatus;
+    private TextView dictionaryModeStatus;
     private Button exportAppData;
     private Button importAppData;
     private static final ExecutorService IO_EXECUTOR =
@@ -40,7 +42,10 @@ public class SettingsActivity extends Activity {
         setTitle(R.string.settings_title);
 
         modelStatus = findViewById(R.id.model_status);
+        dictionaryModeStatus = findViewById(R.id.dictionary_mode_status);
         Button chooseModel = findViewById(R.id.choose_model);
+        Button chooseDictionaryMode = findViewById(R.id.choose_dictionary_mode);
+        Button useBundledDictionary = findViewById(R.id.use_bundled_dictionary);
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         exportAppData = findViewById(R.id.export_app_data);
         importAppData = findViewById(R.id.import_app_data);
@@ -49,7 +54,10 @@ public class SettingsActivity extends Activity {
         Button choose = findViewById(R.id.choose_keyboard);
 
         updateModelStatus();
+        updateDictionaryModeStatus();
         chooseModel.setOnClickListener(view -> chooseModel());
+        chooseDictionaryMode.setOnClickListener(view -> chooseDictionaryMode());
+        useBundledDictionary.setOnClickListener(view -> useBundledDictionary());
         manageDictionaries.setOnClickListener(view -> startActivity(
                 new Intent(this, DictionaryManagementActivity.class)
         ));
@@ -77,6 +85,24 @@ public class SettingsActivity extends Activity {
                 )
                 .setType("application/octet-stream");
         startActivityForResult(intent, CHOOSE_MODEL_REQUEST);
+    }
+
+    private void chooseDictionaryMode() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                )
+                .setType("text/plain");
+        startActivityForResult(intent, CHOOSE_DICTIONARY_MODE_REQUEST);
+    }
+
+    private void useBundledDictionary() {
+        ImePreferences.clearDictionaryModeUri(this);
+        NativeInference.invalidateDictionaryCache();
+        updateDictionaryModeStatus();
+        Toast.makeText(this, R.string.dictionary_mode_bundled, Toast.LENGTH_SHORT).show();
     }
 
     private void chooseSourceDestination() {
@@ -123,6 +149,24 @@ public class SettingsActivity extends Activity {
                         .show();
             }
 
+        } else if (requestCode == CHOOSE_DICTIONARY_MODE_REQUEST) {
+            try {
+                getContentResolver().takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                );
+                ImePreferences.setDictionaryModeUri(this, uri);
+                NativeInference.invalidateDictionaryCache();
+                updateDictionaryModeStatus();
+                Toast.makeText(
+                        this,
+                        R.string.dictionary_mode_selected,
+                        Toast.LENGTH_SHORT
+                ).show();
+            } catch (SecurityException error) {
+                Toast.makeText(this, R.string.model_permission_failed, Toast.LENGTH_LONG)
+                        .show();
+            }
         } else if (requestCode == SAVE_SOURCE_REQUEST) {
             saveSourceArchive(uri);
         } else if (requestCode == SAVE_APP_DATA_REQUEST) {
@@ -175,6 +219,32 @@ public class SettingsActivity extends Activity {
                 ? name
                 : getString(R.string.model_status_with_size, name, formatBytes(size));
         modelStatus.setText(detail);
+    }
+
+    private void updateDictionaryModeStatus() {
+        Uri uri = ImePreferences.getDictionaryModeUri(this);
+        if (uri == null) {
+            dictionaryModeStatus.setText(R.string.dictionary_mode_bundled);
+            return;
+        }
+        String name = null;
+        try (Cursor cursor = getContentResolver().query(
+                uri,
+                new String[]{OpenableColumns.DISPLAY_NAME},
+                null,
+                null,
+                null
+        )) {
+            if (cursor != null && cursor.moveToFirst()) {
+                int index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                if (index >= 0) name = cursor.getString(index);
+            }
+        } catch (Exception ignored) {
+            // The persisted provider may currently be offline.
+        }
+        dictionaryModeStatus.setText(
+                TextUtils.isEmpty(name) ? uri.getLastPathSegment() : name
+        );
     }
 
     private String formatBytes(long bytes) {

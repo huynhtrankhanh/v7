@@ -59,6 +59,15 @@ struct Tokenizer {
     sorted_consonant_keys: Vec<String>,
     // Flattened structure to improve cache locality and reduce pointer chasing
     candidates_index: HashMap<(String, char, i32), Vec<Arc<str>>>,
+    lexical_pair_index: HashMap<((String, char, i32), (String, char, i32)), Vec<LexicalPair>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LexicalPair {
+    display_left: Arc<str>,
+    display_right: Arc<str>,
+    lm_left: Arc<str>,
+    lm_right: Arc<str>,
 }
 
 fn structured_onset<'a>(c: &'a str, v: &str) -> &'a str {
@@ -356,12 +365,124 @@ impl Tokenizer {
         let mut sorted_consonant_keys: Vec<String> = valid_consonants_map.keys().cloned().collect();
         sorted_consonant_keys.sort_by(|a, b| b.len().cmp(&a.len()));
 
+        let bundled_dictionary = include_str!("../../data/two_syllable_dictionary.txt");
+        validate_bundled_lexical_dictionary(&candidates_index, bundled_dictionary)?;
+        let lexical_pair_index =
+            build_lexical_pair_index(&candidates_index, bundled_dictionary, true);
         Ok(Tokenizer {
             valid_consonants_map,
             sorted_consonant_keys,
             candidates_index,
+            lexical_pair_index,
         })
     }
+}
+
+/// Build the closed lexical-pair dictionary from a dedicated pair-per-line file.
+/// Only pairs whose two words are both exactly V7-representable are retained.
+fn build_lexical_pair_index(
+    candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
+    source: &str,
+    exact_line_entries: bool,
+) -> HashMap<((String, char, i32), (String, char, i32)), Vec<LexicalPair>> {
+    let mut codes_by_word: HashMap<&str, Vec<&(String, char, i32)>> = HashMap::new();
+    for (code, words) in candidates_index {
+        for word in words {
+            codes_by_word.entry(word.as_ref()).or_default().push(code);
+        }
+    }
+    let mut result = HashMap::new();
+    for line in source.lines() {
+        let words = purify(line);
+        // User dictionaries are newline-delimited lexical entries. Requiring
+        // exactly two words prevents accidental pairs spanning prose columns.
+        if exact_line_entries && words.len() != 2 {
+            continue;
+        }
+        let display_words = line
+            .split_whitespace()
+            .map(|word| word.nfc().collect::<String>())
+            .collect::<Vec<_>>();
+        if display_words.len() != 2
+            || display_words
+                .iter()
+                .any(|word| !word.chars().all(char::is_alphabetic))
+        {
+            continue;
+        }
+        for pair in words.windows(2) {
+            let (Some(left_codes), Some(right_codes)) = (
+                codes_by_word.get(pair[0].as_str()),
+                codes_by_word.get(pair[1].as_str()),
+            ) else {
+                continue;
+            };
+            for left_code in left_codes {
+                for right_code in right_codes {
+                    let bucket = result
+                        .entry(((*left_code).clone(), (*right_code).clone()))
+                        .or_insert_with(Vec::new);
+                    let lexical_pair = LexicalPair {
+                        display_left: Arc::from(display_words[0].as_str()),
+                        display_right: Arc::from(display_words[1].as_str()),
+                        lm_left: Arc::from(pair[0].as_str()),
+                        lm_right: Arc::from(pair[1].as_str()),
+                    };
+                    if !bucket.contains(&lexical_pair) {
+                        bucket.push(lexical_pair);
+                    }
+                }
+            }
+        }
+    }
+    result
+}
+
+fn validate_bundled_lexical_dictionary(
+    candidates_index: &HashMap<(String, char, i32), Vec<Arc<str>>>,
+    source: &str,
+) -> Result<()> {
+    let mut codes_by_word: HashMap<&str, usize> = HashMap::new();
+    for words in candidates_index.values() {
+        for word in words {
+            *codes_by_word.entry(word.as_ref()).or_default() += 1;
+        }
+    }
+    let mut seen = HashSet::new();
+    for (index, raw_line) in source.lines().enumerate() {
+        let line_number = index + 1;
+        let normalized = raw_line.nfc().collect::<String>();
+        if raw_line != raw_line.trim() || normalized != raw_line {
+            anyhow::bail!("bundled lexical dictionary line {line_number} must be trimmed and NFC");
+        }
+        let words = purify(raw_line);
+        let display_words = raw_line.split(' ').collect::<Vec<_>>();
+        if words.len() != 2
+            || display_words.len() != 2
+            || display_words
+                .iter()
+                .any(|word| !word.chars().all(char::is_alphabetic))
+        {
+            anyhow::bail!(
+                "bundled lexical dictionary line {line_number} must contain exactly two normalized words"
+            );
+        }
+        let normalized_key = words.join(" ");
+        if !seen.insert(normalized_key) {
+            anyhow::bail!("duplicate bundled lexical dictionary entry on line {line_number}");
+        }
+        for word in words {
+            if codes_by_word.get(word.as_str()).copied().unwrap_or(0) != 1 {
+                anyhow::bail!(
+                    "bundled lexical dictionary line {line_number} contains a word without exactly one canonical V7 code: {word}"
+                );
+            }
+        }
+    }
+    if seen.is_empty() {
+        anyhow::bail!("bundled lexical dictionary must not be empty");
+    }
+    Ok(())
 }
 
 fn is_combining_mark(c: char) -> bool {
@@ -386,7 +507,9 @@ fn remove_diacritics(text: &str) -> String {
 fn purify(text: &str) -> Vec<String> {
     static NON_LETTER_RE: OnceLock<Regex> = OnceLock::new();
     let non_letter_re = NON_LETTER_RE.get_or_init(|| Regex::new(r"[^\p{L}\s]").unwrap());
-    let lower = text.to_lowercase();
+    // Compose combining marks before punctuation filtering so canonically
+    // equivalent NFC/NFD Vietnamese produces identical LM tokens.
+    let lower = text.nfc().collect::<String>().to_lowercase();
     let cleaned = non_letter_re.replace_all(&lower, " ");
     cleaned.split_whitespace().map(|s| s.to_string()).collect()
 }
@@ -803,6 +926,144 @@ fn beam_search_v7_island(
     results
 }
 
+fn beam_search_dictionary_island(
+    templates: &[PartialSyllableTemplate],
+    tokenizer: &Tokenizer,
+    model: &kenlm::Model,
+    beam_width: usize,
+    incoming_states: &[IslandState],
+) -> Vec<IslandState> {
+    if templates.len() != 2 {
+        return vec![];
+    }
+    let key = |template: &PartialSyllableTemplate| {
+        (
+            template.consonant.clone(),
+            normalize_rime_start_char(template.rime_first_letter),
+            template.tone,
+        )
+    };
+    let Some(pairs) = tokenizer
+        .lexical_pair_index
+        .get(&(key(&templates[0]), key(&templates[1])))
+    else {
+        // A structural dictionary stroke owns the input. Never fall back to the
+        // compositional Cartesian product when its lexical bucket is empty.
+        return vec![];
+    };
+    let mut results = Vec::with_capacity(incoming_states.len() * pairs.len());
+    for incoming in incoming_states {
+        for pair in pairs {
+            let (left_score, left_state) = model.score(&incoming.state, &pair.lm_left);
+            let (right_score, right_state) = model.score(&left_state, &pair.lm_right);
+            let mut history = incoming.history.clone();
+            history.push(vec![pair.display_left.clone(), pair.display_right.clone()]);
+            results.push(IslandState {
+                score: incoming.score + left_score + right_score,
+                state: right_state,
+                history,
+            });
+        }
+    }
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    results.truncate(beam_width);
+    results
+}
+
+#[derive(Clone, Copy)]
+enum InferenceV7Mode {
+    Compositional,
+    Dictionary,
+}
+
+enum InferenceSegment {
+    Fixed(String),
+    V7 { code: String, mode: InferenceV7Mode },
+}
+
+fn perform_typed_inference(
+    segments: &[InferenceSegment],
+    tokenizer: &Tokenizer,
+    model: &kenlm::Model,
+    beam_width: usize,
+) -> Result<Vec<Vec<String>>> {
+    let mut current_states = vec![IslandState {
+        score: 0.0,
+        state: model.begin_sentence_state(),
+        history: Vec::new(),
+    }];
+    for segment in segments {
+        match segment {
+            InferenceSegment::V7 { code, mode } => {
+                let templates = parse_v7_string(code, tokenizer)?;
+                current_states = match mode {
+                    InferenceV7Mode::Compositional => beam_search_v7_island(
+                        &templates,
+                        tokenizer,
+                        model,
+                        beam_width,
+                        &current_states,
+                    ),
+                    InferenceV7Mode::Dictionary => beam_search_dictionary_island(
+                        &templates,
+                        tokenizer,
+                        model,
+                        beam_width,
+                        &current_states,
+                    ),
+                };
+            }
+            InferenceSegment::Fixed(text) => {
+                let context_events = fixed_text_context_events(text);
+                for state in &mut current_states {
+                    for event in &context_events {
+                        match event {
+                            FixedContextEvent::Word(word) => {
+                                let (score, next) = model.score(&state.state, word);
+                                state.score += score;
+                                state.state = next;
+                            }
+                            FixedContextEvent::SentenceEnd => {
+                                state.state = model.begin_sentence_state();
+                            }
+                        }
+                    }
+                    state.history.push(vec![Arc::from(text.as_str())]);
+                }
+            }
+        }
+        if current_states.is_empty() {
+            return Ok(vec![]);
+        }
+    }
+    current_states.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(current_states
+        .into_iter()
+        .take(beam_width)
+        .map(|state| {
+            state
+                .history
+                .into_iter()
+                .map(|words| {
+                    words
+                        .iter()
+                        .map(AsRef::as_ref)
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect()
+        })
+        .collect())
+}
+
 fn perform_inference(
     islands: &[String],
     tokenizer: &Tokenizer,
@@ -876,9 +1137,11 @@ fn perform_inference(
 #[cfg(test)]
 mod tests {
     use super::{
-        fixed_text_context_events, is_v7_segment, uses_strict_alternating_island_mode,
+        build_lexical_pair_index, fixed_text_context_events, is_v7_segment, purify,
+        uses_strict_alternating_island_mode, validate_bundled_lexical_dictionary,
         FixedContextEvent, Tokenizer,
     };
+    use unicode_normalization::UnicodeNormalization;
 
     #[test]
     fn detects_parseable_v7_segment() {
@@ -923,6 +1186,30 @@ mod tests {
     }
 
     #[test]
+    fn fixed_context_preserves_only_purified_lm_tokens() {
+        assert_eq!(
+            fixed_text_context_events("TÔI gặp Việt Nam!!!"),
+            vec![
+                FixedContextEvent::Word("tôi".to_string()),
+                FixedContextEvent::Word("gặp".to_string()),
+                FixedContextEvent::Word("việt".to_string()),
+                FixedContextEvent::Word("nam".to_string()),
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::SentenceEnd,
+                FixedContextEvent::SentenceEnd,
+            ]
+        );
+    }
+
+    #[test]
+    fn purification_is_identical_for_nfc_and_nfd_vietnamese() {
+        let nfc = "TÔI gặp Việt Nam!!!";
+        let nfd = nfc.nfd().collect::<String>();
+        assert_eq!(purify(nfc), purify(&nfd));
+        assert_eq!(purify(&nfd), vec!["tôi", "gặp", "việt", "nam"]);
+    }
+
+    #[test]
     fn repeated_sentence_endings_each_reset_context() {
         assert_eq!(
             fixed_text_context_events("Thật?!"),
@@ -931,6 +1218,72 @@ mod tests {
                 FixedContextEvent::SentenceEnd,
                 FixedContextEvent::SentenceEnd,
             ]
+        );
+    }
+
+    #[test]
+    fn lexical_pair_index_contains_only_exact_representable_pairs() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        assert!(!tokenizer.lexical_pair_index.is_empty());
+        for ((left_code, right_code), pairs) in &tokenizer.lexical_pair_index {
+            let left_candidates = tokenizer.candidates_index.get(left_code).unwrap();
+            let right_candidates = tokenizer.candidates_index.get(right_code).unwrap();
+            assert!(!pairs.is_empty());
+            for pair in pairs {
+                assert!(left_candidates.contains(&pair.lm_left));
+                assert!(right_candidates.contains(&pair.lm_right));
+            }
+        }
+    }
+
+    #[test]
+    fn txt_lexical_dictionary_accepts_lf_and_crlf() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        let lf = build_lexical_pair_index(
+            &tokenizer.candidates_index,
+            "trời mưa\nhôm nay\ninvalid three words\n",
+            true,
+        );
+        let crlf = build_lexical_pair_index(
+            &tokenizer.candidates_index,
+            "trời mưa\r\nhôm nay\r\ninvalid three words\r\n",
+            true,
+        );
+        assert_eq!(lf, crlf);
+        assert!(!lf.is_empty());
+        assert!(lf.values().flatten().all(|pair| {
+            matches!(
+                (pair.lm_left.as_ref(), pair.lm_right.as_ref()),
+                ("trời", "mưa") | ("hôm", "nay")
+            )
+        }));
+    }
+
+    #[test]
+    fn lexical_pair_keeps_display_case_separate_from_lm_tokens() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        let index = build_lexical_pair_index(&tokenizer.candidates_index, "Việt Nam\n", true);
+        let pair = index.values().flatten().next().expect("pair is indexed");
+        assert_eq!(pair.display_left.as_ref(), "Việt");
+        assert_eq!(pair.display_right.as_ref(), "Nam");
+        assert_eq!(pair.lm_left.as_ref(), "việt");
+        assert_eq!(pair.lm_right.as_ref(), "nam");
+    }
+
+    #[test]
+    fn bundled_dictionary_validation_rejects_noncanonical_and_duplicate_lines() {
+        let tokenizer = Tokenizer::new().expect("tokenizer should load");
+        assert!(
+            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, " hôm nay\n").is_err()
+        );
+        assert!(validate_bundled_lexical_dictionary(
+            &tokenizer.candidates_index,
+            "hôm nay\nhôm nay\n"
+        )
+        .is_err());
+        assert!(
+            validate_bundled_lexical_dictionary(&tokenizer.candidates_index, "hôm nay mai\n")
+                .is_err()
         );
     }
 }
@@ -951,13 +1304,41 @@ struct AppState {
 const PLOVER_STATUS_CACHE_SECONDS: u64 = 2;
 
 #[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum TypedInferIsland {
+    Fixed { text: String },
+    V7 { code: String, mode: V7Mode },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum V7Mode {
+    Compositional,
+    Dictionary,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum InferIsland {
+    Legacy(String),
+    Typed(TypedInferIsland),
+}
+
+#[derive(Deserialize)]
 struct InferRequest {
-    islands: Vec<String>,
+    #[serde(default)]
+    version: Option<u8>,
+    islands: Vec<InferIsland>,
 }
 
 #[derive(Serialize)]
 struct InferResponse {
     candidates: Vec<Vec<String>>,
+    #[serde(
+        rename = "dictionaryBucketSizes",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    dictionary_bucket_sizes: Vec<usize>,
 }
 
 #[derive(Deserialize)]
@@ -978,16 +1359,26 @@ async fn infer_handler(
     Json(payload): Json<InferRequest>,
 ) -> Json<InferResponse> {
     if payload.is_empty() {
-        return Json(InferResponse { candidates: vec![] });
+        return Json(InferResponse {
+            candidates: vec![],
+            dictionary_bucket_sizes: vec![],
+        });
     }
 
-    let result = perform_inference(&payload.islands, &state.tokenizer, &state.model, 100);
+    let dictionary_bucket_sizes = payload.dictionary_bucket_sizes(&state.tokenizer);
+    let result = payload.perform(&state.tokenizer, &state.model, 100);
 
     match result {
-        Ok(candidates) => Json(InferResponse { candidates }),
+        Ok(candidates) => Json(InferResponse {
+            candidates,
+            dictionary_bucket_sizes,
+        }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
-            Json(InferResponse { candidates: vec![] })
+            Json(InferResponse {
+                candidates: vec![],
+                dictionary_bucket_sizes: vec![],
+            })
         }
     }
 }
@@ -1091,6 +1482,85 @@ impl InferRequest {
     fn is_empty(&self) -> bool {
         self.islands.is_empty()
     }
+
+    fn perform(
+        &self,
+        tokenizer: &Tokenizer,
+        model: &kenlm::Model,
+        beam_width: usize,
+    ) -> Result<Vec<Vec<String>>> {
+        if self
+            .islands
+            .iter()
+            .all(|island| matches!(island, InferIsland::Legacy(_)))
+        {
+            let legacy = self
+                .islands
+                .iter()
+                .filter_map(|island| match island {
+                    InferIsland::Legacy(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            return perform_inference(&legacy, tokenizer, model, beam_width);
+        }
+        if self.version != Some(2) {
+            anyhow::bail!("typed inference islands require protocol version 2");
+        }
+        let segments = self
+            .islands
+            .iter()
+            .map(|island| match island {
+                InferIsland::Typed(TypedInferIsland::Fixed { text }) => {
+                    Ok(InferenceSegment::Fixed(text.clone()))
+                }
+                InferIsland::Typed(TypedInferIsland::V7 { code, mode }) => {
+                    Ok(InferenceSegment::V7 {
+                        code: code.clone(),
+                        mode: match mode {
+                            V7Mode::Compositional => InferenceV7Mode::Compositional,
+                            V7Mode::Dictionary => InferenceV7Mode::Dictionary,
+                        },
+                    })
+                }
+                InferIsland::Legacy(_) => anyhow::bail!("cannot mix legacy and typed islands"),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        perform_typed_inference(&segments, tokenizer, model, beam_width)
+    }
+
+    fn dictionary_bucket_sizes(&self, tokenizer: &Tokenizer) -> Vec<usize> {
+        self.islands
+            .iter()
+            .filter_map(|island| {
+                let InferIsland::Typed(TypedInferIsland::V7 {
+                    code,
+                    mode: V7Mode::Dictionary,
+                }) = island
+                else {
+                    return None;
+                };
+                let templates = parse_v7_string(code, tokenizer).ok()?;
+                if templates.len() != 2 {
+                    return Some(0);
+                }
+                let key = |template: &PartialSyllableTemplate| {
+                    (
+                        template.consonant.clone(),
+                        normalize_rime_start_char(template.rime_first_letter),
+                        template.tone,
+                    )
+                };
+                Some(
+                    tokenizer
+                        .lexical_pair_index
+                        .get(&(key(&templates[0]), key(&templates[1])))
+                        .map(Vec::len)
+                        .unwrap_or(0),
+                )
+            })
+            .collect()
+    }
 }
 
 pub(crate) struct EmbeddedInference {
@@ -1120,9 +1590,29 @@ impl EmbeddedInference {
         let candidates = if payload.is_empty() {
             vec![]
         } else {
-            perform_inference(&payload.islands, &self.tokenizer, &self.model, 100)?
+            payload.perform(&self.tokenizer, &self.model, 100)?
         };
-        Ok(serde_json::to_string(&InferResponse { candidates })?)
+        Ok(serde_json::to_string(&InferResponse {
+            candidates,
+            dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&self.tokenizer),
+        })?)
+    }
+
+    #[cfg(target_os = "android")]
+    pub(crate) fn set_lexical_dictionary(&mut self, source: Option<&str>) {
+        self.tokenizer.lexical_pair_index = if source.is_none() {
+            build_lexical_pair_index(
+                &self.tokenizer.candidates_index,
+                include_str!("../../data/two_syllable_dictionary.txt"),
+                true,
+            )
+        } else {
+            build_lexical_pair_index(
+                &self.tokenizer.candidates_index,
+                source.expect("custom dictionary source is present"),
+                true,
+            )
+        };
     }
 }
 
@@ -1145,13 +1635,24 @@ async fn main() -> Result<()> {
         let mut stdout = std::io::BufWriter::new(std::io::stdout().lock());
         for line in stdin.lock().lines() {
             let line = line?;
-            let islands: Vec<String> = serde_json::from_str(&line)?;
-            let candidates = if islands.is_empty() {
-                vec![]
+            if let Ok(islands) = serde_json::from_str::<Vec<String>>(&line) {
+                let candidates = if islands.is_empty() {
+                    vec![]
+                } else {
+                    perform_inference(&islands, &tokenizer, &model, 100)?
+                };
+                serde_json::to_writer(&mut stdout, &candidates)?;
             } else {
-                perform_inference(&islands, &tokenizer, &model, 100)?
-            };
-            serde_json::to_writer(&mut stdout, &candidates)?;
+                let payload: InferRequest = serde_json::from_str(&line)?;
+                let candidates = payload.perform(&tokenizer, &model, 100)?;
+                serde_json::to_writer(
+                    &mut stdout,
+                    &InferResponse {
+                        candidates,
+                        dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&tokenizer),
+                    },
+                )?;
+            }
             stdout.write_all(b"\n")?;
             stdout.flush()?;
         }

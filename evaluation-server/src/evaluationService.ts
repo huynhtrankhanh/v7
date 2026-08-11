@@ -1,4 +1,5 @@
 import { evaluateSynthesisMeasure } from "../../evaluator/synthesisObjective";
+import { evaluateDictionaryMode } from "../../evaluator/evaluateInference";
 import type {
   InferenceFunction,
   InferenceResponse,
@@ -17,6 +18,14 @@ export interface CausalMetrics {
   p95ErrorCascadeLength: number;
   totalCandidateInspectionSteps: number;
   p95InferenceLatencyMilliseconds: number;
+  dictionaryCoveredPairs: number;
+  dictionaryMisses: number;
+  dictionaryTop1: number;
+  dictionaryTop5: number;
+  compositionalInteractionCost: number;
+  dictionaryInteractionCost: number | null;
+  dictionaryInteractionCostDelta: number | null;
+  coveredPairsDictionaryInteractionCost: number;
 }
 
 export async function evaluateCorpus(
@@ -33,6 +42,48 @@ export async function evaluateCorpus(
   const objective = await evaluateSynthesisMeasure(corpus, inference, {
     artifactBytes: 0,
   });
+  let dictionaryCoveredPairs = 0;
+  let dictionaryMisses = 0;
+  let dictionaryTop1 = 0;
+  let dictionaryTop5 = 0;
+  let compositionalInteractionCost = 0;
+  let dictionaryInteractionCost: number | null = 0;
+  let dictionaryInteractionCostDelta: number | null = 0;
+  let coveredPairsDictionaryInteractionCost = 0;
+  for (const text of corpus) {
+    const dictionary = await evaluateDictionaryMode(text, async (request) => {
+      const result = await session.infer(request);
+      if (
+        !Array.isArray(result) &&
+        !(result && typeof result === "object" && "candidates" in result)
+      ) {
+        throw new TypeError("Typed inference must return candidates.");
+      }
+      return result as
+        | InferenceResponse
+        | {
+            candidates: InferenceResponse;
+            dictionaryBucketSizes?: readonly number[];
+          };
+    });
+    dictionaryCoveredPairs += dictionary.coveredPairs;
+    dictionaryMisses += dictionary.misses;
+    dictionaryTop1 += dictionary.top1;
+    dictionaryTop5 += dictionary.top5;
+    compositionalInteractionCost += dictionary.compositionalInteractionCost;
+    dictionaryInteractionCost =
+      dictionaryInteractionCost === null ||
+      dictionary.dictionaryInteractionCost === null
+        ? null
+        : dictionaryInteractionCost + dictionary.dictionaryInteractionCost;
+    dictionaryInteractionCostDelta =
+      dictionaryInteractionCostDelta === null ||
+      dictionary.interactionCostDelta === null
+        ? null
+        : dictionaryInteractionCostDelta + dictionary.interactionCostDelta;
+    coveredPairsDictionaryInteractionCost +=
+      dictionary.coveredPairsDictionaryInteractionCost;
+  }
 
   // objective[10] is artifactBytes and is intentionally not returned or logged.
   return {
@@ -46,5 +97,13 @@ export async function evaluateCorpus(
     p95ErrorCascadeLength: objective[7],
     totalCandidateInspectionSteps: objective[8],
     p95InferenceLatencyMilliseconds: objective[9],
+    dictionaryCoveredPairs,
+    dictionaryMisses,
+    dictionaryTop1,
+    dictionaryTop5,
+    compositionalInteractionCost,
+    dictionaryInteractionCost,
+    dictionaryInteractionCostDelta,
+    coveredPairsDictionaryInteractionCost,
   };
 }

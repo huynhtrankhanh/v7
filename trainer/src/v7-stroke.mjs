@@ -161,3 +161,21 @@ export function strokeForV7Pair(code) {
     keys: ordered.map((token) => physicalKey[token]),
   };
 }
+
+export function dictionaryStrokeForV7Pair(code) {
+  const left = parseSyllable(code, 0);
+  const right = parseSyllable(code, left.nextOffset);
+  if (right.nextOffset !== code.length)
+    throw new Error(`Mã V7 không hợp lệ: ${code}`);
+  const ordinary = strokeForV7Pair(code).stroke;
+  const [leftStroke, rightStroke] = ordinary.split("*");
+  if (["e", "u"].includes(left.vowel) && ["e", "u"].includes(right.vowel)) {
+    const flags = `${left.vowel === "u" ? "O" : ""}${right.vowel === "u" ? "E" : ""}`;
+    const rightBody = rightStroke.replace(/[DZ]/g, "");
+    return flags
+      ? `${leftStroke}${flags}${rightBody}DZ`
+      : `${leftStroke}-${rightBody}DZ`;
+  }
+  const body = rightStroke.replace(/[DZ]/g, "");
+  return `${leftStroke}*${body}${rightStroke.includes("D") ? "" : "D"}${rightStroke.includes("Z") ? "" : "Z"}`;
+}

@@ -1,4 +1,5 @@
-import { strokeForV7Pair } from "./v7-stroke.mjs";
+import { dictionaryStrokeForV7Pair, strokeForV7Pair } from "./v7-stroke.mjs";
+import { hasLexicalPair } from "./lexical-pairs.mjs";
 
 const toneCharacters = {
   áắấéếíóốớúứý: 1,
@@ -74,10 +75,14 @@ function makeSentence(id, text, category) {
   const pairs = [];
   for (let index = 0; index + 1 < words.length; index += 2) {
     const code = wordCode(words[index]) + wordCode(words[index + 1]);
+    const pairWords = `${words[index]} ${words[index + 1]}`;
     pairs.push({
-      words: `${words[index]} ${words[index + 1]}`,
+      words: pairWords,
       code,
       ...strokeForV7Pair(code),
+      dictionaryStroke: hasLexicalPair(pairWords)
+        ? dictionaryStrokeForV7Pair(code)
+        : null,
     });
   }
   return {

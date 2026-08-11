@@ -2,6 +2,7 @@ import {
   buildEvaluationIslands,
   evaluate,
   evaluateDetailed,
+  evaluateDictionaryMode,
   getPiecemealCorrectionCost,
   ILLEGAL,
   type InferenceFunction,
@@ -130,5 +131,59 @@ describe("inference inconvenience evaluator", () => {
     await expect(
       evaluate("trời mưa", async () => [["trời, mưa"]]),
     ).resolves.toBe(ILLEGAL);
+  });
+
+  test("compares typed dictionary and compositional pair requests", async () => {
+    const modes: string[] = [];
+    const result = await evaluateDictionaryMode("trời mưa", async (request) => {
+      const v7 = request.islands.find((island) => island.kind === "v7");
+      modes.push(v7?.kind === "v7" ? v7.mode : "missing");
+      return v7?.kind === "v7" && v7.mode === "dictionary"
+        ? [["", "trời mưa", ""]]
+        : [["", "trời mua", ""]];
+    });
+    expect(modes).toEqual(["compositional", "dictionary"]);
+    expect(result).toMatchObject({ coveredPairs: 1, misses: 0, top1: 1 });
+  });
+
+  test("extracts only the current replacement for later dictionary pairs", async () => {
+    const result = await evaluateDictionaryMode(
+      "hôm nay trời mưa",
+      async (request) => {
+        const fixed = request.islands[0];
+        const v7 = request.islands[1];
+        const prefix = fixed.kind === "fixed" ? fixed.text : "";
+        const replacement =
+          v7.kind === "v7" && v7.code === "tro2mu0" ? "trời mưa" : "hôm nay";
+        return {
+          candidates: [[prefix, replacement, ""]],
+          dictionaryBucketSizes: [7],
+        };
+      },
+    );
+    expect(result.steps).toHaveLength(2);
+    expect(result.steps[1]).toMatchObject({
+      dictionaryTop1: true,
+      dictionaryBucketSize: 7,
+      compositionalTop5: true,
+      compositionalInteractionCost: 1,
+      dictionaryInteractionCost: 1,
+      interactionCostDelta: 0,
+    });
+  });
+
+  test("marks aggregate interaction cost incomplete on dictionary miss", async () => {
+    const result = await evaluateDictionaryMode("trời mưa", async (request) => {
+      const v7 = request.islands[1];
+      return v7.kind === "v7" && v7.mode === "dictionary"
+        ? { candidates: [], dictionaryBucketSizes: [0] }
+        : [["", "trời mưa", ""]];
+    });
+    expect(result).toMatchObject({
+      misses: 1,
+      dictionaryInteractionCost: null,
+      interactionCostDelta: null,
+      coveredPairsDictionaryInteractionCost: 0,
+    });
   });
 });

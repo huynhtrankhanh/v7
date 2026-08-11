@@ -741,7 +741,7 @@ function renderSentencePractice(payload) {
           <p class="instruction">${escapeHtml(card.note)}</p>
           <div class="sentence-target">${escapeHtml(card.target)}</div>
           <div class="stroke-hint">
-            <span id="stroke-value" class="stroke-text">${escapeHtml(firstPair?.stroke ?? "")}</span>
+            <span id="stroke-value" class="stroke-text">${escapeHtml(firstPair ? pairStrokeHint(firstPair) : "")}</span>
             <button id="show-hint" class="link-button" hidden>Hiện gợi ý</button>
           </div>
           <iframe
@@ -758,6 +758,7 @@ function renderSentencePractice(payload) {
         <ul class="queue">
           <li>Gõ từng tiếng: không dùng Space</li>
           <li>Gõ hai tiếng một lượt: bấm thêm Space</li>
+          <li>Gõ cặp từ điển: đảo cả D và Z (góc e/u dùng DZ không Space)</li>
           <li>Khi có nhiều cách viết: dùng -T, -TS, -S, -D hoặc -Z để chọn dòng</li>
           <li>Chỉ sửa chỗ sai: chọn chỗ bằng T-, P-, H-, TK-… rồi gõ lại</li>
           <li>Quay lại lần bấm trước: bấm * riêng</li>
@@ -793,12 +794,18 @@ function comparableWords(value) {
   ).join(" ");
 }
 
+function pairStrokeHint(pair) {
+  return pair.dictionaryStroke
+    ? `ordinary: ${pair.stroke} · dictionary: ${pair.dictionaryStroke}`
+    : `ordinary: ${pair.stroke}`;
+}
+
 function updateSentenceHint(text) {
   const words = String(text).match(/[\p{L}\p{M}]+/gu)?.length ?? 0;
   const pair = currentPayload.card.pairs[Math.floor(words / 2)];
   const hint = document.getElementById("stroke-value");
   if (pair) {
-    hint.textContent = `${pair.words} · ${pair.stroke}`;
+    hint.textContent = `${pair.words} · ${pairStrokeHint(pair)}`;
     document.getElementById("feedback").textContent =
       `Một cách nhanh để viết “${pair.words}” là bấm ${pair.stroke}. Bạn vẫn có thể gõ từng tiếng.`;
   } else {
@@ -832,6 +839,16 @@ function attachProductionEditor(frame) {
       stroke,
     });
   });
+  editorWindow.addEventListener("v7-editor-interpretation", (event) => {
+    const detail = event.detail ?? {};
+    queueTelemetry("sentence_editor_interpretation", {
+      cardId: currentPayload.card.id,
+      stroke: detail.stroke,
+      interpretation: detail.interpretation,
+      sourceV7Stroke: detail.sourceV7Stroke,
+      sourceV7Code: detail.sourceV7Code,
+    });
+  });
   editorWindow.addEventListener("v7-editor-state", (event) => {
     const detail = event.detail ?? {};
     sentenceEditorText = String(detail.text ?? "");
@@ -848,6 +865,7 @@ function attachProductionEditor(frame) {
       piecemealCursorIndex: detail.piecemealCursorIndex,
       inferencePending: detail.inferencePending,
       inferenceError: detail.inferenceError,
+      v7Modes: detail.v7Modes ?? [],
     });
     if (
       !submitting &&

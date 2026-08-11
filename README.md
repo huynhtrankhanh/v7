@@ -1,5 +1,13 @@
 # V7 Text Prediction Engine
 
+## Two-syllable dictionary mode
+
+An ordinary two-syllable chord asks inference to compose two syllables. Its
+dictionary conjugate asks for lexical entries with the same V7 pair code.
+Derive it by flipping `D` and `Z`; for the low-vowel corner use `* → -DZ`,
+`*Z → EDZ`, `*D → ODZ`, and `*DZ → OEDZ`. Redundant `D`/`Z` vowel aliases are
+therefore reserved for dictionary mode.
+
 This project implements a high-performance Vietnamese text prediction engine using a specialized "V7" input format. It utilizes a 3-gram language model trained with KenLM to disambiguate and reconstruct Vietnamese sentences from compact encoded strings. A web demo with a stenographic input interface is also included.
 
 ## Project Structure

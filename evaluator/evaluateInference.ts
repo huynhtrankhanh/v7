@@ -5,6 +5,50 @@ export type InferenceResponse = readonly InferenceCandidate[];
 export type InferenceFunction = (
   request: string[],
 ) => InferenceResponse | Promise<InferenceResponse>;
+export type TypedInferenceIsland =
+  | { kind: "fixed"; text: string }
+  | { kind: "v7"; code: string; mode: "compositional" | "dictionary" };
+export type TypedInferenceFunction = (request: {
+  version: 2;
+  islands: TypedInferenceIsland[];
+}) =>
+  | InferenceResponse
+  | { candidates: InferenceResponse; dictionaryBucketSizes?: readonly number[] }
+  | Promise<
+      | InferenceResponse
+      | {
+          candidates: InferenceResponse;
+          dictionaryBucketSizes?: readonly number[];
+        }
+    >;
+
+export interface DictionaryEvaluationStep {
+  sourceText: string;
+  v7Code: string;
+  dictionaryBucketSize: number;
+  dictionaryMiss: boolean;
+  compositionalTop1: boolean;
+  compositionalTop5: boolean;
+  dictionaryTop1: boolean;
+  dictionaryTop5: boolean;
+  compositionalInteractionCost: number;
+  dictionaryInteractionCost: number | null;
+  interactionCostDelta: number | null;
+}
+
+export interface DictionaryEvaluationResult {
+  coveredPairs: number;
+  misses: number;
+  top1: number;
+  top5: number;
+  compositionalInteractionCost: number;
+  /** Null when any evaluated pair missed; never treats a miss as free. */
+  dictionaryInteractionCost: number | null;
+  interactionCostDelta: number | null;
+  /** Cost over covered pairs only, explicitly excluding misses. */
+  coveredPairsDictionaryInteractionCost: number;
+  steps: DictionaryEvaluationStep[];
+}
 
 export interface EvaluationWeights {
   /** Enter one V7 island (normally one chord containing up to two syllables). */
@@ -414,6 +458,124 @@ export async function evaluateDetailed(
       0,
     ),
     fixedText: getFixedText(text, islands),
+    steps,
+  };
+}
+
+/** Compare lexical and compositional inference for each representable pair. */
+export async function evaluateDictionaryMode(
+  text: string,
+  inference: TypedInferenceFunction,
+): Promise<DictionaryEvaluationResult> {
+  const pairIslands = buildEvaluationIslands(text, 2).filter(
+    (island) => island.targetSyllables.length === 2,
+  );
+  const steps: DictionaryEvaluationStep[] = [];
+  for (const island of pairIslands) {
+    const request = (mode: "compositional" | "dictionary") => ({
+      version: 2 as const,
+      islands: [
+        { kind: "fixed" as const, text: text.slice(0, island.sourceStart) },
+        { kind: "v7" as const, code: island.v7Code, mode },
+        { kind: "fixed" as const, text: "" },
+      ],
+    });
+    const [compositionalResponse, dictionaryResponse] = await Promise.all([
+      inference(request("compositional")),
+      inference(request("dictionary")),
+    ]);
+    const responseCandidates = (
+      response:
+        | InferenceResponse
+        | {
+            candidates: InferenceResponse;
+            dictionaryBucketSizes?: readonly number[];
+          },
+    ): InferenceResponse =>
+      "candidates" in response ? response.candidates : response;
+    const legacyRequest = [
+      text.slice(0, island.sourceStart),
+      island.v7Code,
+      "",
+    ];
+    const normalizedCandidates = (response: InferenceResponse) =>
+      response.map((candidate) =>
+        getSyllables(candidateReplacement(candidate, legacyRequest)),
+      );
+    const compositional = responseCandidates(compositionalResponse);
+    const dictionary = responseCandidates(dictionaryResponse);
+    const compositionalCandidates = normalizedCandidates(compositional);
+    const dictionaryCandidates = normalizedCandidates(dictionary);
+    const exact = (candidate: readonly string[] | undefined) =>
+      candidate !== undefined &&
+      sameSyllables(candidate, island.targetSyllables);
+    const interactionCost = (
+      predictions: readonly string[][],
+    ): number | null => {
+      if (predictions.length === 0) return null;
+      const exactIndex = predictions.slice(0, 5).findIndex(exact);
+      const correctionCost =
+        exactIndex === 0
+          ? 0
+          : exactIndex > 0
+            ? DEFAULT_WEIGHTS.candidateSelection
+            : getPiecemealCorrectionCost(
+                island.targetSyllables,
+                predictions[0],
+                DEFAULT_WEIGHTS,
+              );
+      return DEFAULT_WEIGHTS.v7Entry + correctionCost;
+    };
+    const compositionalCost = interactionCost(compositionalCandidates) ?? 0;
+    const dictionaryCost = interactionCost(dictionaryCandidates);
+    steps.push({
+      sourceText: island.sourceText,
+      v7Code: island.v7Code,
+      dictionaryBucketSize:
+        "dictionaryBucketSizes" in dictionaryResponse
+          ? (dictionaryResponse.dictionaryBucketSizes?.[0] ??
+            dictionaryCandidates.length)
+          : dictionaryCandidates.length,
+      dictionaryMiss: dictionaryCandidates.length === 0,
+      compositionalTop1: exact(compositionalCandidates[0]),
+      compositionalTop5: compositionalCandidates.slice(0, 5).some(exact),
+      dictionaryTop1: exact(dictionaryCandidates[0]),
+      dictionaryTop5: dictionaryCandidates.slice(0, 5).some(exact),
+      compositionalInteractionCost: compositionalCost,
+      dictionaryInteractionCost: dictionaryCost,
+      interactionCostDelta:
+        dictionaryCost === null ? null : dictionaryCost - compositionalCost,
+    });
+  }
+  return {
+    coveredPairs: steps.filter((step) => !step.dictionaryMiss).length,
+    misses: steps.filter((step) => step.dictionaryMiss).length,
+    top1: steps.filter((step) => step.dictionaryTop1).length,
+    top5: steps.filter((step) => step.dictionaryTop5).length,
+    compositionalInteractionCost: steps.reduce(
+      (total, step) => total + step.compositionalInteractionCost,
+      0,
+    ),
+    dictionaryInteractionCost: steps.some(
+      (step) => step.dictionaryInteractionCost === null,
+    )
+      ? null
+      : steps.reduce(
+          (total, step) => total + (step.dictionaryInteractionCost ?? 0),
+          0,
+        ),
+    interactionCostDelta: steps.some(
+      (step) => step.interactionCostDelta === null,
+    )
+      ? null
+      : steps.reduce(
+          (total, step) => total + (step.interactionCostDelta ?? 0),
+          0,
+        ),
+    coveredPairsDictionaryInteractionCost: steps.reduce(
+      (total, step) => total + (step.dictionaryInteractionCost ?? 0),
+      0,
+    ),
     steps,
   };
 }
