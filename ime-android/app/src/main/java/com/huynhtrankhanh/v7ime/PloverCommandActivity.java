@@ -28,7 +28,6 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class PloverCommandActivity extends Activity {
@@ -191,50 +190,67 @@ public class PloverCommandActivity extends Activity {
         }
 
         TextView status = addStatus();
-        Button lookup = addButton(R.string.lookup_action);
-        lookup.setOnClickListener(view -> {
-            String strokeQuery = stroke.getText().toString().trim();
-            String translationQuery = translation.getText().toString().trim();
-            if (strokeQuery.isEmpty() && translationQuery.isEmpty()) {
-                status.setText(R.string.lookup_query_required);
+        final int[] queryGeneration = {0};
+        Button lookupStroke = addButton(R.string.lookup_stroke_action);
+        lookupStroke.setOnClickListener(view -> {
+            String query = stroke.getText().toString().trim();
+            if (query.isEmpty()) {
+                showStatus(status, R.string.lookup_stroke_required);
                 return;
             }
-            lookup.setEnabled(false);
-            status.setText(R.string.looking_up_entries);
+            int generation = ++queryGeneration[0];
+            lookupStroke.setEnabled(false);
+            showStatus(status, R.string.looking_up_entries);
             JSONObject params = new JSONObject();
             try {
-                if (!strokeQuery.isEmpty()) {
-                    params.put("stroke", strokeQuery);
-                }
-                if (!translationQuery.isEmpty()) {
-                    params.put("output", translationQuery);
-                }
-                params.put("match", "substring");
-                params.put("sort", "alphabetic");
-                params.put("page", 1);
-                params.put("page_size", 100);
+                params.put("stroke", query);
             } catch (Exception error) {
-                status.setText(messageFor(error));
-                lookup.setEnabled(true);
+                showStatus(status, messageFor(error));
+                lookupStroke.setEnabled(true);
                 return;
             }
-            request("search_entries", params, (result, error) -> {
-                lookup.setEnabled(true);
-                if (!error.isEmpty()) {
-                    status.setText(error);
+            request("lookup", params, (result, error) -> {
+                lookupStroke.setEnabled(true);
+                if (generation != queryGeneration[0]
+                        || !query.equals(stroke.getText().toString().trim())) {
                     return;
                 }
-                status.setText(formatLookupResults(
-                        result,
-                        strokeQuery,
-                        translationQuery
-                ));
+                showStatus(status, error.isEmpty()
+                        ? formatStrokeLookupResult(result, query) : error);
             });
         });
-        submitOnEnter(stroke, lookup);
-        submitOnEnter(translation, lookup);
+        Button lookupTranslation = addButton(R.string.lookup_translation_action);
+        lookupTranslation.setOnClickListener(view -> {
+            String query = translation.getText().toString().trim();
+            if (query.isEmpty()) {
+                showStatus(status, R.string.lookup_translation_required);
+                return;
+            }
+            int generation = ++queryGeneration[0];
+            lookupTranslation.setEnabled(false);
+            showStatus(status, R.string.looking_up_entries);
+            JSONObject params = new JSONObject();
+            try {
+                params.put("translation", query);
+            } catch (Exception error) {
+                showStatus(status, messageFor(error));
+                lookupTranslation.setEnabled(true);
+                return;
+            }
+            request("reverse_lookup", params, (result, error) -> {
+                lookupTranslation.setEnabled(true);
+                if (generation != queryGeneration[0]
+                        || !query.equals(translation.getText().toString().trim())) {
+                    return;
+                }
+                showStatus(status, error.isEmpty()
+                        ? formatReverseLookupResult(result, query) : error);
+            });
+        });
+        submitOnEnter(stroke, lookupStroke);
+        submitOnEnter(translation, lookupTranslation);
         addCloseButton();
-        focusInitially(stroke);
+        focusInitially(translation.getText().length() > 0 ? translation : stroke);
     }
 
     private void showAddTranslation(String argument) {
@@ -445,40 +461,31 @@ public class PloverCommandActivity extends Activity {
         focusInitially(outline);
     }
 
-    private String formatLookupResults(
-            JSONObject result,
-            String strokeQuery,
-            String translationQuery) {
-        JSONArray entries = result.optJSONArray("entries");
+    private String formatStrokeLookupResult(JSONObject result, String query) {
+        String translation = result.optString("translation", "");
+        return translation.isEmpty()
+                ? getString(R.string.no_lookup_results)
+                : result.optString("stroke", query) + " \u2192 " + translation;
+    }
+
+    private String formatReverseLookupResult(JSONObject result, String query) {
+        JSONArray strokes = result.optJSONArray("strokes");
         List<String> rows = new ArrayList<>();
-        for (int index = 0; entries != null && index < entries.length(); index++) {
-            JSONObject entry = entries.optJSONObject(index);
-            if (entry == null) {
-                continue;
-            }
-            String stroke = entry.optString("stroke", "");
-            String translation = entry.optString("translation", "");
-            if (!strokeQuery.isEmpty()
-                    && !stroke.equalsIgnoreCase(strokeQuery)) {
-                continue;
-            }
-            if (!translationQuery.isEmpty()
-                    && !translation.toLowerCase(Locale.ROOT).contains(
-                            translationQuery.toLowerCase(Locale.ROOT)
-                    )) {
-                continue;
-            }
-            String dictionary = entry.optString(
-                    "dictionary",
-                    getString(R.string.unknown_dictionary)
-            );
-            rows.add(stroke + " \u2192 " + translation + "\n"
-                    + getString(R.string.from_dictionary, dictionary));
+        for (int index = 0; strokes != null && index < strokes.length(); index++) {
+            String stroke = strokes.optString(index, "");
+            if (!stroke.isEmpty()) rows.add(stroke + " \u2192 " + query);
         }
-        if (rows.isEmpty()) {
-            return getString(R.string.no_lookup_results);
-        }
-        return android.text.TextUtils.join("\n\n", rows);
+        return rows.isEmpty() ? getString(R.string.no_lookup_results)
+                : android.text.TextUtils.join("\n", rows);
+    }
+
+    private void showStatus(TextView status, int message) {
+        showStatus(status, getString(message));
+    }
+
+    private void showStatus(TextView status, String message) {
+        status.setText(message);
+        revealFocusedView(status);
     }
 
     private void request(
@@ -645,7 +652,10 @@ public class PloverCommandActivity extends Activity {
         status.setPadding(0, dp(14), 0, dp(8));
         status.setTextIsSelectable(true);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        registerFocusable(status);
+        // A selectable TextView makes itself focusable. Keep an empty/live status
+        // out of keyboard traversal; accessibility announces updates via liveRegion.
+        status.setFocusable(false);
+        status.setFocusableInTouchMode(false);
         content.addView(status, matchWrap());
         return status;
     }
@@ -675,7 +685,7 @@ public class PloverCommandActivity extends Activity {
             dictionaryChoices.add(choice);
             choice.setOnClickListener(view -> {
                 dictionaryGroup.check(choice.getId());
-                choice.requestFocus();
+                choice.requestFocusFromTouch();
                 revealFocusedView(choice);
             });
             choice.setOnFocusChangeListener((view, hasFocus) -> {
@@ -750,7 +760,10 @@ public class PloverCommandActivity extends Activity {
             view.setId(View.generateViewId());
         }
         view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
+        // Buttons and radios must remain keyboard-focusable without consuming the
+        // first tap merely to enter touch focus mode. Editors retain their normal
+        // touch-focus behavior.
+        view.setFocusableInTouchMode(view instanceof EditText);
         return view;
     }
 
