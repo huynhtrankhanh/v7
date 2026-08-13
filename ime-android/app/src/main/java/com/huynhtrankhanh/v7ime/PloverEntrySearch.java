@@ -37,7 +37,11 @@ final class PloverEntrySearch {
     }
 
     static String unicodeLookupKey(String value) {
-        return Normalizer.normalize(value, Normalizer.Form.NFC).toLowerCase(Locale.ROOT);
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFC);
+        return Normalizer.normalize(
+                normalized.toLowerCase(Locale.ROOT),
+                Normalizer.Form.NFC
+        );
     }
 
     static boolean shouldRequestNextPage(boolean hasMore, boolean ownsRequest) {

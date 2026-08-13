@@ -5,7 +5,6 @@ import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 public class PloverEntrySearchTest {
     @Test
@@ -35,8 +34,17 @@ public class PloverEntrySearchTest {
 
     @Test
     public void canceledRequestDoesNotScheduleAnotherPage() {
-        assertTrue(PloverEntrySearch.shouldRequestNextPage(true, true));
-        assertFalse(PloverEntrySearch.shouldRequestNextPage(true, false));
+        LookupQueryGeneration generation = new LookupQueryGeneration();
+        int request = generation.submit();
+        int[] requestedPages = {1};
+
+        generation.edited();
+        if (PloverEntrySearch.shouldRequestNextPage(true, generation.owns(request))) {
+            requestedPages[0] += 1;
+        }
+
+        assertEquals(1, requestedPages[0]);
+        assertFalse(generation.owns(request));
         assertFalse(PloverEntrySearch.shouldRequestNextPage(false, true));
     }
 }
