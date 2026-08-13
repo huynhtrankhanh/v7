@@ -29,6 +29,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 public class PloverCommandActivity extends Activity {
     static final String ACTION_LOOKUP =
@@ -216,7 +217,9 @@ public class PloverCommandActivity extends Activity {
             lookupStroke.setEnabled(false);
             lookupTranslation.setEnabled(false);
             showProgress(status);
-            searchExactEntries("stroke", query, (entries, error) -> {
+            BooleanSupplier ownsRequest = () -> queryGeneration.owns(generation)
+                    && query.equals(stroke.getText().toString().trim());
+            searchExactEntries("stroke", query, ownsRequest, (entries, error) -> {
                 if (!queryGeneration.owns(generation)
                         || !query.equals(stroke.getText().toString().trim())) {
                     return;
@@ -238,7 +241,9 @@ public class PloverCommandActivity extends Activity {
             lookupStroke.setEnabled(false);
             lookupTranslation.setEnabled(false);
             showProgress(status);
-            searchExactEntries("output", query, (entries, error) -> {
+            BooleanSupplier ownsRequest = () -> queryGeneration.owns(generation)
+                    && query.equals(translation.getText().toString().trim());
+            searchUnicodeTranslationEntries(query, ownsRequest, (entries, error) -> {
                 if (!queryGeneration.owns(generation)
                         || !query.equals(translation.getText().toString().trim())) {
                     return;
@@ -463,9 +468,9 @@ public class PloverCommandActivity extends Activity {
         focusInitially(outline);
     }
 
-    private void searchExactEntries(
-            String field, String query, EntrySearchCallback callback) {
-        searchExactEntries(field, query, 1, new JSONArray(), callback);
+    private void searchExactEntries(String field, String query,
+            BooleanSupplier ownsRequest, EntrySearchCallback callback) {
+        searchExactEntries(field, query, 1, new JSONArray(), ownsRequest, callback);
     }
 
     private void searchExactEntries(
@@ -473,9 +478,12 @@ public class PloverCommandActivity extends Activity {
             String query,
             int page,
             JSONArray accumulated,
+            BooleanSupplier ownsRequest,
             EntrySearchCallback callback) {
+        if (!ownsRequest.getAsBoolean()) return;
         request("search_entries", PloverEntrySearch.exactParams(field, query, page),
                 (result, error) -> {
+            if (!ownsRequest.getAsBoolean()) return;
             if (!error.isEmpty()) {
                 callback.onResult(accumulated, error);
                 return;
@@ -484,10 +492,46 @@ public class PloverCommandActivity extends Activity {
             for (int index = 0; entries != null && index < entries.length(); index++) {
                 accumulated.put(entries.opt(index));
             }
-            if (result.optBoolean("has_more", false)) {
-                searchExactEntries(field, query, page + 1, accumulated, callback);
+            if (PloverEntrySearch.shouldRequestNextPage(
+                    result.optBoolean("has_more", false), ownsRequest.getAsBoolean())) {
+                searchExactEntries(field, query, page + 1, accumulated,
+                        ownsRequest, callback);
             } else {
                 callback.onResult(accumulated, "");
+            }
+        });
+    }
+
+    private void searchUnicodeTranslationEntries(String query,
+            BooleanSupplier ownsRequest, EntrySearchCallback callback) {
+        listUnicodeTranslationEntries(PloverEntrySearch.unicodeLookupKey(query), 1,
+                new JSONArray(), ownsRequest, callback);
+    }
+
+    private void listUnicodeTranslationEntries(String queryKey, int page,
+            JSONArray matches, BooleanSupplier ownsRequest,
+            EntrySearchCallback callback) {
+        if (!ownsRequest.getAsBoolean()) return;
+        request("list_entries", PloverEntrySearch.listParams(page), (result, error) -> {
+            if (!ownsRequest.getAsBoolean()) return;
+            if (!error.isEmpty()) {
+                callback.onResult(matches, error);
+                return;
+            }
+            JSONArray entries = result.optJSONArray("entries");
+            for (int index = 0; entries != null && index < entries.length(); index++) {
+                JSONObject entry = entries.optJSONObject(index);
+                if (entry != null && queryKey.equals(PloverEntrySearch.unicodeLookupKey(
+                        entry.optString("translation", "")))) {
+                    matches.put(entry);
+                }
+            }
+            if (PloverEntrySearch.shouldRequestNextPage(
+                    result.optBoolean("has_more", false), ownsRequest.getAsBoolean())) {
+                listUnicodeTranslationEntries(queryKey, page + 1, matches,
+                        ownsRequest, callback);
+            } else {
+                callback.onResult(matches, "");
             }
         });
     }
