@@ -788,8 +788,7 @@ public class V7ImeService extends InputMethodService {
                             event.optString("event", ""),
                             event.optString("command", "")
                     ),
-                    event.optString("argument", ""),
-                    event.optString("argument_kind", "")
+                    event.optString("argument", "")
             );
             Intent intent;
             switch (commandEvent.type) {
@@ -818,10 +817,6 @@ public class V7ImeService extends InputMethodService {
                 intent.putExtra(
                         PloverCommandActivity.EXTRA_ARGUMENT,
                         commandEvent.argument
-                );
-                intent.putExtra(
-                        PloverCommandActivity.EXTRA_ARGUMENT_KIND,
-                        commandEvent.argumentKind.name()
                 );
             }
             if (commandEvent.type == PloverCommandEvent.Type.CONFIGURE) {

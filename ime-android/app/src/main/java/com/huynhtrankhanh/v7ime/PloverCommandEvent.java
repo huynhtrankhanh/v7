@@ -1,7 +1,6 @@
 package com.huynhtrankhanh.v7ime;
 
 final class PloverCommandEvent {
-    enum ArgumentKind { STROKE, TRANSLATION, UNSPECIFIED }
     enum Type {
         LOOKUP,
         ADD_TRANSLATION,
@@ -11,18 +10,10 @@ final class PloverCommandEvent {
 
     final Type type;
     final String argument;
-    final ArgumentKind argumentKind;
 
-    PloverCommandEvent(Type type, String argument, String argumentKind) {
+    PloverCommandEvent(Type type, String argument) {
         this.type = type;
         this.argument = argument == null ? "" : argument;
-        this.argumentKind = argumentKindFor(argumentKind);
-    }
-
-    static ArgumentKind argumentKindFor(String value) {
-        if ("stroke".equals(value)) return ArgumentKind.STROKE;
-        if ("translation".equals(value)) return ArgumentKind.TRANSLATION;
-        return ArgumentKind.UNSPECIFIED;
     }
 
     static Type typeFor(String event, String command) {

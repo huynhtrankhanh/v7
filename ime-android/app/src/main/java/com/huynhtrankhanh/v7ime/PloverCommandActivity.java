@@ -36,7 +36,6 @@ public class PloverCommandActivity extends Activity {
     static final String ACTION_ADD_TRANSLATION =
             "com.huynhtrankhanh.v7ime.action.PLOVER_ADD_TRANSLATION";
     static final String EXTRA_ARGUMENT = "plover_argument";
-    static final String EXTRA_ARGUMENT_KIND = "plover_argument_kind";
     private final AtomicInteger requestIds = new AtomicInteger(1);
     private LinearLayout content;
     private FrameLayout rootView;
@@ -124,10 +123,7 @@ public class PloverCommandActivity extends Activity {
         } else {
             setTitle(R.string.lookup_entries_title);
             addDialogTitle(R.string.lookup_entries_title);
-            showLookup(
-                    argument == null ? "" : argument,
-                    argumentKind(intent)
-            );
+            showLookup(argument == null ? "" : argument);
         }
     }
 
@@ -172,19 +168,7 @@ public class PloverCommandActivity extends Activity {
         super.onDestroy();
     }
 
-    private PloverCommandEvent.ArgumentKind argumentKind(Intent intent) {
-        try {
-            return PloverCommandEvent.ArgumentKind.valueOf(
-                    intent.getStringExtra(EXTRA_ARGUMENT_KIND)
-            );
-        } catch (Exception ignored) {
-            return PloverCommandEvent.ArgumentKind.UNSPECIFIED;
-        }
-    }
-
-    private void showLookup(
-            String argument,
-            PloverCommandEvent.ArgumentKind argumentKind) {
+    private void showLookup(String argument) {
         addDescription(R.string.lookup_entries_description);
         EditText stroke = addField(
                 R.string.stroke_label,
@@ -199,14 +183,10 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
-        // Untyped command arguments are inherently ambiguous (for example HAT
-        // can be both text and a stroke). Only explicit protocol metadata may
-        // select Raw outline mode; otherwise preserve the argument as text.
-        if (argumentKind == PloverCommandEvent.ArgumentKind.STROKE) {
-            stroke.setText(argument);
-        } else {
-            translation.setText(argument);
-        }
+        // The pinned protocol has one untyped argument. Preserve it as text:
+        // HAT, for example, cannot be classified reliably as either ordinary
+        // text or a steno outline without protocol type metadata.
+        translation.setText(argument);
 
         TextView status = addStatus();
         LookupQueryGeneration queryGeneration = new LookupQueryGeneration();
@@ -478,24 +458,23 @@ public class PloverCommandActivity extends Activity {
                     updateAddEnabled.run();
                     return;
                 }
+                Runnable cancelReplacement = () -> {
+                    submitting[0] = false;
+                    showTerminalStatus(status, R.string.translation_not_replaced);
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
+                };
                 new AlertDialog.Builder(this)
                         .setTitle(R.string.replace_translation_title)
                         .setMessage(getString(
                                 R.string.replace_translation_message,
                                 stroke, selected, existing, output
                         ))
-                        .setNegativeButton(R.string.cancel, (dialog, which) -> {
-                            submitting[0] = false;
-                            showTerminalStatus(status, R.string.translation_not_replaced);
-                            revealFocusedView(status);
-                            updateAddEnabled.run();
-                        })
+                        .setNegativeButton(R.string.cancel, (dialog, which) ->
+                                cancelReplacement.run())
                         .setPositiveButton(R.string.replace_translation, (dialog, which) ->
                                 mutation.run())
-                        .setOnCancelListener(dialog -> {
-                            submitting[0] = false;
-                            updateAddEnabled.run();
-                        })
+                        .setOnCancelListener(dialog -> cancelReplacement.run())
                         .show();
             });
         });
