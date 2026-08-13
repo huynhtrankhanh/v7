@@ -216,17 +216,7 @@ public class PloverCommandActivity extends Activity {
             lookupStroke.setEnabled(false);
             lookupTranslation.setEnabled(false);
             showProgress(status);
-            JSONObject params = new JSONObject();
-            try {
-                params.put("stroke", query);
-            } catch (Exception error) {
-                showTerminalStatus(status, messageFor(error));
-                queryGeneration.completed(generation);
-                lookupStroke.setEnabled(true);
-                lookupTranslation.setEnabled(true);
-                return;
-            }
-            request("lookup", params, (result, error) -> {
+            searchExactEntries("stroke", query, (entries, error) -> {
                 if (!queryGeneration.owns(generation)
                         || !query.equals(stroke.getText().toString().trim())) {
                     return;
@@ -235,7 +225,7 @@ public class PloverCommandActivity extends Activity {
                 lookupStroke.setEnabled(true);
                 lookupTranslation.setEnabled(true);
                 showTerminalStatus(status, error.isEmpty()
-                        ? formatStrokeLookupResult(result, query) : error);
+                        ? formatEntrySearchResult(entries) : error);
             });
         });
         lookupTranslation.setOnClickListener(view -> {
@@ -248,17 +238,7 @@ public class PloverCommandActivity extends Activity {
             lookupStroke.setEnabled(false);
             lookupTranslation.setEnabled(false);
             showProgress(status);
-            JSONObject params = new JSONObject();
-            try {
-                params.put("translation", query);
-            } catch (Exception error) {
-                showTerminalStatus(status, messageFor(error));
-                queryGeneration.completed(generation);
-                lookupStroke.setEnabled(true);
-                lookupTranslation.setEnabled(true);
-                return;
-            }
-            request("reverse_lookup", params, (result, error) -> {
+            searchExactEntries("output", query, (entries, error) -> {
                 if (!queryGeneration.owns(generation)
                         || !query.equals(translation.getText().toString().trim())) {
                     return;
@@ -267,7 +247,7 @@ public class PloverCommandActivity extends Activity {
                 lookupStroke.setEnabled(true);
                 lookupTranslation.setEnabled(true);
                 showTerminalStatus(status, error.isEmpty()
-                        ? formatReverseLookupResult(result, query) : error);
+                        ? formatEntrySearchResult(entries) : error);
             });
         });
         submitOnEnter(stroke, lookupStroke);
@@ -483,23 +463,46 @@ public class PloverCommandActivity extends Activity {
         focusInitially(outline);
     }
 
-    private String formatStrokeLookupResult(JSONObject result, String query) {
-        Object rawTranslation = result.opt("translation");
-        if (PloverLookupResult.isMissingTranslation(rawTranslation)) {
-            return getString(R.string.no_lookup_results);
-        }
-        return result.optString("stroke", query) + " \u2192 " + rawTranslation;
+    private void searchExactEntries(
+            String field, String query, EntrySearchCallback callback) {
+        searchExactEntries(field, query, 1, new JSONArray(), callback);
     }
 
-    private String formatReverseLookupResult(JSONObject result, String query) {
-        JSONArray strokes = result.optJSONArray("strokes");
+    private void searchExactEntries(
+            String field,
+            String query,
+            int page,
+            JSONArray accumulated,
+            EntrySearchCallback callback) {
+        request("search_entries", PloverEntrySearch.exactParams(field, query, page),
+                (result, error) -> {
+            if (!error.isEmpty()) {
+                callback.onResult(accumulated, error);
+                return;
+            }
+            JSONArray entries = result.optJSONArray("entries");
+            for (int index = 0; entries != null && index < entries.length(); index++) {
+                accumulated.put(entries.opt(index));
+            }
+            if (result.optBoolean("has_more", false)) {
+                searchExactEntries(field, query, page + 1, accumulated, callback);
+            } else {
+                callback.onResult(accumulated, "");
+            }
+        });
+    }
+
+    private String formatEntrySearchResult(JSONArray entries) {
         List<String> rows = new ArrayList<>();
-        for (int index = 0; strokes != null && index < strokes.length(); index++) {
-            String stroke = strokes.optString(index, "");
-            if (!stroke.isEmpty()) rows.add(stroke + " \u2192 " + query);
+        for (int index = 0; index < entries.length(); index++) {
+            JSONObject entry = entries.optJSONObject(index);
+            if (entry == null) continue;
+            rows.add(entry.optString("stroke", "") + " \u2192 "
+                    + entry.optString("translation", "") + "\n"
+                    + entry.optString("dictionary", ""));
         }
         return rows.isEmpty() ? getString(R.string.no_lookup_results)
-                : android.text.TextUtils.join("\n", rows);
+                : android.text.TextUtils.join("\n\n", rows);
     }
 
     private void showProgress(TextView status) {
@@ -926,5 +929,9 @@ public class PloverCommandActivity extends Activity {
 
     private interface ResultCallback {
         void onResult(JSONObject result, String error);
+    }
+
+    private interface EntrySearchCallback {
+        void onResult(JSONArray entries, String error);
     }
 }
