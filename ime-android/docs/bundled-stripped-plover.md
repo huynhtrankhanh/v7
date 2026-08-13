@@ -51,8 +51,10 @@ that currently owns the editor and disappears completely when closed.
 
 Hardware-keyboard users can cycle every enabled command control with Tab and
 Shift-Tab, including populated selectable results/errors and wraparound, while
-disabled controls are skipped. Focus starts in the first editable field,
-focused controls are scrolled into view, Enter retains the existing submit
+disabled controls are skipped. Focus starts in the populated editor when the
+command identifies its argument kind; untyped arguments populate Translation,
+and an empty argument starts in Stroke. Focused controls are scrolled into view,
+Enter retains the existing submit
 behavior, and Escape closes the dialog.
 These rules are implemented natively so they remain consistent when the soft
 keyboard is hidden. Writable dictionaries are visible numbered radio choices;

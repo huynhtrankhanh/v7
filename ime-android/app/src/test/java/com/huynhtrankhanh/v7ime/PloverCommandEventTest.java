@@ -6,6 +6,21 @@ import static org.junit.Assert.assertEquals;
 
 public class PloverCommandEventTest {
     @Test
+    public void parsesExplicitArgumentKindsAndKeepsUntypedArgumentsUnspecified() {
+        assertEquals(
+                PloverCommandEvent.ArgumentKind.STROKE,
+                PloverCommandEvent.argumentKindFor("stroke")
+        );
+        assertEquals(
+                PloverCommandEvent.ArgumentKind.TRANSLATION,
+                PloverCommandEvent.argumentKindFor("translation")
+        );
+        assertEquals(
+                PloverCommandEvent.ArgumentKind.UNSPECIFIED,
+                PloverCommandEvent.argumentKindFor("")
+        );
+    }
+    @Test
     public void recognizesEverySupportedEventName() {
         assertEquals(
                 PloverCommandEvent.Type.LOOKUP,

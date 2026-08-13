@@ -105,7 +105,10 @@ dialog. A later command refreshes that activity in place; it cannot leave old
 dialog tasks behind for Android to resurface. The full, wrapping title is part
 of the dialog content rather than a truncating platform title bar.
 
-Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
+Focus starts in the editor populated by explicitly typed command metadata;
+untyped lookup arguments conservatively populate Translation because text such
+as `HAT` is inherently ambiguous. With no argument, focus starts in Stroke.
+`Tab` and `Shift+Tab` move forward
 and backward through the editable fields, the dictionary radio group as one
 tab stop, populated selectable results/errors, the primary action, and Close
 button with wraparound. Arrow keys move and select within the radio group;

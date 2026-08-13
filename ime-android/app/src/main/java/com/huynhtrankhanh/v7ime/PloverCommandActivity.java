@@ -36,6 +36,7 @@ public class PloverCommandActivity extends Activity {
     static final String ACTION_ADD_TRANSLATION =
             "com.huynhtrankhanh.v7ime.action.PLOVER_ADD_TRANSLATION";
     static final String EXTRA_ARGUMENT = "plover_argument";
+    static final String EXTRA_ARGUMENT_KIND = "plover_argument_kind";
     private final AtomicInteger requestIds = new AtomicInteger(1);
     private LinearLayout content;
     private FrameLayout rootView;
@@ -123,7 +124,10 @@ public class PloverCommandActivity extends Activity {
         } else {
             setTitle(R.string.lookup_entries_title);
             addDialogTitle(R.string.lookup_entries_title);
-            showLookup(argument == null ? "" : argument);
+            showLookup(
+                    argument == null ? "" : argument,
+                    argumentKind(intent)
+            );
         }
     }
 
@@ -168,7 +172,19 @@ public class PloverCommandActivity extends Activity {
         super.onDestroy();
     }
 
-    private void showLookup(String argument) {
+    private PloverCommandEvent.ArgumentKind argumentKind(Intent intent) {
+        try {
+            return PloverCommandEvent.ArgumentKind.valueOf(
+                    intent.getStringExtra(EXTRA_ARGUMENT_KIND)
+            );
+        } catch (Exception ignored) {
+            return PloverCommandEvent.ArgumentKind.UNSPECIFIED;
+        }
+    }
+
+    private void showLookup(
+            String argument,
+            PloverCommandEvent.ArgumentKind argumentKind) {
         addDescription(R.string.lookup_entries_description);
         EditText stroke = addField(
                 R.string.stroke_label,
@@ -183,7 +199,10 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
-        if (PloverOutlineParser.isCanonicalOutline(argument)) {
+        // Untyped command arguments are inherently ambiguous (for example HAT
+        // can be both text and a stroke). Only explicit protocol metadata may
+        // select Raw outline mode; otherwise preserve the argument as text.
+        if (argumentKind == PloverCommandEvent.ArgumentKind.STROKE) {
             stroke.setText(argument);
         } else {
             translation.setText(argument);
@@ -191,19 +210,22 @@ public class PloverCommandActivity extends Activity {
 
         TextView status = addStatus();
         LookupQueryGeneration queryGeneration = new LookupQueryGeneration();
+        Button lookupStroke = addButton(R.string.lookup_stroke_action);
+        Button lookupTranslation = addButton(R.string.lookup_translation_action);
         TextWatcher invalidateLookup = new TextWatcher() {
             @Override public void beforeTextChanged(
                     CharSequence value, int start, int count, int after) {}
             @Override public void onTextChanged(
                     CharSequence value, int start, int before, int count) {
                 queryGeneration.edited();
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
                 clearStatus(status);
             }
             @Override public void afterTextChanged(Editable value) {}
         };
         stroke.addTextChangedListener(invalidateLookup);
         translation.addTextChangedListener(invalidateLookup);
-        Button lookupStroke = addButton(R.string.lookup_stroke_action);
         lookupStroke.setOnClickListener(view -> {
             String query = stroke.getText().toString().trim();
             if (query.isEmpty()) {
@@ -212,26 +234,30 @@ public class PloverCommandActivity extends Activity {
             }
             int generation = queryGeneration.submit();
             lookupStroke.setEnabled(false);
+            lookupTranslation.setEnabled(false);
             showProgress(status);
             JSONObject params = new JSONObject();
             try {
                 params.put("stroke", query);
             } catch (Exception error) {
                 showTerminalStatus(status, messageFor(error));
+                queryGeneration.completed(generation);
                 lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
                 return;
             }
             request("lookup", params, (result, error) -> {
-                lookupStroke.setEnabled(true);
                 if (!queryGeneration.owns(generation)
                         || !query.equals(stroke.getText().toString().trim())) {
                     return;
                 }
+                queryGeneration.completed(generation);
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
                 showTerminalStatus(status, error.isEmpty()
                         ? formatStrokeLookupResult(result, query) : error);
             });
         });
-        Button lookupTranslation = addButton(R.string.lookup_translation_action);
         lookupTranslation.setOnClickListener(view -> {
             String query = translation.getText().toString().trim();
             if (query.isEmpty()) {
@@ -239,6 +265,7 @@ public class PloverCommandActivity extends Activity {
                 return;
             }
             int generation = queryGeneration.submit();
+            lookupStroke.setEnabled(false);
             lookupTranslation.setEnabled(false);
             showProgress(status);
             JSONObject params = new JSONObject();
@@ -246,15 +273,19 @@ public class PloverCommandActivity extends Activity {
                 params.put("translation", query);
             } catch (Exception error) {
                 showTerminalStatus(status, messageFor(error));
+                queryGeneration.completed(generation);
+                lookupStroke.setEnabled(true);
                 lookupTranslation.setEnabled(true);
                 return;
             }
             request("reverse_lookup", params, (result, error) -> {
-                lookupTranslation.setEnabled(true);
                 if (!queryGeneration.owns(generation)
                         || !query.equals(translation.getText().toString().trim())) {
                     return;
                 }
+                queryGeneration.completed(generation);
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
                 showTerminalStatus(status, error.isEmpty()
                         ? formatReverseLookupResult(result, query) : error);
             });
@@ -326,10 +357,10 @@ public class PloverCommandActivity extends Activity {
         dictionaryGroup.setOnCheckedChangeListener((group, checkedId) ->
                 updateAddEnabled.run());
 
-        status.setText(R.string.loading_dictionaries);
+        showProgress(status, R.string.loading_dictionaries);
         request("get_dictionary_state", new JSONObject(), (result, error) -> {
             if (!error.isEmpty()) {
-                status.setText(error);
+                showTerminalStatus(status, error);
                 return;
             }
             JSONArray state = result.optJSONArray("dictionaries");
@@ -349,7 +380,7 @@ public class PloverCommandActivity extends Activity {
             dictionaryLabel.setEnabled(available);
             dictionariesLoaded[0] = available;
             updateAddEnabled.run();
-            status.setText(
+            showTerminalStatus(status,
                     available
                             ? R.string.choose_dictionary_and_add
                             : R.string.no_writable_dictionaries
@@ -360,13 +391,13 @@ public class PloverCommandActivity extends Activity {
             String stroke = outline.getText().toString().trim();
             String output = translation.getText().toString();
             if (stroke.isEmpty() || output.isEmpty()) {
-                status.setText(R.string.translation_fields_required);
+                showTerminalStatus(status, R.string.translation_fields_required);
                 return;
             }
             int selectedPosition = selectedDictionaryIndex();
             if (selectedPosition < 0
                     || selectedPosition >= writableDictionaries.size()) {
-                status.setText(R.string.no_writable_dictionaries);
+                showTerminalStatus(status, R.string.no_writable_dictionaries);
                 return;
             }
             String selected = writableDictionaries.get(selectedPosition);
@@ -374,7 +405,7 @@ public class PloverCommandActivity extends Activity {
                     + output + "\u0000" + selected;
             submitting[0] = true;
             updateAddEnabled.run();
-            status.setText(R.string.checking_existing_translation);
+            showProgress(status, R.string.checking_existing_translation);
             revealFocusedView(status);
             JSONObject params = new JSONObject();
             try {
@@ -382,24 +413,24 @@ public class PloverCommandActivity extends Activity {
                 params.put("stroke", stroke);
                 params.put("translation", output);
             } catch (Exception error) {
-                status.setText(messageFor(error));
+                showTerminalStatus(status, messageFor(error));
                 submitting[0] = false;
                 updateAddEnabled.run();
                 return;
             }
             class Mutation {
                 void run() {
-                    status.setText(R.string.adding_translation);
+                    showProgress(status, R.string.adding_translation);
                     revealFocusedView(status);
                     request("replace_entry", params, (result, error) -> {
                         submitting[0] = false;
                         if (!error.isEmpty()) {
-                            status.setText(error);
+                            showTerminalStatus(status, error);
                         } else if (result.optBoolean("conflict", false)) {
-                            status.setText(R.string.translation_changed_before_replace);
+                            showTerminalStatus(status, R.string.translation_changed_before_replace);
                         } else {
                             completedSubmission[0] = submittedSignature;
-                            status.setText(getString(
+                            showTerminalStatus(status, getString(
                                     R.string.translation_added, stroke, selected
                             ));
                         }
@@ -412,7 +443,7 @@ public class PloverCommandActivity extends Activity {
             request("add_entry_safely", params, (result, error) -> {
                 if (!error.isEmpty()) {
                     submitting[0] = false;
-                    status.setText(error);
+                    showTerminalStatus(status, error);
                     revealFocusedView(status);
                     updateAddEnabled.run();
                     return;
@@ -420,7 +451,7 @@ public class PloverCommandActivity extends Activity {
                 if (!result.optBoolean("conflict", false)) {
                     submitting[0] = false;
                     completedSubmission[0] = submittedSignature;
-                    status.setText(getString(
+                    showTerminalStatus(status, getString(
                             R.string.translation_added,
                             result.optString("stroke", stroke), selected
                     ));
@@ -433,14 +464,14 @@ public class PloverCommandActivity extends Activity {
                     params.put("expected_translation", existing);
                 } catch (Exception exception) {
                     submitting[0] = false;
-                    status.setText(messageFor(exception));
+                    showTerminalStatus(status, messageFor(exception));
                     updateAddEnabled.run();
                     return;
                 }
                 if (existing.equals(output)) {
                     submitting[0] = false;
                     completedSubmission[0] = submittedSignature;
-                    status.setText(getString(
+                    showTerminalStatus(status, getString(
                             R.string.translation_already_exists, stroke, selected
                     ));
                     revealFocusedView(status);
@@ -455,7 +486,7 @@ public class PloverCommandActivity extends Activity {
                         ))
                         .setNegativeButton(R.string.cancel, (dialog, which) -> {
                             submitting[0] = false;
-                            status.setText(R.string.translation_not_replaced);
+                            showTerminalStatus(status, R.string.translation_not_replaced);
                             revealFocusedView(status);
                             updateAddEnabled.run();
                         })
@@ -493,8 +524,12 @@ public class PloverCommandActivity extends Activity {
     }
 
     private void showProgress(TextView status) {
+        showProgress(status, R.string.looking_up_entries);
+    }
+
+    private void showProgress(TextView status, int message) {
         status.setFocusable(false);
-        status.setText(R.string.looking_up_entries);
+        status.setText(message);
         revealFocusedView(status);
     }
 
