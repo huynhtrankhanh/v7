@@ -63,12 +63,12 @@ keyboard is hidden. Writable dictionaries are visible numbered radio choices;
 bare number keys select one while the choice list has focus, and Alt plus that
 number selects it from anywhere in the form.
 
-Lookup enumerates stored entries in bounded pages and displays each supplying
-dictionary. Stroke matching uses the runtime's exact search. Translation
-matching compares NFC-normalized, Unicode-lowercased keys on Android so
-Vietnamese case variants do not depend on SQLite's ASCII-only `NOCASE`
-collation. Editing either field cancels ownership of the current page chain;
-an obsolete response cannot schedule another page or replace the result pane.
+Lookup uses the runtime's bounded, paginated exact entry search and displays
+each supplying dictionary. Translation lookup does not request sentence
+capitalization: non-ASCII text is searched as entered because the pinned
+runtime does not expose Unicode case-folded indexed search. Editing either
+field cancels ownership of the current page chain; an obsolete response cannot
+schedule another page or replace the result pane.
 
 Caps Lock follows the physical keyboard's current lock state throughout these
 flows. Candidate selection preserves the casing assigned when each piece of

@@ -8,10 +8,11 @@ import static org.junit.Assert.assertFalse;
 
 public class PloverEntrySearchTest {
     @Test
-    public void entryListingUsesTheLargestProtocolPage() {
-        JSONObject params = PloverEntrySearch.listParams(1);
+    public void translationUsesBoundedExactSearch() {
+        JSONObject params = PloverEntrySearch.exactParams("output", "đẹp", 1);
 
-        assertEquals("enumerate_entries", PloverEntrySearch.ENUMERATE_METHOD);
+        assertEquals("đẹp", params.optString("output"));
+        assertEquals("exact", params.optString("match"));
         assertEquals(1, params.optInt("page"));
         assertEquals(500, params.optInt("page_size"));
     }
@@ -23,14 +24,6 @@ public class PloverEntrySearchTest {
         assertEquals("TEFT", params.optString("stroke"));
         assertEquals("exact", params.optString("match"));
         assertEquals(2, params.optInt("page"));
-    }
-
-    @Test
-    public void unicodeLookupKeyFoldsVietnameseCaseAndNormalizesCombiningMarks() {
-        assertEquals(PloverEntrySearch.unicodeLookupKey("đẹp"),
-                PloverEntrySearch.unicodeLookupKey("Đẹp"));
-        assertEquals(PloverEntrySearch.unicodeLookupKey("áo"),
-                PloverEntrySearch.unicodeLookupKey("A\u0301o"));
     }
 
     @Test

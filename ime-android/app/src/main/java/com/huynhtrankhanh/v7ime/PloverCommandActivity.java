@@ -182,7 +182,6 @@ public class PloverCommandActivity extends Activity {
                 R.string.translation_label,
                 R.string.translation_hint,
                 InputType.TYPE_CLASS_TEXT
-                        | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
         // The pinned protocol has one untyped argument. Preserve it as text:
         // HAT, for example, cannot be classified reliably as either ordinary
@@ -243,7 +242,7 @@ public class PloverCommandActivity extends Activity {
             showProgress(status);
             BooleanSupplier ownsRequest = () -> queryGeneration.owns(generation)
                     && query.equals(translation.getText().toString().trim());
-            searchUnicodeTranslationEntries(query, ownsRequest, (entries, error) -> {
+            searchExactEntries("output", query, ownsRequest, (entries, error) -> {
                 if (!queryGeneration.owns(generation)
                         || !query.equals(translation.getText().toString().trim())) {
                     return;
@@ -498,41 +497,6 @@ public class PloverCommandActivity extends Activity {
                         ownsRequest, callback);
             } else {
                 callback.onResult(accumulated, "");
-            }
-        });
-    }
-
-    private void searchUnicodeTranslationEntries(String query,
-            BooleanSupplier ownsRequest, EntrySearchCallback callback) {
-        listUnicodeTranslationEntries(PloverEntrySearch.unicodeLookupKey(query), 1,
-                new JSONArray(), ownsRequest, callback);
-    }
-
-    private void listUnicodeTranslationEntries(String queryKey, int page,
-            JSONArray matches, BooleanSupplier ownsRequest,
-            EntrySearchCallback callback) {
-        if (!ownsRequest.getAsBoolean()) return;
-        request(PloverEntrySearch.ENUMERATE_METHOD,
-                PloverEntrySearch.listParams(page), (result, error) -> {
-            if (!ownsRequest.getAsBoolean()) return;
-            if (!error.isEmpty()) {
-                callback.onResult(matches, error);
-                return;
-            }
-            JSONArray entries = result.optJSONArray("entries");
-            for (int index = 0; entries != null && index < entries.length(); index++) {
-                JSONObject entry = entries.optJSONObject(index);
-                if (entry != null && queryKey.equals(PloverEntrySearch.unicodeLookupKey(
-                        entry.optString("translation", "")))) {
-                    matches.put(entry);
-                }
-            }
-            if (PloverEntrySearch.shouldRequestNextPage(
-                    result.optBoolean("has_more", false), ownsRequest.getAsBoolean())) {
-                listUnicodeTranslationEntries(queryKey, page + 1, matches,
-                        ownsRequest, callback);
-            } else {
-                callback.onResult(matches, "");
             }
         });
     }
