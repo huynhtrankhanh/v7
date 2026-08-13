@@ -183,39 +183,51 @@ public class PloverCommandActivity extends Activity {
                 InputType.TYPE_CLASS_TEXT
                         | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
-        if (looksLikeOutline(argument)) {
+        if (PloverOutlineParser.isCanonicalOutline(argument)) {
             stroke.setText(argument);
         } else {
             translation.setText(argument);
         }
 
         TextView status = addStatus();
-        final int[] queryGeneration = {0};
+        LookupQueryGeneration queryGeneration = new LookupQueryGeneration();
+        TextWatcher invalidateLookup = new TextWatcher() {
+            @Override public void beforeTextChanged(
+                    CharSequence value, int start, int count, int after) {}
+            @Override public void onTextChanged(
+                    CharSequence value, int start, int before, int count) {
+                queryGeneration.edited();
+                clearStatus(status);
+            }
+            @Override public void afterTextChanged(Editable value) {}
+        };
+        stroke.addTextChangedListener(invalidateLookup);
+        translation.addTextChangedListener(invalidateLookup);
         Button lookupStroke = addButton(R.string.lookup_stroke_action);
         lookupStroke.setOnClickListener(view -> {
             String query = stroke.getText().toString().trim();
             if (query.isEmpty()) {
-                showStatus(status, R.string.lookup_stroke_required);
+                showTerminalStatus(status, R.string.lookup_stroke_required);
                 return;
             }
-            int generation = ++queryGeneration[0];
+            int generation = queryGeneration.submit();
             lookupStroke.setEnabled(false);
-            showStatus(status, R.string.looking_up_entries);
+            showProgress(status);
             JSONObject params = new JSONObject();
             try {
                 params.put("stroke", query);
             } catch (Exception error) {
-                showStatus(status, messageFor(error));
+                showTerminalStatus(status, messageFor(error));
                 lookupStroke.setEnabled(true);
                 return;
             }
             request("lookup", params, (result, error) -> {
                 lookupStroke.setEnabled(true);
-                if (generation != queryGeneration[0]
+                if (!queryGeneration.owns(generation)
                         || !query.equals(stroke.getText().toString().trim())) {
                     return;
                 }
-                showStatus(status, error.isEmpty()
+                showTerminalStatus(status, error.isEmpty()
                         ? formatStrokeLookupResult(result, query) : error);
             });
         });
@@ -223,27 +235,27 @@ public class PloverCommandActivity extends Activity {
         lookupTranslation.setOnClickListener(view -> {
             String query = translation.getText().toString().trim();
             if (query.isEmpty()) {
-                showStatus(status, R.string.lookup_translation_required);
+                showTerminalStatus(status, R.string.lookup_translation_required);
                 return;
             }
-            int generation = ++queryGeneration[0];
+            int generation = queryGeneration.submit();
             lookupTranslation.setEnabled(false);
-            showStatus(status, R.string.looking_up_entries);
+            showProgress(status);
             JSONObject params = new JSONObject();
             try {
                 params.put("translation", query);
             } catch (Exception error) {
-                showStatus(status, messageFor(error));
+                showTerminalStatus(status, messageFor(error));
                 lookupTranslation.setEnabled(true);
                 return;
             }
             request("reverse_lookup", params, (result, error) -> {
                 lookupTranslation.setEnabled(true);
-                if (generation != queryGeneration[0]
+                if (!queryGeneration.owns(generation)
                         || !query.equals(translation.getText().toString().trim())) {
                     return;
                 }
-                showStatus(status, error.isEmpty()
+                showTerminalStatus(status, error.isEmpty()
                         ? formatReverseLookupResult(result, query) : error);
             });
         });
@@ -462,10 +474,11 @@ public class PloverCommandActivity extends Activity {
     }
 
     private String formatStrokeLookupResult(JSONObject result, String query) {
-        String translation = result.optString("translation", "");
-        return translation.isEmpty()
-                ? getString(R.string.no_lookup_results)
-                : result.optString("stroke", query) + " \u2192 " + translation;
+        Object rawTranslation = result.opt("translation");
+        if (PloverLookupResult.isMissingTranslation(rawTranslation)) {
+            return getString(R.string.no_lookup_results);
+        }
+        return result.optString("stroke", query) + " \u2192 " + rawTranslation;
     }
 
     private String formatReverseLookupResult(JSONObject result, String query) {
@@ -479,13 +492,25 @@ public class PloverCommandActivity extends Activity {
                 : android.text.TextUtils.join("\n", rows);
     }
 
-    private void showStatus(TextView status, int message) {
-        showStatus(status, getString(message));
+    private void showProgress(TextView status) {
+        status.setFocusable(false);
+        status.setText(R.string.looking_up_entries);
+        revealFocusedView(status);
     }
 
-    private void showStatus(TextView status, String message) {
+    private void showTerminalStatus(TextView status, int message) {
+        showTerminalStatus(status, getString(message));
+    }
+
+    private void showTerminalStatus(TextView status, String message) {
         status.setText(message);
+        status.setFocusable(true);
         revealFocusedView(status);
+    }
+
+    private void clearStatus(TextView status) {
+        status.setText("");
+        status.setFocusable(false);
     }
 
     private void request(
@@ -652,10 +677,12 @@ public class PloverCommandActivity extends Activity {
         status.setPadding(0, dp(14), 0, dp(8));
         status.setTextIsSelectable(true);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        // A selectable TextView makes itself focusable. Keep an empty/live status
-        // out of keyboard traversal; accessibility announces updates via liveRegion.
+        // Register the result at its documented position, but only terminal,
+        // selectable content enables it as a Tab stop.
         status.setFocusable(false);
         status.setFocusableInTouchMode(false);
+        registerFocusable(status);
+        status.setFocusable(false);
         content.addView(status, matchWrap());
         return status;
     }
@@ -763,7 +790,11 @@ public class PloverCommandActivity extends Activity {
         // Buttons and radios must remain keyboard-focusable without consuming the
         // first tap merely to enter touch focus mode. Editors retain their normal
         // touch-focus behavior.
-        view.setFocusableInTouchMode(view instanceof EditText);
+        view.setFocusableInTouchMode(
+                CommandControlFocusPolicy.focusableInTouchMode(
+                        view instanceof EditText
+                )
+        );
         return view;
     }
 
@@ -862,12 +893,6 @@ public class PloverCommandActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
-    }
-
-    private static boolean looksLikeOutline(String value) {
-        return value != null
-                && !value.isEmpty()
-                && value.matches("[#STKPWHRAO*EUFRPBLGTSDZ\\-/]+");
     }
 
     private static String messageFor(Exception error) {

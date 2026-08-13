@@ -107,7 +107,7 @@ of the dialog content rather than a truncating platform title bar.
 
 Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
 and backward through the editable fields, the dictionary radio group as one
-tab stop, the selectable result/status region, the primary action, and Close
+tab stop, populated selectable results/errors, the primary action, and Close
 button with wraparound. Arrow keys move and select within the radio group;
 disabled controls are skipped and newly focused controls are
 scrolled into view. Labels are linked to their fields and changing status text

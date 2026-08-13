@@ -50,7 +50,7 @@ pulled underneath the modal. The transient dialog appears over the application
 that currently owns the editor and disappears completely when closed.
 
 Hardware-keyboard users can cycle every enabled command control with Tab and
-Shift-Tab, including the selectable result/status region and wraparound, while
+Shift-Tab, including populated selectable results/errors and wraparound, while
 disabled controls are skipped. Focus starts in the first editable field,
 focused controls are scrolled into view, Enter retains the existing submit
 behavior, and Escape closes the dialog.

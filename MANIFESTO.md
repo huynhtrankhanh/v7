@@ -1,6 +1,6 @@
 # Android IME native popup behavior
 
-Native Stripped Plover command dialogs support touch and complete hardware-keyboard navigation. Tab and Shift+Tab cycle through every field, status region, dictionary choice, and action; Escape closes the dialog; Enter submits; and numbered shortcuts plus radio-button arrow navigation select writable dictionaries.
+Native Stripped Plover command dialogs support touch and complete hardware-keyboard navigation. Tab and Shift+Tab cycle through every field, populated result/error region, dictionary choice, and action; Escape closes the dialog; Enter submits; and numbered shortcuts plus radio-button arrow navigation select writable dictionaries.
 
 Dictionary choices use full-width 48 dp targets and select on the first tap. When focus leaves an editor for a radio button or action, the IME relinquishes dialog-navigation keys to the native activity instead of interpreting them through the former Raw outline editor. V7's Ctrl+Shift mode chord remains owned by the IME. In add-translation, Enter advances from outline to translation and then submits.
 
