@@ -512,7 +512,8 @@ public class PloverCommandActivity extends Activity {
             JSONArray matches, BooleanSupplier ownsRequest,
             EntrySearchCallback callback) {
         if (!ownsRequest.getAsBoolean()) return;
-        request("list_entries", PloverEntrySearch.listParams(page), (result, error) -> {
+        request(PloverEntrySearch.ENUMERATE_METHOD,
+                PloverEntrySearch.listParams(page), (result, error) -> {
             if (!ownsRequest.getAsBoolean()) return;
             if (!error.isEmpty()) {
                 callback.onResult(matches, error);

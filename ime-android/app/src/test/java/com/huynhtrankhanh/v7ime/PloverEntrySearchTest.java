@@ -11,6 +11,7 @@ public class PloverEntrySearchTest {
     public void entryListingUsesTheLargestProtocolPage() {
         JSONObject params = PloverEntrySearch.listParams(1);
 
+        assertEquals("enumerate_entries", PloverEntrySearch.ENUMERATE_METHOD);
         assertEquals(1, params.optInt("page"));
         assertEquals(500, params.optInt("page_size"));
     }

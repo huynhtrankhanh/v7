@@ -6,6 +6,7 @@ import java.text.Normalizer;
 import java.util.Locale;
 
 final class PloverEntrySearch {
+    static final String ENUMERATE_METHOD = "enumerate_entries";
     static final int PAGE_SIZE = 500;
 
     private PloverEntrySearch() {}
