@@ -50,14 +50,25 @@ pulled underneath the modal. The transient dialog appears over the application
 that currently owns the editor and disappears completely when closed.
 
 Hardware-keyboard users can cycle every enabled command control with Tab and
-Shift-Tab, including the selectable result/status region and wraparound, while
-disabled controls are skipped. Focus starts in the first editable field,
-focused controls are scrolled into view, Enter retains the existing submit
+Shift-Tab, including populated selectable results/errors and wraparound, while
+disabled controls are skipped. The pinned command protocol supplies one
+untyped argument. Because values such as `HAT` can be either ordinary text or
+a valid outline, V7 does not guess: all command arguments populate Translation,
+while an empty argument starts in Stroke. Focus starts in that initial editor.
+Focused controls are scrolled into view,
+Enter retains the existing submit
 behavior, and Escape closes the dialog.
 These rules are implemented natively so they remain consistent when the soft
 keyboard is hidden. Writable dictionaries are visible numbered radio choices;
 bare number keys select one while the choice list has focus, and Alt plus that
 number selects it from anywhere in the form.
+
+Lookup uses the runtime's bounded, paginated exact entry search and displays
+each supplying dictionary. Translation lookup does not request sentence
+capitalization: non-ASCII text is searched as entered because the pinned
+runtime does not expose Unicode case-folded indexed search. Editing either
+field cancels ownership of the current page chain; an obsolete response cannot
+schedule another page or replace the result pane.
 
 Caps Lock follows the physical keyboard's current lock state throughout these
 flows. Candidate selection preserves the casing assigned when each piece of

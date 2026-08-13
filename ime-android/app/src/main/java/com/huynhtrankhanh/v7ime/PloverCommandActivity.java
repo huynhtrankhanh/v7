@@ -28,8 +28,8 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 public class PloverCommandActivity extends Activity {
     static final String ACTION_LOOKUP =
@@ -182,59 +182,82 @@ public class PloverCommandActivity extends Activity {
                 R.string.translation_label,
                 R.string.translation_hint,
                 InputType.TYPE_CLASS_TEXT
-                        | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
         );
-        if (looksLikeOutline(argument)) {
-            stroke.setText(argument);
-        } else {
-            translation.setText(argument);
-        }
+        // The pinned protocol has one untyped argument. Preserve it as text:
+        // HAT, for example, cannot be classified reliably as either ordinary
+        // text or a steno outline without protocol type metadata.
+        translation.setText(argument);
 
         TextView status = addStatus();
-        Button lookup = addButton(R.string.lookup_action);
-        lookup.setOnClickListener(view -> {
-            String strokeQuery = stroke.getText().toString().trim();
-            String translationQuery = translation.getText().toString().trim();
-            if (strokeQuery.isEmpty() && translationQuery.isEmpty()) {
-                status.setText(R.string.lookup_query_required);
+        LookupQueryGeneration queryGeneration = new LookupQueryGeneration();
+        Button lookupStroke = addButton(R.string.lookup_stroke_action);
+        Button lookupTranslation = addButton(R.string.lookup_translation_action);
+        TextWatcher invalidateLookup = new TextWatcher() {
+            @Override public void beforeTextChanged(
+                    CharSequence value, int start, int count, int after) {}
+            @Override public void onTextChanged(
+                    CharSequence value, int start, int before, int count) {
+                queryGeneration.edited();
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
+                clearStatus(status);
+            }
+            @Override public void afterTextChanged(Editable value) {}
+        };
+        stroke.addTextChangedListener(invalidateLookup);
+        translation.addTextChangedListener(invalidateLookup);
+        lookupStroke.setOnClickListener(view -> {
+            String query = stroke.getText().toString().trim();
+            if (query.isEmpty()) {
+                showTerminalStatus(status, R.string.lookup_stroke_required);
                 return;
             }
-            lookup.setEnabled(false);
-            status.setText(R.string.looking_up_entries);
-            JSONObject params = new JSONObject();
-            try {
-                if (!strokeQuery.isEmpty()) {
-                    params.put("stroke", strokeQuery);
-                }
-                if (!translationQuery.isEmpty()) {
-                    params.put("output", translationQuery);
-                }
-                params.put("match", "substring");
-                params.put("sort", "alphabetic");
-                params.put("page", 1);
-                params.put("page_size", 100);
-            } catch (Exception error) {
-                status.setText(messageFor(error));
-                lookup.setEnabled(true);
-                return;
-            }
-            request("search_entries", params, (result, error) -> {
-                lookup.setEnabled(true);
-                if (!error.isEmpty()) {
-                    status.setText(error);
+            int generation = queryGeneration.submit();
+            lookupStroke.setEnabled(false);
+            lookupTranslation.setEnabled(false);
+            showProgress(status);
+            BooleanSupplier ownsRequest = () -> queryGeneration.owns(generation)
+                    && query.equals(stroke.getText().toString().trim());
+            searchExactEntries("stroke", query, ownsRequest, (entries, error) -> {
+                if (!queryGeneration.owns(generation)
+                        || !query.equals(stroke.getText().toString().trim())) {
                     return;
                 }
-                status.setText(formatLookupResults(
-                        result,
-                        strokeQuery,
-                        translationQuery
-                ));
+                queryGeneration.completed(generation);
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
+                showTerminalStatus(status, error.isEmpty()
+                        ? formatEntrySearchResult(entries) : error);
             });
         });
-        submitOnEnter(stroke, lookup);
-        submitOnEnter(translation, lookup);
+        lookupTranslation.setOnClickListener(view -> {
+            String query = translation.getText().toString().trim();
+            if (query.isEmpty()) {
+                showTerminalStatus(status, R.string.lookup_translation_required);
+                return;
+            }
+            int generation = queryGeneration.submit();
+            lookupStroke.setEnabled(false);
+            lookupTranslation.setEnabled(false);
+            showProgress(status);
+            BooleanSupplier ownsRequest = () -> queryGeneration.owns(generation)
+                    && query.equals(translation.getText().toString().trim());
+            searchExactEntries("output", query, ownsRequest, (entries, error) -> {
+                if (!queryGeneration.owns(generation)
+                        || !query.equals(translation.getText().toString().trim())) {
+                    return;
+                }
+                queryGeneration.completed(generation);
+                lookupStroke.setEnabled(true);
+                lookupTranslation.setEnabled(true);
+                showTerminalStatus(status, error.isEmpty()
+                        ? formatEntrySearchResult(entries) : error);
+            });
+        });
+        submitOnEnter(stroke, lookupStroke);
+        submitOnEnter(translation, lookupTranslation);
         addCloseButton();
-        focusInitially(stroke);
+        focusInitially(translation.getText().length() > 0 ? translation : stroke);
     }
 
     private void showAddTranslation(String argument) {
@@ -298,10 +321,10 @@ public class PloverCommandActivity extends Activity {
         dictionaryGroup.setOnCheckedChangeListener((group, checkedId) ->
                 updateAddEnabled.run());
 
-        status.setText(R.string.loading_dictionaries);
+        showProgress(status, R.string.loading_dictionaries);
         request("get_dictionary_state", new JSONObject(), (result, error) -> {
             if (!error.isEmpty()) {
-                status.setText(error);
+                showTerminalStatus(status, error);
                 return;
             }
             JSONArray state = result.optJSONArray("dictionaries");
@@ -321,7 +344,7 @@ public class PloverCommandActivity extends Activity {
             dictionaryLabel.setEnabled(available);
             dictionariesLoaded[0] = available;
             updateAddEnabled.run();
-            status.setText(
+            showTerminalStatus(status,
                     available
                             ? R.string.choose_dictionary_and_add
                             : R.string.no_writable_dictionaries
@@ -332,13 +355,13 @@ public class PloverCommandActivity extends Activity {
             String stroke = outline.getText().toString().trim();
             String output = translation.getText().toString();
             if (stroke.isEmpty() || output.isEmpty()) {
-                status.setText(R.string.translation_fields_required);
+                showTerminalStatus(status, R.string.translation_fields_required);
                 return;
             }
             int selectedPosition = selectedDictionaryIndex();
             if (selectedPosition < 0
                     || selectedPosition >= writableDictionaries.size()) {
-                status.setText(R.string.no_writable_dictionaries);
+                showTerminalStatus(status, R.string.no_writable_dictionaries);
                 return;
             }
             String selected = writableDictionaries.get(selectedPosition);
@@ -346,7 +369,7 @@ public class PloverCommandActivity extends Activity {
                     + output + "\u0000" + selected;
             submitting[0] = true;
             updateAddEnabled.run();
-            status.setText(R.string.checking_existing_translation);
+            showProgress(status, R.string.checking_existing_translation);
             revealFocusedView(status);
             JSONObject params = new JSONObject();
             try {
@@ -354,24 +377,24 @@ public class PloverCommandActivity extends Activity {
                 params.put("stroke", stroke);
                 params.put("translation", output);
             } catch (Exception error) {
-                status.setText(messageFor(error));
+                showTerminalStatus(status, messageFor(error));
                 submitting[0] = false;
                 updateAddEnabled.run();
                 return;
             }
             class Mutation {
                 void run() {
-                    status.setText(R.string.adding_translation);
+                    showProgress(status, R.string.adding_translation);
                     revealFocusedView(status);
                     request("replace_entry", params, (result, error) -> {
                         submitting[0] = false;
                         if (!error.isEmpty()) {
-                            status.setText(error);
+                            showTerminalStatus(status, error);
                         } else if (result.optBoolean("conflict", false)) {
-                            status.setText(R.string.translation_changed_before_replace);
+                            showTerminalStatus(status, R.string.translation_changed_before_replace);
                         } else {
                             completedSubmission[0] = submittedSignature;
-                            status.setText(getString(
+                            showTerminalStatus(status, getString(
                                     R.string.translation_added, stroke, selected
                             ));
                         }
@@ -384,7 +407,7 @@ public class PloverCommandActivity extends Activity {
             request("add_entry_safely", params, (result, error) -> {
                 if (!error.isEmpty()) {
                     submitting[0] = false;
-                    status.setText(error);
+                    showTerminalStatus(status, error);
                     revealFocusedView(status);
                     updateAddEnabled.run();
                     return;
@@ -392,7 +415,7 @@ public class PloverCommandActivity extends Activity {
                 if (!result.optBoolean("conflict", false)) {
                     submitting[0] = false;
                     completedSubmission[0] = submittedSignature;
-                    status.setText(getString(
+                    showTerminalStatus(status, getString(
                             R.string.translation_added,
                             result.optString("stroke", stroke), selected
                     ));
@@ -405,38 +428,37 @@ public class PloverCommandActivity extends Activity {
                     params.put("expected_translation", existing);
                 } catch (Exception exception) {
                     submitting[0] = false;
-                    status.setText(messageFor(exception));
+                    showTerminalStatus(status, messageFor(exception));
                     updateAddEnabled.run();
                     return;
                 }
                 if (existing.equals(output)) {
                     submitting[0] = false;
                     completedSubmission[0] = submittedSignature;
-                    status.setText(getString(
+                    showTerminalStatus(status, getString(
                             R.string.translation_already_exists, stroke, selected
                     ));
                     revealFocusedView(status);
                     updateAddEnabled.run();
                     return;
                 }
+                Runnable cancelReplacement = () -> {
+                    submitting[0] = false;
+                    showTerminalStatus(status, R.string.translation_not_replaced);
+                    revealFocusedView(status);
+                    updateAddEnabled.run();
+                };
                 new AlertDialog.Builder(this)
                         .setTitle(R.string.replace_translation_title)
                         .setMessage(getString(
                                 R.string.replace_translation_message,
                                 stroke, selected, existing, output
                         ))
-                        .setNegativeButton(R.string.cancel, (dialog, which) -> {
-                            submitting[0] = false;
-                            status.setText(R.string.translation_not_replaced);
-                            revealFocusedView(status);
-                            updateAddEnabled.run();
-                        })
+                        .setNegativeButton(R.string.cancel, (dialog, which) ->
+                                cancelReplacement.run())
                         .setPositiveButton(R.string.replace_translation, (dialog, which) ->
                                 mutation.run())
-                        .setOnCancelListener(dialog -> {
-                            submitting[0] = false;
-                            updateAddEnabled.run();
-                        })
+                        .setOnCancelListener(dialog -> cancelReplacement.run())
                         .show();
             });
         });
@@ -445,40 +467,76 @@ public class PloverCommandActivity extends Activity {
         focusInitially(outline);
     }
 
-    private String formatLookupResults(
-            JSONObject result,
-            String strokeQuery,
-            String translationQuery) {
-        JSONArray entries = result.optJSONArray("entries");
+    private void searchExactEntries(String field, String query,
+            BooleanSupplier ownsRequest, EntrySearchCallback callback) {
+        searchExactEntries(field, query, 1, new JSONArray(), ownsRequest, callback);
+    }
+
+    private void searchExactEntries(
+            String field,
+            String query,
+            int page,
+            JSONArray accumulated,
+            BooleanSupplier ownsRequest,
+            EntrySearchCallback callback) {
+        if (!ownsRequest.getAsBoolean()) return;
+        request("search_entries", PloverEntrySearch.exactParams(field, query, page),
+                (result, error) -> {
+            if (!ownsRequest.getAsBoolean()) return;
+            if (!error.isEmpty()) {
+                callback.onResult(accumulated, error);
+                return;
+            }
+            JSONArray entries = result.optJSONArray("entries");
+            for (int index = 0; entries != null && index < entries.length(); index++) {
+                accumulated.put(entries.opt(index));
+            }
+            if (PloverEntrySearch.shouldRequestNextPage(
+                    result.optBoolean("has_more", false), ownsRequest.getAsBoolean())) {
+                searchExactEntries(field, query, page + 1, accumulated,
+                        ownsRequest, callback);
+            } else {
+                callback.onResult(accumulated, "");
+            }
+        });
+    }
+
+    private String formatEntrySearchResult(JSONArray entries) {
         List<String> rows = new ArrayList<>();
-        for (int index = 0; entries != null && index < entries.length(); index++) {
+        for (int index = 0; index < entries.length(); index++) {
             JSONObject entry = entries.optJSONObject(index);
-            if (entry == null) {
-                continue;
-            }
-            String stroke = entry.optString("stroke", "");
-            String translation = entry.optString("translation", "");
-            if (!strokeQuery.isEmpty()
-                    && !stroke.equalsIgnoreCase(strokeQuery)) {
-                continue;
-            }
-            if (!translationQuery.isEmpty()
-                    && !translation.toLowerCase(Locale.ROOT).contains(
-                            translationQuery.toLowerCase(Locale.ROOT)
-                    )) {
-                continue;
-            }
-            String dictionary = entry.optString(
-                    "dictionary",
-                    getString(R.string.unknown_dictionary)
-            );
-            rows.add(stroke + " \u2192 " + translation + "\n"
-                    + getString(R.string.from_dictionary, dictionary));
+            if (entry == null) continue;
+            rows.add(entry.optString("stroke", "") + " \u2192 "
+                    + entry.optString("translation", "") + "\n"
+                    + entry.optString("dictionary", ""));
         }
-        if (rows.isEmpty()) {
-            return getString(R.string.no_lookup_results);
-        }
-        return android.text.TextUtils.join("\n\n", rows);
+        return rows.isEmpty() ? getString(R.string.no_lookup_results)
+                : android.text.TextUtils.join("\n\n", rows);
+    }
+
+    private void showProgress(TextView status) {
+        showProgress(status, R.string.looking_up_entries);
+    }
+
+    private void showProgress(TextView status, int message) {
+        status.setFocusable(false);
+        status.setText(message);
+        revealFocusedView(status);
+    }
+
+    private void showTerminalStatus(TextView status, int message) {
+        showTerminalStatus(status, getString(message));
+    }
+
+    private void showTerminalStatus(TextView status, String message) {
+        status.setText(message);
+        status.setFocusable(true);
+        revealFocusedView(status);
+    }
+
+    private void clearStatus(TextView status) {
+        status.setText("");
+        status.setFocusable(false);
     }
 
     private void request(
@@ -645,7 +703,12 @@ public class PloverCommandActivity extends Activity {
         status.setPadding(0, dp(14), 0, dp(8));
         status.setTextIsSelectable(true);
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        // Register the result at its documented position, but only terminal,
+        // selectable content enables it as a Tab stop.
+        status.setFocusable(false);
+        status.setFocusableInTouchMode(false);
         registerFocusable(status);
+        status.setFocusable(false);
         content.addView(status, matchWrap());
         return status;
     }
@@ -675,7 +738,7 @@ public class PloverCommandActivity extends Activity {
             dictionaryChoices.add(choice);
             choice.setOnClickListener(view -> {
                 dictionaryGroup.check(choice.getId());
-                choice.requestFocus();
+                choice.requestFocusFromTouch();
                 revealFocusedView(choice);
             });
             choice.setOnFocusChangeListener((view, hasFocus) -> {
@@ -750,7 +813,14 @@ public class PloverCommandActivity extends Activity {
             view.setId(View.generateViewId());
         }
         view.setFocusable(true);
-        view.setFocusableInTouchMode(true);
+        // Buttons and radios must remain keyboard-focusable without consuming the
+        // first tap merely to enter touch focus mode. Editors retain their normal
+        // touch-focus behavior.
+        view.setFocusableInTouchMode(
+                CommandControlFocusPolicy.focusableInTouchMode(
+                        view instanceof EditText
+                )
+        );
         return view;
     }
 
@@ -851,12 +921,6 @@ public class PloverCommandActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
-    private static boolean looksLikeOutline(String value) {
-        return value != null
-                && !value.isEmpty()
-                && value.matches("[#STKPWHRAO*EUFRPBLGTSDZ\\-/]+");
-    }
-
     private static String messageFor(Exception error) {
         String message = error.getMessage();
         return message == null || message.isEmpty()
@@ -874,5 +938,9 @@ public class PloverCommandActivity extends Activity {
 
     private interface ResultCallback {
         void onResult(JSONObject result, String error);
+    }
+
+    private interface EntrySearchCallback {
+        void onResult(JSONArray entries, String error);
     }
 }

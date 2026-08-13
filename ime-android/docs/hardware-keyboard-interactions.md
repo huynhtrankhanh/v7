@@ -105,9 +105,12 @@ dialog. A later command refreshes that activity in place; it cannot leave old
 dialog tasks behind for Android to resurface. The full, wrapping title is part
 of the dialog content rather than a truncating platform title bar.
 
-Focus starts in the first editable field. `Tab` and `Shift+Tab` move forward
+The pinned command protocol does not type its argument, so command arguments
+always populate Translation because text such as `HAT` is inherently
+ambiguous. With no argument, focus starts in Stroke.
+`Tab` and `Shift+Tab` move forward
 and backward through the editable fields, the dictionary radio group as one
-tab stop, the selectable result/status region, the primary action, and Close
+tab stop, populated selectable results/errors, the lookup actions, and Close
 button with wraparound. Arrow keys move and select within the radio group;
 disabled controls are skipped and newly focused controls are
 scrolled into view. Labels are linked to their fields and changing status text

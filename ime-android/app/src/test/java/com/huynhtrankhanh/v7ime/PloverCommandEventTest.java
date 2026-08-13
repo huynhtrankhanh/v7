@@ -6,6 +6,17 @@ import static org.junit.Assert.assertEquals;
 
 public class PloverCommandEventTest {
     @Test
+    public void preservesThePinnedProtocolsUntypedArgument() {
+        PloverCommandEvent event = new PloverCommandEvent(
+                PloverCommandEvent.Type.LOOKUP,
+                "HAT"
+        );
+
+        assertEquals(PloverCommandEvent.Type.LOOKUP, event.type);
+        assertEquals("HAT", event.argument);
+    }
+
+    @Test
     public void recognizesEverySupportedEventName() {
         assertEquals(
                 PloverCommandEvent.Type.LOOKUP,
