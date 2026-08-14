@@ -74,6 +74,7 @@ public class V7ImeService extends InputMethodService {
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
+    private boolean telexModeEnabled = false;
     private boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
@@ -345,7 +346,7 @@ public class V7ImeService extends InputMethodService {
                 && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if (!stenoModeEnabled && !rawOutlineMode) {
+        if (!stenoModeEnabled && !telexModeEnabled && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 editorPassedHardwareKeys.add(event.getKeyCode());
@@ -362,7 +363,7 @@ public class V7ImeService extends InputMethodService {
             }
             return false;
         }
-        if (isEnterKey(event.getKeyCode())) {
+        if (!telexModeEnabled && isEnterKey(event.getKeyCode())) {
             return dispatchEnterKey(event);
         }
         String action = event.getAction() == KeyEvent.ACTION_UP
@@ -393,10 +394,18 @@ public class V7ImeService extends InputMethodService {
                 return true;
             }
             editorPassedHardwareKeys.remove(event.getKeyCode());
-            stenoModeEnabled = !stenoModeEnabled;
+            stenoModeEnabled = !stenoModeEnabled && !telexModeEnabled;
+            telexModeEnabled = false;
             finishCurrentPreedit();
             publishStenoModeState();
             return false;
+        } else if (action == HardwareKeyActionResolver.Action.TOGGLE_TELEX) {
+            if (rawOutlineMode) return true;
+            telexModeEnabled = !telexModeEnabled;
+            stenoModeEnabled = !telexModeEnabled;
+            finishCurrentPreedit();
+            publishStenoModeState();
+            return true;
         } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
             finishCurrentPreedit();
         } else if (action
@@ -519,6 +528,22 @@ public class V7ImeService extends InputMethodService {
         return (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
                 || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
                 || keyCode == KeyEvent.KEYCODE_SEMICOLON
+                || keyCode == KeyEvent.KEYCODE_TAB
+                || keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                || keyCode == KeyEvent.KEYCODE_DEL
+                || keyCode == KeyEvent.KEYCODE_COMMA
+                || keyCode == KeyEvent.KEYCODE_PERIOD
+                || keyCode == KeyEvent.KEYCODE_SLASH
+                || keyCode == KeyEvent.KEYCODE_APOSTROPHE
+                || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET
+                || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET
+                || keyCode == KeyEvent.KEYCODE_MINUS
+                || keyCode == KeyEvent.KEYCODE_EQUALS
+                || keyCode == KeyEvent.KEYCODE_GRAVE
+                || keyCode == KeyEvent.KEYCODE_BACKSLASH
+                || keyCode == KeyEvent.KEYCODE_AT
+                || keyCode == KeyEvent.KEYCODE_PLUS
                 || keyCode == KeyEvent.KEYCODE_SPACE
                 || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
@@ -536,6 +561,13 @@ public class V7ImeService extends InputMethodService {
         switch (event.getKeyCode()) {
             case KeyEvent.KEYCODE_SPACE:
                 return " ";
+            case KeyEvent.KEYCODE_TAB:
+                return "Tab";
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                return "Enter";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
                 return "Shift";
@@ -573,6 +605,13 @@ public class V7ImeService extends InputMethodService {
                 return "Semicolon";
             case KeyEvent.KEYCODE_SPACE:
                 return "Space";
+            case KeyEvent.KEYCODE_TAB:
+                return "Tab";
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                return "Enter";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
                 return "ShiftLeft";
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
@@ -747,6 +786,8 @@ public class V7ImeService extends InputMethodService {
                 "window.handleAndroidStenoModeChanged"
                         + " && window.handleAndroidStenoModeChanged("
                         + stenoModeEnabled
+                        + ","
+                        + telexModeEnabled
                         + ")"
         );
     }
@@ -1113,6 +1154,11 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
+        public boolean isTelexModeEnabled() {
+            return telexModeEnabled;
+        }
+
+        @JavascriptInterface
         public boolean isRawOutlineMode() {
             return rawOutlineMode;
         }
@@ -1188,6 +1234,20 @@ public class V7ImeService extends InputMethodService {
                             normalizedGrammarSections
                     );
                 }
+            });
+        }
+
+        @JavascriptInterface
+        public void commitTelexText(String text) {
+            if (!isCurrentInputView() || !telexModeEnabled) return;
+            String committed = text == null ? "" : text;
+            owner.post(() -> {
+                if (!isCurrentInputView() || !telexModeEnabled) return;
+                InputConnection connection = getCurrentInputConnection();
+                if (connection != null) connection.commitText(committed, 1);
+                preeditText = "";
+                preeditGrammarSectionsJson = "[]";
+                pendingPreeditLengths.clear();
             });
         }
 

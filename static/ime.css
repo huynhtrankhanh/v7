@@ -68,6 +68,7 @@ button {
 
 .ime-plover-banner,
 .ime-normal-banner,
+.ime-telex-banner,
 .ime-raw-outline-banner {
   align-items: center;
   display: none;
@@ -77,6 +78,7 @@ button {
 
 .ime-plover-banner strong,
 .ime-normal-banner strong,
+.ime-telex-banner strong,
 .ime-raw-outline-banner strong {
   font-size: 0.82rem;
   letter-spacing: 0.02em;
@@ -94,6 +96,14 @@ button {
   background: var(--ime-accent);
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgb(201 245 111 / 14%);
+  height: 7px;
+  width: 7px;
+}
+
+.ime-telex-pulse {
+  background: #67e8f9;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgb(103 232 249 / 14%);
   height: 7px;
   width: 7px;
 }

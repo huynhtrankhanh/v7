@@ -40,6 +40,7 @@ import {
   decodeCanonicalTwoSyllableStroke,
   decodeDictionaryModeStroke,
 } from "./twoSyllableV7";
+import { TelexComposer } from "./telex";
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
@@ -296,10 +297,12 @@ interface AndroidImeBridge {
   isPlainTextMode?(): boolean;
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
+  isTelexModeEnabled?(): boolean;
   changeInputMethod(): void;
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
+  commitTelexText?(text: string): void;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -335,6 +338,7 @@ const isTrainerEmbedded = new URLSearchParams(window.location.search).has(
 document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
+let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
@@ -2585,6 +2589,13 @@ function updateDisplay(): void {
     "android-normal-typing",
     strippedDisplay.enabled &&
       (!androidStenoModeEnabled || androidPlainTextMode) &&
+      !androidTelexModeEnabled &&
+      !androidRawOutlineMode,
+  );
+  document.body.classList.toggle(
+    "android-telex",
+    strippedDisplay.enabled &&
+      androidTelexModeEnabled &&
       !androidRawOutlineMode,
   );
   document.body.classList.toggle(
@@ -2595,9 +2606,11 @@ function updateDisplay(): void {
   if (modeTitle && strippedDisplay.enabled) {
     modeTitle.textContent = androidRawOutlineMode
       ? "Raw outline mode"
-      : androidStenoModeEnabled && !androidPlainTextMode
-        ? "Compose"
-        : "Normal typing";
+      : androidTelexModeEnabled
+        ? "Telex"
+        : androidStenoModeEnabled && !androidPlainTextMode
+          ? "Compose"
+          : "Normal typing";
   }
   document.body.classList.toggle(
     "stripped-plover-active",
@@ -2806,10 +2819,36 @@ function updateDisplay(): void {
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
+const telexComposer = new TelexComposer();
 
 document.addEventListener("keydown", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
+  if (androidIme && androidTelexModeEnabled) {
+    if (e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (e.key === "Backspace") {
+      androidIme.setPreeditText(telexComposer.backspace(), "[]");
+      e.preventDefault();
+      return;
+    }
+    if (Array.from(e.key).length === 1 && /[\p{L}\[\]]/u.test(e.key)) {
+      androidIme.setPreeditText(telexComposer.push(e.key), "[]");
+      e.preventDefault();
+      return;
+    }
+    if (
+      Array.from(e.key).length === 1 ||
+      e.key === "Enter" ||
+      e.key === "Tab"
+    ) {
+      const separator =
+        e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
+      androidIme.commitTelexText?.(telexComposer.commit() + separator);
+      e.preventDefault();
+      return;
+    }
+    return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     resetHardwareKeyboardState();
@@ -2928,6 +2967,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
+  if (androidIme && androidTelexModeEnabled) {
+    e.preventDefault();
+    return;
   }
   if (hasOsPassthroughModifier(e)) {
     resetHardwareKeyboardState();
@@ -3403,7 +3446,7 @@ declare global {
       rawOutline: boolean,
       plainText: boolean,
     ) => void;
-    handleAndroidStenoModeChanged?: (enabled: boolean) => void;
+    handleAndroidStenoModeChanged?: (enabled: boolean, telex: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3531,8 +3574,10 @@ window.handleAndroidPloverPaused = (paused) => {
   updateDisplay();
 };
 
-window.handleAndroidStenoModeChanged = (enabled) => {
+window.handleAndroidStenoModeChanged = (enabled, telex) => {
   androidStenoModeEnabled = enabled;
+  androidTelexModeEnabled = telex;
+  telexComposer.clear();
   resetHardwareKeyboardState();
   updateDisplay();
 };
@@ -3664,6 +3709,7 @@ window.addEventListener("resize", () => {
 });
 
 window.clearPreeditFromAndroid = () => {
+  telexComposer.clear();
   resetHardwareKeyboardState();
   abortInferenceRequest(true);
   strippedPlover.requestId += 1;

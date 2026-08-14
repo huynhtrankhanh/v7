@@ -10,6 +10,23 @@ import org.junit.Test;
 
 public class HardwareKeyActionResolverTest {
     @Test
+    public void controlTabSelectsTelexOncePerPress() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        assertEquals(HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(true, KeyEvent.KEYCODE_CTRL_LEFT,
+                        KeyEvent.ACTION_DOWN, 0));
+        assertEquals(HardwareKeyActionResolver.Action.TOGGLE_TELEX,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB,
+                        KeyEvent.ACTION_DOWN, 0));
+        assertEquals(HardwareKeyActionResolver.Action.CONSUME,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB,
+                        KeyEvent.ACTION_DOWN, 1));
+        assertEquals(HardwareKeyActionResolver.Action.CONSUME,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB,
+                        KeyEvent.ACTION_UP, 0));
+    }
+
+    @Test
     public void controlThenShiftTogglesOnceAndBalancesControl() {
         HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
         assertEquals(

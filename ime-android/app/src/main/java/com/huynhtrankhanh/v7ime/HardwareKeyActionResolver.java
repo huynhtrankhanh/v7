@@ -10,6 +10,7 @@ final class HardwareKeyActionResolver {
         PASS_THROUGH,
         CONSUME,
         TOGGLE_STENO,
+        TOGGLE_TELEX,
         FINISH_PREEDIT,
         FINISH_PREEDIT_AND_INSERT_SPACE
     }
@@ -17,6 +18,7 @@ final class HardwareKeyActionResolver {
     private final Set<Integer> pressedControlKeys = new HashSet<>();
     private final Set<Integer> pressedShiftKeys = new HashSet<>();
     private boolean toggleChordPending = false;
+    private boolean tabToggleActive = false;
 
     Action resolve(
             boolean stenoModeEnabled,
@@ -25,6 +27,20 @@ final class HardwareKeyActionResolver {
             int repeatCount) {
         if (isControlKey(keyCode) || isShiftKey(keyCode)) {
             return resolveModeToggleChord(keyCode, action);
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_TAB) {
+            if (action == KeyEvent.ACTION_DOWN
+                    && repeatCount == 0
+                    && !pressedControlKeys.isEmpty()) {
+                toggleChordPending = false;
+                tabToggleActive = true;
+                return Action.TOGGLE_TELEX;
+            }
+            if (tabToggleActive) {
+                if (action == KeyEvent.ACTION_UP) tabToggleActive = false;
+                return Action.CONSUME;
+            }
         }
 
         if (toggleChordPending && action == KeyEvent.ACTION_DOWN) {
@@ -52,6 +68,7 @@ final class HardwareKeyActionResolver {
         pressedControlKeys.clear();
         pressedShiftKeys.clear();
         toggleChordPending = false;
+        tabToggleActive = false;
     }
 
     boolean isModeToggleChordActive() {
