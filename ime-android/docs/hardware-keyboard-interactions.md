@@ -106,6 +106,11 @@ reports Latin fallback until the isolate is ready; warmed key conversion is
 bounded to 100 ms.
 If the shared sandbox process dies, its singleton is invalidated so Telex
 warm-up and subsequent dictionary-import retries can create a fresh process.
+Timed-out sandbox connection futures are cancelled so AndroidX runs its service
+unbind listener before a later reconnect attempt.
+Dead-accent key events remain native until the following printable character;
+Android's `getDeadChar()` result is then appended to Telex as one Unicode code
+point instead of splitting the dead key between the editor and PREEDIT.
 
 ## Raw outline fields
 

@@ -6,7 +6,10 @@ import androidx.javascriptengine.JavaScriptIsolate;
 import androidx.javascriptengine.JavaScriptSandbox;
 import androidx.javascriptengine.SandboxDeadException;
 
+import com.google.common.util.concurrent.ListenableFuture;
+
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /** Process-wide JavaScriptSandbox owner. Callers create independent isolates. */
 final class ApplicationJavaScriptSandbox {
@@ -21,10 +24,25 @@ final class ApplicationJavaScriptSandbox {
             if (!JavaScriptSandbox.isSupported()) {
                 throw new IllegalStateException("JavaScriptSandbox is unavailable");
             }
-            sandbox = JavaScriptSandbox.createConnectedInstanceAsync(
-                    context.getApplicationContext()).get(timeout, unit);
+            ListenableFuture<JavaScriptSandbox> connection =
+                    JavaScriptSandbox.createConnectedInstanceAsync(
+                            context.getApplicationContext());
+            sandbox = awaitConnection(connection, timeout, unit);
         }
         return sandbox;
+    }
+
+    static <T> T awaitConnection(
+            ListenableFuture<T> connection, long timeout, TimeUnit unit)
+            throws Exception {
+        try {
+            return connection.get(timeout, unit);
+        } catch (TimeoutException timeoutError) {
+            // AndroidX attaches its service-unbind cleanup to cancellation.
+            // If completion won the race, retain that sole valid instance.
+            if (!connection.cancel(true)) return connection.get();
+            throw timeoutError;
+        }
     }
 
     static JavaScriptIsolate createIsolate(

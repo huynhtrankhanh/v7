@@ -76,6 +76,17 @@ dictionary importing applies the same invalidation rule before reporting its
 failed attempt, so a later retry also reconnects instead of reusing a dead
 process handle.
 
+International-layout dead accents are retained natively. The next printable
+letter is combined with `KeyCharacterMap.getDeadChar()` before it enters the raw
+Telex buffer; Backspace cancels a pending accent. A dead accent followed by
+Space commits the accent itself, while other non-letter terminators finalize
+the current word and pass through their separator.
+
+Native-to-Web mode and epoch publication runs immediately when the IME is
+already on Android's main thread. The clear/state scripts are therefore issued
+before the first V7/Plover hardware event after a mode transition, preventing
+that event from observing the previous WebUI epoch.
+
 The supplied adapter's more detailed conversion notes are preserved as
 [the Telex adapter supplement](telex-behavior-supplement.md), with an explicit
 erratum for the archived document's reversed bracket shortcuts.

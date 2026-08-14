@@ -85,6 +85,7 @@ public class V7ImeService extends InputMethodService {
     private TelexJavaScriptSandbox telexSandbox;
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
     private String nativeTelexRendered = "";
+    private int pendingTelexDeadAccent;
 
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
@@ -443,19 +444,33 @@ public class V7ImeService extends InputMethodService {
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
                 || keyCode == KeyEvent.KEYCODE_CAPS_LOCK) return true;
         if (isEnterKey(keyCode)) {
+            flushPendingTelexDeadAccent();
             finishCurrentPreedit();
             return dispatchEnterKey(event);
         }
         if (keyCode == KeyEvent.KEYCODE_DEL) {
+            if (pendingTelexDeadAccent != 0) {
+                pendingTelexDeadAccent = 0;
+                return true;
+            }
             if (!nativeTelexRaw.backspace()) return false;
             updateNativeTelexPreedit();
             return true;
         }
+        int unicode = event.getUnicodeChar();
+        if ((unicode & KeyCharacterMap.COMBINING_ACCENT) != 0) {
+            pendingTelexDeadAccent = unicode
+                    & KeyCharacterMap.COMBINING_ACCENT_MASK;
+            return true;
+        }
         if (isTelexTerminator(event)) {
+            boolean hadDeadAccent = pendingTelexDeadAccent != 0;
+            flushPendingTelexDeadAccent();
+            if (hadDeadAccent && keyCode == KeyEvent.KEYCODE_SPACE) return true;
             commitNativeTelexSeparator(getTelexSeparator(event));
             return true;
         }
-        String key = getJavascriptKey(event);
+        String key = getNativeTelexKey(event, unicode);
         if (key.codePointCount(0, key.length()) == 1
                 && (Character.isLetter(key.codePointAt(0))
                         || "[".equals(key)
@@ -465,6 +480,25 @@ public class V7ImeService extends InputMethodService {
             return true;
         }
         return false;
+    }
+
+    private String getNativeTelexKey(KeyEvent event, int unicode) {
+        if (pendingTelexDeadAccent == 0) return getJavascriptKey(event);
+        int accent = pendingTelexDeadAccent;
+        pendingTelexDeadAccent = 0;
+        int combined = unicode == 0
+                ? 0
+                : KeyCharacterMap.getDeadChar(accent, unicode);
+        if (combined != 0) return new String(Character.toChars(combined));
+        commitNativeTelexSeparator(new String(Character.toChars(accent)));
+        return getJavascriptKey(event);
+    }
+
+    private void flushPendingTelexDeadAccent() {
+        if (pendingTelexDeadAccent == 0) return;
+        int accent = pendingTelexDeadAccent;
+        pendingTelexDeadAccent = 0;
+        commitNativeTelexSeparator(new String(Character.toChars(accent)));
     }
 
     private void updateNativeTelexPreedit() {
@@ -498,6 +532,7 @@ public class V7ImeService extends InputMethodService {
         }
         nativeTelexRaw.clear();
         nativeTelexRendered = "";
+        pendingTelexDeadAccent = 0;
         telexHasPreedit = false;
         preeditText = "";
         preeditGrammarSectionsJson = "[]";
@@ -911,6 +946,7 @@ public class V7ImeService extends InputMethodService {
      * that the user already sees in the editor.
      */
     private void finishCurrentPreedit() {
+        flushPendingTelexDeadAccent();
         int generation = inputGeneration.getAndIncrement();
         latestInferenceRequestId.set(-1);
         String latestTelexText = takePendingTelexText(generation);
@@ -919,6 +955,7 @@ public class V7ImeService extends InputMethodService {
         telexHasPreedit = false;
         nativeTelexRaw.clear();
         nativeTelexRendered = "";
+        pendingTelexDeadAccent = 0;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
         if (hadPreedit || latestTelexText != null) {
@@ -1051,11 +1088,16 @@ public class V7ImeService extends InputMethodService {
         if (target == null) {
             return;
         }
-        target.post(() -> {
+        Runnable evaluation = () -> {
             if (inputViewOwnership.isCurrent(target, targetGeneration)) {
                 target.evaluateJavascript(script, null);
             }
-        });
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            evaluation.run();
+        } else {
+            target.post(evaluation);
+        }
     }
 
     private void resetHardwareKeyboardStateInWebView() {
