@@ -62,6 +62,7 @@ async function androidChord(page, keys, { capsLock = false } = {}) {
           false,
           false,
           capsLockActive,
+          window.__androidInputGeneration,
         );
       }
       for (const key of [...downKeys].reverse()) {
@@ -75,6 +76,7 @@ async function androidChord(page, keys, { capsLock = false } = {}) {
           false,
           false,
           capsLockActive,
+          window.__androidInputGeneration,
         );
       }
     },
@@ -129,6 +131,7 @@ async function main() {
       window.__androidRawOutlineUndos = 0;
       window.__androidTelexMode = false;
       window.__androidTelexCommits = [];
+      window.__androidInputGeneration = 0;
       window.AndroidIme = {
         getInferenceModelError() {
           return "";
@@ -145,6 +148,9 @@ async function main() {
         isTelexModeEnabled() {
           return window.__androidTelexMode;
         },
+        getInputGeneration() {
+          return window.__androidInputGeneration;
+        },
         isRawOutlineMode() {
           return false;
         },
@@ -157,14 +163,20 @@ async function main() {
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
-        setPreeditText(text, grammarSectionsJson) {
+        setPreeditText(text, grammarSectionsJson, epoch) {
+          if (epoch !== window.__androidInputGeneration) return;
           window.__androidPreedits.push({
             text,
             grammarSections: JSON.parse(grammarSectionsJson),
           });
         },
-        commitTelexText(expectedText, separator) {
+        commitTelexText(expectedText, separator, epoch) {
+          if (epoch !== window.__androidInputGeneration) {
+            return window.__androidInputGeneration;
+          }
           window.__androidTelexCommits.push({ expectedText, separator });
+          window.__androidInputGeneration += 1;
+          return window.__androidInputGeneration;
         },
         undoRawOutlineStroke() {
           window.__androidRawOutlineUndos += 1;
@@ -312,7 +324,26 @@ async function main() {
 
     const telexResult = await page.evaluate(() => {
       window.__androidTelexMode = true;
-      window.handleAndroidStenoModeChanged(false, true);
+      window.handleAndroidStenoModeChanged(
+        false,
+        true,
+        window.__androidInputGeneration,
+      );
+      const preeditsBeforeStaleEvent = window.__androidPreedits.length;
+      window.handleAndroidKeyEvent(
+        "keydown",
+        "x",
+        "KeyX",
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        window.__androidInputGeneration - 1,
+      );
+      const staleEventIgnored =
+        window.__androidPreedits.length === preeditsBeforeStaleEvent;
       const send = (key, code, repeat = false) =>
         window.handleAndroidKeyEvent(
           "keydown",
@@ -324,6 +355,7 @@ async function main() {
           false,
           false,
           false,
+          window.__androidInputGeneration,
         );
       for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
       const composed = window.__androidPreedits.at(-1)?.text;
@@ -346,9 +378,11 @@ async function main() {
         true,
         false,
         false,
+        window.__androidInputGeneration,
       );
       return {
         composed,
+        staleEventIgnored,
         afterBackspace,
         afterRepeatedBackspace,
         commit,
@@ -361,6 +395,7 @@ async function main() {
     });
     assert(
       telexResult.composed === "tiếng" &&
+        telexResult.staleEventIgnored &&
         telexResult.afterBackspace === "tiêng" &&
         telexResult.afterRepeatedBackspace === "tiên" &&
         telexResult.commit?.expectedText === "tiếng" &&
@@ -374,7 +409,11 @@ async function main() {
     );
     await page.evaluate(() => {
       window.__androidTelexMode = false;
-      window.handleAndroidStenoModeChanged(true, false);
+      window.handleAndroidStenoModeChanged(
+        true,
+        false,
+        window.__androidInputGeneration,
+      );
     });
 
     await page.evaluate(() => {
@@ -455,7 +494,11 @@ async function main() {
     );
 
     const immediateCompactHeight = await page.evaluate(() => {
-      window.handleAndroidStenoModeChanged(false);
+      window.handleAndroidStenoModeChanged(
+        false,
+        false,
+        window.__androidInputGeneration,
+      );
       return window.__androidHeight;
     });
     assert(
@@ -495,7 +538,11 @@ async function main() {
       "Normal typing bar switch did not invoke the input method picker",
     );
     const immediateRestoredHeight = await page.evaluate(() => {
-      window.handleAndroidStenoModeChanged(true);
+      window.handleAndroidStenoModeChanged(
+        true,
+        false,
+        window.__androidInputGeneration,
+      );
       return window.__androidHeight;
     });
     assert(
@@ -521,6 +568,8 @@ async function main() {
         true,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
       window.handleAndroidKeyEvent(
         "keyup",
@@ -531,6 +580,8 @@ async function main() {
         true,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
     });
     const modifiedKeyState = await page.evaluate(() => ({
@@ -555,6 +606,8 @@ async function main() {
         false,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
       // Simulate Android invalidating key ownership while the matching keyup
       // is routed elsewhere during an input-view or native-focus transition.

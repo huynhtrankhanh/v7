@@ -584,6 +584,8 @@ public class V7ImeService extends InputMethodService {
                 + event.isMetaPressed()
                 + ","
                 + event.isCapsLockOn()
+                + ","
+                + inputGeneration.get()
                 + ")";
         webView.evaluateJavascript(script, null);
         return true;
@@ -837,6 +839,8 @@ public class V7ImeService extends InputMethodService {
                         + (mode == HardwareInputMode.V7_PLOVER)
                         + ","
                         + (mode == HardwareInputMode.TELEX)
+                        + ","
+                        + inputGeneration.get()
                         + ")"
         );
     }
@@ -1207,6 +1211,11 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
+        public int getInputGeneration() {
+            return inputGeneration.get();
+        }
+
+        @JavascriptInterface
         public boolean isRawOutlineMode() {
             return rawOutlineMode;
         }
@@ -1265,12 +1274,16 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void setPreeditText(String text, String grammarSectionsJson) {
-            if (!isCurrentInputView()) {
+        public void setPreeditText(
+                String text,
+                String grammarSectionsJson,
+                int eventGeneration) {
+            if (!isCurrentInputView()
+                    || eventGeneration != inputGeneration.get()) {
                 return;
             }
             String normalized = text == null ? "" : text;
-            int generation = inputGeneration.get();
+            int generation = eventGeneration;
             if (isTelexMode()) {
                 telexHasPreedit = !normalized.isEmpty();
                 rememberPendingTelexText(normalized, generation);
@@ -1290,9 +1303,19 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void commitTelexText(String expectedText, String separator) {
-            if (!isCurrentInputView() || !isTelexMode()) return;
-            int generation = inputGeneration.get();
+        public int commitTelexText(
+                String expectedText,
+                String separator,
+                int eventGeneration) {
+            if (!isCurrentInputView()
+                    || !isTelexMode()
+                    || !inputGeneration.compareAndSet(
+                            eventGeneration,
+                            eventGeneration + 1)) {
+                return inputGeneration.get();
+            }
+            int generation = eventGeneration;
+            int nextGeneration = eventGeneration + 1;
             String committedText = expectedText == null ? "" : expectedText;
             String committedSeparator = separator == null ? "" : separator;
             telexHasPreedit = false;
@@ -1303,7 +1326,7 @@ public class V7ImeService extends InputMethodService {
                     // task. This does not depend on an earlier asynchronous
                     // PREEDIT update having reached the InputConnection.
                     if (!isCurrentInputView()
-                            || generation != inputGeneration.get()
+                            || nextGeneration != inputGeneration.get()
                             || !isTelexMode()) return;
                     InputConnection connection = getCurrentInputConnection();
                     if (connection != null) {
@@ -1314,7 +1337,6 @@ public class V7ImeService extends InputMethodService {
                     preeditText = "";
                     preeditGrammarSectionsJson = "[]";
                     pendingPreeditLengths.clear();
-                    inputGeneration.incrementAndGet();
                     takePendingTelexText(generation);
                 } finally {
                     applied.countDown();
@@ -1325,6 +1347,7 @@ public class V7ImeService extends InputMethodService {
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
             }
+            return nextGeneration;
         }
 
         @JavascriptInterface

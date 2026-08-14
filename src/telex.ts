@@ -747,9 +747,25 @@ function tryWShape(
       }
     }
 
-    // Free end-of-word marks intentionally transform one target per W so that
-    // `duongww` can reach `dương`. Otherwise this is simply the rightmost
-    // eligible vowel in the active nucleus.
+    if (
+      eligible.hasCoda &&
+      options.freeShapeMarks &&
+      eligible.positions.length >= 2
+    ) {
+      const penultimate = eligible.positions[eligible.positions.length - 2];
+      const last = eligible.positions[eligible.positions.length - 1];
+      const bases = [penultimate, last].map((position) =>
+        stripToneFromChar(state.letters[position]).toLocaleLowerCase("vi"),
+      );
+      if (last === penultimate + 1 && bases[0] === "u" && bases[1] === "o") {
+        replaceLetterWithCase(state, penultimate, "ư");
+        replaceLetterWithCase(state, last, "ơ");
+        state.pendingUoCompletion = false;
+        return true;
+      }
+    }
+
+    // Otherwise transform the rightmost eligible vowel in the active nucleus.
     const index = eligible.positions[eligible.positions.length - 1];
     const base = stripToneFromChar(state.letters[index]).toLocaleLowerCase(
       "vi",
@@ -804,14 +820,14 @@ function processStandardShortcut(
   rawChar: string,
 ): boolean {
   if (rawChar === "[") {
-    state.letters.push("ư");
+    state.letters.push("ơ");
     state.pendingUoCompletion = false;
     state.commandGroup = null;
     refreshToneAnchor(state);
     return true;
   }
   if (rawChar === "]") {
-    state.letters.push("ơ");
+    state.letters.push("ư");
     state.pendingUoCompletion = false;
     state.commandGroup = null;
     refreshToneAnchor(state);

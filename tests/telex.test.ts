@@ -94,8 +94,8 @@ describe("standard and simple Telex", () => {
   test("standard mode supports standalone W and bracket shortcuts", () => {
     expect(convertTelexToken("w")).toBe("ư");
     expect(convertTelexToken("W")).toBe("Ư");
-    expect(convertTelexToken("t[")).toBe("tư");
-    expect(convertTelexToken("t]")).toBe("tơ");
+    expect(convertTelexToken("t[")).toBe("tơ");
+    expect(convertTelexToken("t]")).toBe("tư");
   });
 
   test("simple mode leaves standalone W literal", () => {
@@ -114,7 +114,7 @@ describe("free shape marks", () => {
   });
 
   test("permit the classic fully delayed spelling when enabled", () => {
-    expect(convertTelexToken("duongwwfd", { freeShapeMarks: true })).toBe(
+    expect(convertTelexToken("dduongwf", { freeShapeMarks: true })).toBe(
       "đường",
     );
   });
@@ -179,6 +179,12 @@ describe("pure helpers", () => {
 });
 
 describe("TelexComposer", () => {
+  test("supports IME-style free delayed marks", () => {
+    const composer = new TelexComposer({ freeShapeMarks: true });
+    for (const key of "dduongwf") composer.push(key);
+    expect(composer.text).toBe("đường");
+  });
+
   test("replays raw keystrokes and backspaces over raw input", () => {
     const composer = new TelexComposer();
     for (const key of "tieengs") composer.push(key);

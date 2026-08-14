@@ -301,8 +301,17 @@ interface AndroidImeBridge {
   changeInputMethod(): void;
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
-  setPreeditText(text: string, grammarSectionsJson: string): void;
-  commitTelexText?(expectedText: string, separator: string): void;
+  getInputGeneration?(): number;
+  setPreeditText(
+    text: string,
+    grammarSectionsJson: string,
+    epoch: number,
+  ): void;
+  commitTelexText?(
+    expectedText: string,
+    separator: string,
+    epoch: number,
+  ): number;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -339,6 +348,7 @@ document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
+let androidInputEpoch = androidIme?.getInputGeneration?.() ?? 0;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
@@ -2819,7 +2829,7 @@ function updateDisplay(): void {
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
-const telexComposer = new TelexComposer();
+const telexComposer = new TelexComposer({ freeShapeMarks: true });
 
 document.addEventListener("keydown", (e) => {
   if (!androidIme) {
@@ -2835,12 +2845,20 @@ document.addEventListener("keydown", (e) => {
     )
       return;
     if (e.key === "Backspace") {
-      androidIme.setPreeditText(telexComposer.backspace(), "[]");
+      androidIme.setPreeditText(
+        telexComposer.backspace(),
+        "[]",
+        androidInputEpoch,
+      );
       e.preventDefault();
       return;
     }
     if (Array.from(e.key).length === 1 && /[\p{L}\[\]]/u.test(e.key)) {
-      androidIme.setPreeditText(telexComposer.push(e.key), "[]");
+      androidIme.setPreeditText(
+        telexComposer.push(e.key),
+        "[]",
+        androidInputEpoch,
+      );
       e.preventDefault();
       return;
     }
@@ -2852,7 +2870,12 @@ document.addEventListener("keydown", (e) => {
       const separator =
         e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
       const expectedText = telexComposer.commit();
-      androidIme.commitTelexText?.(expectedText, separator);
+      androidInputEpoch =
+        androidIme.commitTelexText?.(
+          expectedText,
+          separator,
+          androidInputEpoch,
+        ) ?? androidInputEpoch;
       e.preventDefault();
       return;
     }
@@ -3454,7 +3477,11 @@ declare global {
       rawOutline: boolean,
       plainText: boolean,
     ) => void;
-    handleAndroidStenoModeChanged?: (enabled: boolean, telex: boolean) => void;
+    handleAndroidStenoModeChanged?: (
+      enabled: boolean,
+      telex: boolean,
+      epoch: number,
+    ) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3465,6 +3492,7 @@ declare global {
       altKey: boolean,
       metaKey: boolean,
       capsLockActive: boolean,
+      epoch: number,
     ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
@@ -3582,9 +3610,10 @@ window.handleAndroidPloverPaused = (paused) => {
   updateDisplay();
 };
 
-window.handleAndroidStenoModeChanged = (enabled, telex) => {
+window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidStenoModeEnabled = enabled;
   androidTelexModeEnabled = telex;
+  androidInputEpoch = epoch;
   telexComposer.clear();
   resetHardwareKeyboardState();
   updateDisplay();
@@ -3625,6 +3654,7 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   androidIme.setPreeditText(
     renderVisibleText(state.islands, state.candidates),
     JSON.stringify(grammarSections),
+    androidInputEpoch,
   );
 }
 
@@ -3751,7 +3781,9 @@ window.handleAndroidKeyEvent = (
   altKey,
   metaKey,
   capsLockActive,
+  epoch,
 ) => {
+  if (epoch !== androidInputEpoch) return;
   keyboardCapsLockActive = capsLockActive;
   document.dispatchEvent(
     new KeyboardEvent(action, {
