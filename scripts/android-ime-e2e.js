@@ -187,7 +187,11 @@ async function main() {
           if (epoch !== window.__androidInputGeneration) {
             return window.__androidInputGeneration;
           }
-          window.__androidTelexBarriers.push({ barrierId, expectedText, epoch });
+          window.__androidTelexBarriers.push({
+            barrierId,
+            expectedText,
+            epoch,
+          });
           window.__androidInputGeneration += 1;
           return window.__androidInputGeneration;
         },
