@@ -296,10 +296,17 @@ interface AndroidImeBridge {
   isPlainTextMode?(): boolean;
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
+  isTelexModeEnabled?(): boolean;
+  isTelexReady?(): boolean;
   changeInputMethod(): void;
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
-  setPreeditText(text: string, grammarSectionsJson: string): void;
+  getInputGeneration?(): number;
+  setPreeditText(
+    text: string,
+    grammarSectionsJson: string,
+    epoch: number,
+  ): void;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -335,10 +342,20 @@ const isTrainerEmbedded = new URLSearchParams(window.location.search).has(
 document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
+let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
+let androidTelexReady = androidIme?.isTelexReady?.() ?? false;
+let androidInputEpoch = androidIme?.getInputGeneration?.() ?? 0;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
 let keyboardCapsLockActive = false;
+
+function isAndroidEffectiveTelexMode(): boolean {
+  return (
+    Boolean(androidIme) && androidTelexModeEnabled && !androidRawOutlineMode
+  );
+}
+
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
@@ -2585,8 +2602,27 @@ function updateDisplay(): void {
     "android-normal-typing",
     strippedDisplay.enabled &&
       (!androidStenoModeEnabled || androidPlainTextMode) &&
+      !androidTelexModeEnabled &&
       !androidRawOutlineMode,
   );
+  document.body.classList.toggle(
+    "android-telex",
+    strippedDisplay.enabled &&
+      androidTelexModeEnabled &&
+      !androidRawOutlineMode,
+  );
+  document.body.classList.toggle(
+    "android-telex-degraded",
+    strippedDisplay.enabled && androidTelexModeEnabled && !androidTelexReady,
+  );
+  const telexBannerLabel = document.querySelector<HTMLElement>(
+    ".ime-telex-banner strong",
+  );
+  if (telexBannerLabel) {
+    telexBannerLabel.textContent = androidTelexReady
+      ? "Telex"
+      : "Telex unavailable — Latin fallback";
+  }
   document.body.classList.toggle(
     "android-raw-outline",
     strippedDisplay.enabled && androidRawOutlineMode,
@@ -2595,9 +2631,11 @@ function updateDisplay(): void {
   if (modeTitle && strippedDisplay.enabled) {
     modeTitle.textContent = androidRawOutlineMode
       ? "Raw outline mode"
-      : androidStenoModeEnabled && !androidPlainTextMode
-        ? "Compose"
-        : "Normal typing";
+      : androidTelexModeEnabled
+        ? "Telex"
+        : androidStenoModeEnabled && !androidPlainTextMode
+          ? "Compose"
+          : "Normal typing";
   }
   document.body.classList.toggle(
     "stripped-plover-active",
@@ -2806,7 +2844,6 @@ function updateDisplay(): void {
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
-
 document.addEventListener("keydown", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
@@ -2928,6 +2965,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
+  if (isAndroidEffectiveTelexMode()) {
+    e.preventDefault();
+    return;
   }
   if (hasOsPassthroughModifier(e)) {
     resetHardwareKeyboardState();
@@ -3389,7 +3430,7 @@ declare global {
   interface Window {
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
-    clearPreeditFromAndroid?: () => void;
+    clearPreeditFromAndroid?: (epoch?: number) => void;
     resetHardwareKeyboardStateFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
@@ -3403,7 +3444,12 @@ declare global {
       rawOutline: boolean,
       plainText: boolean,
     ) => void;
-    handleAndroidStenoModeChanged?: (enabled: boolean) => void;
+    handleAndroidStenoModeChanged?: (
+      enabled: boolean,
+      telex: boolean,
+      epoch: number,
+    ) => void;
+    handleAndroidTelexAvailability?: (ready: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3414,6 +3460,7 @@ declare global {
       altKey: boolean,
       metaKey: boolean,
       capsLockActive: boolean,
+      epoch: number,
     ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
@@ -3531,9 +3578,16 @@ window.handleAndroidPloverPaused = (paused) => {
   updateDisplay();
 };
 
-window.handleAndroidStenoModeChanged = (enabled) => {
+window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidStenoModeEnabled = enabled;
+  androidTelexModeEnabled = telex;
+  androidInputEpoch = epoch;
   resetHardwareKeyboardState();
+  updateDisplay();
+};
+
+window.handleAndroidTelexAvailability = (ready) => {
+  androidTelexReady = ready;
   updateDisplay();
 };
 
@@ -3572,6 +3626,7 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   androidIme.setPreeditText(
     renderVisibleText(state.islands, state.candidates),
     JSON.stringify(grammarSections),
+    androidInputEpoch,
   );
 }
 
@@ -3580,6 +3635,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   const compact =
     document.body.classList.contains("stripped-plover-active") ||
     document.body.classList.contains("android-normal-typing") ||
+    document.body.classList.contains("android-telex") ||
     document.body.classList.contains("android-raw-outline");
   if (compact) {
     if (lastRequestedAndroidKeyboardHeight !== 48) {
@@ -3663,7 +3719,8 @@ window.addEventListener("resize", () => {
   }
 });
 
-window.clearPreeditFromAndroid = () => {
+window.clearPreeditFromAndroid = (epoch) => {
+  if (epoch !== undefined) androidInputEpoch = epoch;
   resetHardwareKeyboardState();
   abortInferenceRequest(true);
   strippedPlover.requestId += 1;
@@ -3696,7 +3753,9 @@ window.handleAndroidKeyEvent = (
   altKey,
   metaKey,
   capsLockActive,
+  epoch,
 ) => {
+  if (epoch !== androidInputEpoch) return;
   keyboardCapsLockActive = capsLockActive;
   document.dispatchEvent(
     new KeyboardEvent(action, {

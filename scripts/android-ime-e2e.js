@@ -62,6 +62,7 @@ async function androidChord(page, keys, { capsLock = false } = {}) {
           false,
           false,
           capsLockActive,
+          window.__androidInputGeneration,
         );
       }
       for (const key of [...downKeys].reverse()) {
@@ -75,6 +76,7 @@ async function androidChord(page, keys, { capsLock = false } = {}) {
           false,
           false,
           capsLockActive,
+          window.__androidInputGeneration,
         );
       }
     },
@@ -127,6 +129,8 @@ async function main() {
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.__androidRawOutlineUndos = 0;
+      window.__androidTelexMode = false;
+      window.__androidInputGeneration = 0;
       window.AndroidIme = {
         getInferenceModelError() {
           return "";
@@ -140,6 +144,15 @@ async function main() {
         isStenoModeEnabled() {
           return true;
         },
+        isTelexModeEnabled() {
+          return window.__androidTelexMode;
+        },
+        isTelexReady() {
+          return true;
+        },
+        getInputGeneration() {
+          return window.__androidInputGeneration;
+        },
         isRawOutlineMode() {
           return false;
         },
@@ -152,7 +165,8 @@ async function main() {
         setKeyboardHeight(height) {
           window.__androidHeight = height;
         },
-        setPreeditText(text, grammarSectionsJson) {
+        setPreeditText(text, grammarSectionsJson, epoch) {
+          if (epoch !== window.__androidInputGeneration) return;
           window.__androidPreedits.push({
             text,
             grammarSections: JSON.parse(grammarSectionsJson),
@@ -302,6 +316,35 @@ async function main() {
       inferenceStatus: document.querySelector("#inference-status").textContent,
     }));
 
+    const telexResult = await page.evaluate(() => {
+      window.__androidTelexMode = true;
+      window.handleAndroidStenoModeChanged(
+        false,
+        true,
+        window.__androidInputGeneration,
+      );
+      window.handleAndroidTelexAvailability(false);
+      const degraded = {
+        className: document.body.classList.contains("android-telex-degraded"),
+        label: document.querySelector(".ime-telex-banner strong").textContent,
+      };
+      window.handleAndroidTelexAvailability(true);
+      return {
+        degraded,
+        compact: document.body.classList.contains("android-telex"),
+        banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
+          .display,
+        height: window.__androidHeight,
+      };
+    });
+    assert(
+      telexResult.compact &&
+        telexResult.degraded.className &&
+        telexResult.degraded.label.includes("Latin fallback") &&
+        telexResult.banner === "flex" &&
+        telexResult.height === 48,
+      `Telex native-mode UI failed: ${JSON.stringify(telexResult)}`,
+    );
     await page.evaluate(() => {
       window.clearPreeditFromAndroid();
       window.handleAndroidEditorModeChanged(true, false);
@@ -343,8 +386,23 @@ async function main() {
     await androidChord(page, [" "]);
     await page.waitForFunction(() => window.__androidRawOutlineUndos === 1);
     await page.evaluate(() => {
-      window.handleAndroidEditorModeChanged(false, true);
+      window.handleAndroidEditorModeChanged(false, false);
       window.clearPreeditFromAndroid();
+    });
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("android-telex") &&
+        !document.body.classList.contains("android-raw-outline") &&
+        window.__androidHeight === 48,
+    );
+    await page.evaluate(() => {
+      window.__androidTelexMode = false;
+      window.handleAndroidStenoModeChanged(
+        true,
+        false,
+        window.__androidInputGeneration,
+      );
+      window.handleAndroidEditorModeChanged(false, true);
     });
     await page.waitForFunction(
       () =>
@@ -380,7 +438,11 @@ async function main() {
     );
 
     const immediateCompactHeight = await page.evaluate(() => {
-      window.handleAndroidStenoModeChanged(false);
+      window.handleAndroidStenoModeChanged(
+        false,
+        false,
+        window.__androidInputGeneration,
+      );
       return window.__androidHeight;
     });
     assert(
@@ -420,7 +482,11 @@ async function main() {
       "Normal typing bar switch did not invoke the input method picker",
     );
     const immediateRestoredHeight = await page.evaluate(() => {
-      window.handleAndroidStenoModeChanged(true);
+      window.handleAndroidStenoModeChanged(
+        true,
+        false,
+        window.__androidInputGeneration,
+      );
       return window.__androidHeight;
     });
     assert(
@@ -446,6 +512,8 @@ async function main() {
         true,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
       window.handleAndroidKeyEvent(
         "keyup",
@@ -456,6 +524,8 @@ async function main() {
         true,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
     });
     const modifiedKeyState = await page.evaluate(() => ({
@@ -480,6 +550,8 @@ async function main() {
         false,
         false,
         false,
+        false,
+        window.__androidInputGeneration,
       );
       // Simulate Android invalidating key ownership while the matching keyup
       // is routed elsewhere during an input-view or native-focus transition.

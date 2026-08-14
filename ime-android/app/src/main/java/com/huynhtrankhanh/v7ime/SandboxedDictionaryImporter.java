@@ -50,17 +50,10 @@ final class SandboxedDictionaryImporter {
             boolean merge,
             ProgressCallback progress) throws Exception {
         validateRequest(name, type, source, merge);
-        if (!JavaScriptSandbox.isSupported()) {
-            throw new IllegalStateException(
-                    "Background dictionary import requires Android 8 or newer "
-                            + "and a current Android System WebView"
-            );
-        }
-
         progress.onProgress("Starting Android JavaScript sandbox", 0, -1, 8);
-        try (JavaScriptSandbox sandbox = JavaScriptSandbox
-                .createConnectedInstanceAsync(context.getApplicationContext())
-                .get(SANDBOX_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+        JavaScriptSandbox sandbox = ApplicationJavaScriptSandbox.get(
+                context, SANDBOX_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        try {
             requireFeature(
                     sandbox,
                     JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN,
@@ -115,6 +108,11 @@ final class SandboxedDictionaryImporter {
                         progress
                 );
             }
+        } catch (Exception error) {
+            if (ApplicationJavaScriptSandbox.isSandboxDead(error)) {
+                ApplicationJavaScriptSandbox.invalidate(sandbox);
+            }
+            throw error;
         }
     }
 

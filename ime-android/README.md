@@ -16,9 +16,13 @@ imports.
 - `V7ImeService` hosts that UI in a `WebView`. The WebUI detects
   `window.AndroidIme`, enables stripped display mode, and mirrors its current
   rendered text into Android composing text.
-- External hardware key-down and key-up events are captured by the IME and
-  forwarded to the WebUI as browser `KeyboardEvent`s. The IME does not render
-  an on-screen key layout.
+- V7/Plover hardware events are forwarded to the WebUI as browser
+  `KeyboardEvent`s. Telex hardware input is handled natively; only its pure
+  linguistic conversion runs synchronously in a DOM-free AndroidX
+  `JavaScriptSandbox`. The IME does not render an on-screen key layout.
+- Telex and dictionary importing share the application's single sandbox using
+  separate isolates. Telex loads and warms its tone oracle in the background;
+  its banner explicitly reports Latin fallback until conversion is ready.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
 - Settings can replace the bundled two-syllable lexical dictionary with a
@@ -62,6 +66,15 @@ imports.
 - The physical Ctrl+Shift chord switches between STENO capture and ordinary
   hardware-keyboard typing. The chord toggles once per press cycle while solo
   Ctrl and Shift retain their ordinary behavior.
+- `Ctrl+Tab` switches between V7/Stripped Plover and Telex composition. From
+  Normal typing it enters Telex directly; `Ctrl+Shift` from Telex enters Normal
+  typing, while `Ctrl+Shift` from Normal typing returns to V7/Plover. Telex
+  keeps the current word as Android PREEDIT, supports ordinary Latin text via
+  repeated-mark escapes, and commits/ends PREEDIT at whitespace or symbols.
+  Empty-PREEDIT Backspace passes through to the editor, and Enter retains the
+  editor's standard Android action behavior after finalizing PREEDIT.
+  Numpad and layout-specific printable keys also terminate PREEDIT rather than
+  bypassing the Telex composer.
 - Normal typing uses a labeled 48 dp status bar, matching the compact active
   Stripped Plover treatment instead of leaving the composition UI visible.
   Compact transitions apply their height immediately, and returning to V7
@@ -87,6 +100,10 @@ imports.
 See [Android hardware-keyboard interactions](docs/hardware-keyboard-interactions.md)
 for the complete mode table, PREEDIT semantics, and native/WebUI event-routing
 order.
+
+See [Telex behavior](docs/telex-behavior.md) for the three-mode state machine
+and [the supplied Telex adapter supplement](docs/telex-behavior-supplement.md)
+for the converter's detailed key and tone-placement rules.
 
 See [Virtual-keyboard visibility with an external keyboard](docs/keyboard-visibility.md)
 for the attach/detach recovery policy, lifecycle safeguards, and verification
