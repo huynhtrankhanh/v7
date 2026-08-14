@@ -31,6 +31,7 @@ android {
     sourceSets {
         main {
             assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
+            assets.srcDir layout.buildDirectory.dir("generated/telexSandbox")
             assets.srcDir layout.buildDirectory.dir(
                     "generated/strippedPloverWeb"
             )
@@ -62,6 +63,7 @@ android {
 
 def webRoot = rootProject.file("..")
 def generatedWebAssets = layout.buildDirectory.dir("generated/v7WebUi")
+def generatedTelexSandbox = layout.buildDirectory.dir("generated/telexSandbox")
 def generatedStrippedPloverAssets = layout.buildDirectory.dir(
         "generated/strippedPloverWeb"
 )
@@ -103,6 +105,22 @@ tasks.register("syncWebUi", Sync) {
         include "script.js"
     }
     into generatedWebAssets
+}
+
+tasks.register("buildTelexSandbox", Exec) {
+    commandLine(
+            "node",
+            new File(webRoot, "scripts/build-telex-sandbox.mjs"),
+            generatedTelexSandbox.get().file("telex-sandbox.js").asFile
+    )
+    workingDir webRoot
+    inputs.files(
+            new File(webRoot, "src/telex-sandbox.ts"),
+            new File(webRoot, "src/telex.ts"),
+            new File(webRoot, "src/vietnameseSyllables.ts"),
+            new File(webRoot, "scripts/build-telex-sandbox.mjs")
+    )
+    outputs.file generatedTelexSandbox.map { it.file("telex-sandbox.js") }
 }
 
 tasks.register("prepareKenlm", Exec) {
@@ -226,6 +244,7 @@ tasks.register("buildSourceArchive", Exec) {
 
 tasks.named("preBuild").configure {
     dependsOn "syncWebUi"
+    dependsOn "buildTelexSandbox"
     dependsOn "buildStrippedPloverWeb"
     dependsOn "buildNativeInference"
     dependsOn "buildSourceArchive"

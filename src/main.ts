@@ -40,7 +40,6 @@ import {
   decodeCanonicalTwoSyllableStroke,
   decodeDictionaryModeStroke,
 } from "./twoSyllableV7";
-import { TelexComposer } from "./telex";
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
@@ -307,19 +306,6 @@ interface AndroidImeBridge {
     grammarSectionsJson: string,
     epoch: number,
   ): void;
-  commitTelexText?(
-    expectedText: string,
-    separator: string,
-    epoch: number,
-  ): number;
-  acknowledgeHardwareEvent?(sequence: number, epoch: number): void;
-  completeTelexBarrier?(
-    barrierId: number,
-    expectedText: string,
-    separator: string,
-    epoch: number,
-  ): number;
-  cancelTelexBarrier?(barrierId: number, epoch: number): void;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -2837,57 +2823,9 @@ function updateDisplay(): void {
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
-const telexComposer = new TelexComposer({ freeShapeMarks: true });
-
 document.addEventListener("keydown", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
-  }
-  if (androidIme && androidTelexModeEnabled) {
-    const printableAltLayoutKey =
-      e.altKey && !e.metaKey && Array.from(e.key).length === 1;
-    if (
-      e.metaKey ||
-      (e.ctrlKey && !printableAltLayoutKey) ||
-      (e.altKey && !printableAltLayoutKey)
-    )
-      return;
-    if (e.key === "Backspace") {
-      androidIme.setPreeditText(
-        telexComposer.backspace(),
-        "[]",
-        androidInputEpoch,
-      );
-      e.preventDefault();
-      return;
-    }
-    if (Array.from(e.key).length === 1 && /[\p{L}\[\]]/u.test(e.key)) {
-      androidIme.setPreeditText(
-        telexComposer.push(e.key),
-        "[]",
-        androidInputEpoch,
-      );
-      e.preventDefault();
-      return;
-    }
-    if (
-      Array.from(e.key).length === 1 ||
-      e.key === "Enter" ||
-      e.key === "Tab"
-    ) {
-      const separator =
-        e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
-      const expectedText = telexComposer.commit();
-      androidInputEpoch =
-        androidIme.commitTelexText?.(
-          expectedText,
-          separator,
-          androidInputEpoch,
-        ) ?? androidInputEpoch;
-      e.preventDefault();
-      return;
-    }
-    return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     resetHardwareKeyboardState();
@@ -3501,12 +3439,6 @@ declare global {
       metaKey: boolean,
       capsLockActive: boolean,
       epoch: number,
-      sequence?: number,
-    ) => void;
-    handleAndroidTelexBarrier?: (
-      barrierId: number,
-      epoch: number,
-      separator: string,
     ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
@@ -3628,7 +3560,6 @@ window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidStenoModeEnabled = enabled;
   androidTelexModeEnabled = telex;
   androidInputEpoch = epoch;
-  telexComposer.clear();
   resetHardwareKeyboardState();
   updateDisplay();
 };
@@ -3763,7 +3694,6 @@ window.addEventListener("resize", () => {
 
 window.clearPreeditFromAndroid = (epoch) => {
   if (epoch !== undefined) androidInputEpoch = epoch;
-  telexComposer.clear();
   resetHardwareKeyboardState();
   abortInferenceRequest(true);
   strippedPlover.requestId += 1;
@@ -3797,44 +3727,22 @@ window.handleAndroidKeyEvent = (
   metaKey,
   capsLockActive,
   epoch,
-  sequence,
 ) => {
-  try {
-    if (epoch !== androidInputEpoch) return;
-    keyboardCapsLockActive = capsLockActive;
-    document.dispatchEvent(
-      new KeyboardEvent(action, {
-        key,
-        code,
-        repeat,
-        shiftKey,
-        ctrlKey,
-        altKey,
-        metaKey,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  } finally {
-    if (sequence !== undefined) {
-      androidIme?.acknowledgeHardwareEvent?.(sequence, epoch);
-    }
-  }
-};
-
-window.handleAndroidTelexBarrier = (barrierId, epoch, separator) => {
-  if (epoch !== androidInputEpoch) {
-    androidIme?.cancelTelexBarrier?.(barrierId, epoch);
-    return;
-  }
-  const expectedText = telexComposer.commit();
-  androidInputEpoch =
-    androidIme?.completeTelexBarrier?.(
-      barrierId,
-      expectedText,
-      separator,
-      epoch,
-    ) ?? epoch;
+  if (epoch !== androidInputEpoch) return;
+  keyboardCapsLockActive = capsLockActive;
+  document.dispatchEvent(
+    new KeyboardEvent(action, {
+      key,
+      code,
+      repeat,
+      shiftKey,
+      ctrlKey,
+      altKey,
+      metaKey,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
 };
 
 window.setStrippedDisplay = (options = {}) => {

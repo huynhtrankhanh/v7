@@ -29,18 +29,6 @@ final class HardwareKeyPressOwnership {
         }
     }
 
-    boolean transfer(
-            int keyCode, Owner expectedOwner, Owner nextOwner, int generation) {
-        Claim existing = owners.get(keyCode);
-        if (existing == null
-                || existing.owner != expectedOwner
-                || !existing.belongsTo(generation)) {
-            return false;
-        }
-        owners.put(keyCode, new Claim(nextOwner, generation));
-        return true;
-    }
-
     Claim get(int keyCode) {
         return owners.get(keyCode);
     }

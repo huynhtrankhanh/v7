@@ -16,9 +16,10 @@ imports.
 - `V7ImeService` hosts that UI in a `WebView`. The WebUI detects
   `window.AndroidIme`, enables stripped display mode, and mirrors its current
   rendered text into Android composing text.
-- External hardware key-down and key-up events are captured by the IME and
-  forwarded to the WebUI as browser `KeyboardEvent`s. The IME does not render
-  an on-screen key layout.
+- V7/Plover hardware events are forwarded to the WebUI as browser
+  `KeyboardEvent`s. Telex hardware input is handled natively; only its pure
+  linguistic conversion runs synchronously in a DOM-free AndroidX
+  `JavaScriptSandbox`. The IME does not render an on-screen key layout.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
 - Settings can replace the bundled two-syllable lexical dictionary with a

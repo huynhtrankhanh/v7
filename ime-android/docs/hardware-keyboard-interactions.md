@@ -91,27 +91,13 @@ V7/Plover those Telex-only keys retain the pre-Telex pass-through behavior.
 Printable Alt/AltGr layout output is also captured to terminate Telex PREEDIT;
 Ctrl-only and Meta shortcuts continue to pass directly to the editor.
 
-Key ownership is normally fixed from the first key-down through repeats and
-key-up. Backspace is the deliberate exception: if a held, Web-owned Backspace
-exhausts Telex PREEDIT, its next repeat transfers the press to the editor. The
-remaining repeats and key-up then stay editor-owned, allowing the same hold to
-continue deleting committed text.
-WEB-owned presses also retain their starting input generation. After an editor
-or mode transition, their remaining repeats and key-up are consumed until
-physical release instead of being reinterpreted by the new mode. Editor-owned
-key-up events still pass through so the target editor receives balanced input.
-
-While a Telex separator, Enter, or mode-change barrier is waiting for the WebUI, later
-physical events are consumed into a native FIFO. Once finalization installs the
-new epoch and target mode, those events are replayed through normal routing;
-events are discarded instead if the barrier became stale because the editor or
-input view changed.
-The native timeout fallback prevents a missing/uninitialized JavaScript handler
-from freezing hardware input, and lifecycle resets cancel any active barrier.
-Native routing also serializes ordinary Telex key-downs one JavaScript turn at
-a time. Key-up, repeat, shortcut, and following-character events wait in a
-native FIFO until the Web bridge acknowledges completion of the current
-synchronous DOM reduction.
+V7/Plover Web-owned presses retain their starting input generation. Telex is
+different: Android handles its raw buffer, Backspace, PREEDIT, terminators, and
+mode changes directly. Each raw-word conversion is a synchronous call to a
+persistent DOM-free `JavaScriptSandbox`; no Telex hardware event is sent through
+the WebView, queued, acknowledged, or replayed. Once held Backspace empties the
+native raw buffer, the next repeat follows ordinary editor routing and continues
+deleting committed text.
 
 ## Raw outline fields
 

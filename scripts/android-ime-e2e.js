@@ -130,10 +130,6 @@ async function main() {
       window.__androidKeyboardSwitches = 0;
       window.__androidRawOutlineUndos = 0;
       window.__androidTelexMode = false;
-      window.__androidTelexCommits = [];
-      window.__androidHardwareAcks = [];
-      window.__androidTelexBarriers = [];
-      window.__androidCancelledTelexBarriers = [];
       window.__androidInputGeneration = 0;
       window.AndroidIme = {
         getInferenceModelError() {
@@ -172,33 +168,6 @@ async function main() {
             text,
             grammarSections: JSON.parse(grammarSectionsJson),
           });
-        },
-        commitTelexText(expectedText, separator, epoch) {
-          if (epoch !== window.__androidInputGeneration) {
-            return window.__androidInputGeneration;
-          }
-          window.__androidTelexCommits.push({ expectedText, separator });
-          window.__androidInputGeneration += 1;
-          return window.__androidInputGeneration;
-        },
-        acknowledgeHardwareEvent(sequence, epoch) {
-          window.__androidHardwareAcks.push({ sequence, epoch });
-        },
-        completeTelexBarrier(barrierId, expectedText, separator, epoch) {
-          if (epoch !== window.__androidInputGeneration) {
-            return window.__androidInputGeneration;
-          }
-          window.__androidTelexBarriers.push({
-            barrierId,
-            expectedText,
-            separator,
-            epoch,
-          });
-          window.__androidInputGeneration += 1;
-          return window.__androidInputGeneration;
-        },
-        cancelTelexBarrier(barrierId, epoch) {
-          window.__androidCancelledTelexBarriers.push({ barrierId, epoch });
         },
         undoRawOutlineStroke() {
           window.__androidRawOutlineUndos += 1;
@@ -351,109 +320,7 @@ async function main() {
         true,
         window.__androidInputGeneration,
       );
-      const preeditsBeforeStaleEvent = window.__androidPreedits.length;
-      window.handleAndroidKeyEvent(
-        "keydown",
-        "x",
-        "KeyX",
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        window.__androidInputGeneration - 1,
-      );
-      const staleEventIgnored =
-        window.__androidPreedits.length === preeditsBeforeStaleEvent;
-      window.__androidInputGeneration += 1;
-      window.clearPreeditFromAndroid(window.__androidInputGeneration);
-      const send = (
-        key,
-        code,
-        repeat = false,
-        shiftKey = false,
-        capsLockActive = false,
-      ) =>
-        window.handleAndroidKeyEvent(
-          "keydown",
-          key,
-          code,
-          repeat,
-          shiftKey,
-          false,
-          false,
-          false,
-          capsLockActive,
-          window.__androidInputGeneration,
-        );
-      for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
-      const composed = window.__androidPreedits.at(-1)?.text;
-      window.handleAndroidTelexBarrier(41, window.__androidInputGeneration, "");
-      const barrier = window.__androidTelexBarriers.at(-1);
-      window.clearPreeditFromAndroid(window.__androidInputGeneration);
-      for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
-      send("Backspace", "Backspace");
-      const afterBackspace = window.__androidPreedits.at(-1)?.text;
-      send("Backspace", "Backspace", true);
-      const afterRepeatedBackspace = window.__androidPreedits.at(-1)?.text;
-      send("g", "KeyG");
-      send("s", "KeyS");
-      send(" ", "Space");
-      const commit = window.__androidTelexCommits.at(-1);
-      for (const key of "xin") send(key, `Key${key.toUpperCase()}`);
-      window.handleAndroidKeyEvent(
-        "keydown",
-        "€",
-        "KeyE",
-        false,
-        false,
-        true,
-        true,
-        false,
-        false,
-        window.__androidInputGeneration,
-      );
-      const altGraphCommit = window.__androidTelexCommits.at(-1);
-      for (const key of "Dduowngf") {
-        send(key, `Key${key.toUpperCase()}`, false, key === "D");
-      }
-      const shiftedD = window.__androidPreedits.at(-1)?.text;
-      send(" ", "Space");
-      for (const key of "Tieengs") {
-        send(key, `Key${key.toUpperCase()}`, false, key === "T");
-      }
-      const shiftedT = window.__androidPreedits.at(-1)?.text;
-      send(" ", "Space");
-      for (const key of "DDUOWNGF") {
-        send(key, `Key${key}`, false, false, true);
-      }
-      const capsLockWord = window.__androidPreedits.at(-1)?.text;
-      window.handleAndroidTelexBarrier(
-        42,
-        window.__androidInputGeneration,
-        " ",
-      );
-      const separatorBarrier = window.__androidTelexBarriers.at(-1);
-      window.handleAndroidTelexBarrier(
-        43,
-        window.__androidInputGeneration - 1,
-        " ",
-      );
-      const cancelledBarrier = window.__androidCancelledTelexBarriers.at(-1);
       return {
-        composed,
-        barrier,
-        staleEventIgnored,
-        afterBackspace,
-        afterRepeatedBackspace,
-        commit,
-        altGraphCommit,
-        shiftedD,
-        shiftedT,
-        capsLockWord,
-        separatorBarrier,
-        cancelledBarrier,
         compact: document.body.classList.contains("android-telex"),
         banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
           .display,
@@ -461,26 +328,10 @@ async function main() {
       };
     });
     assert(
-      telexResult.composed === "tiếng" &&
-        telexResult.barrier?.barrierId === 41 &&
-        telexResult.barrier?.expectedText === "tiếng" &&
-        telexResult.staleEventIgnored &&
-        telexResult.afterBackspace === "tiêng" &&
-        telexResult.afterRepeatedBackspace === "tiên" &&
-        telexResult.commit?.expectedText === "tiếng" &&
-        telexResult.commit?.separator === " " &&
-        telexResult.altGraphCommit?.expectedText === "xin" &&
-        telexResult.altGraphCommit?.separator === "€" &&
-        telexResult.shiftedD === "Đường" &&
-        telexResult.shiftedT === "Tiếng" &&
-        telexResult.capsLockWord === "ĐƯỜNG" &&
-        telexResult.separatorBarrier?.expectedText === "ĐƯỜNG" &&
-        telexResult.separatorBarrier?.separator === " " &&
-        telexResult.cancelledBarrier?.barrierId === 43 &&
-        telexResult.compact &&
+      telexResult.compact &&
         telexResult.banner === "flex" &&
         telexResult.height === 48,
-      `Telex PREEDIT/repeat/commit behavior failed: ${JSON.stringify(telexResult)}`,
+      `Telex native-mode UI failed: ${JSON.stringify(telexResult)}`,
     );
     await page.evaluate(() => {
       window.__androidTelexMode = false;
