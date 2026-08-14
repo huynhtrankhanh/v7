@@ -13,6 +13,7 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.SuggestionSpan;
 import android.util.Log;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -32,11 +33,13 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class V7ImeService extends InputMethodService {
     private static final String LOG_TAG = "V7Ime";
@@ -50,16 +53,31 @@ public class V7ImeService extends InputMethodService {
             new KeyboardVisibilityController();
     private final HardwareKeyActionResolver hardwareKeyActionResolver =
             new HardwareKeyActionResolver();
-    private final Set<Integer> webCapturedHardwareKeys = new HashSet<>();
-    private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
+    private final TelexHardwareKeyPolicy telexHardwareKeyPolicy =
+            new TelexHardwareKeyPolicy();
+    private final HardwareKeyCapturePolicy hardwareKeyCapturePolicy =
+            new HardwareKeyCapturePolicy();
+    private final HardwareKeyPressOwnership hardwareKeyPressOwnership =
+            new HardwareKeyPressOwnership();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout inputContainer;
-    private WebView webView;
+    private volatile WebView webView;
     private boolean inferenceWarmupScheduled = false;
     private String preeditText = "";
     private String preeditGrammarSectionsJson = "[]";
+    private final TelexPreeditState telexPreeditState = new TelexPreeditState();
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
     private final AtomicInteger inputGeneration = new AtomicInteger();
+    private final AtomicLong hardwareEventSequence = new AtomicLong();
+    private final AtomicInteger barrierSequence = new AtomicInteger();
+    private final ConcurrentHashMap<Long, Integer> pendingTelexEvents =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, PendingTelexBarrier> pendingTelexBarriers =
+            new ConcurrentHashMap<>();
+    // Main-thread-only queue. A Telex barrier owns all later physical events
+    // until it has advanced the epoch and applied its editor/mode action.
+    private final HardwareEventBarrierQueue<KeyEvent> hardwareEventBarrierQueue =
+            new HardwareEventBarrierQueue<>();
     private final GenerationOwnership<WebView> inputViewOwnership =
             new GenerationOwnership<>();
     private int inputViewGeneration;
@@ -73,8 +91,20 @@ public class V7ImeService extends InputMethodService {
     private static volatile String inferenceModelError = "";
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
-    private boolean stenoModeEnabled = true;
-    private boolean rawOutlineMode = false;
+    private volatile HardwareInputMode hardwareInputMode =
+            HardwareInputMode.V7_PLOVER;
+    private volatile boolean telexHasPreedit = false;
+    private volatile boolean rawOutlineMode = false;
+
+    private static final class PendingTelexBarrier {
+        final int generation;
+        final Runnable afterFinalize;
+
+        PendingTelexBarrier(int generation, Runnable afterFinalize) {
+            this.generation = generation;
+            this.afterFinalize = afterFinalize;
+        }
+    }
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
@@ -323,13 +353,16 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
+        if (hardwareEventBarrierQueue.offerIfActive(new KeyEvent(event))) {
+            return true;
+        }
         if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(event)) {
             resetHardwareInputState();
             return false;
         }
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
-                        stenoModeEnabled || rawOutlineMode,
+                        isV7PloverMode() || rawOutlineMode,
                         event.getKeyCode(),
                         event.getAction(),
                         event.getRepeatCount()
@@ -337,32 +370,91 @@ public class V7ImeService extends InputMethodService {
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
             return dispatchModeKeyAction(event, hardwareAction);
         }
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && webCapturedHardwareKeys.remove(event.getKeyCode())) {
+        HardwareKeyPressOwnership.Claim keyClaim =
+                hardwareKeyPressOwnership.get(event.getKeyCode());
+        if (event.getAction() == KeyEvent.ACTION_UP && keyClaim != null) {
+            hardwareKeyPressOwnership.release(event.getKeyCode());
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
+                return false;
+            }
+            if (!keyClaim.belongsTo(inputGeneration.get())) return true;
             return dispatchPhysicalKeyToWeb("keyup", event);
         }
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && editorPassedHardwareKeys.remove(event.getKeyCode())) {
-            return false;
+        if (event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() > 0 && keyClaim != null) {
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
+                return false;
+            }
+            if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            // Backspace is the one press whose owner may deliberately change:
+            // once its Web-owned repeats exhaust raw Telex PREEDIT, later
+            // repeats and the eventual key-up must belong to the editor so a
+            // continuous hold can keep deleting committed text.
+            if (isTelexMode()
+                    && event.getKeyCode() == KeyEvent.KEYCODE_DEL
+                    && !telexHasPreedit
+                    && !hasPendingTelexEvent()
+                    && hardwareKeyPressOwnership.transfer(
+                            event.getKeyCode(),
+                            HardwareKeyPressOwnership.Owner.WEB,
+                            HardwareKeyPressOwnership.Owner.EDITOR,
+                            inputGeneration.get())) {
+                return false;
+            }
+            return dispatchPhysicalKeyToWeb("keydown", event);
         }
-        if (!stenoModeEnabled && !rawOutlineMode) {
+        if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
-                editorPassedHardwareKeys.add(event.getKeyCode());
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
             }
             return false;
         }
+        boolean captureModifiedPrintable =
+                hardwareKeyCapturePolicy.capturesModifiedPrintable(
+                        isTelexMode(),
+                        event.getUnicodeChar(),
+                        event.isAltPressed(),
+                        event.isMetaPressed());
         if (isOsPassthroughModifierKey(event.getKeyCode())
-                || event.isCtrlPressed()
-                || event.isAltPressed()
-                || event.isMetaPressed()) {
+                || (!captureModifiedPrintable
+                        && (event.isCtrlPressed()
+                                || event.isAltPressed()
+                                || event.isMetaPressed()))) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
-                editorPassedHardwareKeys.add(event.getKeyCode());
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
+            }
+            return false;
+        }
+        TelexHardwareKeyPolicy.Route telexRoute = isTelexMode()
+                ? telexHardwareKeyPolicy.resolve(
+                        event.getKeyCode(),
+                        telexHasPreedit || hasPendingTelexEvent())
+                : TelexHardwareKeyPolicy.Route.WEB_PREEDIT;
+        if (telexRoute == TelexHardwareKeyPolicy.Route.EDITOR) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
             }
             return false;
         }
         if (isEnterKey(event.getKeyCode())) {
+            if (isTelexMode()
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                KeyEvent enterEvent = new KeyEvent(event);
+                dispatchTelexBarrier(() -> dispatchEnterKey(enterEvent));
+                return true;
+            }
             return dispatchEnterKey(event);
         }
         String action = event.getAction() == KeyEvent.ACTION_UP
@@ -370,7 +462,10 @@ public class V7ImeService extends InputMethodService {
                 : "keydown";
         boolean captured = dispatchPhysicalKeyToWeb(action, event);
         if (captured && event.getAction() == KeyEvent.ACTION_DOWN) {
-            webCapturedHardwareKeys.add(event.getKeyCode());
+            hardwareKeyPressOwnership.claim(
+                    event.getKeyCode(),
+                    HardwareKeyPressOwnership.Owner.WEB,
+                    inputGeneration.get());
         }
         return captured;
     }
@@ -392,11 +487,33 @@ public class V7ImeService extends InputMethodService {
                     && !PloverCommandFocusState.isNativeControlFocused()) {
                 return true;
             }
-            editorPassedHardwareKeys.remove(event.getKeyCode());
-            stenoModeEnabled = !stenoModeEnabled;
-            finishCurrentPreedit();
-            publishStenoModeState();
+            HardwareInputMode.Transition transition =
+                    currentHardwareInputMode().onControlShift();
+            hardwareKeyPressOwnership.remove(event.getKeyCode());
+            if (isTelexMode()) {
+                dispatchTelexBarrier(() -> {
+                    applyHardwareInputMode(transition.mode);
+                    publishStenoModeState();
+                });
+            } else {
+                applyHardwareInputTransition(transition);
+                publishStenoModeState();
+            }
             return false;
+        } else if (action == HardwareKeyActionResolver.Action.TOGGLE_TELEX) {
+            if (rawOutlineMode) return true;
+            HardwareInputMode.Transition transition =
+                    currentHardwareInputMode().onControlTab();
+            if (isTelexMode()) {
+                dispatchTelexBarrier(() -> {
+                    applyHardwareInputMode(transition.mode);
+                    publishStenoModeState();
+                });
+            } else {
+                applyHardwareInputTransition(transition);
+                publishStenoModeState();
+            }
+            return true;
         } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
             finishCurrentPreedit();
         } else if (action
@@ -408,6 +525,28 @@ public class V7ImeService extends InputMethodService {
             }
         }
         return true;
+    }
+
+    private HardwareInputMode currentHardwareInputMode() {
+        return hardwareInputMode;
+    }
+
+    private void applyHardwareInputMode(HardwareInputMode mode) {
+        hardwareInputMode = mode;
+    }
+
+    private boolean isV7PloverMode() {
+        return hardwareInputMode == HardwareInputMode.V7_PLOVER;
+    }
+
+    private boolean isTelexMode() {
+        return hardwareInputMode == HardwareInputMode.TELEX;
+    }
+
+    private void applyHardwareInputTransition(
+            HardwareInputMode.Transition transition) {
+        if (transition.finishPreedit) finishCurrentPreedit();
+        applyHardwareInputMode(transition.mode);
     }
 
     private boolean dispatchEnterKey(KeyEvent event) {
@@ -487,7 +626,10 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {
-        if (webView == null || !isCapturedKey(event.getKeyCode())) {
+        if (webView == null || !hardwareKeyCapturePolicy.isCaptured(
+                event.getKeyCode(),
+                event.getUnicodeChar(),
+                isTelexMode())) {
             return false;
         }
 
@@ -499,6 +641,11 @@ public class V7ImeService extends InputMethodService {
 
         String key = getJavascriptKey(event);
         String code = getJavascriptCode(event.getKeyCode());
+        long sequence = hardwareEventSequence.incrementAndGet();
+        int generation = inputGeneration.get();
+        if (isTelexMode() && "keydown".equals(action)) {
+            pendingTelexEvents.put(sequence, generation);
+        }
         String script = "window.handleAndroidKeyEvent && window.handleAndroidKeyEvent("
                 + JSONObject.quote(action) + ","
                 + JSONObject.quote(key) + ","
@@ -510,32 +657,59 @@ public class V7ImeService extends InputMethodService {
                 + event.isMetaPressed()
                 + ","
                 + event.isCapsLockOn()
+                + ","
+                + generation
+                + ","
+                + sequence
                 + ")";
         webView.evaluateJavascript(script, null);
         return true;
     }
 
-    private boolean isCapturedKey(int keyCode) {
-        return (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
-                || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
-                || keyCode == KeyEvent.KEYCODE_SEMICOLON
-                || keyCode == KeyEvent.KEYCODE_SPACE
-                || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
-                || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
-                || keyCode == KeyEvent.KEYCODE_CTRL_LEFT
-                || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT
-                || keyCode == KeyEvent.KEYCODE_ALT_LEFT
-                || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
-                || keyCode == KeyEvent.KEYCODE_META_LEFT
-                || keyCode == KeyEvent.KEYCODE_META_RIGHT
-                || keyCode == KeyEvent.KEYCODE_CAPS_LOCK
-                || keyCode == KeyEvent.KEYCODE_ESCAPE;
+    private boolean hasPendingTelexEvent() {
+        int generation = inputGeneration.get();
+        return pendingTelexEvents.containsValue(generation);
+    }
+
+    private void dispatchTelexBarrier(Runnable afterFinalize) {
+        WebView target = webView;
+        if (target == null) {
+            finishCurrentPreedit();
+            afterFinalize.run();
+            return;
+        }
+        int id = barrierSequence.incrementAndGet();
+        int generation = inputGeneration.get();
+        hardwareEventBarrierQueue.begin(id);
+        pendingTelexBarriers.put(id, new PendingTelexBarrier(generation, afterFinalize));
+        target.evaluateJavascript(
+                "window.handleAndroidTelexBarrier"
+                        + " && window.handleAndroidTelexBarrier("
+                        + id + "," + generation + ")",
+                null);
+    }
+
+    private void finishTelexBarrier(int barrierId, boolean replayQueuedEvents) {
+        for (KeyEvent queued : hardwareEventBarrierQueue.finish(
+                barrierId, replayQueuedEvents)) {
+            if (!dispatchHardwareKeyEvent(queued)) {
+                InputConnection connection = getCurrentInputConnection();
+                if (connection != null) connection.sendKeyEvent(queued);
+            }
+        }
     }
 
     private String getJavascriptKey(KeyEvent event) {
         switch (event.getKeyCode()) {
             case KeyEvent.KEYCODE_SPACE:
                 return " ";
+            case KeyEvent.KEYCODE_TAB:
+                return "Tab";
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                return "Enter";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
                 return "Shift";
@@ -554,7 +728,10 @@ public class V7ImeService extends InputMethodService {
                 return "Escape";
             default:
                 int unicode = event.getUnicodeChar();
-                if (unicode != 0) {
+                if ((unicode & KeyCharacterMap.COMBINING_ACCENT) != 0) {
+                    unicode &= KeyCharacterMap.COMBINING_ACCENT_MASK;
+                }
+                if (unicode != 0 && Character.isValidCodePoint(unicode)) {
                     return new String(Character.toChars(unicode));
                 }
                 return "";
@@ -573,6 +750,13 @@ public class V7ImeService extends InputMethodService {
                 return "Semicolon";
             case KeyEvent.KEYCODE_SPACE:
                 return "Space";
+            case KeyEvent.KEYCODE_TAB:
+                return "Tab";
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                return "Enter";
+            case KeyEvent.KEYCODE_DEL:
+                return "Backspace";
             case KeyEvent.KEYCODE_SHIFT_LEFT:
                 return "ShiftLeft";
             case KeyEvent.KEYCODE_SHIFT_RIGHT:
@@ -725,28 +909,50 @@ public class V7ImeService extends InputMethodService {
      * that the user already sees in the editor.
      */
     private void finishCurrentPreedit() {
-        inputGeneration.incrementAndGet();
+        int generation = inputGeneration.getAndIncrement();
         latestInferenceRequestId.set(-1);
+        String latestTelexText = takePendingTelexText(generation);
         boolean hadPreedit = !preeditText.isEmpty();
         preeditText = "";
+        telexHasPreedit = false;
+        pendingTelexEvents.entrySet().removeIf(
+                entry -> entry.getValue() <= generation);
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
-        if (hadPreedit) {
+        if (hadPreedit || latestTelexText != null) {
             InputConnection connection = getCurrentInputConnection();
             if (connection != null) {
+                if (latestTelexText != null) {
+                    connection.setComposingText(latestTelexText, 1);
+                }
                 connection.finishComposingText();
             }
         }
         evaluateJavascript(
-                "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid()"
+                "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid("
+                        + inputGeneration.get()
+                        + ")"
         );
     }
 
+    private String takePendingTelexText(int generation) {
+        return telexPreeditState.take(generation);
+    }
+
+    private void rememberPendingTelexText(String text, int generation) {
+        telexPreeditState.remember(text, generation);
+    }
+
     private void publishStenoModeState() {
+        HardwareInputMode mode = hardwareInputMode;
         evaluateJavascript(
                 "window.handleAndroidStenoModeChanged"
                         + " && window.handleAndroidStenoModeChanged("
-                        + stenoModeEnabled
+                        + (mode == HardwareInputMode.V7_PLOVER)
+                        + ","
+                        + (mode == HardwareInputMode.TELEX)
+                        + ","
+                        + inputGeneration.get()
                         + ")"
         );
     }
@@ -865,8 +1071,7 @@ public class V7ImeService extends InputMethodService {
 
     private void resetHardwareInputState() {
         hardwareKeyActionResolver.reset();
-        webCapturedHardwareKeys.clear();
-        editorPassedHardwareKeys.clear();
+        hardwareKeyPressOwnership.invalidate();
         resetHardwareKeyboardStateInWebView();
     }
 
@@ -1052,7 +1257,7 @@ public class V7ImeService extends InputMethodService {
             if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
-            if (!stenoModeEnabled) {
+            if (!isV7PloverMode()) {
                 return false;
             }
             return super.dispatchKeyEvent(event);
@@ -1109,7 +1314,17 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public boolean isStenoModeEnabled() {
-            return stenoModeEnabled;
+            return isV7PloverMode();
+        }
+
+        @JavascriptInterface
+        public boolean isTelexModeEnabled() {
+            return isTelexMode();
+        }
+
+        @JavascriptInterface
+        public int getInputGeneration() {
+            return inputGeneration.get();
         }
 
         @JavascriptInterface
@@ -1171,15 +1386,23 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void setPreeditText(String text, String grammarSectionsJson) {
-            if (!isCurrentInputView()) {
+        public void setPreeditText(
+                String text,
+                String grammarSectionsJson,
+                int eventGeneration) {
+            if (!isCurrentInputView()
+                    || eventGeneration != inputGeneration.get()) {
                 return;
             }
             String normalized = text == null ? "" : text;
+            int generation = eventGeneration;
+            if (isTelexMode()) {
+                telexHasPreedit = !normalized.isEmpty();
+                rememberPendingTelexText(normalized, generation);
+            }
             String normalizedGrammarSections = grammarSectionsJson == null
                     ? "[]"
                     : grammarSectionsJson;
-            int generation = inputGeneration.get();
             owner.post(() -> {
                 if (isCurrentInputView()
                         && generation == inputGeneration.get()) {
@@ -1189,6 +1412,104 @@ public class V7ImeService extends InputMethodService {
                     );
                 }
             });
+        }
+
+        @JavascriptInterface
+        public void acknowledgeHardwareEvent(long sequence, int eventGeneration) {
+            pendingTelexEvents.remove(sequence, eventGeneration);
+        }
+
+        @JavascriptInterface
+        public int completeTelexBarrier(
+                int barrierId, String expectedText, int eventGeneration) {
+            PendingTelexBarrier barrier = pendingTelexBarriers.remove(barrierId);
+            if (barrier == null
+                    || barrier.generation != eventGeneration
+                    || !isCurrentInputView()
+                    || !isTelexMode()
+                    || !inputGeneration.compareAndSet(
+                            eventGeneration, eventGeneration + 1)) {
+                owner.post(() -> finishTelexBarrier(barrierId, false));
+                return inputGeneration.get();
+            }
+            String finalText = expectedText == null ? "" : expectedText;
+            telexHasPreedit = false;
+            pendingTelexEvents.entrySet().removeIf(
+                    entry -> entry.getValue() <= eventGeneration);
+            owner.post(() -> {
+                if (!isCurrentInputView()
+                        || inputGeneration.get() != eventGeneration + 1) {
+                    finishTelexBarrier(barrierId, false);
+                    return;
+                }
+                InputConnection connection = getCurrentInputConnection();
+                if (connection != null) {
+                    // Empty is meaningful: replace any older composing range
+                    // that may still be visible because its asynchronous empty
+                    // PREEDIT update lost the generation race.
+                    connection.setComposingText(finalText, 1);
+                    connection.finishComposingText();
+                }
+                preeditText = "";
+                preeditGrammarSectionsJson = "[]";
+                pendingPreeditLengths.clear();
+                takePendingTelexText(eventGeneration);
+                evaluateJavascript(
+                        "window.clearPreeditFromAndroid"
+                                + " && window.clearPreeditFromAndroid("
+                                + inputGeneration.get() + ")");
+                barrier.afterFinalize.run();
+                finishTelexBarrier(barrierId, true);
+            });
+            return eventGeneration + 1;
+        }
+
+        @JavascriptInterface
+        public int commitTelexText(
+                String expectedText,
+                String separator,
+                int eventGeneration) {
+            if (!isCurrentInputView()
+                    || !isTelexMode()
+                    || !inputGeneration.compareAndSet(
+                            eventGeneration,
+                            eventGeneration + 1)) {
+                return inputGeneration.get();
+            }
+            int generation = eventGeneration;
+            int nextGeneration = eventGeneration + 1;
+            String committedText = expectedText == null ? "" : expectedText;
+            String committedSeparator = separator == null ? "" : separator;
+            telexHasPreedit = false;
+            CountDownLatch applied = new CountDownLatch(1);
+            owner.post(() -> {
+                try {
+                    // Apply the expected final word and separator in one UI
+                    // task. This does not depend on an earlier asynchronous
+                    // PREEDIT update having reached the InputConnection.
+                    if (!isCurrentInputView()
+                            || nextGeneration != inputGeneration.get()
+                            || !isTelexMode()) return;
+                    InputConnection connection = getCurrentInputConnection();
+                    if (connection != null) {
+                        connection.setComposingText(committedText, 1);
+                        connection.finishComposingText();
+                        connection.commitText(committedSeparator, 1);
+                    }
+                    preeditText = "";
+                    preeditGrammarSectionsJson = "[]";
+                    pendingPreeditLengths.clear();
+                    takePendingTelexText(generation);
+                } finally {
+                    applied.countDown();
+                }
+            });
+            try {
+                applied.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return nextGeneration;
         }
 
         @JavascriptInterface

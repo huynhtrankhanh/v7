@@ -24,12 +24,16 @@
         const steno =
           typeof bridge.isStenoModeEnabled !== "function" ||
           bridge.isStenoModeEnabled();
+        const telex =
+          typeof bridge.isTelexModeEnabled === "function" &&
+          bridge.isTelexModeEnabled();
         document.body.classList.add("stripped-display");
         document.body.classList.toggle("android-raw-outline", rawOutline);
         document.body.classList.toggle(
           "android-normal-typing",
-          !rawOutline && (!steno || plainText),
+          !rawOutline && !telex && (!steno || plainText),
         );
+        document.body.classList.toggle("android-telex", !rawOutline && telex);
       })();
     </script>
     <main id="inference-shell">
@@ -42,6 +46,11 @@
         <div class="ime-normal-banner" aria-label="Normal typing active">
           <span class="ime-normal-pulse" aria-hidden="true"></span>
           <strong>Normal typing</strong>
+        </div>
+
+        <div class="ime-telex-banner" aria-label="Telex typing active">
+          <span class="ime-telex-pulse" aria-hidden="true"></span>
+          <strong>Telex</strong>
         </div>
 
         <div

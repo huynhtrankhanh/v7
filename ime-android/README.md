@@ -62,6 +62,15 @@ imports.
 - The physical Ctrl+Shift chord switches between STENO capture and ordinary
   hardware-keyboard typing. The chord toggles once per press cycle while solo
   Ctrl and Shift retain their ordinary behavior.
+- `Ctrl+Tab` switches between V7/Stripped Plover and Telex composition. From
+  Normal typing it enters Telex directly; `Ctrl+Shift` from Telex enters Normal
+  typing, while `Ctrl+Shift` from Normal typing returns to V7/Plover. Telex
+  keeps the current word as Android PREEDIT, supports ordinary Latin text via
+  repeated-mark escapes, and commits/ends PREEDIT at whitespace or symbols.
+  Empty-PREEDIT Backspace passes through to the editor, and Enter retains the
+  editor's standard Android action behavior after finalizing PREEDIT.
+  Numpad and layout-specific printable keys also terminate PREEDIT rather than
+  bypassing the Telex composer.
 - Normal typing uses a labeled 48 dp status bar, matching the compact active
   Stripped Plover treatment instead of leaving the composition UI visible.
   Compact transitions apply their height immediately, and returning to V7
@@ -87,6 +96,10 @@ imports.
 See [Android hardware-keyboard interactions](docs/hardware-keyboard-interactions.md)
 for the complete mode table, PREEDIT semantics, and native/WebUI event-routing
 order.
+
+See [Telex behavior](docs/telex-behavior.md) for the three-mode state machine
+and [the supplied Telex adapter supplement](docs/telex-behavior-supplement.md)
+for the converter's detailed key and tone-placement rules.
 
 See [Virtual-keyboard visibility with an external keyboard](docs/keyboard-visibility.md)
 for the attach/detach recovery policy, lifecycle safeguards, and verification
