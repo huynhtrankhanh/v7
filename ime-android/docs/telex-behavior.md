@@ -52,5 +52,14 @@ Native PREEDIT clearing publishes the advanced epoch back to the WebUI on
 ordinary editor changes and cursor-driven composition cancellation, so the
 first key in the new context is accepted without requiring a mode toggle.
 
-The supplied adapter's more detailed conversion notes are preserved verbatim
-as [the Telex adapter supplement](telex-behavior-supplement.md).
+Hardware events also carry a monotonically increasing sequence number and the
+WebUI acknowledges each event after reduction. Enter and mode changes are
+ordered barriers: JavaScript supplies the composer's latest rendered word
+before native code advances the epoch and performs the editor action or mode
+transition. An unacknowledged Telex key-down counts as possible PREEDIT for
+Backspace routing. Thus fast `letter → Enter`, `letter → mode switch`, and
+`first letter → Backspace` sequences cannot lose or bypass the queued letter.
+
+The supplied adapter's more detailed conversion notes are preserved as
+[the Telex adapter supplement](telex-behavior-supplement.md), with an explicit
+erratum for the archived document's reversed bracket shortcuts.

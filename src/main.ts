@@ -312,6 +312,12 @@ interface AndroidImeBridge {
     separator: string,
     epoch: number,
   ): number;
+  acknowledgeHardwareEvent?(sequence: number, epoch: number): void;
+  completeTelexBarrier?(
+    barrierId: number,
+    expectedText: string,
+    epoch: number,
+  ): number;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -3493,7 +3499,9 @@ declare global {
       metaKey: boolean,
       capsLockActive: boolean,
       epoch: number,
+      sequence?: number,
     ) => void;
+    handleAndroidTelexBarrier?: (barrierId: number, epoch: number) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
 }
@@ -3783,22 +3791,36 @@ window.handleAndroidKeyEvent = (
   metaKey,
   capsLockActive,
   epoch,
+  sequence,
 ) => {
+  try {
+    if (epoch !== androidInputEpoch) return;
+    keyboardCapsLockActive = capsLockActive;
+    document.dispatchEvent(
+      new KeyboardEvent(action, {
+        key,
+        code,
+        repeat,
+        shiftKey,
+        ctrlKey,
+        altKey,
+        metaKey,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  } finally {
+    if (sequence !== undefined) {
+      androidIme?.acknowledgeHardwareEvent?.(sequence, epoch);
+    }
+  }
+};
+
+window.handleAndroidTelexBarrier = (barrierId, epoch) => {
   if (epoch !== androidInputEpoch) return;
-  keyboardCapsLockActive = capsLockActive;
-  document.dispatchEvent(
-    new KeyboardEvent(action, {
-      key,
-      code,
-      repeat,
-      shiftKey,
-      ctrlKey,
-      altKey,
-      metaKey,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
+  const expectedText = telexComposer.commit();
+  androidInputEpoch =
+    androidIme?.completeTelexBarrier?.(barrierId, expectedText, epoch) ?? epoch;
 };
 
 window.setStrippedDisplay = (options = {}) => {

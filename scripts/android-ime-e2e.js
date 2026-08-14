@@ -131,6 +131,8 @@ async function main() {
       window.__androidRawOutlineUndos = 0;
       window.__androidTelexMode = false;
       window.__androidTelexCommits = [];
+      window.__androidHardwareAcks = [];
+      window.__androidTelexBarriers = [];
       window.__androidInputGeneration = 0;
       window.AndroidIme = {
         getInferenceModelError() {
@@ -175,6 +177,17 @@ async function main() {
             return window.__androidInputGeneration;
           }
           window.__androidTelexCommits.push({ expectedText, separator });
+          window.__androidInputGeneration += 1;
+          return window.__androidInputGeneration;
+        },
+        acknowledgeHardwareEvent(sequence, epoch) {
+          window.__androidHardwareAcks.push({ sequence, epoch });
+        },
+        completeTelexBarrier(barrierId, expectedText, epoch) {
+          if (epoch !== window.__androidInputGeneration) {
+            return window.__androidInputGeneration;
+          }
+          window.__androidTelexBarriers.push({ barrierId, expectedText, epoch });
           window.__androidInputGeneration += 1;
           return window.__androidInputGeneration;
         },
@@ -361,6 +374,10 @@ async function main() {
         );
       for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
       const composed = window.__androidPreedits.at(-1)?.text;
+      window.handleAndroidTelexBarrier(41, window.__androidInputGeneration);
+      const barrier = window.__androidTelexBarriers.at(-1);
+      window.clearPreeditFromAndroid(window.__androidInputGeneration);
+      for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
       send("Backspace", "Backspace");
       const afterBackspace = window.__androidPreedits.at(-1)?.text;
       send("Backspace", "Backspace", true);
@@ -384,6 +401,7 @@ async function main() {
       );
       return {
         composed,
+        barrier,
         staleEventIgnored,
         afterBackspace,
         afterRepeatedBackspace,
@@ -397,6 +415,8 @@ async function main() {
     });
     assert(
       telexResult.composed === "tiếng" &&
+        telexResult.barrier?.barrierId === 41 &&
+        telexResult.barrier?.expectedText === "tiếng" &&
         telexResult.staleEventIgnored &&
         telexResult.afterBackspace === "tiêng" &&
         telexResult.afterRepeatedBackspace === "tiên" &&

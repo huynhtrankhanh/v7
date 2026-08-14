@@ -1,5 +1,10 @@
 # Telex adapter behavior for V7
 
+> **Integration erratum:** the archived ZIP version reverses the Extended
+> Telex bracket shortcuts. The Android integration and its tests are
+> authoritative: `[` produces `ơ`, and `]` produces `ư`. The original ZIP is
+> intentionally preserved unchanged.
+
 ## Status
 
 This document specifies the behavior of `telex.ts`.
