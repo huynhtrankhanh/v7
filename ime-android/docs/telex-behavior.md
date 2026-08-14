@@ -48,6 +48,9 @@ Every forwarded Telex key carries the native input epoch; WebUI and bridge
 updates reject stale epochs after a mode/editor transition. Accepting a
 separator atomically reserves the next epoch before waiting for its UI task, so
 typing the next word cannot be invalidated even if that task is delayed.
+Native PREEDIT clearing publishes the advanced epoch back to the WebUI on
+ordinary editor changes and cursor-driven composition cancellation, so the
+first key in the new context is accepted without requiring a mode toggle.
 
 The supplied adapter's more detailed conversion notes are preserved verbatim
 as [the Telex adapter supplement](telex-behavior-supplement.md).

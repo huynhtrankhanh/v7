@@ -345,24 +345,31 @@ public class V7ImeService extends InputMethodService {
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
             return dispatchModeKeyAction(event, hardwareAction);
         }
-        HardwareKeyPressOwnership.Owner keyOwner =
+        HardwareKeyPressOwnership.Claim keyClaim =
                 hardwareKeyPressOwnership.get(event.getKeyCode());
-        if (event.getAction() == KeyEvent.ACTION_UP && keyOwner != null) {
+        if (event.getAction() == KeyEvent.ACTION_UP && keyClaim != null) {
             hardwareKeyPressOwnership.release(event.getKeyCode());
-            return keyOwner == HardwareKeyPressOwnership.Owner.WEB
-                    && dispatchPhysicalKeyToWeb("keyup", event);
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
+                return false;
+            }
+            if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            return dispatchPhysicalKeyToWeb("keyup", event);
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getRepeatCount() > 0 && keyOwner != null) {
-            return keyOwner == HardwareKeyPressOwnership.Owner.WEB
-                    && dispatchPhysicalKeyToWeb("keydown", event);
+                && event.getRepeatCount() > 0 && keyClaim != null) {
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
+                return false;
+            }
+            if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            return dispatchPhysicalKeyToWeb("keydown", event);
         }
         if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 hardwareKeyPressOwnership.claim(
                         event.getKeyCode(),
-                        HardwareKeyPressOwnership.Owner.EDITOR);
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
             }
             return false;
         }
@@ -381,7 +388,8 @@ public class V7ImeService extends InputMethodService {
                     && isModifierKey(event.getKeyCode())) {
                 hardwareKeyPressOwnership.claim(
                         event.getKeyCode(),
-                        HardwareKeyPressOwnership.Owner.EDITOR);
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
             }
             return false;
         }
@@ -394,7 +402,8 @@ public class V7ImeService extends InputMethodService {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 hardwareKeyPressOwnership.claim(
                         event.getKeyCode(),
-                        HardwareKeyPressOwnership.Owner.EDITOR);
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
             }
             return false;
         }
@@ -413,7 +422,8 @@ public class V7ImeService extends InputMethodService {
         if (captured && event.getAction() == KeyEvent.ACTION_DOWN) {
             hardwareKeyPressOwnership.claim(
                     event.getKeyCode(),
-                    HardwareKeyPressOwnership.Owner.WEB);
+                    HardwareKeyPressOwnership.Owner.WEB,
+                    inputGeneration.get());
         }
         return captured;
     }
@@ -819,7 +829,9 @@ public class V7ImeService extends InputMethodService {
             }
         }
         evaluateJavascript(
-                "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid()"
+                "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid("
+                        + inputGeneration.get()
+                        + ")"
         );
     }
 
@@ -959,7 +971,7 @@ public class V7ImeService extends InputMethodService {
 
     private void resetHardwareInputState() {
         hardwareKeyActionResolver.reset();
-        hardwareKeyPressOwnership.clear();
+        hardwareKeyPressOwnership.invalidate();
         resetHardwareKeyboardStateInWebView();
     }
 

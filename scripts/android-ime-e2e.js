@@ -344,6 +344,8 @@ async function main() {
       );
       const staleEventIgnored =
         window.__androidPreedits.length === preeditsBeforeStaleEvent;
+      window.__androidInputGeneration += 1;
+      window.clearPreeditFromAndroid(window.__androidInputGeneration);
       const send = (key, code, repeat = false) =>
         window.handleAndroidKeyEvent(
           "keydown",

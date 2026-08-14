@@ -3463,7 +3463,7 @@ declare global {
   interface Window {
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
-    clearPreeditFromAndroid?: () => void;
+    clearPreeditFromAndroid?: (epoch?: number) => void;
     resetHardwareKeyboardStateFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
@@ -3747,7 +3747,8 @@ window.addEventListener("resize", () => {
   }
 });
 
-window.clearPreeditFromAndroid = () => {
+window.clearPreeditFromAndroid = (epoch) => {
+  if (epoch !== undefined) androidInputEpoch = epoch;
   telexComposer.clear();
   resetHardwareKeyboardState();
   abortInferenceRequest(true);

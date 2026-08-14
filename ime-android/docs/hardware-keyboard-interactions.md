@@ -95,6 +95,10 @@ Key ownership is fixed from the first key-down through repeats and key-up. If a
 held Backspace begins by editing PREEDIT, all repeats and its release remain in
 the WebUI even after PREEDIT becomes empty. A new Backspace press then belongs
 to the editor and can delete committed text normally.
+WEB-owned presses also retain their starting input generation. After an editor
+or mode transition, their remaining repeats and key-up are consumed until
+physical release instead of being reinterpreted by the new mode. Editor-owned
+key-up events still pass through so the target editor receives balanced input.
 
 ## Raw outline fields
 

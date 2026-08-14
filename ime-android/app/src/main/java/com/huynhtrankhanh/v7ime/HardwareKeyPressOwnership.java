@@ -6,17 +6,34 @@ import java.util.Map;
 final class HardwareKeyPressOwnership {
     enum Owner { WEB, EDITOR }
 
-    private final Map<Integer, Owner> owners = new HashMap<>();
+    static final class Claim {
+        final Owner owner;
+        final int generation;
 
-    void claim(int keyCode, Owner owner) {
-        owners.putIfAbsent(keyCode, owner);
+        Claim(Owner owner, int generation) {
+            this.owner = owner;
+            this.generation = generation;
+        }
+
+        boolean belongsTo(int currentGeneration) {
+            return generation == currentGeneration;
+        }
     }
 
-    Owner get(int keyCode) {
+    private final Map<Integer, Claim> owners = new HashMap<>();
+
+    void claim(int keyCode, Owner owner, int generation) {
+        Claim existing = owners.get(keyCode);
+        if (existing == null || !existing.belongsTo(generation)) {
+            owners.put(keyCode, new Claim(owner, generation));
+        }
+    }
+
+    Claim get(int keyCode) {
         return owners.get(keyCode);
     }
 
-    Owner release(int keyCode) {
+    Claim release(int keyCode) {
         return owners.remove(keyCode);
     }
 
@@ -24,7 +41,7 @@ final class HardwareKeyPressOwnership {
         owners.remove(keyCode);
     }
 
-    void clear() {
-        owners.clear();
+    void invalidate() {
+        owners.replaceAll((keyCode, claim) -> new Claim(claim.owner, -1));
     }
 }
