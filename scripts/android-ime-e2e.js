@@ -163,8 +163,8 @@ async function main() {
             grammarSections: JSON.parse(grammarSectionsJson),
           });
         },
-        commitTelexText(text) {
-          window.__androidTelexCommits.push(text);
+        commitTelexText(expectedText, separator) {
+          window.__androidTelexCommits.push({ expectedText, separator });
         },
         undoRawOutlineStroke() {
           window.__androidRawOutlineUndos += 1;
@@ -339,13 +339,21 @@ async function main() {
         afterBackspace,
         afterRepeatedBackspace,
         commit: window.__androidTelexCommits.at(-1),
+        compact: document.body.classList.contains("android-telex"),
+        banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
+          .display,
+        height: window.__androidHeight,
       };
     });
     assert(
       telexResult.composed === "tiếng" &&
         telexResult.afterBackspace === "tiêng" &&
         telexResult.afterRepeatedBackspace === "tiên" &&
-        telexResult.commit === " ",
+        telexResult.commit?.expectedText === "tiếng" &&
+        telexResult.commit?.separator === " " &&
+        telexResult.compact &&
+        telexResult.banner === "flex" &&
+        telexResult.height === 48,
       `Telex PREEDIT/repeat/commit behavior failed: ${JSON.stringify(telexResult)}`,
     );
     await page.evaluate(() => {

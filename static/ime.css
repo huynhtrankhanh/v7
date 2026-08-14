@@ -502,12 +502,14 @@ body.stripped-plover-paused .ime-status-dot {
 
 body.stripped-plover-active,
 body.android-normal-typing,
+body.android-telex,
 body.android-raw-outline {
   background: #17140e;
 }
 
 body.stripped-plover-active .ime-toolbar,
 body.android-normal-typing .ime-toolbar,
+body.android-telex .ime-toolbar,
 body.android-raw-outline .ime-toolbar {
   border: 0;
   flex: 1 1 auto;
@@ -524,6 +526,10 @@ body.android-normal-typing .ime-normal-banner {
   display: flex;
 }
 
+body.android-telex .ime-telex-banner {
+  display: flex;
+}
+
 body.android-raw-outline .ime-raw-outline-banner {
   display: flex;
 }
@@ -532,6 +538,8 @@ body.stripped-plover-active .ime-identity,
 body.stripped-plover-active #workbench,
 body.android-normal-typing .ime-identity,
 body.android-normal-typing #workbench,
+body.android-telex .ime-identity,
+body.android-telex #workbench,
 body.android-raw-outline .ime-identity,
 body.android-raw-outline #workbench {
   display: none !important;
@@ -539,6 +547,7 @@ body.android-raw-outline #workbench {
 
 body.stripped-plover-active .ime-plover-state,
 body.android-normal-typing .ime-plover-state,
+body.android-telex .ime-plover-state,
 body.android-raw-outline .ime-plover-state {
   display: none;
 }

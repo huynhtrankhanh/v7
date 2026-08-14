@@ -77,6 +77,8 @@ Android native key handling runs before WebView dispatch:
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.
+Telex-only editing and separator keys are added to native capture only while
+Telex is active; in V7/Plover they retain the pre-Telex pass-through behavior.
 
 ## Raw outline fields
 

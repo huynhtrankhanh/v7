@@ -34,8 +34,10 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class V7ImeService extends InputMethodService {
@@ -52,6 +54,8 @@ public class V7ImeService extends InputMethodService {
             new HardwareKeyActionResolver();
     private final TelexHardwareKeyPolicy telexHardwareKeyPolicy =
             new TelexHardwareKeyPolicy();
+    private final HardwareKeyCapturePolicy hardwareKeyCapturePolicy =
+            new HardwareKeyCapturePolicy();
     private final Set<Integer> webCapturedHardwareKeys = new HashSet<>();
     private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -510,7 +514,8 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {
-        if (webView == null || !isCapturedKey(event.getKeyCode())) {
+        if (webView == null || !hardwareKeyCapturePolicy.isCaptured(
+                event.getKeyCode(), telexModeEnabled)) {
             return false;
         }
 
@@ -536,39 +541,6 @@ public class V7ImeService extends InputMethodService {
                 + ")";
         webView.evaluateJavascript(script, null);
         return true;
-    }
-
-    private boolean isCapturedKey(int keyCode) {
-        return (keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
-                || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
-                || keyCode == KeyEvent.KEYCODE_SEMICOLON
-                || keyCode == KeyEvent.KEYCODE_TAB
-                || keyCode == KeyEvent.KEYCODE_ENTER
-                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                || keyCode == KeyEvent.KEYCODE_DEL
-                || keyCode == KeyEvent.KEYCODE_COMMA
-                || keyCode == KeyEvent.KEYCODE_PERIOD
-                || keyCode == KeyEvent.KEYCODE_SLASH
-                || keyCode == KeyEvent.KEYCODE_APOSTROPHE
-                || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET
-                || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET
-                || keyCode == KeyEvent.KEYCODE_MINUS
-                || keyCode == KeyEvent.KEYCODE_EQUALS
-                || keyCode == KeyEvent.KEYCODE_GRAVE
-                || keyCode == KeyEvent.KEYCODE_BACKSLASH
-                || keyCode == KeyEvent.KEYCODE_AT
-                || keyCode == KeyEvent.KEYCODE_PLUS
-                || keyCode == KeyEvent.KEYCODE_SPACE
-                || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
-                || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT
-                || keyCode == KeyEvent.KEYCODE_CTRL_LEFT
-                || keyCode == KeyEvent.KEYCODE_CTRL_RIGHT
-                || keyCode == KeyEvent.KEYCODE_ALT_LEFT
-                || keyCode == KeyEvent.KEYCODE_ALT_RIGHT
-                || keyCode == KeyEvent.KEYCODE_META_LEFT
-                || keyCode == KeyEvent.KEYCODE_META_RIGHT
-                || keyCode == KeyEvent.KEYCODE_CAPS_LOCK
-                || keyCode == KeyEvent.KEYCODE_ESCAPE;
     }
 
     private String getJavascriptKey(KeyEvent event) {
@@ -1254,24 +1226,36 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void commitTelexText(String separator) {
+        public void commitTelexText(String expectedText, String separator) {
             if (!isCurrentInputView() || !telexModeEnabled) return;
+            String committedText = expectedText == null ? "" : expectedText;
             String committedSeparator = separator == null ? "" : separator;
             telexHasPreedit = false;
+            CountDownLatch applied = new CountDownLatch(1);
             owner.post(() -> {
-                // Once the WebUI has handed off a separator commit, a later
-                // mode toggle must not revoke it. The owner check still keeps
-                // work from an obsolete input view out of a replacement view.
-                if (!isCurrentInputView()) return;
-                InputConnection connection = getCurrentInputConnection();
-                if (connection != null) {
-                    connection.finishComposingText();
-                    connection.commitText(committedSeparator, 1);
+                try {
+                    // Apply the expected final word and separator in one UI
+                    // task. This does not depend on an earlier asynchronous
+                    // PREEDIT update having reached the InputConnection.
+                    if (!isCurrentInputView()) return;
+                    InputConnection connection = getCurrentInputConnection();
+                    if (connection != null) {
+                        connection.setComposingText(committedText, 1);
+                        connection.finishComposingText();
+                        connection.commitText(committedSeparator, 1);
+                    }
+                    preeditText = "";
+                    preeditGrammarSectionsJson = "[]";
+                    pendingPreeditLengths.clear();
+                } finally {
+                    applied.countDown();
                 }
-                preeditText = "";
-                preeditGrammarSectionsJson = "[]";
-                pendingPreeditLengths.clear();
             });
+            try {
+                applied.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
         }
 
         @JavascriptInterface

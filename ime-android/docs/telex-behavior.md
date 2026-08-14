@@ -20,8 +20,9 @@ tones (`s`, `f`, `r`, `x`, `j`), tone removal (`z`), standalone `w`, and the
 `[`/`]` shortcuts are supported. Repeating a command key escapes it, allowing
 ordinary Latin typing such as `Windows` without leaving Telex.
 
-Space, Tab, digits, and symbols terminate the word. The IME atomically commits
-the converted word plus that separator, ends composition, and starts a fresh
+Space, Tab, digits, and symbols terminate the word. The WebUI hands Android the
+expected converted word and separator together; Android applies both in one UI
+task, ends composition, and starts a fresh
 PREEDIT on the next letter. Enter instead finalizes the word and follows the
 editor's normal Android action: Next, Done, Go, Search, Send, a custom action,
 or a physical newline when the editor advertises no action. This prevents a

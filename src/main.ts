@@ -302,7 +302,7 @@ interface AndroidImeBridge {
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
   setPreeditText(text: string, grammarSectionsJson: string): void;
-  commitTelexText?(text: string): void;
+  commitTelexText?(expectedText: string, separator: string): void;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -2844,8 +2844,8 @@ document.addEventListener("keydown", (e) => {
     ) {
       const separator =
         e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
-      telexComposer.commit();
-      androidIme.commitTelexText?.(separator);
+      const expectedText = telexComposer.commit();
+      androidIme.commitTelexText?.(expectedText, separator);
       e.preventDefault();
       return;
     }
@@ -3626,6 +3626,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   const compact =
     document.body.classList.contains("stripped-plover-active") ||
     document.body.classList.contains("android-normal-typing") ||
+    document.body.classList.contains("android-telex") ||
     document.body.classList.contains("android-raw-outline");
   if (compact) {
     if (lastRequestedAndroidKeyboardHeight !== 48) {
