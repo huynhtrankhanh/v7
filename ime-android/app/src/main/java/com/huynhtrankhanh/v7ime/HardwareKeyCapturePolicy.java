@@ -3,7 +3,10 @@ package com.huynhtrankhanh.v7ime;
 import android.view.KeyEvent;
 
 final class HardwareKeyCapturePolicy {
-    boolean isCaptured(int keyCode, boolean telexModeEnabled) {
+    boolean isCaptured(
+            int keyCode,
+            int unicodeChar,
+            boolean telexModeEnabled) {
         if ((keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
                 || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
                 || keyCode == KeyEvent.KEYCODE_SEMICOLON
@@ -20,25 +23,14 @@ final class HardwareKeyCapturePolicy {
                 || keyCode == KeyEvent.KEYCODE_ESCAPE) {
             return true;
         }
-        return telexModeEnabled && isTelexOnlyKey(keyCode);
+        return telexModeEnabled
+                && (unicodeChar != 0 || isTelexEditingKey(keyCode));
     }
 
-    private boolean isTelexOnlyKey(int keyCode) {
+    private boolean isTelexEditingKey(int keyCode) {
         return keyCode == KeyEvent.KEYCODE_TAB
                 || keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                || keyCode == KeyEvent.KEYCODE_DEL
-                || keyCode == KeyEvent.KEYCODE_COMMA
-                || keyCode == KeyEvent.KEYCODE_PERIOD
-                || keyCode == KeyEvent.KEYCODE_SLASH
-                || keyCode == KeyEvent.KEYCODE_APOSTROPHE
-                || keyCode == KeyEvent.KEYCODE_LEFT_BRACKET
-                || keyCode == KeyEvent.KEYCODE_RIGHT_BRACKET
-                || keyCode == KeyEvent.KEYCODE_MINUS
-                || keyCode == KeyEvent.KEYCODE_EQUALS
-                || keyCode == KeyEvent.KEYCODE_GRAVE
-                || keyCode == KeyEvent.KEYCODE_BACKSLASH
-                || keyCode == KeyEvent.KEYCODE_AT
-                || keyCode == KeyEvent.KEYCODE_PLUS;
+                || keyCode == KeyEvent.KEYCODE_DEL;
     }
 }

@@ -13,6 +13,7 @@ import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.SuggestionSpan;
 import android.util.Log;
+import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -60,7 +61,7 @@ public class V7ImeService extends InputMethodService {
     private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout inputContainer;
-    private WebView webView;
+    private volatile WebView webView;
     private boolean inferenceWarmupScheduled = false;
     private String preeditText = "";
     private String preeditGrammarSectionsJson = "[]";
@@ -79,10 +80,10 @@ public class V7ImeService extends InputMethodService {
     private static volatile String inferenceModelError = "";
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
-    private boolean stenoModeEnabled = true;
-    private boolean telexModeEnabled = false;
+    private volatile boolean stenoModeEnabled = true;
+    private volatile boolean telexModeEnabled = false;
     private volatile boolean telexHasPreedit = false;
-    private boolean rawOutlineMode = false;
+    private volatile boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
@@ -412,16 +413,14 @@ public class V7ImeService extends InputMethodService {
                 return true;
             }
             editorPassedHardwareKeys.remove(event.getKeyCode());
-            stenoModeEnabled = !stenoModeEnabled && !telexModeEnabled;
-            telexModeEnabled = false;
-            finishCurrentPreedit();
+            applyHardwareInputTransition(
+                    currentHardwareInputMode().onControlShift());
             publishStenoModeState();
             return false;
         } else if (action == HardwareKeyActionResolver.Action.TOGGLE_TELEX) {
             if (rawOutlineMode) return true;
-            telexModeEnabled = !telexModeEnabled;
-            stenoModeEnabled = !telexModeEnabled;
-            finishCurrentPreedit();
+            applyHardwareInputTransition(
+                    currentHardwareInputMode().onControlTab());
             publishStenoModeState();
             return true;
         } else if (action == HardwareKeyActionResolver.Action.FINISH_PREEDIT) {
@@ -435,6 +434,23 @@ public class V7ImeService extends InputMethodService {
             }
         }
         return true;
+    }
+
+    private HardwareInputMode currentHardwareInputMode() {
+        return HardwareInputMode.fromFlags(
+                stenoModeEnabled,
+                telexModeEnabled);
+    }
+
+    private void applyHardwareInputMode(HardwareInputMode mode) {
+        telexModeEnabled = mode == HardwareInputMode.TELEX;
+        stenoModeEnabled = mode == HardwareInputMode.V7_PLOVER;
+    }
+
+    private void applyHardwareInputTransition(
+            HardwareInputMode.Transition transition) {
+        applyHardwareInputMode(transition.mode);
+        if (transition.finishPreedit) finishCurrentPreedit();
     }
 
     private boolean dispatchEnterKey(KeyEvent event) {
@@ -515,7 +531,9 @@ public class V7ImeService extends InputMethodService {
 
     private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {
         if (webView == null || !hardwareKeyCapturePolicy.isCaptured(
-                event.getKeyCode(), telexModeEnabled)) {
+                event.getKeyCode(),
+                event.getUnicodeChar(),
+                telexModeEnabled)) {
             return false;
         }
 
@@ -572,7 +590,10 @@ public class V7ImeService extends InputMethodService {
                 return "Escape";
             default:
                 int unicode = event.getUnicodeChar();
-                if (unicode != 0) {
+                if ((unicode & KeyCharacterMap.COMBINING_ACCENT) != 0) {
+                    unicode &= KeyCharacterMap.COMBINING_ACCENT_MASK;
+                }
+                if (unicode != 0 && Character.isValidCodePoint(unicode)) {
                     return new String(Character.toChars(unicode));
                 }
                 return "";

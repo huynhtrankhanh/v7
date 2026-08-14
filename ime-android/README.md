@@ -69,6 +69,8 @@ imports.
   repeated-mark escapes, and commits/ends PREEDIT at whitespace or symbols.
   Empty-PREEDIT Backspace passes through to the editor, and Enter retains the
   editor's standard Android action behavior after finalizing PREEDIT.
+  Numpad and layout-specific printable keys also terminate PREEDIT rather than
+  bypassing the Telex composer.
 - Normal typing uses a labeled 48 dp status bar, matching the compact active
   Stripped Plover treatment instead of leaving the composition UI visible.
   Compact transitions apply their height immediately, and returning to V7

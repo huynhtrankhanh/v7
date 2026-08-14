@@ -24,7 +24,9 @@ including across editor changes.
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Update Telex PREEDIT                            | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
-chord. All modifier events pass through as balanced down/up pairs. The mode
+chord. V7/Normal modifier events pass through as balanced down/up pairs. Telex
+captures Shift events in the WebUI while subsequent printable events carry the
+active Shift state for casing; Ctrl, Alt, and Meta continue to pass through. The mode
 changes only after every participating modifier has been released. Pressing
 any non-modifier while the chord is held cancels the pending mode change, so
 shortcuts such as `Ctrl+Shift+Arrow` retain their ordinary editor behavior.
@@ -77,8 +79,9 @@ Android native key handling runs before WebView dispatch:
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.
-Telex-only editing and separator keys are added to native capture only while
-Telex is active; in V7/Plover they retain the pre-Telex pass-through behavior.
+Telex captures any unmodified printable key reported by Android, including
+numpad and layout-specific characters, plus its non-printable editing keys. In
+V7/Plover those Telex-only keys retain the pre-Telex pass-through behavior.
 
 ## Raw outline fields
 
