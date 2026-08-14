@@ -1,0 +1,89 @@
+# Telex hardware-input mode
+
+V7 IME has three hardware-input states. It starts in **V7/Plover**:
+
+| Current state | `Ctrl+Tab` | `Ctrl+Shift` |
+| --- | --- | --- |
+| V7/Plover | Telex | Normal typing |
+| Telex | V7/Plover | Normal typing |
+| Normal typing | Telex | V7/Plover |
+
+The shortcuts fire once per press. Switching modes finalizes the current
+Android PREEDIT without deleting its visible text. Raw-outline editor fields
+continue to reserve their existing capture behavior.
+
+In **Telex**, letter keys build a replayable raw word and the converted NFC
+Vietnamese word is sent to Android as composing text after every key. Backspace
+removes one raw keystroke, so transformations and tone placement are replayed
+correctly. Standard Telex shapes (`aa`, `aw`, `ee`, `oo`, `ow`, `uw`, `dd`),
+tones (`s`, `f`, `r`, `x`, `j`), tone removal (`z`), standalone `w`, and the
+UniKey-compatible `[` → `ơ` and `]` → `ư` shortcuts are supported. Repeating a command key escapes it, allowing
+ordinary Latin typing such as `Windows` without leaving Telex.
+
+The Android IME enables free marking: delayed `uo` + `w` applies both horns in
+one command even after a coda, so `dduongwf` produces `đường`. The standalone
+converter keeps its conservative opt-in default for callers outside the IME.
+
+Space, Tab, digits, and symbols terminate the word. This includes numpad input
+and layout-specific printable keys reported by Android. The WebUI hands Android the
+expected converted word and separator together; Android applies both in one UI
+task, ends composition, and starts a fresh
+PREEDIT on the next letter. Enter instead finalizes the word and follows the
+editor's normal Android action: Next, Done, Go, Search, Send, a custom action,
+or a physical newline when the editor advertises no action. This prevents a
+completed Telex word from remaining underlined or being rewritten by the next
+word.
+
+Backspace removes raw Telex keystrokes, including key-repeat events, while a
+word is being composed. When PREEDIT is empty, Backspace is passed through to
+the editor so it can delete previously committed spaces and text normally. If
+a held Backspace exhausts PREEDIT, ownership transfers to the editor for the
+remaining repeats and matching key-up, so deletion continues without requiring
+the user to release and press the key again.
+Escape also passes through without changing or consuming Telex composition.
+
+Native code records each rendered Telex word synchronously with the current
+editor generation before posting its visual PREEDIT update. Enter and mode
+switches finalize that latest logical word, even if its visual update is still
+queued. Separator commits re-check the editor generation and Telex mode on the
+UI thread so delayed work cannot type into a replacement editor or mode.
+Every forwarded Telex key carries the native input epoch; WebUI and bridge
+updates reject stale epochs after a mode/editor transition. Accepting a
+separator atomically reserves the next epoch before waiting for its UI task, so
+typing the next word cannot be invalidated even if that task is delayed.
+Native PREEDIT clearing publishes the advanced epoch back to the WebUI on
+ordinary editor changes and cursor-driven composition cancellation, so the
+first key in the new context is accepted without requiring a mode toggle.
+
+Hardware events also carry a monotonically increasing sequence number and the
+WebUI acknowledges each event after reduction. Enter and mode changes are
+ordered barriers: JavaScript supplies the composer's latest rendered word
+before native code advances the epoch and performs the editor action or mode
+transition. An unacknowledged Telex key-down counts as possible PREEDIT for
+Backspace routing. Thus fast `letter → Enter`, `letter → mode switch`, and
+`first letter → Backspace` sequences cannot lose or bypass the queued letter.
+Physical events arriving after a barrier are held natively and replayed in
+order only after its new mode and epoch are installed; this also protects the
+first letter after a mode switch or Enter. Barrier finalization always replaces
+the editor's composing range, including with an empty string, before finishing
+composition. Therefore a queued empty PREEDIT cannot leave an older word
+composing in the editor.
+Space, Tab, digits, punctuation, and layout-produced symbols use this same
+barrier protocol, including atomic word-plus-separator commit, so the first
+letter of the next word cannot retain the separator's old epoch. A bounded
+native timeout completes the best available PREEDIT if the WebUI callback is
+missing; stale epoch callbacks cancel explicitly, and lifecycle resets clear
+both the active barrier and its queued events.
+
+Android, rather than the WebView, owns hardware-event ordering. It permits only
+one Telex key-down JavaScript reduction at a time and holds all later physical
+events until the bridge acknowledges that the synchronous DOM dispatch and
+composer update have finished. The converter remains shared TypeScript logic,
+but PREEDIT ownership, serialization, epochs, separators, editor commits,
+timeouts, and mode transitions are native responsibilities. This avoids
+blocking Android's main thread while giving each JavaScript reduction
+synchronous, in-order semantics.
+
+The supplied adapter's more detailed conversion notes are preserved as
+[the Telex adapter supplement](telex-behavior-supplement.md), with an explicit
+erratum for the archived document's reversed bracket shortcuts.

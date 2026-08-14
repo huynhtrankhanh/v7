@@ -10,13 +10,17 @@ final class HardwareKeyActionResolver {
         PASS_THROUGH,
         CONSUME,
         TOGGLE_STENO,
+        TOGGLE_TELEX,
         FINISH_PREEDIT,
         FINISH_PREEDIT_AND_INSERT_SPACE
     }
 
     private final Set<Integer> pressedControlKeys = new HashSet<>();
     private final Set<Integer> pressedShiftKeys = new HashSet<>();
+    private final Set<Integer> pressedAltKeys = new HashSet<>();
+    private final Set<Integer> pressedMetaKeys = new HashSet<>();
     private boolean toggleChordPending = false;
+    private boolean tabToggleActive = false;
 
     Action resolve(
             boolean stenoModeEnabled,
@@ -25,6 +29,30 @@ final class HardwareKeyActionResolver {
             int repeatCount) {
         if (isControlKey(keyCode) || isShiftKey(keyCode)) {
             return resolveModeToggleChord(keyCode, action);
+        }
+        if (isAltKey(keyCode) || isMetaKey(keyCode)) {
+            updatePressedModifier(keyCode, action);
+            if (toggleChordPending && action == KeyEvent.ACTION_DOWN) {
+                toggleChordPending = false;
+            }
+            return Action.PASS_THROUGH;
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_TAB) {
+            if (action == KeyEvent.ACTION_DOWN
+                    && repeatCount == 0
+                    && !pressedControlKeys.isEmpty()
+                    && pressedShiftKeys.isEmpty()
+                    && pressedAltKeys.isEmpty()
+                    && pressedMetaKeys.isEmpty()) {
+                toggleChordPending = false;
+                tabToggleActive = true;
+                return Action.TOGGLE_TELEX;
+            }
+            if (tabToggleActive) {
+                if (action == KeyEvent.ACTION_UP) tabToggleActive = false;
+                return Action.CONSUME;
+            }
         }
 
         if (toggleChordPending && action == KeyEvent.ACTION_DOWN) {
@@ -51,7 +79,10 @@ final class HardwareKeyActionResolver {
     void reset() {
         pressedControlKeys.clear();
         pressedShiftKeys.clear();
+        pressedAltKeys.clear();
+        pressedMetaKeys.clear();
         toggleChordPending = false;
+        tabToggleActive = false;
     }
 
     boolean isModeToggleChordActive() {
@@ -95,5 +126,26 @@ final class HardwareKeyActionResolver {
     private boolean isShiftKey(int keyCode) {
         return keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT;
+    }
+
+    private boolean isAltKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_ALT_LEFT
+                || keyCode == KeyEvent.KEYCODE_ALT_RIGHT;
+    }
+
+    private boolean isMetaKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_META_LEFT
+                || keyCode == KeyEvent.KEYCODE_META_RIGHT;
+    }
+
+    private void updatePressedModifier(int keyCode, int action) {
+        Set<Integer> pressedKeys = isAltKey(keyCode)
+                ? pressedAltKeys
+                : pressedMetaKeys;
+        if (action == KeyEvent.ACTION_DOWN) {
+            pressedKeys.add(keyCode);
+        } else if (action == KeyEvent.ACTION_UP) {
+            pressedKeys.remove(keyCode);
+        }
     }
 }

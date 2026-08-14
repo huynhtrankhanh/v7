@@ -6,25 +6,36 @@ including across editor changes.
 
 ## Mode and key behavior
 
-| Physical input               | STENO mode                                                       | Normal typing mode              |
-| ---------------------------- | ---------------------------------------------------------------- | ------------------------------- |
-| `Ctrl+Shift` chord           | Toggle on release and finalize the current PREEDIT               | Toggle to STENO on release      |
-| `Ctrl+Shift` plus other key  | Pass through without toggling (for example, selection shortcuts) | Pass through without toggling   |
-| Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Pass through normally           |
-| `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally           |
-| `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Pass both keys through normally |
-| `[` down                     | Finalize the current PREEDIT and start a clean composing session | Pass `[` through normally       |
-| `[` repeat/up                | Consume without finalizing again                                 | Pass through normally           |
-| `'` down                     | Finalize the current PREEDIT and insert one space                | Pass `'` through normally       |
-| `'` repeat/up                | Consume without inserting another space                          | Pass through normally           |
-| `Caps Lock`                  | Uppercase all steno output while the current lock state is on    | Pass through to the editor      |
-| Other unmodified mapped keys | Capture and aggregate into steno chords                          | Pass through to the editor      |
+| Physical input               | STENO mode                                                       | Telex mode                                      | Normal typing mode              |
+| ---------------------------- | ---------------------------------------------------------------- | ----------------------------------------------- | ------------------------------- |
+| `Ctrl+Shift` chord           | Toggle on release and finalize the current PREEDIT               | Enter Normal mode and finalize PREEDIT          | Toggle to STENO on release      |
+| `Ctrl+Tab` chord             | Enter Telex and finalize PREEDIT                                 | Return to STENO and finalize PREEDIT             | Enter Telex                     |
+| `Ctrl+Shift` plus other key  | Pass through without toggling (including `Ctrl+Shift+Tab`)        | Pass through without toggling                   | Pass through without toggling   |
+| Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Preserve ordinary modifier behavior             | Pass through normally           |
+| `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally                           | Pass through normally           |
+| `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Type through Telex                              | Pass both keys through normally |
+| `[` down                     | Finalize the current PREEDIT and start a clean composing session | Apply the Telex `ư` shortcut                    | Pass `[` through normally       |
+| `[` repeat/up                | Consume without finalizing again                                 | Repeat/update Telex PREEDIT                      | Pass through normally           |
+| `'` down                     | Finalize the current PREEDIT and insert one space                | Commit Telex PREEDIT and apostrophe              | Pass `'` through normally       |
+| `'` repeat/up                | Consume without inserting another space                          | Repeat/finish the apostrophe event               | Pass through normally           |
+| `Caps Lock`                  | Uppercase all steno output while the current lock state is on    | Apply ordinary cased-key input                   | Pass through to the editor      |
+| Backspace                    | Capture as mapped steno input                                    | Replay raw input; pass through when PREEDIT empty | Pass through to the editor      |
+| Enter                        | Use the editor's native action                                   | Finalize PREEDIT, then use the native action     | Pass through to the editor      |
+| Escape                       | Capture for V7/Plover handling                                   | Pass through to the editor                       | Pass through to the editor      |
+| Other letters / `[` / `]`    | Capture mapped keys into steno chords                            | Update Telex PREEDIT                            | Pass through to the editor      |
+| Digits and printable symbols | Capture only existing V7 mappings                                | Commit and terminate Telex PREEDIT              | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
-chord. All modifier events pass through as balanced down/up pairs. The mode
-changes only after every participating modifier has been released. Pressing
+chord. V7/Normal modifier events pass through as balanced down/up pairs. Telex
+captures Shift events in the WebUI while subsequent printable events carry the
+active Shift state for casing; Ctrl and Meta continue to pass through, as do
+Alt events that do not produce printable layout text.
+The Ctrl+Shift mode change occurs only after every participating modifier has
+been released. Pressing
 any non-modifier while the chord is held cancels the pending mode change, so
 shortcuts such as `Ctrl+Shift+Arrow` retain their ordinary editor behavior.
+`Ctrl+Tab` is exact: adding Shift, Alt, or Meta cancels the mode shortcut and
+passes the modified Tab sequence through.
 
 The `Q+A` physical chord maps to the internal steno stroke `#S`, but Android
 reserves that stroke for the input-method picker. It is intercepted before V7
@@ -74,6 +85,33 @@ Android native key handling runs before WebView dispatch:
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.
+Telex captures any unmodified printable key reported by Android, including
+numpad and layout-specific characters, plus its non-printable editing keys. In
+V7/Plover those Telex-only keys retain the pre-Telex pass-through behavior.
+Printable Alt/AltGr layout output is also captured to terminate Telex PREEDIT;
+Ctrl-only and Meta shortcuts continue to pass directly to the editor.
+
+Key ownership is normally fixed from the first key-down through repeats and
+key-up. Backspace is the deliberate exception: if a held, Web-owned Backspace
+exhausts Telex PREEDIT, its next repeat transfers the press to the editor. The
+remaining repeats and key-up then stay editor-owned, allowing the same hold to
+continue deleting committed text.
+WEB-owned presses also retain their starting input generation. After an editor
+or mode transition, their remaining repeats and key-up are consumed until
+physical release instead of being reinterpreted by the new mode. Editor-owned
+key-up events still pass through so the target editor receives balanced input.
+
+While a Telex separator, Enter, or mode-change barrier is waiting for the WebUI, later
+physical events are consumed into a native FIFO. Once finalization installs the
+new epoch and target mode, those events are replayed through normal routing;
+events are discarded instead if the barrier became stale because the editor or
+input view changed.
+The native timeout fallback prevents a missing/uninitialized JavaScript handler
+from freezing hardware input, and lifecycle resets cancel any active barrier.
+Native routing also serializes ordinary Telex key-downs one JavaScript turn at
+a time. Key-up, repeat, shortcut, and following-character events wait in a
+native FIFO until the Web bridge acknowledges completion of the current
+synchronous DOM reduction.
 
 ## Raw outline fields
 

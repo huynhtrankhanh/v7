@@ -40,6 +40,7 @@ import {
   decodeCanonicalTwoSyllableStroke,
   decodeDictionaryModeStroke,
 } from "./twoSyllableV7";
+import { TelexComposer } from "./telex";
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
@@ -296,10 +297,29 @@ interface AndroidImeBridge {
   isPlainTextMode?(): boolean;
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
+  isTelexModeEnabled?(): boolean;
   changeInputMethod(): void;
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
-  setPreeditText(text: string, grammarSectionsJson: string): void;
+  getInputGeneration?(): number;
+  setPreeditText(
+    text: string,
+    grammarSectionsJson: string,
+    epoch: number,
+  ): void;
+  commitTelexText?(
+    expectedText: string,
+    separator: string,
+    epoch: number,
+  ): number;
+  acknowledgeHardwareEvent?(sequence: number, epoch: number): void;
+  completeTelexBarrier?(
+    barrierId: number,
+    expectedText: string,
+    separator: string,
+    epoch: number,
+  ): number;
+  cancelTelexBarrier?(barrierId: number, epoch: number): void;
   setKeyboardHeight(heightDp: number): void;
   undoRawOutlineStroke?(): void;
 }
@@ -335,6 +355,8 @@ const isTrainerEmbedded = new URLSearchParams(window.location.search).has(
 document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
+let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
+let androidInputEpoch = androidIme?.getInputGeneration?.() ?? 0;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
@@ -2585,6 +2607,13 @@ function updateDisplay(): void {
     "android-normal-typing",
     strippedDisplay.enabled &&
       (!androidStenoModeEnabled || androidPlainTextMode) &&
+      !androidTelexModeEnabled &&
+      !androidRawOutlineMode,
+  );
+  document.body.classList.toggle(
+    "android-telex",
+    strippedDisplay.enabled &&
+      androidTelexModeEnabled &&
       !androidRawOutlineMode,
   );
   document.body.classList.toggle(
@@ -2595,9 +2624,11 @@ function updateDisplay(): void {
   if (modeTitle && strippedDisplay.enabled) {
     modeTitle.textContent = androidRawOutlineMode
       ? "Raw outline mode"
-      : androidStenoModeEnabled && !androidPlainTextMode
-        ? "Compose"
-        : "Normal typing";
+      : androidTelexModeEnabled
+        ? "Telex"
+        : androidStenoModeEnabled && !androidPlainTextMode
+          ? "Compose"
+          : "Normal typing";
   }
   document.body.classList.toggle(
     "stripped-plover-active",
@@ -2806,10 +2837,57 @@ function updateDisplay(): void {
 // --- Input Handling ---
 
 const keyboardStrokeTracker = new KeyboardStrokeTracker();
+const telexComposer = new TelexComposer({ freeShapeMarks: true });
 
 document.addEventListener("keydown", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
+  if (androidIme && androidTelexModeEnabled) {
+    const printableAltLayoutKey =
+      e.altKey && !e.metaKey && Array.from(e.key).length === 1;
+    if (
+      e.metaKey ||
+      (e.ctrlKey && !printableAltLayoutKey) ||
+      (e.altKey && !printableAltLayoutKey)
+    )
+      return;
+    if (e.key === "Backspace") {
+      androidIme.setPreeditText(
+        telexComposer.backspace(),
+        "[]",
+        androidInputEpoch,
+      );
+      e.preventDefault();
+      return;
+    }
+    if (Array.from(e.key).length === 1 && /[\p{L}\[\]]/u.test(e.key)) {
+      androidIme.setPreeditText(
+        telexComposer.push(e.key),
+        "[]",
+        androidInputEpoch,
+      );
+      e.preventDefault();
+      return;
+    }
+    if (
+      Array.from(e.key).length === 1 ||
+      e.key === "Enter" ||
+      e.key === "Tab"
+    ) {
+      const separator =
+        e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
+      const expectedText = telexComposer.commit();
+      androidInputEpoch =
+        androidIme.commitTelexText?.(
+          expectedText,
+          separator,
+          androidInputEpoch,
+        ) ?? androidInputEpoch;
+      e.preventDefault();
+      return;
+    }
+    return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     resetHardwareKeyboardState();
@@ -2928,6 +3006,10 @@ document.addEventListener("keydown", (e) => {
 document.addEventListener("keyup", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
+  }
+  if (androidIme && androidTelexModeEnabled) {
+    e.preventDefault();
+    return;
   }
   if (hasOsPassthroughModifier(e)) {
     resetHardwareKeyboardState();
@@ -3389,7 +3471,7 @@ declare global {
   interface Window {
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
-    clearPreeditFromAndroid?: () => void;
+    clearPreeditFromAndroid?: (epoch?: number) => void;
     resetHardwareKeyboardStateFromAndroid?: () => void;
     handleAndroidInferenceState?: (state: string) => void;
     handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
@@ -3403,7 +3485,11 @@ declare global {
       rawOutline: boolean,
       plainText: boolean,
     ) => void;
-    handleAndroidStenoModeChanged?: (enabled: boolean) => void;
+    handleAndroidStenoModeChanged?: (
+      enabled: boolean,
+      telex: boolean,
+      epoch: number,
+    ) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3414,6 +3500,13 @@ declare global {
       altKey: boolean,
       metaKey: boolean,
       capsLockActive: boolean,
+      epoch: number,
+      sequence?: number,
+    ) => void;
+    handleAndroidTelexBarrier?: (
+      barrierId: number,
+      epoch: number,
+      separator: string,
     ) => void;
     setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
@@ -3531,8 +3624,11 @@ window.handleAndroidPloverPaused = (paused) => {
   updateDisplay();
 };
 
-window.handleAndroidStenoModeChanged = (enabled) => {
+window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidStenoModeEnabled = enabled;
+  androidTelexModeEnabled = telex;
+  androidInputEpoch = epoch;
+  telexComposer.clear();
   resetHardwareKeyboardState();
   updateDisplay();
 };
@@ -3572,6 +3668,7 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   androidIme.setPreeditText(
     renderVisibleText(state.islands, state.candidates),
     JSON.stringify(grammarSections),
+    androidInputEpoch,
   );
 }
 
@@ -3580,6 +3677,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
   const compact =
     document.body.classList.contains("stripped-plover-active") ||
     document.body.classList.contains("android-normal-typing") ||
+    document.body.classList.contains("android-telex") ||
     document.body.classList.contains("android-raw-outline");
   if (compact) {
     if (lastRequestedAndroidKeyboardHeight !== 48) {
@@ -3663,7 +3761,9 @@ window.addEventListener("resize", () => {
   }
 });
 
-window.clearPreeditFromAndroid = () => {
+window.clearPreeditFromAndroid = (epoch) => {
+  if (epoch !== undefined) androidInputEpoch = epoch;
+  telexComposer.clear();
   resetHardwareKeyboardState();
   abortInferenceRequest(true);
   strippedPlover.requestId += 1;
@@ -3696,21 +3796,45 @@ window.handleAndroidKeyEvent = (
   altKey,
   metaKey,
   capsLockActive,
+  epoch,
+  sequence,
 ) => {
-  keyboardCapsLockActive = capsLockActive;
-  document.dispatchEvent(
-    new KeyboardEvent(action, {
-      key,
-      code,
-      repeat,
-      shiftKey,
-      ctrlKey,
-      altKey,
-      metaKey,
-      bubbles: true,
-      cancelable: true,
-    }),
-  );
+  try {
+    if (epoch !== androidInputEpoch) return;
+    keyboardCapsLockActive = capsLockActive;
+    document.dispatchEvent(
+      new KeyboardEvent(action, {
+        key,
+        code,
+        repeat,
+        shiftKey,
+        ctrlKey,
+        altKey,
+        metaKey,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  } finally {
+    if (sequence !== undefined) {
+      androidIme?.acknowledgeHardwareEvent?.(sequence, epoch);
+    }
+  }
+};
+
+window.handleAndroidTelexBarrier = (barrierId, epoch, separator) => {
+  if (epoch !== androidInputEpoch) {
+    androidIme?.cancelTelexBarrier?.(barrierId, epoch);
+    return;
+  }
+  const expectedText = telexComposer.commit();
+  androidInputEpoch =
+    androidIme?.completeTelexBarrier?.(
+      barrierId,
+      expectedText,
+      separator,
+      epoch,
+    ) ?? epoch;
 };
 
 window.setStrippedDisplay = (options = {}) => {
