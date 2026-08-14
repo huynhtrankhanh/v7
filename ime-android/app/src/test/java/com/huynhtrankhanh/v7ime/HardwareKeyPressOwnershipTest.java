@@ -57,4 +57,28 @@ public class HardwareKeyPressOwnershipTest {
                 ownership.release(67).owner);
     }
 
+    @Test
+    public void repeatCanRefreshTheSameNativePressGeneration() {
+        HardwareKeyPressOwnership ownership = new HardwareKeyPressOwnership();
+        ownership.claim(62, HardwareKeyPressOwnership.Owner.NATIVE, 8);
+        HardwareKeyPressOwnership.Claim claim = ownership.get(62);
+
+        assertTrue(ownership.refresh(62, claim, 9));
+        assertEquals(HardwareKeyPressOwnership.Owner.NATIVE,
+                ownership.get(62).owner);
+        assertTrue(ownership.get(62).belongsTo(9));
+    }
+
+    @Test
+    public void staleRepeatCannotRefreshAnInvalidatedPress() {
+        HardwareKeyPressOwnership ownership = new HardwareKeyPressOwnership();
+        ownership.claim(62, HardwareKeyPressOwnership.Owner.NATIVE, 8);
+        HardwareKeyPressOwnership.Claim staleClaim = ownership.get(62);
+
+        ownership.invalidate();
+
+        assertFalse(ownership.refresh(62, staleClaim, 9));
+        assertFalse(ownership.get(62).belongsTo(9));
+    }
+
 }

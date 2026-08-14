@@ -97,7 +97,10 @@ mode changes directly. Each raw-word conversion is a synchronous call to a
 persistent DOM-free `JavaScriptSandbox`; no Telex hardware event is sent through
 the WebView, queued, acknowledged, or replayed. Every initial Telex key-down is
 claimed by either the native reducer or the editor, and repeats plus key-up keep
-that owner. This preserves balanced navigation, modifier, and Enter lifecycles.
+that owner. A handled native repeat refreshes its claim after a separator or
+Enter advances the PREEDIT generation; an editor/lifecycle invalidation replaces
+the claim and therefore cannot be resurrected by that refresh. This preserves
+balanced navigation, modifier, Enter, and autorepeat lifecycles.
 Once held Backspace empties the native raw buffer, the next repeat explicitly
 transfers that press to ordinary editor routing and continues deleting committed
 text; merely reaching an empty buffer does not leak the preceding key-up.

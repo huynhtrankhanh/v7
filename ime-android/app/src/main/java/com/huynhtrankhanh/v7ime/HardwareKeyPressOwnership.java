@@ -45,6 +45,12 @@ final class HardwareKeyPressOwnership {
         owners.put(keyCode, new Claim(owner, generation));
     }
 
+    boolean refresh(int keyCode, Claim expected, int generation) {
+        if (owners.get(keyCode) != expected) return false;
+        owners.put(keyCode, new Claim(expected.owner, generation));
+        return true;
+    }
+
     void invalidate() {
         owners.replaceAll((keyCode, claim) -> new Claim(claim.owner, -1));
     }

@@ -380,6 +380,11 @@ public class V7ImeService extends InputMethodService {
                             event.getKeyCode(),
                             HardwareKeyPressOwnership.Owner.EDITOR,
                             inputGeneration.get());
+                } else {
+                    hardwareKeyPressOwnership.refresh(
+                            event.getKeyCode(),
+                            keyClaim,
+                            inputGeneration.get());
                 }
                 return handled;
             }
