@@ -24,6 +24,7 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
     private JavaScriptIsolate isolate;
     private volatile boolean ready;
     private boolean warming;
+    private boolean closed;
 
     TelexJavaScriptSandbox(Context context) {
         this.context = context.getApplicationContext();
@@ -31,17 +32,19 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
 
     void warmAsync(Executor executor, Runnable stateChanged) {
         synchronized (this) {
-            if (ready || warming) return;
+            if (closed || ready || warming) return;
             warming = true;
         }
         executor.execute(() -> {
+            boolean notify;
             try {
                 startAndWarm();
             } finally {
                 synchronized (this) {
                     warming = false;
+                    notify = !closed;
                 }
-                stateChanged.run();
+                if (notify) stateChanged.run();
             }
         });
     }
@@ -69,6 +72,9 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
     }
 
     private void startAndWarm() {
+        synchronized (this) {
+            if (closed) return;
+        }
         JavaScriptIsolate candidate = null;
         JavaScriptSandbox shared = null;
         try {
@@ -83,6 +89,7 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
                     "convertV7TelexRaw('tieengs')"
             ).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             synchronized (this) {
+                if (closed) return;
                 if (isolate != null) isolate.close();
                 sandbox = shared;
                 isolate = candidate;
@@ -113,6 +120,7 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
 
     @Override
     public synchronized void close() {
+        closed = true;
         closeIsolate();
     }
 

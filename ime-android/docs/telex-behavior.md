@@ -70,11 +70,19 @@ finishes, or after sandbox failure, conversion immediately uses raw Latin with
 a visible **Telex unavailable — Latin fallback** banner. Once ready, a warmed
 conversion has a 100 ms hard deadline; failure drops back to the visible Latin
 mode and schedules recovery rather than stalling the IME for seconds.
+Conversion failure publishes the unavailable state immediately, before
+background recovery begins, so the banner cannot continue claiming Telex while
+the current PREEDIT is raw Latin.
 `SandboxDeadException`, including one wrapped by a future, invalidates and
 closes the process-wide singleton. The next warm-up reconnects a new sandbox;
 dictionary importing applies the same invalidation rule before reporting its
 failed attempt, so a later retry also reconnects instead of reusing a dead
 process handle.
+
+Destroying the IME permanently closes its Telex wrapper. An in-flight warm-up
+checks that closed state before installing its candidate isolate and suppresses
+the readiness callback, so service teardown cannot be undone by a late sandbox
+future completion.
 
 International-layout dead accents are retained natively. The next printable
 letter is combined with `KeyCharacterMap.getDeadChar()` before it enters the raw

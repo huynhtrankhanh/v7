@@ -517,6 +517,7 @@ public class V7ImeService extends InputMethodService {
         String converted = telexSandbox.convertIfReady(nativeTelexRaw.text());
         if (converted == null) {
             nativeTelexRendered = nativeTelexRaw.text();
+            publishTelexAvailability();
             warmTelexSandbox();
         } else {
             nativeTelexRendered = converted;
