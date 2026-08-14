@@ -65,6 +65,7 @@ public class V7ImeService extends InputMethodService {
     private boolean inferenceWarmupScheduled = false;
     private String preeditText = "";
     private String preeditGrammarSectionsJson = "[]";
+    private final TelexPreeditState telexPreeditState = new TelexPreeditState();
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
     private final AtomicInteger inputGeneration = new AtomicInteger();
     private final GenerationOwnership<WebView> inputViewOwnership =
@@ -454,8 +455,8 @@ public class V7ImeService extends InputMethodService {
 
     private void applyHardwareInputTransition(
             HardwareInputMode.Transition transition) {
-        applyHardwareInputMode(transition.mode);
         if (transition.finishPreedit) finishCurrentPreedit();
+        applyHardwareInputMode(transition.mode);
     }
 
     private boolean dispatchEnterKey(KeyEvent event) {
@@ -776,22 +777,34 @@ public class V7ImeService extends InputMethodService {
      * that the user already sees in the editor.
      */
     private void finishCurrentPreedit() {
-        inputGeneration.incrementAndGet();
+        int generation = inputGeneration.getAndIncrement();
         latestInferenceRequestId.set(-1);
+        String latestTelexText = takePendingTelexText(generation);
         boolean hadPreedit = !preeditText.isEmpty();
         preeditText = "";
         telexHasPreedit = false;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
-        if (hadPreedit) {
+        if (hadPreedit || latestTelexText != null) {
             InputConnection connection = getCurrentInputConnection();
             if (connection != null) {
+                if (latestTelexText != null) {
+                    connection.setComposingText(latestTelexText, 1);
+                }
                 connection.finishComposingText();
             }
         }
         evaluateJavascript(
                 "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid()"
         );
+    }
+
+    private String takePendingTelexText(int generation) {
+        return telexPreeditState.take(generation);
+    }
+
+    private void rememberPendingTelexText(String text, int generation) {
+        telexPreeditState.remember(text, generation);
     }
 
     private void publishStenoModeState() {
@@ -1236,11 +1249,14 @@ public class V7ImeService extends InputMethodService {
                 return;
             }
             String normalized = text == null ? "" : text;
-            if (isTelexMode()) telexHasPreedit = !normalized.isEmpty();
+            int generation = inputGeneration.get();
+            if (isTelexMode()) {
+                telexHasPreedit = !normalized.isEmpty();
+                rememberPendingTelexText(normalized, generation);
+            }
             String normalizedGrammarSections = grammarSectionsJson == null
                     ? "[]"
                     : grammarSectionsJson;
-            int generation = inputGeneration.get();
             owner.post(() -> {
                 if (isCurrentInputView()
                         && generation == inputGeneration.get()) {
@@ -1255,6 +1271,7 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public void commitTelexText(String expectedText, String separator) {
             if (!isCurrentInputView() || !isTelexMode()) return;
+            int generation = inputGeneration.get();
             String committedText = expectedText == null ? "" : expectedText;
             String committedSeparator = separator == null ? "" : separator;
             telexHasPreedit = false;
@@ -1264,7 +1281,9 @@ public class V7ImeService extends InputMethodService {
                     // Apply the expected final word and separator in one UI
                     // task. This does not depend on an earlier asynchronous
                     // PREEDIT update having reached the InputConnection.
-                    if (!isCurrentInputView()) return;
+                    if (!isCurrentInputView()
+                            || generation != inputGeneration.get()
+                            || !isTelexMode()) return;
                     InputConnection connection = getCurrentInputConnection();
                     if (connection != null) {
                         connection.setComposingText(committedText, 1);
@@ -1274,6 +1293,8 @@ public class V7ImeService extends InputMethodService {
                     preeditText = "";
                     preeditGrammarSectionsJson = "[]";
                     pendingPreeditLengths.clear();
+                    inputGeneration.incrementAndGet();
+                    takePendingTelexText(generation);
                 } finally {
                     applied.countDown();
                 }

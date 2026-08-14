@@ -24,4 +24,10 @@ public class TelexHardwareKeyPolicyTest {
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR_ENTER,
                 policy.resolve(KeyEvent.KEYCODE_NUMPAD_ENTER, true));
     }
+
+    @Test
+    public void escapeReturnsToEditor() {
+        assertEquals(TelexHardwareKeyPolicy.Route.EDITOR,
+                policy.resolve(KeyEvent.KEYCODE_ESCAPE, true));
+    }
 }

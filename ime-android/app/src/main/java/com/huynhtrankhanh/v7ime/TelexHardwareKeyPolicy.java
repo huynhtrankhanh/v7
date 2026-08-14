@@ -17,6 +17,7 @@ final class TelexHardwareKeyPolicy {
         if (keyCode == KeyEvent.KEYCODE_DEL && !hasPreedit) {
             return Route.EDITOR;
         }
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE) return Route.EDITOR;
         return Route.WEB_PREEDIT;
     }
 }

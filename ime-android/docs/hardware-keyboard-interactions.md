@@ -10,7 +10,7 @@ including across editor changes.
 | ---------------------------- | ---------------------------------------------------------------- | ----------------------------------------------- | ------------------------------- |
 | `Ctrl+Shift` chord           | Toggle on release and finalize the current PREEDIT               | Enter Normal mode and finalize PREEDIT          | Toggle to STENO on release      |
 | `Ctrl+Tab` chord             | Enter Telex and finalize PREEDIT                                 | Return to STENO and finalize PREEDIT             | Enter Telex                     |
-| `Ctrl+Shift` plus other key  | Pass through without toggling (for example, selection shortcuts) | Pass through without toggling                   | Pass through without toggling   |
+| `Ctrl+Shift` plus other key  | Pass through without toggling (including `Ctrl+Shift+Tab`)        | Pass through without toggling                   | Pass through without toggling   |
 | Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Preserve ordinary modifier behavior             | Pass through normally           |
 | `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally                           | Pass through normally           |
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Type through Telex                              | Pass both keys through normally |
@@ -21,6 +21,7 @@ including across editor changes.
 | `Caps Lock`                  | Uppercase all steno output while the current lock state is on    | Apply ordinary cased-key input                   | Pass through to the editor      |
 | Backspace                    | Capture as mapped steno input                                    | Replay raw input; pass through when PREEDIT empty | Pass through to the editor      |
 | Enter                        | Use the editor's native action                                   | Finalize PREEDIT, then use the native action     | Pass through to the editor      |
+| Escape                       | Capture for V7/Plover handling                                   | Pass through to the editor                       | Pass through to the editor      |
 | Other unmodified mapped keys | Capture and aggregate into steno chords                          | Update Telex PREEDIT                            | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
@@ -30,6 +31,8 @@ active Shift state for casing; Ctrl, Alt, and Meta continue to pass through. The
 changes only after every participating modifier has been released. Pressing
 any non-modifier while the chord is held cancels the pending mode change, so
 shortcuts such as `Ctrl+Shift+Arrow` retain their ordinary editor behavior.
+`Ctrl+Tab` is exact: adding Shift, Alt, or Meta cancels the mode shortcut and
+passes the modified Tab sequence through.
 
 The `Q+A` physical chord maps to the internal steno stroke `#S`, but Android
 reserves that stroke for the input-method picker. It is intercepted before V7

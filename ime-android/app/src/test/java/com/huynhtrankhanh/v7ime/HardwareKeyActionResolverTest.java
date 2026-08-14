@@ -27,6 +27,37 @@ public class HardwareKeyActionResolverTest {
     }
 
     @Test
+    public void controlShiftTabCancelsBothModeShortcuts() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        resolver.resolve(true, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_DOWN, 0);
+        resolver.resolve(true, KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.ACTION_DOWN, 0);
+        assertEquals(HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB, KeyEvent.ACTION_DOWN, 0));
+        resolver.resolve(true, KeyEvent.KEYCODE_TAB, KeyEvent.ACTION_UP, 0);
+        resolver.resolve(true, KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.ACTION_UP, 0);
+        assertEquals(HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(true, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_UP, 0));
+    }
+
+    @Test
+    public void controlAltTabDoesNotToggleTelex() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        resolver.resolve(true, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_DOWN, 0);
+        resolver.resolve(true, KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.ACTION_DOWN, 0);
+        assertEquals(HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB, KeyEvent.ACTION_DOWN, 0));
+    }
+
+    @Test
+    public void controlMetaTabDoesNotToggleTelex() {
+        HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
+        resolver.resolve(true, KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.ACTION_DOWN, 0);
+        resolver.resolve(true, KeyEvent.KEYCODE_META_LEFT, KeyEvent.ACTION_DOWN, 0);
+        assertEquals(HardwareKeyActionResolver.Action.PASS_THROUGH,
+                resolver.resolve(true, KeyEvent.KEYCODE_TAB, KeyEvent.ACTION_DOWN, 0));
+    }
+
+    @Test
     public void controlThenShiftTogglesOnceAndBalancesControl() {
         HardwareKeyActionResolver resolver = new HardwareKeyActionResolver();
         assertEquals(
