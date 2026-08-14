@@ -14,7 +14,7 @@ including across editor changes.
 | Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Preserve ordinary modifier behavior             | Pass through normally           |
 | `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally                           | Pass through normally           |
 | `Q+A` chord                  | Open Android's input-method picker; do not emit a steno stroke   | Type through Telex                              | Pass both keys through normally |
-| `[` down                     | Finalize the current PREEDIT and start a clean composing session | Apply the Telex `ư` shortcut                    | Pass `[` through normally       |
+| `[` down                     | Finalize the current PREEDIT and start a clean composing session | Apply the Telex `ơ` shortcut                    | Pass `[` through normally       |
 | `[` repeat/up                | Consume without finalizing again                                 | Repeat/update Telex PREEDIT                      | Pass through normally           |
 | `'` down                     | Finalize the current PREEDIT and insert one space                | Commit Telex PREEDIT and apostrophe              | Pass `'` through normally       |
 | `'` repeat/up                | Consume without inserting another space                          | Repeat/finish the apostrophe event               | Pass through normally           |
@@ -26,8 +26,8 @@ including across editor changes.
 | Digits and printable symbols | Capture only existing V7 mappings                                | Commit and terminate Telex PREEDIT              | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
-chord. V7/Normal modifier events pass through as balanced down/up pairs. Telex
-captures Shift events in the WebUI while subsequent printable events carry the
+chord. V7/Normal modifier events pass through as balanced down/up pairs. Native
+Telex consumes Shift events while subsequent printable `KeyEvent`s carry the
 active Shift state for casing; Ctrl and Meta continue to pass through, as do
 Alt events that do not produce printable layout text.
 The Ctrl+Shift mode change occurs only after every participating modifier has
@@ -111,6 +111,11 @@ unbind listener before a later reconnect attempt.
 Dead-accent key events remain native until the following printable character;
 Android's `getDeadChar()` result is then appended to Telex as one Unicode code
 point instead of splitting the dead key between the editor and PREEDIT.
+
+Raw-outline editor fields take precedence over the saved V7/Telex/Normal mode.
+Even when Telex is the stored mode, their keys use the existing raw-outline
+WebUI chord path; leaving the field restores Telex without changing the saved
+mode.
 
 ## Raw outline fields
 

@@ -115,10 +115,10 @@ tasks.register("buildTelexSandbox", Exec) {
     )
     workingDir webRoot
     inputs.files(
-            new File(webRoot, "src/telex-sandbox.ts"),
-            new File(webRoot, "src/telex.ts"),
-            new File(webRoot, "src/vietnameseSyllables.ts"),
-            new File(webRoot, "scripts/build-telex-sandbox.mjs")
+            fileTree(new File(webRoot, "src")) { include "**/*.ts" },
+            new File(webRoot, "scripts/build-telex-sandbox.mjs"),
+            new File(webRoot, "package.json"),
+            new File(webRoot, "package-lock.json")
     )
     outputs.file generatedTelexSandbox.map { it.file("telex-sandbox.js") }
 }

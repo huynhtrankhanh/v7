@@ -87,6 +87,10 @@ already on Android's main thread. The clear/state scripts are therefore issued
 before the first V7/Plover hardware event after a mode transition, preventing
 that event from observing the previous WebUI epoch.
 
+Raw-outline Lookup/Add Translation fields override the stored hardware mode.
+Their chords continue through the raw-outline WebUI even if Telex was active
+before focus entered the field; Telex resumes when that editor closes.
+
 The supplied adapter's more detailed conversion notes are preserved as
 [the Telex adapter supplement](telex-behavior-supplement.md), with an explicit
 erratum for the archived document's reversed bracket shortcuts.

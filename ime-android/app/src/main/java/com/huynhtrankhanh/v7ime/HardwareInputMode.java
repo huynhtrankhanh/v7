@@ -22,4 +22,8 @@ enum HardwareInputMode {
     Transition onControlShift() {
         return new Transition(this == NORMAL ? V7_PLOVER : NORMAL);
     }
+
+    boolean usesNativeTelex(boolean rawOutlineMode) {
+        return this == TELEX && !rawOutlineMode;
+    }
 }

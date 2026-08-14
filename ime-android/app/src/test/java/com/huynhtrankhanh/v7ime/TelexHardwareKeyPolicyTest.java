@@ -14,17 +14,19 @@ public class TelexHardwareKeyPolicyTest {
     @Test
     public void emptyPreeditBackspaceReturnsToEditor() {
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR,
-                policy.resolve(KeyEvent.KEYCODE_DEL, false));
+                policy.resolve(KeyEvent.KEYCODE_DEL, false, false));
         assertEquals(TelexHardwareKeyPolicy.Route.WEB_PREEDIT,
-                policy.resolve(KeyEvent.KEYCODE_DEL, true));
+                policy.resolve(KeyEvent.KEYCODE_DEL, true, false));
+        assertEquals(TelexHardwareKeyPolicy.Route.WEB_PREEDIT,
+                policy.resolve(KeyEvent.KEYCODE_DEL, false, true));
     }
 
     @Test
     public void enterAlwaysUsesNativeEditorActionPath() {
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR_ENTER,
-                policy.resolve(KeyEvent.KEYCODE_ENTER, false));
+                policy.resolve(KeyEvent.KEYCODE_ENTER, false, false));
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR_ENTER,
-                policy.resolve(KeyEvent.KEYCODE_NUMPAD_ENTER, true));
+                policy.resolve(KeyEvent.KEYCODE_NUMPAD_ENTER, true, false));
         assertTrue(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_ENTER));
         assertTrue(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_NUMPAD_ENTER));
         assertFalse(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_A));
@@ -33,6 +35,6 @@ public class TelexHardwareKeyPolicyTest {
     @Test
     public void escapeReturnsToEditor() {
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR,
-                policy.resolve(KeyEvent.KEYCODE_ESCAPE, true));
+                policy.resolve(KeyEvent.KEYCODE_ESCAPE, true, false));
     }
 }

@@ -9,12 +9,15 @@ final class TelexHardwareKeyPolicy {
         EDITOR_ENTER
     }
 
-    Route resolve(int keyCode, boolean hasPreedit) {
+    Route resolve(
+            int keyCode, boolean hasPreedit, boolean hasPendingDeadAccent) {
         if (keyCode == KeyEvent.KEYCODE_ENTER
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) {
             return Route.EDITOR_ENTER;
         }
-        if (keyCode == KeyEvent.KEYCODE_DEL && !hasPreedit) {
+        if (keyCode == KeyEvent.KEYCODE_DEL
+                && !hasPreedit
+                && !hasPendingDeadAccent) {
             return Route.EDITOR;
         }
         if (keyCode == KeyEvent.KEYCODE_ESCAPE) return Route.EDITOR;
