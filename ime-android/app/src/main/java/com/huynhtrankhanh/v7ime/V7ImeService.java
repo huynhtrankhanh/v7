@@ -379,6 +379,21 @@ public class V7ImeService extends InputMethodService {
                 return false;
             }
             if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            // Backspace is the one press whose owner may deliberately change:
+            // once its Web-owned repeats exhaust raw Telex PREEDIT, later
+            // repeats and the eventual key-up must belong to the editor so a
+            // continuous hold can keep deleting committed text.
+            if (isTelexMode()
+                    && event.getKeyCode() == KeyEvent.KEYCODE_DEL
+                    && !telexHasPreedit
+                    && !hasPendingTelexEvent()
+                    && hardwareKeyPressOwnership.transfer(
+                            event.getKeyCode(),
+                            HardwareKeyPressOwnership.Owner.WEB,
+                            HardwareKeyPressOwnership.Owner.EDITOR,
+                            inputGeneration.get())) {
+                return false;
+            }
             return dispatchPhysicalKeyToWeb("keydown", event);
         }
         if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {

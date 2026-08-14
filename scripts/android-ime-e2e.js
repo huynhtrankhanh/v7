@@ -359,17 +359,23 @@ async function main() {
         window.__androidPreedits.length === preeditsBeforeStaleEvent;
       window.__androidInputGeneration += 1;
       window.clearPreeditFromAndroid(window.__androidInputGeneration);
-      const send = (key, code, repeat = false) =>
+      const send = (
+        key,
+        code,
+        repeat = false,
+        shiftKey = false,
+        capsLockActive = false,
+      ) =>
         window.handleAndroidKeyEvent(
           "keydown",
           key,
           code,
           repeat,
+          shiftKey,
           false,
           false,
           false,
-          false,
-          false,
+          capsLockActive,
           window.__androidInputGeneration,
         );
       for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
@@ -399,6 +405,21 @@ async function main() {
         false,
         window.__androidInputGeneration,
       );
+      const altGraphCommit = window.__androidTelexCommits.at(-1);
+      for (const key of "Dduowngf") {
+        send(key, `Key${key.toUpperCase()}`, false, key === "D");
+      }
+      const shiftedD = window.__androidPreedits.at(-1)?.text;
+      send(" ", "Space");
+      for (const key of "Tieengs") {
+        send(key, `Key${key.toUpperCase()}`, false, key === "T");
+      }
+      const shiftedT = window.__androidPreedits.at(-1)?.text;
+      send(" ", "Space");
+      for (const key of "DDUOWNGF") {
+        send(key, `Key${key}`, false, false, true);
+      }
+      const capsLockWord = window.__androidPreedits.at(-1)?.text;
       return {
         composed,
         barrier,
@@ -406,7 +427,10 @@ async function main() {
         afterBackspace,
         afterRepeatedBackspace,
         commit,
-        altGraphCommit: window.__androidTelexCommits.at(-1),
+        altGraphCommit,
+        shiftedD,
+        shiftedT,
+        capsLockWord,
         compact: document.body.classList.contains("android-telex"),
         banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
           .display,
@@ -424,6 +448,9 @@ async function main() {
         telexResult.commit?.separator === " " &&
         telexResult.altGraphCommit?.expectedText === "xin" &&
         telexResult.altGraphCommit?.separator === "€" &&
+        telexResult.shiftedD === "Đường" &&
+        telexResult.shiftedT === "Tiếng" &&
+        telexResult.capsLockWord === "ĐƯỜNG" &&
         telexResult.compact &&
         telexResult.banner === "flex" &&
         telexResult.height === 48,

@@ -36,7 +36,10 @@ word.
 
 Backspace removes raw Telex keystrokes, including key-repeat events, while a
 word is being composed. When PREEDIT is empty, Backspace is passed through to
-the editor so it can delete previously committed spaces and text normally.
+the editor so it can delete previously committed spaces and text normally. If
+a held Backspace exhausts PREEDIT, ownership transfers to the editor for the
+remaining repeats and matching key-up, so deletion continues without requiring
+the user to release and press the key again.
 Escape also passes through without changing or consuming Telex composition.
 
 Native code records each rendered Telex word synchronously with the current

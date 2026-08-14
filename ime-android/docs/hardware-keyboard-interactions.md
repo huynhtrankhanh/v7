@@ -91,10 +91,11 @@ V7/Plover those Telex-only keys retain the pre-Telex pass-through behavior.
 Printable Alt/AltGr layout output is also captured to terminate Telex PREEDIT;
 Ctrl-only and Meta shortcuts continue to pass directly to the editor.
 
-Key ownership is fixed from the first key-down through repeats and key-up. If a
-held Backspace begins by editing PREEDIT, all repeats and its release remain in
-the WebUI even after PREEDIT becomes empty. A new Backspace press then belongs
-to the editor and can delete committed text normally.
+Key ownership is normally fixed from the first key-down through repeats and
+key-up. Backspace is the deliberate exception: if a held, Web-owned Backspace
+exhausts Telex PREEDIT, its next repeat transfers the press to the editor. The
+remaining repeats and key-up then stay editor-owned, allowing the same hold to
+continue deleting committed text.
 WEB-owned presses also retain their starting input generation. After an editor
 or mode transition, their remaining repeats and key-up are consumed until
 physical release instead of being reinterpreted by the new mode. Editor-owned

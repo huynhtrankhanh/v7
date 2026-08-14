@@ -40,4 +40,28 @@ public class HardwareKeyPressOwnershipTest {
         ownership.claim(29, HardwareKeyPressOwnership.Owner.WEB, 9);
         assertTrue(ownership.get(29).belongsTo(9));
     }
+
+    @Test
+    public void backspaceOwnershipCanTransferAfterPreeditIsExhausted() {
+        HardwareKeyPressOwnership ownership = new HardwareKeyPressOwnership();
+        ownership.claim(67, HardwareKeyPressOwnership.Owner.WEB, 12);
+
+        assertTrue(ownership.transfer(
+                67,
+                HardwareKeyPressOwnership.Owner.WEB,
+                HardwareKeyPressOwnership.Owner.EDITOR,
+                12));
+        assertEquals(HardwareKeyPressOwnership.Owner.EDITOR,
+                ownership.get(67).owner);
+        assertFalse(ownership.transfer(
+                67,
+                HardwareKeyPressOwnership.Owner.WEB,
+                HardwareKeyPressOwnership.Owner.EDITOR,
+                12));
+        assertFalse(ownership.transfer(
+                67,
+                HardwareKeyPressOwnership.Owner.EDITOR,
+                HardwareKeyPressOwnership.Owner.WEB,
+                13));
+    }
 }

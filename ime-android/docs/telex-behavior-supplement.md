@@ -1,9 +1,9 @@
 # Telex adapter behavior for V7
 
-> **Integration erratum:** the archived ZIP version reverses the Extended
-> Telex bracket shortcuts. The Android integration and its tests are
-> authoritative: `[` produces `ơ`, and `]` produces `ư`. The original ZIP is
-> intentionally preserved unchanged.
+> **Archive correction:** the archived ZIP version reverses the Extended
+> Telex bracket shortcuts. This extracted supplement has been corrected to
+> match the integration and its tests: `[` produces `ơ`, and `]` produces
+> `ư`. The original ZIP remains intentionally unchanged.
 
 ## Status
 
@@ -116,8 +116,8 @@ Standard mode follows the classic Telex key set:
 
 ```text
 w   -> ư when W is acting as the vowel itself
-[   -> ư
-]   -> ơ
+[   -> ơ
+]   -> ư
 ```
 
 Examples:
@@ -125,8 +125,8 @@ Examples:
 ```text
 w   -> ư
 W   -> Ư
-t[  -> tư
-t]  -> tơ
+t[  -> tơ
+t]  -> tư
 ```
 
 A standalone `w` is converted only when the current active region does not already contain a vowel. If a previous vowel exists but `w` cannot legally modify it under the current options, `w` is kept literal instead of inventing another `ư` at the end of the word.
@@ -578,8 +578,8 @@ These vectors are part of the contract.
 | `uoes` | deterministic malformed form, mechanically toned on the selected fallback carrier |
 | `w` | `ư` |
 | `W` | `Ư` |
-| `t[` | `tư` |
-| `t]` | `tơ` |
+| `t[` | `tơ` |
+| `t]` | `tư` |
 
 ### Simple mode
 
