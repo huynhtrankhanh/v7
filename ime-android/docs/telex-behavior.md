@@ -97,7 +97,9 @@ that event from observing the previous WebUI epoch.
 
 Raw-outline Lookup/Add Translation fields override the stored hardware mode.
 Their chords continue through the raw-outline WebUI even if Telex was active
-before focus entered the field; Telex resumes when that editor closes.
+before focus entered the field. The WebUI applies the same effective-Telex rule
+to key-up handling so raw-outline chords can complete; Telex resumes when that
+editor closes.
 
 The supplied adapter's more detailed conversion notes are preserved as
 [the Telex adapter supplement](telex-behavior-supplement.md), with an explicit

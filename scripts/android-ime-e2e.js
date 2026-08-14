@@ -346,15 +346,6 @@ async function main() {
       `Telex native-mode UI failed: ${JSON.stringify(telexResult)}`,
     );
     await page.evaluate(() => {
-      window.__androidTelexMode = false;
-      window.handleAndroidStenoModeChanged(
-        true,
-        false,
-        window.__androidInputGeneration,
-      );
-    });
-
-    await page.evaluate(() => {
       window.clearPreeditFromAndroid();
       window.handleAndroidEditorModeChanged(true, false);
     });
@@ -395,8 +386,23 @@ async function main() {
     await androidChord(page, [" "]);
     await page.waitForFunction(() => window.__androidRawOutlineUndos === 1);
     await page.evaluate(() => {
-      window.handleAndroidEditorModeChanged(false, true);
+      window.handleAndroidEditorModeChanged(false, false);
       window.clearPreeditFromAndroid();
+    });
+    await page.waitForFunction(
+      () =>
+        document.body.classList.contains("android-telex") &&
+        !document.body.classList.contains("android-raw-outline") &&
+        window.__androidHeight === 48,
+    );
+    await page.evaluate(() => {
+      window.__androidTelexMode = false;
+      window.handleAndroidStenoModeChanged(
+        true,
+        false,
+        window.__androidInputGeneration,
+      );
+      window.handleAndroidEditorModeChanged(false, true);
     });
     await page.waitForFunction(
       () =>

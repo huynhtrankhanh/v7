@@ -349,6 +349,13 @@ let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
 let androidPloverPaused = androidIme?.isPloverPaused?.() ?? false;
 let keyboardCapsLockActive = false;
+
+function isAndroidEffectiveTelexMode(): boolean {
+  return (
+    Boolean(androidIme) && androidTelexModeEnabled && !androidRawOutlineMode
+  );
+}
+
 if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
@@ -2959,7 +2966,7 @@ document.addEventListener("keyup", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
-  if (androidIme && androidTelexModeEnabled) {
+  if (isAndroidEffectiveTelexMode()) {
     e.preventDefault();
     return;
   }
