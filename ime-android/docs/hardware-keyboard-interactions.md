@@ -104,6 +104,8 @@ Telex and background dictionary import share one application-wide AndroidX
 and V7 tone-oracle warm-up happen off the IME thread. The Telex banner visibly
 reports Latin fallback until the isolate is ready; warmed key conversion is
 bounded to 100 ms.
+If the shared sandbox process dies, its singleton is invalidated so Telex
+warm-up and subsequent dictionary-import retries can create a fresh process.
 
 ## Raw outline fields
 

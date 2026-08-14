@@ -432,7 +432,12 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchNativeTelexKey(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_UP) return true;
+        if (event.getAction() == KeyEvent.ACTION_UP) {
+            return telexHardwareKeyPolicy.dispatchKeyUpToEditor(
+                    event.getKeyCode())
+                    ? dispatchEnterKey(event)
+                    : true;
+        }
         int keyCode = event.getKeyCode();
         if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
                 || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT

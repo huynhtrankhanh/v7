@@ -20,4 +20,9 @@ final class TelexHardwareKeyPolicy {
         if (keyCode == KeyEvent.KEYCODE_ESCAPE) return Route.EDITOR;
         return Route.WEB_PREEDIT;
     }
+
+    boolean dispatchKeyUpToEditor(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_ENTER
+                || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
 }

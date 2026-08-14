@@ -1,6 +1,8 @@
 package com.huynhtrankhanh.v7ime;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import android.view.KeyEvent;
 
@@ -23,6 +25,9 @@ public class TelexHardwareKeyPolicyTest {
                 policy.resolve(KeyEvent.KEYCODE_ENTER, false));
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR_ENTER,
                 policy.resolve(KeyEvent.KEYCODE_NUMPAD_ENTER, true));
+        assertTrue(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_ENTER));
+        assertTrue(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_NUMPAD_ENTER));
+        assertFalse(policy.dispatchKeyUpToEditor(KeyEvent.KEYCODE_A));
     }
 
     @Test

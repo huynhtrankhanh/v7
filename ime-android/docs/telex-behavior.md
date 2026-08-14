@@ -57,6 +57,9 @@ returns; Enter and mode changes likewise finalize directly. If the sandbox is
 unavailable, the native fallback returns the raw Latin word rather than dropping
 input. This removes WebView timing, epochs, acknowledgements, barriers, and FIFO
 replay from Telex typing.
+For editors without an advertised action, both physical Enter down and Enter
+up are forwarded after PREEDIT finalization; action-based fields still receive
+their normal Done/Next/Search/Send callback.
 
 The application owns exactly one `JavaScriptSandbox`; Telex keeps one isolate
 inside it while dictionary imports create and close separate temporary
@@ -67,6 +70,11 @@ finishes, or after sandbox failure, conversion immediately uses raw Latin with
 a visible **Telex unavailable — Latin fallback** banner. Once ready, a warmed
 conversion has a 100 ms hard deadline; failure drops back to the visible Latin
 mode and schedules recovery rather than stalling the IME for seconds.
+`SandboxDeadException`, including one wrapped by a future, invalidates and
+closes the process-wide singleton. The next warm-up reconnects a new sandbox;
+dictionary importing applies the same invalidation rule before reporting its
+failed attempt, so a later retry also reconnects instead of reusing a dead
+process handle.
 
 The supplied adapter's more detailed conversion notes are preserved as
 [the Telex adapter supplement](telex-behavior-supplement.md), with an explicit

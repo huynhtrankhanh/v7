@@ -20,6 +20,7 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
     private static final long WARM_CONVERSION_TIMEOUT_MILLIS = 100;
 
     private final Context context;
+    private JavaScriptSandbox sandbox;
     private JavaScriptIsolate isolate;
     private volatile boolean ready;
     private boolean warming;
@@ -58,6 +59,9 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
                         "convertV7TelexRaw(" + JSONObject.quote(raw) + ")"
                 ).get(WARM_CONVERSION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
             } catch (Exception error) {
+                if (ApplicationJavaScriptSandbox.isSandboxDead(error)) {
+                    ApplicationJavaScriptSandbox.invalidate(sandbox);
+                }
                 closeIsolate();
                 return null;
             }
@@ -66,8 +70,9 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
 
     private void startAndWarm() {
         JavaScriptIsolate candidate = null;
+        JavaScriptSandbox shared = null;
         try {
-            JavaScriptSandbox shared = ApplicationJavaScriptSandbox.get(
+            shared = ApplicationJavaScriptSandbox.get(
                     context, STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             candidate = shared.createIsolate();
             candidate.evaluateJavaScriptAsync(readAsset())
@@ -79,11 +84,15 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
             ).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             synchronized (this) {
                 if (isolate != null) isolate.close();
+                sandbox = shared;
                 isolate = candidate;
                 candidate = null;
                 ready = "tiếng".equals(warm);
             }
         } catch (Exception error) {
+            if (ApplicationJavaScriptSandbox.isSandboxDead(error)) {
+                ApplicationJavaScriptSandbox.invalidate(shared);
+            }
             synchronized (this) {
                 ready = false;
             }
@@ -111,5 +120,6 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
         ready = false;
         if (isolate != null) isolate.close();
         isolate = null;
+        sandbox = null;
     }
 }

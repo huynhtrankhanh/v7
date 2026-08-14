@@ -4,6 +4,7 @@ import android.content.Context;
 
 import androidx.javascriptengine.JavaScriptIsolate;
 import androidx.javascriptengine.JavaScriptSandbox;
+import androidx.javascriptengine.SandboxDeadException;
 
 import java.util.concurrent.TimeUnit;
 
@@ -29,5 +30,20 @@ final class ApplicationJavaScriptSandbox {
     static JavaScriptIsolate createIsolate(
             Context context, long timeout, TimeUnit unit) throws Exception {
         return get(context, timeout, unit).createIsolate();
+    }
+
+    static synchronized void invalidate(JavaScriptSandbox expected) {
+        if (expected == null || sandbox != expected) return;
+        sandbox.close();
+        sandbox = null;
+    }
+
+    static boolean isSandboxDead(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SandboxDeadException) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 }

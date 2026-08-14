@@ -53,7 +53,7 @@ final class SandboxedDictionaryImporter {
         progress.onProgress("Starting Android JavaScript sandbox", 0, -1, 8);
         JavaScriptSandbox sandbox = ApplicationJavaScriptSandbox.get(
                 context, SANDBOX_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        {
+        try {
             requireFeature(
                     sandbox,
                     JavaScriptSandbox.JS_FEATURE_PROMISE_RETURN,
@@ -108,6 +108,11 @@ final class SandboxedDictionaryImporter {
                         progress
                 );
             }
+        } catch (Exception error) {
+            if (ApplicationJavaScriptSandbox.isSandboxDead(error)) {
+                ApplicationJavaScriptSandbox.invalidate(sandbox);
+            }
+            throw error;
         }
     }
 
