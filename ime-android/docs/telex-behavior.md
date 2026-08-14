@@ -20,10 +20,17 @@ tones (`s`, `f`, `r`, `x`, `j`), tone removal (`z`), standalone `w`, and the
 `[`/`]` shortcuts are supported. Repeating a command key escapes it, allowing
 ordinary Latin typing such as `Windows` without leaving Telex.
 
-Space, Enter, Tab, digits, and symbols terminate the word. The IME atomically
-commits the converted word plus that separator, ends composition, and starts a
-fresh PREEDIT on the next letter. This prevents a completed Telex word from
-remaining underlined or being rewritten by the next word.
+Space, Tab, digits, and symbols terminate the word. The IME atomically commits
+the converted word plus that separator, ends composition, and starts a fresh
+PREEDIT on the next letter. Enter instead finalizes the word and follows the
+editor's normal Android action: Next, Done, Go, Search, Send, a custom action,
+or a physical newline when the editor advertises no action. This prevents a
+completed Telex word from remaining underlined or being rewritten by the next
+word.
+
+Backspace removes raw Telex keystrokes, including key-repeat events, while a
+word is being composed. When PREEDIT is empty, Backspace is passed through to
+the editor so it can delete previously committed spaces and text normally.
 
 The supplied adapter's more detailed conversion notes are preserved verbatim
 as [the Telex adapter supplement](telex-behavior-supplement.md).

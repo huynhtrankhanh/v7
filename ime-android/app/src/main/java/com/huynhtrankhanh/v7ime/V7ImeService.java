@@ -50,6 +50,8 @@ public class V7ImeService extends InputMethodService {
             new KeyboardVisibilityController();
     private final HardwareKeyActionResolver hardwareKeyActionResolver =
             new HardwareKeyActionResolver();
+    private final TelexHardwareKeyPolicy telexHardwareKeyPolicy =
+            new TelexHardwareKeyPolicy();
     private final Set<Integer> webCapturedHardwareKeys = new HashSet<>();
     private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -75,6 +77,7 @@ public class V7ImeService extends InputMethodService {
     private boolean enterActionDispatched = false;
     private boolean stenoModeEnabled = true;
     private boolean telexModeEnabled = false;
+    private volatile boolean telexHasPreedit = false;
     private boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
@@ -363,7 +366,18 @@ public class V7ImeService extends InputMethodService {
             }
             return false;
         }
-        if (!telexModeEnabled && isEnterKey(event.getKeyCode())) {
+        TelexHardwareKeyPolicy.Route telexRoute = telexModeEnabled
+                ? telexHardwareKeyPolicy.resolve(
+                        event.getKeyCode(),
+                        telexHasPreedit)
+                : TelexHardwareKeyPolicy.Route.WEB_PREEDIT;
+        if (telexRoute == TelexHardwareKeyPolicy.Route.EDITOR) return false;
+        if (isEnterKey(event.getKeyCode())) {
+            if (telexModeEnabled
+                    && event.getAction() == KeyEvent.ACTION_DOWN
+                    && event.getRepeatCount() == 0) {
+                finishCurrentPreedit();
+            }
             return dispatchEnterKey(event);
         }
         String action = event.getAction() == KeyEvent.ACTION_UP
@@ -768,6 +782,7 @@ public class V7ImeService extends InputMethodService {
         latestInferenceRequestId.set(-1);
         boolean hadPreedit = !preeditText.isEmpty();
         preeditText = "";
+        telexHasPreedit = false;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
         if (hadPreedit) {
@@ -1222,6 +1237,7 @@ public class V7ImeService extends InputMethodService {
                 return;
             }
             String normalized = text == null ? "" : text;
+            if (telexModeEnabled) telexHasPreedit = !normalized.isEmpty();
             String normalizedGrammarSections = grammarSectionsJson == null
                     ? "[]"
                     : grammarSectionsJson;
@@ -1238,13 +1254,20 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void commitTelexText(String text) {
+        public void commitTelexText(String separator) {
             if (!isCurrentInputView() || !telexModeEnabled) return;
-            String committed = text == null ? "" : text;
+            String committedSeparator = separator == null ? "" : separator;
+            telexHasPreedit = false;
             owner.post(() -> {
-                if (!isCurrentInputView() || !telexModeEnabled) return;
+                // Once the WebUI has handed off a separator commit, a later
+                // mode toggle must not revoke it. The owner check still keeps
+                // work from an obsolete input view out of a replacement view.
+                if (!isCurrentInputView()) return;
                 InputConnection connection = getCurrentInputConnection();
-                if (connection != null) connection.commitText(committed, 1);
+                if (connection != null) {
+                    connection.finishComposingText();
+                    connection.commitText(committedSeparator, 1);
+                }
                 preeditText = "";
                 preeditGrammarSectionsJson = "[]";
                 pendingPreeditLengths.clear();

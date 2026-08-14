@@ -67,6 +67,8 @@ imports.
   typing, while `Ctrl+Shift` from Normal typing returns to V7/Plover. Telex
   keeps the current word as Android PREEDIT, supports ordinary Latin text via
   repeated-mark escapes, and commits/ends PREEDIT at whitespace or symbols.
+  Empty-PREEDIT Backspace passes through to the editor, and Enter retains the
+  editor's standard Android action behavior after finalizing PREEDIT.
 - Normal typing uses a labeled 48 dp status bar, matching the compact active
   Stripped Plover treatment instead of leaving the composition UI visible.
   Compact transitions apply their height immediately, and returning to V7

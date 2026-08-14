@@ -2826,7 +2826,7 @@ document.addEventListener("keydown", (e) => {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
   if (androidIme && androidTelexModeEnabled) {
-    if (e.repeat || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
     if (e.key === "Backspace") {
       androidIme.setPreeditText(telexComposer.backspace(), "[]");
       e.preventDefault();
@@ -2844,7 +2844,8 @@ document.addEventListener("keydown", (e) => {
     ) {
       const separator =
         e.key === "Enter" ? "\n" : e.key === "Tab" ? "\t" : e.key;
-      androidIme.commitTelexText?.(telexComposer.commit() + separator);
+      telexComposer.commit();
+      androidIme.commitTelexText?.(separator);
       e.preventDefault();
       return;
     }

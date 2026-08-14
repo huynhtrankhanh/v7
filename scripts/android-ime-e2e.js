@@ -127,6 +127,8 @@ async function main() {
       window.__androidHeight = 0;
       window.__androidKeyboardSwitches = 0;
       window.__androidRawOutlineUndos = 0;
+      window.__androidTelexMode = false;
+      window.__androidTelexCommits = [];
       window.AndroidIme = {
         getInferenceModelError() {
           return "";
@@ -139,6 +141,9 @@ async function main() {
         },
         isStenoModeEnabled() {
           return true;
+        },
+        isTelexModeEnabled() {
+          return window.__androidTelexMode;
         },
         isRawOutlineMode() {
           return false;
@@ -157,6 +162,9 @@ async function main() {
             text,
             grammarSections: JSON.parse(grammarSectionsJson),
           });
+        },
+        commitTelexText(text) {
+          window.__androidTelexCommits.push(text);
         },
         undoRawOutlineStroke() {
           window.__androidRawOutlineUndos += 1;
@@ -301,6 +309,49 @@ async function main() {
       dedicatedSurface: document.body.classList.contains("ime-surface"),
       inferenceStatus: document.querySelector("#inference-status").textContent,
     }));
+
+    const telexResult = await page.evaluate(() => {
+      window.__androidTelexMode = true;
+      window.handleAndroidStenoModeChanged(false, true);
+      const send = (key, code, repeat = false) =>
+        window.handleAndroidKeyEvent(
+          "keydown",
+          key,
+          code,
+          repeat,
+          false,
+          false,
+          false,
+          false,
+          false,
+        );
+      for (const key of "tieengs") send(key, `Key${key.toUpperCase()}`);
+      const composed = window.__androidPreedits.at(-1)?.text;
+      send("Backspace", "Backspace");
+      const afterBackspace = window.__androidPreedits.at(-1)?.text;
+      send("Backspace", "Backspace", true);
+      const afterRepeatedBackspace = window.__androidPreedits.at(-1)?.text;
+      send("g", "KeyG");
+      send("s", "KeyS");
+      send(" ", "Space");
+      return {
+        composed,
+        afterBackspace,
+        afterRepeatedBackspace,
+        commit: window.__androidTelexCommits.at(-1),
+      };
+    });
+    assert(
+      telexResult.composed === "tiếng" &&
+        telexResult.afterBackspace === "tiêng" &&
+        telexResult.afterRepeatedBackspace === "tiên" &&
+        telexResult.commit === " ",
+      `Telex PREEDIT/repeat/commit behavior failed: ${JSON.stringify(telexResult)}`,
+    );
+    await page.evaluate(() => {
+      window.__androidTelexMode = false;
+      window.handleAndroidStenoModeChanged(true, false);
+    });
 
     await page.evaluate(() => {
       window.clearPreeditFromAndroid();
