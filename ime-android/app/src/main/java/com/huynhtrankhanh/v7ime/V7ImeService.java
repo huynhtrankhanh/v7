@@ -33,8 +33,6 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,8 +55,8 @@ public class V7ImeService extends InputMethodService {
             new TelexHardwareKeyPolicy();
     private final HardwareKeyCapturePolicy hardwareKeyCapturePolicy =
             new HardwareKeyCapturePolicy();
-    private final Set<Integer> webCapturedHardwareKeys = new HashSet<>();
-    private final Set<Integer> editorPassedHardwareKeys = new HashSet<>();
+    private final HardwareKeyPressOwnership hardwareKeyPressOwnership =
+            new HardwareKeyPressOwnership();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private FrameLayout inputContainer;
     private volatile WebView webView;
@@ -347,28 +345,43 @@ public class V7ImeService extends InputMethodService {
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
             return dispatchModeKeyAction(event, hardwareAction);
         }
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && webCapturedHardwareKeys.remove(event.getKeyCode())) {
-            return dispatchPhysicalKeyToWeb("keyup", event);
+        HardwareKeyPressOwnership.Owner keyOwner =
+                hardwareKeyPressOwnership.get(event.getKeyCode());
+        if (event.getAction() == KeyEvent.ACTION_UP && keyOwner != null) {
+            hardwareKeyPressOwnership.release(event.getKeyCode());
+            return keyOwner == HardwareKeyPressOwnership.Owner.WEB
+                    && dispatchPhysicalKeyToWeb("keyup", event);
         }
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && editorPassedHardwareKeys.remove(event.getKeyCode())) {
-            return false;
+        if (event.getAction() == KeyEvent.ACTION_DOWN
+                && event.getRepeatCount() > 0 && keyOwner != null) {
+            return keyOwner == HardwareKeyPressOwnership.Owner.WEB
+                    && dispatchPhysicalKeyToWeb("keydown", event);
         }
         if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
-                editorPassedHardwareKeys.add(event.getKeyCode());
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR);
             }
             return false;
         }
+        boolean captureModifiedPrintable =
+                hardwareKeyCapturePolicy.capturesModifiedPrintable(
+                        isTelexMode(),
+                        event.getUnicodeChar(),
+                        event.isAltPressed(),
+                        event.isMetaPressed());
         if (isOsPassthroughModifierKey(event.getKeyCode())
-                || event.isCtrlPressed()
-                || event.isAltPressed()
-                || event.isMetaPressed()) {
+                || (!captureModifiedPrintable
+                        && (event.isCtrlPressed()
+                                || event.isAltPressed()
+                                || event.isMetaPressed()))) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
-                editorPassedHardwareKeys.add(event.getKeyCode());
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR);
             }
             return false;
         }
@@ -377,7 +390,14 @@ public class V7ImeService extends InputMethodService {
                         event.getKeyCode(),
                         telexHasPreedit)
                 : TelexHardwareKeyPolicy.Route.WEB_PREEDIT;
-        if (telexRoute == TelexHardwareKeyPolicy.Route.EDITOR) return false;
+        if (telexRoute == TelexHardwareKeyPolicy.Route.EDITOR) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR);
+            }
+            return false;
+        }
         if (isEnterKey(event.getKeyCode())) {
             if (isTelexMode()
                     && event.getAction() == KeyEvent.ACTION_DOWN
@@ -391,7 +411,9 @@ public class V7ImeService extends InputMethodService {
                 : "keydown";
         boolean captured = dispatchPhysicalKeyToWeb(action, event);
         if (captured && event.getAction() == KeyEvent.ACTION_DOWN) {
-            webCapturedHardwareKeys.add(event.getKeyCode());
+            hardwareKeyPressOwnership.claim(
+                    event.getKeyCode(),
+                    HardwareKeyPressOwnership.Owner.WEB);
         }
         return captured;
     }
@@ -413,7 +435,7 @@ public class V7ImeService extends InputMethodService {
                     && !PloverCommandFocusState.isNativeControlFocused()) {
                 return true;
             }
-            editorPassedHardwareKeys.remove(event.getKeyCode());
+            hardwareKeyPressOwnership.remove(event.getKeyCode());
             applyHardwareInputTransition(
                     currentHardwareInputMode().onControlShift());
             publishStenoModeState();
@@ -933,8 +955,7 @@ public class V7ImeService extends InputMethodService {
 
     private void resetHardwareInputState() {
         hardwareKeyActionResolver.reset();
-        webCapturedHardwareKeys.clear();
-        editorPassedHardwareKeys.clear();
+        hardwareKeyPressOwnership.clear();
         resetHardwareKeyboardStateInWebView();
     }
 

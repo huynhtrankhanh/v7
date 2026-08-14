@@ -334,11 +334,25 @@ async function main() {
       send("g", "KeyG");
       send("s", "KeyS");
       send(" ", "Space");
+      const commit = window.__androidTelexCommits.at(-1);
+      for (const key of "xin") send(key, `Key${key.toUpperCase()}`);
+      window.handleAndroidKeyEvent(
+        "keydown",
+        "€",
+        "KeyE",
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+      );
       return {
         composed,
         afterBackspace,
         afterRepeatedBackspace,
-        commit: window.__androidTelexCommits.at(-1),
+        commit,
+        altGraphCommit: window.__androidTelexCommits.at(-1),
         compact: document.body.classList.contains("android-telex"),
         banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
           .display,
@@ -351,6 +365,8 @@ async function main() {
         telexResult.afterRepeatedBackspace === "tiên" &&
         telexResult.commit?.expectedText === "tiếng" &&
         telexResult.commit?.separator === " " &&
+        telexResult.altGraphCommit?.expectedText === "xin" &&
+        telexResult.altGraphCommit?.separator === "€" &&
         telexResult.compact &&
         telexResult.banner === "flex" &&
         telexResult.height === 48,

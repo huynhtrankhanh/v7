@@ -2826,7 +2826,14 @@ document.addEventListener("keydown", (e) => {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
   if (androidIme && androidTelexModeEnabled) {
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    const printableAltLayoutKey =
+      e.altKey && !e.metaKey && Array.from(e.key).length === 1;
+    if (
+      e.metaKey ||
+      (e.ctrlKey && !printableAltLayoutKey) ||
+      (e.altKey && !printableAltLayoutKey)
+    )
+      return;
     if (e.key === "Backspace") {
       androidIme.setPreeditText(telexComposer.backspace(), "[]");
       e.preventDefault();

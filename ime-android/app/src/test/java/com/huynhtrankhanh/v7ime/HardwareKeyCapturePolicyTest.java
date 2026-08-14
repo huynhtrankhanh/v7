@@ -31,4 +31,12 @@ public class HardwareKeyCapturePolicyTest {
         assertTrue(policy.isCaptured(KeyEvent.KEYCODE_UNKNOWN, 0x00a7, true));
         assertFalse(policy.isCaptured(KeyEvent.KEYCODE_F1, 0, true));
     }
+
+    @Test
+    public void altGraphPrintableInputIsDistinctFromEditorShortcuts() {
+        assertTrue(policy.capturesModifiedPrintable(true, '€', true, false));
+        assertFalse(policy.capturesModifiedPrintable(true, 'c', false, false));
+        assertFalse(policy.capturesModifiedPrintable(true, 'x', true, true));
+        assertFalse(policy.capturesModifiedPrintable(false, '€', true, false));
+    }
 }

@@ -33,4 +33,15 @@ final class HardwareKeyCapturePolicy {
                 || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
                 || keyCode == KeyEvent.KEYCODE_DEL;
     }
+
+    boolean capturesModifiedPrintable(
+            boolean telexModeEnabled,
+            int unicodeChar,
+            boolean altPressed,
+            boolean metaPressed) {
+        return telexModeEnabled
+                && unicodeChar != 0
+                && altPressed
+                && !metaPressed;
+    }
 }

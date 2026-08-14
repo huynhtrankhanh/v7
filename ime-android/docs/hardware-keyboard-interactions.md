@@ -22,13 +22,16 @@ including across editor changes.
 | Backspace                    | Capture as mapped steno input                                    | Replay raw input; pass through when PREEDIT empty | Pass through to the editor      |
 | Enter                        | Use the editor's native action                                   | Finalize PREEDIT, then use the native action     | Pass through to the editor      |
 | Escape                       | Capture for V7/Plover handling                                   | Pass through to the editor                       | Pass through to the editor      |
-| Other unmodified mapped keys | Capture and aggregate into steno chords                          | Update Telex PREEDIT                            | Pass through to the editor      |
+| Other letters / `[` / `]`    | Capture mapped keys into steno chords                            | Update Telex PREEDIT                            | Pass through to the editor      |
+| Digits and printable symbols | Capture only existing V7 mappings                                | Commit and terminate Telex PREEDIT              | Pass through to the editor      |
 
 Left and right variants of both `Ctrl` and `Shift` participate in the toggle
 chord. V7/Normal modifier events pass through as balanced down/up pairs. Telex
 captures Shift events in the WebUI while subsequent printable events carry the
-active Shift state for casing; Ctrl, Alt, and Meta continue to pass through. The mode
-changes only after every participating modifier has been released. Pressing
+active Shift state for casing; Ctrl and Meta continue to pass through, as do
+Alt events that do not produce printable layout text.
+The Ctrl+Shift mode change occurs only after every participating modifier has
+been released. Pressing
 any non-modifier while the chord is held cancels the pending mode change, so
 shortcuts such as `Ctrl+Shift+Arrow` retain their ordinary editor behavior.
 `Ctrl+Tab` is exact: adding Shift, Alt, or Meta cancels the mode shortcut and
@@ -85,6 +88,13 @@ preserving balanced modifier events and ordinary modified editor shortcuts.
 Telex captures any unmodified printable key reported by Android, including
 numpad and layout-specific characters, plus its non-printable editing keys. In
 V7/Plover those Telex-only keys retain the pre-Telex pass-through behavior.
+Printable Alt/AltGr layout output is also captured to terminate Telex PREEDIT;
+Ctrl-only and Meta shortcuts continue to pass directly to the editor.
+
+Key ownership is fixed from the first key-down through repeats and key-up. If a
+held Backspace begins by editing PREEDIT, all repeats and its release remain in
+the WebUI even after PREEDIT becomes empty. A new Backspace press then belongs
+to the editor and can delete committed text normally.
 
 ## Raw outline fields
 
