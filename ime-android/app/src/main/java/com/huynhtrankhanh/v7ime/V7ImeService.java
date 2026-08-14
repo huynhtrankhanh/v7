@@ -80,8 +80,8 @@ public class V7ImeService extends InputMethodService {
     private static volatile String inferenceModelError = "";
     private String lastKeyEventSignature = "";
     private boolean enterActionDispatched = false;
-    private volatile boolean stenoModeEnabled = true;
-    private volatile boolean telexModeEnabled = false;
+    private volatile HardwareInputMode hardwareInputMode =
+            HardwareInputMode.V7_PLOVER;
     private volatile boolean telexHasPreedit = false;
     private volatile boolean rawOutlineMode = false;
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
@@ -338,7 +338,7 @@ public class V7ImeService extends InputMethodService {
         }
         HardwareKeyActionResolver.Action hardwareAction =
                 hardwareKeyActionResolver.resolve(
-                        stenoModeEnabled || rawOutlineMode,
+                        isV7PloverMode() || rawOutlineMode,
                         event.getKeyCode(),
                         event.getAction(),
                         event.getRepeatCount()
@@ -354,7 +354,7 @@ public class V7ImeService extends InputMethodService {
                 && editorPassedHardwareKeys.remove(event.getKeyCode())) {
             return false;
         }
-        if (!stenoModeEnabled && !telexModeEnabled && !rawOutlineMode) {
+        if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
                     && isModifierKey(event.getKeyCode())) {
                 editorPassedHardwareKeys.add(event.getKeyCode());
@@ -371,14 +371,14 @@ public class V7ImeService extends InputMethodService {
             }
             return false;
         }
-        TelexHardwareKeyPolicy.Route telexRoute = telexModeEnabled
+        TelexHardwareKeyPolicy.Route telexRoute = isTelexMode()
                 ? telexHardwareKeyPolicy.resolve(
                         event.getKeyCode(),
                         telexHasPreedit)
                 : TelexHardwareKeyPolicy.Route.WEB_PREEDIT;
         if (telexRoute == TelexHardwareKeyPolicy.Route.EDITOR) return false;
         if (isEnterKey(event.getKeyCode())) {
-            if (telexModeEnabled
+            if (isTelexMode()
                     && event.getAction() == KeyEvent.ACTION_DOWN
                     && event.getRepeatCount() == 0) {
                 finishCurrentPreedit();
@@ -437,14 +437,19 @@ public class V7ImeService extends InputMethodService {
     }
 
     private HardwareInputMode currentHardwareInputMode() {
-        return HardwareInputMode.fromFlags(
-                stenoModeEnabled,
-                telexModeEnabled);
+        return hardwareInputMode;
     }
 
     private void applyHardwareInputMode(HardwareInputMode mode) {
-        telexModeEnabled = mode == HardwareInputMode.TELEX;
-        stenoModeEnabled = mode == HardwareInputMode.V7_PLOVER;
+        hardwareInputMode = mode;
+    }
+
+    private boolean isV7PloverMode() {
+        return hardwareInputMode == HardwareInputMode.V7_PLOVER;
+    }
+
+    private boolean isTelexMode() {
+        return hardwareInputMode == HardwareInputMode.TELEX;
     }
 
     private void applyHardwareInputTransition(
@@ -533,7 +538,7 @@ public class V7ImeService extends InputMethodService {
         if (webView == null || !hardwareKeyCapturePolicy.isCaptured(
                 event.getKeyCode(),
                 event.getUnicodeChar(),
-                telexModeEnabled)) {
+                isTelexMode())) {
             return false;
         }
 
@@ -790,12 +795,13 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void publishStenoModeState() {
+        HardwareInputMode mode = hardwareInputMode;
         evaluateJavascript(
                 "window.handleAndroidStenoModeChanged"
                         + " && window.handleAndroidStenoModeChanged("
-                        + stenoModeEnabled
+                        + (mode == HardwareInputMode.V7_PLOVER)
                         + ","
-                        + telexModeEnabled
+                        + (mode == HardwareInputMode.TELEX)
                         + ")"
         );
     }
@@ -1101,7 +1107,7 @@ public class V7ImeService extends InputMethodService {
             if (dispatchHardwareKeyEvent(event)) {
                 return true;
             }
-            if (!stenoModeEnabled) {
+            if (!isV7PloverMode()) {
                 return false;
             }
             return super.dispatchKeyEvent(event);
@@ -1158,12 +1164,12 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public boolean isStenoModeEnabled() {
-            return stenoModeEnabled;
+            return isV7PloverMode();
         }
 
         @JavascriptInterface
         public boolean isTelexModeEnabled() {
-            return telexModeEnabled;
+            return isTelexMode();
         }
 
         @JavascriptInterface
@@ -1230,7 +1236,7 @@ public class V7ImeService extends InputMethodService {
                 return;
             }
             String normalized = text == null ? "" : text;
-            if (telexModeEnabled) telexHasPreedit = !normalized.isEmpty();
+            if (isTelexMode()) telexHasPreedit = !normalized.isEmpty();
             String normalizedGrammarSections = grammarSectionsJson == null
                     ? "[]"
                     : grammarSectionsJson;
@@ -1248,7 +1254,7 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public void commitTelexText(String expectedText, String separator) {
-            if (!isCurrentInputView() || !telexModeEnabled) return;
+            if (!isCurrentInputView() || !isTelexMode()) return;
             String committedText = expectedText == null ? "" : expectedText;
             String committedSeparator = separator == null ? "" : separator;
             telexHasPreedit = false;

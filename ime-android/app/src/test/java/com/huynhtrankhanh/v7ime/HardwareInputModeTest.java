@@ -33,14 +33,4 @@ public class HardwareInputModeTest {
             assertTrue(mode.onControlShift().finishPreedit);
         }
     }
-
-    @Test
-    public void flagsRoundTripAllThreeStates() {
-        assertEquals(HardwareInputMode.V7_PLOVER,
-                HardwareInputMode.fromFlags(true, false));
-        assertEquals(HardwareInputMode.TELEX,
-                HardwareInputMode.fromFlags(false, true));
-        assertEquals(HardwareInputMode.NORMAL,
-                HardwareInputMode.fromFlags(false, false));
-    }
 }

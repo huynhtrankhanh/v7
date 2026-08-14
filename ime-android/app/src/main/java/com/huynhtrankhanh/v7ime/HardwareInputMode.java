@@ -22,11 +22,4 @@ enum HardwareInputMode {
     Transition onControlShift() {
         return new Transition(this == NORMAL ? V7_PLOVER : NORMAL);
     }
-
-    static HardwareInputMode fromFlags(
-            boolean stenoModeEnabled,
-            boolean telexModeEnabled) {
-        if (telexModeEnabled) return TELEX;
-        return stenoModeEnabled ? V7_PLOVER : NORMAL;
-    }
 }
