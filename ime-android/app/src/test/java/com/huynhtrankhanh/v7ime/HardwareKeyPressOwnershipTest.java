@@ -41,4 +41,20 @@ public class HardwareKeyPressOwnershipTest {
         assertTrue(ownership.get(29).belongsTo(9));
     }
 
+    @Test
+    public void nativePressCanTransferToEditorDuringARepeat() {
+        HardwareKeyPressOwnership ownership = new HardwareKeyPressOwnership();
+        ownership.claim(67, HardwareKeyPressOwnership.Owner.NATIVE, 8);
+        ownership.claim(67, HardwareKeyPressOwnership.Owner.EDITOR, 8);
+        assertEquals(HardwareKeyPressOwnership.Owner.NATIVE,
+                ownership.get(67).owner);
+
+        ownership.transfer(67, HardwareKeyPressOwnership.Owner.EDITOR, 8);
+
+        assertEquals(HardwareKeyPressOwnership.Owner.EDITOR,
+                ownership.get(67).owner);
+        assertEquals(HardwareKeyPressOwnership.Owner.EDITOR,
+                ownership.release(67).owner);
+    }
+
 }

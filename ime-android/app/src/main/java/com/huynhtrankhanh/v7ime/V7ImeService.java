@@ -33,8 +33,6 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -88,7 +86,6 @@ public class V7ImeService extends InputMethodService {
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
     private String nativeTelexRendered = "";
     private int pendingTelexDeadAccent;
-    private final Set<Integer> nativeTelexKeyUps = new HashSet<>();
 
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
@@ -343,12 +340,6 @@ public class V7ImeService extends InputMethodService {
 
     private boolean dispatchHardwareKeyEvent(KeyEvent event) {
         boolean effectiveTelex = isEffectiveTelexMode();
-        if (event.getAction() == KeyEvent.ACTION_UP
-                && nativeTelexKeyUps.remove(event.getKeyCode())) return true;
-        if (event.getAction() == KeyEvent.ACTION_DOWN
-                && event.getRepeatCount() > 0) {
-            nativeTelexKeyUps.remove(event.getKeyCode());
-        }
         if (PloverCommandFocusState.shouldPassHardwareKeyToActivity(event)) {
             resetHardwareInputState();
             return false;
@@ -371,6 +362,9 @@ public class V7ImeService extends InputMethodService {
                 return false;
             }
             if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.NATIVE) {
+                return dispatchNativeTelexKey(event);
+            }
             return dispatchPhysicalKeyToWeb("keyup", event);
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN
@@ -379,6 +373,16 @@ public class V7ImeService extends InputMethodService {
                 return false;
             }
             if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.NATIVE) {
+                boolean handled = dispatchNativeTelexKey(event);
+                if (!handled) {
+                    hardwareKeyPressOwnership.transfer(
+                            event.getKeyCode(),
+                            HardwareKeyPressOwnership.Owner.EDITOR,
+                            inputGeneration.get());
+                }
+                return handled;
+            }
             return dispatchPhysicalKeyToWeb("keydown", event);
         }
         if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
@@ -426,7 +430,18 @@ public class V7ImeService extends InputMethodService {
             }
             return false;
         }
-        if (effectiveTelex) return dispatchNativeTelexKey(event);
+        if (effectiveTelex) {
+            boolean handled = dispatchNativeTelexKey(event);
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        handled
+                                ? HardwareKeyPressOwnership.Owner.NATIVE
+                                : HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
+            }
+            return handled;
+        }
         if (isEnterKey(event.getKeyCode())) {
             return dispatchEnterKey(event);
         }
@@ -462,7 +477,6 @@ public class V7ImeService extends InputMethodService {
         if (keyCode == KeyEvent.KEYCODE_DEL) {
             if (pendingTelexDeadAccent != 0) {
                 pendingTelexDeadAccent = 0;
-                nativeTelexKeyUps.add(keyCode);
                 return true;
             }
             if (!nativeTelexRaw.backspace()) return false;
@@ -577,10 +591,13 @@ public class V7ImeService extends InputMethodService {
             }
             HardwareInputMode.Transition transition =
                     currentHardwareInputMode().onControlShift();
+            HardwareKeyPressOwnership.Claim claim =
+                    hardwareKeyPressOwnership.get(event.getKeyCode());
             hardwareKeyPressOwnership.remove(event.getKeyCode());
             applyHardwareInputTransition(transition);
             publishStenoModeState();
-            return false;
+            return claim != null
+                    && claim.owner == HardwareKeyPressOwnership.Owner.NATIVE;
         } else if (action == HardwareKeyActionResolver.Action.TOGGLE_TELEX) {
             if (rawOutlineMode) return true;
             HardwareInputMode.Transition transition =
@@ -1142,7 +1159,6 @@ public class V7ImeService extends InputMethodService {
     private void resetHardwareInputState() {
         hardwareKeyActionResolver.reset();
         hardwareKeyPressOwnership.invalidate();
-        nativeTelexKeyUps.clear();
         resetHardwareKeyboardStateInWebView();
     }
 

@@ -95,9 +95,12 @@ V7/Plover Web-owned presses retain their starting input generation. Telex is
 different: Android handles its raw buffer, Backspace, PREEDIT, terminators, and
 mode changes directly. Each raw-word conversion is a synchronous call to a
 persistent DOM-free `JavaScriptSandbox`; no Telex hardware event is sent through
-the WebView, queued, acknowledged, or replayed. Once held Backspace empties the
-native raw buffer, the next repeat follows ordinary editor routing and continues
-deleting committed text.
+the WebView, queued, acknowledged, or replayed. Every initial Telex key-down is
+claimed by either the native reducer or the editor, and repeats plus key-up keep
+that owner. This preserves balanced navigation, modifier, and Enter lifecycles.
+Once held Backspace empties the native raw buffer, the next repeat explicitly
+transfers that press to ordinary editor routing and continues deleting committed
+text; merely reaching an empty buffer does not leak the preceding key-up.
 
 Telex and background dictionary import share one application-wide AndroidX
 `JavaScriptSandbox` and use distinct isolates. Sandbox creation, bundle loading,

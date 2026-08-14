@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 final class HardwareKeyPressOwnership {
-    enum Owner { WEB, EDITOR }
+    enum Owner { WEB, NATIVE, EDITOR }
 
     static final class Claim {
         final Owner owner;
@@ -39,6 +39,10 @@ final class HardwareKeyPressOwnership {
 
     void remove(int keyCode) {
         owners.remove(keyCode);
+    }
+
+    void transfer(int keyCode, Owner owner, int generation) {
+        owners.put(keyCode, new Claim(owner, generation));
     }
 
     void invalidate() {
