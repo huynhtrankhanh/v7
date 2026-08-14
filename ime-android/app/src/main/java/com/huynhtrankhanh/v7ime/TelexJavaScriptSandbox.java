@@ -11,44 +11,85 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executor;
 
 /** Synchronous, DOM-free Telex conversion owned and invoked by native IME code. */
 final class TelexJavaScriptSandbox implements AutoCloseable {
     private static final String ASSET = "telex-sandbox.js";
-    private static final long TIMEOUT_SECONDS = 3;
+    private static final long STARTUP_TIMEOUT_SECONDS = 3;
+    private static final long WARM_CONVERSION_TIMEOUT_MILLIS = 100;
 
     private final Context context;
-    private JavaScriptSandbox sandbox;
     private JavaScriptIsolate isolate;
+    private volatile boolean ready;
+    private boolean warming;
 
     TelexJavaScriptSandbox(Context context) {
         this.context = context.getApplicationContext();
     }
 
-    synchronized String convert(String raw) {
-        try {
-            ensureStarted();
-            return isolate.evaluateJavaScriptAsync(
-                    "convertV7TelexRaw(" + JSONObject.quote(raw) + ")"
-            ).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (Exception error) {
-            // Ordinary Latin input is safer than dropping a hardware key if
-            // the platform sandbox is unavailable or being recreated.
-            close();
-            return raw;
+    void warmAsync(Executor executor, Runnable stateChanged) {
+        synchronized (this) {
+            if (ready || warming) return;
+            warming = true;
+        }
+        executor.execute(() -> {
+            try {
+                startAndWarm();
+            } finally {
+                synchronized (this) {
+                    warming = false;
+                }
+                stateChanged.run();
+            }
+        });
+    }
+
+    boolean isReady() {
+        return ready;
+    }
+
+    String convertIfReady(String raw) {
+        if (!ready) return null;
+        synchronized (this) {
+            if (!ready || isolate == null) return null;
+            try {
+                return isolate.evaluateJavaScriptAsync(
+                        "convertV7TelexRaw(" + JSONObject.quote(raw) + ")"
+                ).get(WARM_CONVERSION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (Exception error) {
+                closeIsolate();
+                return null;
+            }
         }
     }
 
-    private void ensureStarted() throws Exception {
-        if (isolate != null) return;
-        if (!JavaScriptSandbox.isSupported()) {
-            throw new IllegalStateException("JavaScriptSandbox is unavailable");
+    private void startAndWarm() {
+        JavaScriptIsolate candidate = null;
+        try {
+            JavaScriptSandbox shared = ApplicationJavaScriptSandbox.get(
+                    context, STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            candidate = shared.createIsolate();
+            candidate.evaluateJavaScriptAsync(readAsset())
+                    .get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            // Force construction of the generated V7 tone oracle before the
+            // first physical tone key reaches the IME main thread.
+            String warm = candidate.evaluateJavaScriptAsync(
+                    "convertV7TelexRaw('tieengs')"
+            ).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            synchronized (this) {
+                if (isolate != null) isolate.close();
+                isolate = candidate;
+                candidate = null;
+                ready = "tiếng".equals(warm);
+            }
+        } catch (Exception error) {
+            synchronized (this) {
+                ready = false;
+            }
+        } finally {
+            if (candidate != null) candidate.close();
         }
-        sandbox = JavaScriptSandbox.createConnectedInstanceAsync(context)
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        isolate = sandbox.createIsolate();
-        isolate.evaluateJavaScriptAsync(readAsset())
-                .get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private String readAsset() throws Exception {
@@ -63,9 +104,12 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
 
     @Override
     public synchronized void close() {
+        closeIsolate();
+    }
+
+    private void closeIsolate() {
+        ready = false;
         if (isolate != null) isolate.close();
-        if (sandbox != null) sandbox.close();
         isolate = null;
-        sandbox = null;
     }
 }

@@ -20,6 +20,9 @@ imports.
   `KeyboardEvent`s. Telex hardware input is handled natively; only its pure
   linguistic conversion runs synchronously in a DOM-free AndroidX
   `JavaScriptSandbox`. The IME does not render an on-screen key layout.
+- Telex and dictionary importing share the application's single sandbox using
+  separate isolates. Telex loads and warms its tone oracle in the background;
+  its banner explicitly reports Latin fallback until conversion is ready.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.
 - Settings can replace the bundled two-syllable lexical dictionary with a

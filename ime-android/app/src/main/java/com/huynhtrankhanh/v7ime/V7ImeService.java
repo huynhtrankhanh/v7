@@ -45,6 +45,7 @@ public class V7ImeService extends InputMethodService {
     private static final int MIN_KEYBOARD_HEIGHT_DP = 48;
 
     private final ExecutorService inferenceExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService telexExecutor = Executors.newSingleThreadExecutor();
     private final KeyboardVisibilityController keyboardVisibilityController =
             new KeyboardVisibilityController();
     private final HardwareKeyActionResolver hardwareKeyActionResolver =
@@ -107,7 +108,7 @@ public class V7ImeService extends InputMethodService {
     public void onCreate() {
         super.onCreate();
         telexSandbox = new TelexJavaScriptSandbox(this);
-        inferenceExecutor.execute(() -> telexSandbox.convert(""));
+        warmTelexSandbox();
         serviceGeneration = SERVICE_OWNERSHIP.claim(this);
         rememberKeyboardConfiguration(getResources().getConfiguration());
         BundledStrippedPloverRuntime runtime =
@@ -275,6 +276,7 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
+        telexExecutor.shutdownNow();
         if (telexSandbox != null) telexSandbox.close();
         BundledStrippedPloverRuntime runtime =
                 BundledStrippedPloverRuntime.get(this);
@@ -461,10 +463,25 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void updateNativeTelexPreedit() {
-        nativeTelexRendered = telexSandbox.convert(nativeTelexRaw.text());
+        String converted = telexSandbox.convertIfReady(nativeTelexRaw.text());
+        if (converted == null) {
+            nativeTelexRendered = nativeTelexRaw.text();
+            warmTelexSandbox();
+        } else {
+            nativeTelexRendered = converted;
+        }
         telexHasPreedit = !nativeTelexRendered.isEmpty();
         rememberPendingTelexText(nativeTelexRendered, inputGeneration.get());
         applyPreeditText(nativeTelexRendered, "[]");
+    }
+
+    private void warmTelexSandbox() {
+        telexSandbox.warmAsync(telexExecutor, () -> mainHandler.post(() -> {
+            publishTelexAvailability();
+            if (isTelexMode()
+                    && !nativeTelexRaw.isEmpty()
+                    && telexSandbox.isReady()) updateNativeTelexPreedit();
+        }));
     }
 
     private void commitNativeTelexSeparator(String separator) {
@@ -913,6 +930,14 @@ public class V7ImeService extends InputMethodService {
                         + inputGeneration.get()
                         + ")"
         );
+        publishTelexAvailability();
+    }
+
+    private void publishTelexAvailability() {
+        evaluateJavascript(
+                "window.handleAndroidTelexAvailability"
+                        + " && window.handleAndroidTelexAvailability("
+                        + telexSandbox.isReady() + ")");
     }
 
     private String takePendingTelexText(int generation) {
@@ -933,8 +958,9 @@ public class V7ImeService extends InputMethodService {
                         + (mode == HardwareInputMode.TELEX)
                         + ","
                         + inputGeneration.get()
-                        + ")"
+                + ")"
         );
+        publishTelexAvailability();
     }
 
     private void publishEditorModeState() {
@@ -1300,6 +1326,11 @@ public class V7ImeService extends InputMethodService {
         @JavascriptInterface
         public boolean isTelexModeEnabled() {
             return isTelexMode();
+        }
+
+        @JavascriptInterface
+        public boolean isTelexReady() {
+            return telexSandbox.isReady();
         }
 
         @JavascriptInterface

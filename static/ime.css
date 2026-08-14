@@ -530,6 +530,11 @@ body.android-telex .ime-telex-banner {
   display: flex;
 }
 
+body.android-telex-degraded .ime-telex-banner {
+  color: #8a2f16;
+  background: #fff0e8;
+}
+
 body.android-raw-outline .ime-raw-outline-banner {
   display: flex;
 }

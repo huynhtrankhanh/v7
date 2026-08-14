@@ -147,6 +147,9 @@ async function main() {
         isTelexModeEnabled() {
           return window.__androidTelexMode;
         },
+        isTelexReady() {
+          return true;
+        },
         getInputGeneration() {
           return window.__androidInputGeneration;
         },
@@ -320,7 +323,14 @@ async function main() {
         true,
         window.__androidInputGeneration,
       );
+      window.handleAndroidTelexAvailability(false);
+      const degraded = {
+        className: document.body.classList.contains("android-telex-degraded"),
+        label: document.querySelector(".ime-telex-banner strong").textContent,
+      };
+      window.handleAndroidTelexAvailability(true);
       return {
+        degraded,
         compact: document.body.classList.contains("android-telex"),
         banner: getComputedStyle(document.querySelector(".ime-telex-banner"))
           .display,
@@ -329,6 +339,8 @@ async function main() {
     });
     assert(
       telexResult.compact &&
+        telexResult.degraded.className &&
+        telexResult.degraded.label.includes("Latin fallback") &&
         telexResult.banner === "flex" &&
         telexResult.height === 48,
       `Telex native-mode UI failed: ${JSON.stringify(telexResult)}`,

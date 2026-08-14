@@ -58,6 +58,16 @@ unavailable, the native fallback returns the raw Latin word rather than dropping
 input. This removes WebView timing, epochs, acknowledgements, barriers, and FIFO
 replay from Telex typing.
 
+The application owns exactly one `JavaScriptSandbox`; Telex keeps one isolate
+inside it while dictionary imports create and close separate temporary
+isolates. Telex initialization and the first tone-oracle construction run on a
+dedicated background executor using the warm-up vector `tieengs → tiếng`.
+Hardware input never waits for initialization or its monitor: until warm-up
+finishes, or after sandbox failure, conversion immediately uses raw Latin with
+a visible **Telex unavailable — Latin fallback** banner. Once ready, a warmed
+conversion has a 100 ms hard deadline; failure drops back to the visible Latin
+mode and schedules recovery rather than stalling the IME for seconds.
+
 The supplied adapter's more detailed conversion notes are preserved as
 [the Telex adapter supplement](telex-behavior-supplement.md), with an explicit
 erratum for the archived document's reversed bracket shortcuts.

@@ -297,6 +297,7 @@ interface AndroidImeBridge {
   isRawOutlineMode?(): boolean;
   isStenoModeEnabled?(): boolean;
   isTelexModeEnabled?(): boolean;
+  isTelexReady?(): boolean;
   changeInputMethod(): void;
   requestInferenceSync(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
@@ -342,6 +343,7 @@ document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
+let androidTelexReady = androidIme?.isTelexReady?.() ?? false;
 let androidInputEpoch = androidIme?.getInputGeneration?.() ?? 0;
 let androidRawOutlineMode = androidIme?.isRawOutlineMode?.() ?? false;
 let androidPlainTextMode = androidIme?.isPlainTextMode?.() ?? false;
@@ -2603,6 +2605,18 @@ function updateDisplay(): void {
       !androidRawOutlineMode,
   );
   document.body.classList.toggle(
+    "android-telex-degraded",
+    strippedDisplay.enabled && androidTelexModeEnabled && !androidTelexReady,
+  );
+  const telexBannerLabel = document.querySelector<HTMLElement>(
+    ".ime-telex-banner strong",
+  );
+  if (telexBannerLabel) {
+    telexBannerLabel.textContent = androidTelexReady
+      ? "Telex"
+      : "Telex unavailable — Latin fallback";
+  }
+  document.body.classList.toggle(
     "android-raw-outline",
     strippedDisplay.enabled && androidRawOutlineMode,
   );
@@ -3428,6 +3442,7 @@ declare global {
       telex: boolean,
       epoch: number,
     ) => void;
+    handleAndroidTelexAvailability?: (ready: boolean) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3561,6 +3576,11 @@ window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidTelexModeEnabled = telex;
   androidInputEpoch = epoch;
   resetHardwareKeyboardState();
+  updateDisplay();
+};
+
+window.handleAndroidTelexAvailability = (ready) => {
+  androidTelexReady = ready;
   updateDisplay();
 };
 

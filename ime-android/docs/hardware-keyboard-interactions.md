@@ -99,6 +99,12 @@ the WebView, queued, acknowledged, or replayed. Once held Backspace empties the
 native raw buffer, the next repeat follows ordinary editor routing and continues
 deleting committed text.
 
+Telex and background dictionary import share one application-wide AndroidX
+`JavaScriptSandbox` and use distinct isolates. Sandbox creation, bundle loading,
+and V7 tone-oracle warm-up happen off the IME thread. The Telex banner visibly
+reports Latin fallback until the isolate is ready; warmed key conversion is
+bounded to 100 ms.
+
 ## Raw outline fields
 
 The native lookup stroke field and add-translation outline field request
