@@ -30,10 +30,7 @@ import {
   selectCandidateIslands,
   stripVisibleTextSegments,
 } from "./webCore";
-import {
-  isEmilyCapitalizationStroke,
-  isRetiredEmilyCapitalizationStroke,
-} from "./emilySymbols";
+import { handleEmilySymbol } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 import { ploverProtocolErrorMessage } from "./ploverProtocol";
 import {
@@ -43,17 +40,6 @@ import {
 
 // Maps for V7 Decoding
 type RetroSpaceAction = "insert" | "delete";
-
-interface EmilyResult {
-  type: "emily";
-  value: string;
-  leftSpace: boolean;
-  rightSpace: boolean;
-  explicitSpacing: boolean;
-  capNext: boolean;
-  retroSpace: RetroSpaceAction | null;
-  repeat: number;
-}
 
 interface PloverDictionary {
   name?: string;
@@ -102,123 +88,12 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-// Emily symbols (subset mapping adapted from emily-symbols)
-const EMILY_ATTACHMENT_METHOD = "space";
-const EMILY_NO_SPACING_SYMBOLS = ["{*!}", "{*?}"];
-const EMILY_SYMBOLS: Record<string, readonly string[]> = {
-  // System / navigation
-  FG: ["{#Tab}", "{#Backspace}", "{#Delete}", "{#Escape}"],
-  RPBG: ["{#Up}", "{#Left}", "{#Right}", "{#Down}"],
-  FRPBG: ["{#Page_Up}", "{#Home}", "{#End}", "{#Page_Down}"],
-  FRBG: ["{#AudioPlay}", "{#AudioPrev}", "{#AudioNext}", "{#AudioStop}"],
-  FRB: [
-    "{#AudioMute}",
-    "{#AudioLowerVolume}",
-    "{#AudioRaiseVolume}",
-    "{#Eject}",
-  ],
-  "": ["", "{*!}", "{*?}", "{#Space}"],
-  FL: ["{*-|}", "{*<}", "{<}", "{*>}"],
-  // Symbols
-  FR: ["!", "¬", "↦", "¡"],
-  FP: ['"', "“", "”", "„"],
-  FRLG: ["#", "©", "®", "™"],
-  RPBL: ["$", "¥", "€", "£"],
-  FRPB: ["%", "‰", "‱", "φ"],
-  FBG: ["&", "∩", "∧", "∈"],
-  F: ["'", "‘", "’", "‚"],
-  FPL: ["(", "[", "<", "{"],
-  RBG: [")", "]", ">", "}"],
-  L: ["*", "∏", "§", "×"],
-  G: ["+", "∑", "¶", "±"],
-  B: [",", "∪", "∨", "∉"],
-  PL: ["-", "−", "–", "—"],
-  R: [".", "•", "·", "…"],
-  RP: ["/", "⇒", "⇔", "÷"],
-  LG: [":", "∋", "∵", "∴"],
-  RB: [";", "∀", "∃", "∄"],
-  PBLG: ["=", "≡", "≈", "≠"],
-  FPB: ["?", "¿", "∝", "‽"],
-  FRPBLG: ["@", "⊕", "⊗", "∅"],
-  FB: ["\\", "Δ", "√", "∞"],
-  RPG: ["^", "«", "»", "°"],
-  BG: ["_", "≤", "≥", "µ"],
-  P: ["`", "⊂", "⊃", "π"],
-  PB: ["|", "⊤", "⊥", "¦"],
-  FPBG: ["~", "⊆", "⊇", "˜"],
-  FPBL: ["↑", "←", "→", "↓"],
-};
 const PUNCTUATION_MAP: Record<string, string> = {
   "TP-PL": ".",
   "KW-BG": ",",
   "KW-PL": "?",
   "TP-BG": "!",
 };
-
-function handleEmilySymbol(stroke: string): EmilyResult | null {
-  // WHR replaces the otherwise ambiguous WH* capitalization command. The
-  // right-hand R pattern remains WH-R and continues to produce a period.
-  if (isEmilyCapitalizationStroke(stroke)) {
-    return {
-      type: "emily",
-      value: "",
-      leftSpace: false,
-      rightSpace: false,
-      explicitSpacing: true,
-      capNext: true,
-      retroSpace: null,
-      repeat: 1,
-    };
-  }
-
-  // stroke pattern: starter WH + attachments (A/O), capitalization (*), variants (E/U), pattern (FRPBLG)
-  const match = stroke.match(
-    /^([#]?WH)([AO]*)([*-]?)([EU]*)([FRPBLG]*)([TS]*)$/,
-  );
-  if (!match) return null;
-  const [, starter, attachments, capKey, variantKeys, pattern, repeatKeys] =
-    match;
-
-  if (isRetiredEmilyCapitalizationStroke(stroke)) return null;
-
-  if (!(pattern in EMILY_SYMBOLS)) return null;
-
-  let variant = 0;
-  if (variantKeys.includes("E")) variant += 1;
-  if (variantKeys.includes("U")) variant += 2;
-  const baseList = EMILY_SYMBOLS[pattern];
-  const symbol = Array.isArray(baseList) ? baseList[variant] : baseList;
-
-  let repeat = 1;
-  if (repeatKeys.includes("S")) repeat += 1;
-  if (repeatKeys.includes("T")) repeat += 2;
-
-  const usesSpaceAttachment = EMILY_ATTACHMENT_METHOD === "space";
-  const spaceBefore = usesSpaceAttachment
-    ? attachments.includes("A")
-    : !attachments.includes("A");
-  const spaceAfter = usesSpaceAttachment
-    ? attachments.includes("O")
-    : !attachments.includes("O");
-
-  const output = symbol.repeat(repeat);
-
-  const capNext = capKey === "*";
-  const shouldApplySpacing = !EMILY_NO_SPACING_SYMBOLS.includes(symbol);
-
-  // leftSpace/rightSpace tags for spacing engine
-  return {
-    type: "emily",
-    value: output,
-    leftSpace: shouldApplySpacing ? spaceBefore : false,
-    rightSpace: shouldApplySpacing ? spaceAfter : false,
-    explicitSpacing: shouldApplySpacing,
-    capNext,
-    retroSpace:
-      symbol === "{*?}" ? "insert" : symbol === "{*!}" ? "delete" : null,
-    repeat,
-  };
-}
 
 function applyRetroactiveSpace(
   action: RetroSpaceAction | null,

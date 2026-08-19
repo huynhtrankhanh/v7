@@ -111,7 +111,7 @@ describe("two-syllable V7 dictionary mode", () => {
                   );
                 if (
                   reservedExactStrokes.has(target) ||
-                  /^[#]?WH[AO]*[*-]?[EU]*[FRPBLG]*[TS]*$/.test(target)
+                  /^[#]?WHR?[AO]*-?[EU]*-?[FRPBLG]*[TS]*$/.test(target)
                 )
                   throw new Error(
                     `dictionary target hits reserved grammar: ${target}`,
