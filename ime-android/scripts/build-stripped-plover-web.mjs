@@ -95,7 +95,18 @@ fs.writeFileSync(
   `
 declare class Buffer extends Uint8Array {
   static alloc(size: number): Buffer;
-  writeBigUInt64LE(value: bigint, offset?: number): number;
+  static from(value: string, encoding?: string): Buffer;
+
+  toString(
+    encoding?: string,
+    start?: number,
+    end?: number,
+  ): string;
+
+  writeBigUInt64LE(
+    value: bigint,
+    offset?: number,
+  ): number;
 }
 declare const process: { platform: string };
 declare module "@v7/python-wasm-browser" {
