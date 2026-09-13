@@ -12,6 +12,7 @@ export interface Island {
   isV7?: boolean;
   v7Mode?: V7Mode;
   dictionaryBucketSize?: number;
+  invalidV7Code?: boolean;
   leftSpace?: boolean;
   rightSpace?: boolean;
   explicitSpacing?: boolean;

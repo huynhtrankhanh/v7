@@ -235,19 +235,32 @@ describe("webCore keyboard input", () => {
 });
 
 describe("webCore candidate selection", () => {
-  test("renders an explicit lexical miss for unresolved dictionary islands", () => {
+  test("renders dictionary and illegal pre-inference markers", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true, {
         v7Mode: "dictionary",
         dictionaryBucketSize: 0,
       }),
     ];
-    expect(renderVisibleText(islands, [])).toBe("[dictionary miss: tro2ma1]");
+    expect(renderVisibleText(islands, [])).toBe("[D: tro2ma1]");
     expect(
       renderVisibleTextSegments(islands, [])
         .filter((segment) => segment.piecemealNumber !== undefined)
         .map((segment) => segment.text),
     ).toEqual(["tro2", "ma1"]);
+    expect(
+      renderVisibleText([{ ...islands[0], invalidV7Code: true }], []),
+    ).toBe("[DI: tro2ma1]");
+    expect(
+      renderVisibleText(
+        [
+          createIsland("vietnamese", "bad0code0", true, {
+            invalidV7Code: true,
+          }),
+        ],
+        [],
+      ),
+    ).toBe("[I: bad0code0]");
   });
   test("does not report a dictionary miss before bucket lookup completes", () => {
     const islands = [
@@ -255,7 +268,7 @@ describe("webCore candidate selection", () => {
         v7Mode: "dictionary",
       }),
     ];
-    expect(renderVisibleText(islands, [])).toBe("[tro2ma1]");
+    expect(renderVisibleText(islands, [])).toBe("[D: tro2ma1]");
   });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [

@@ -787,9 +787,6 @@ struct BeamNode {
     origin_idx: usize,
 }
 
-const UNKNOWN_PENALTY: f32 = -10.0;
-const UNKNOWN_TOKEN: &str = "<?>";
-
 fn get_candidates<'a>(
     template: &PartialSyllableTemplate,
     tokenizer: &'a Tokenizer,
@@ -851,7 +848,7 @@ fn beam_search_v7_island(
                 .iter()
                 .map(|w| (w.clone(), model.lookup(w.as_ref()), 0.0))
                 .collect(),
-            _ => vec![(Arc::from(UNKNOWN_TOKEN), 0, UNKNOWN_PENALTY)],
+            _ => return vec![],
         };
 
         let prev_beam = history.last().unwrap();
@@ -859,17 +856,6 @@ fn beam_search_v7_island(
 
         for (parent_idx, node) in prev_beam.iter().enumerate() {
             for (word, word_idx, penalty) in &candidate_data {
-                if word.as_ref() == UNKNOWN_TOKEN {
-                    next_candidates.push((
-                        node.score + penalty,
-                        parent_idx,
-                        node.origin_idx,
-                        word.clone(),
-                        node.state.clone(),
-                    ));
-                    continue;
-                }
-
                 let (lm_score, new_state) = model.score_index(&node.state, *word_idx);
                 next_candidates.push((
                     node.score + lm_score + penalty,
@@ -947,9 +933,24 @@ fn beam_search_dictionary_island(
         .lexical_pair_index
         .get(&(key(&templates[0]), key(&templates[1])))
     else {
-        // A structural dictionary stroke owns the input. Never fall back to the
-        // compositional Cartesian product when its lexical bucket is empty.
-        return vec![];
+        // A dictionary miss falls back to ordinary candidate generation, but
+        // deliberately starts from KenLM's context-free state. This keeps the
+        // dictionary chord useful without allowing preceding prose to bias it.
+        let context_free_states = incoming_states
+            .iter()
+            .map(|incoming| IslandState {
+                score: incoming.score,
+                state: model.null_context_state(),
+                history: incoming.history.clone(),
+            })
+            .collect::<Vec<_>>();
+        return beam_search_v7_island(
+            templates,
+            tokenizer,
+            model,
+            beam_width,
+            &context_free_states,
+        );
     };
     let mut results = Vec::with_capacity(incoming_states.len() * pairs.len());
     for incoming in incoming_states {
@@ -1334,6 +1335,8 @@ struct InferRequest {
 #[derive(Serialize)]
 struct InferResponse {
     candidates: Vec<Vec<String>>,
+    #[serde(rename = "invalidV7Codes", skip_serializing_if = "Vec::is_empty")]
+    invalid_v7_codes: Vec<bool>,
     #[serde(
         rename = "dictionaryBucketSizes",
         skip_serializing_if = "Vec::is_empty"
@@ -1361,22 +1364,26 @@ async fn infer_handler(
     if payload.is_empty() {
         return Json(InferResponse {
             candidates: vec![],
+            invalid_v7_codes: vec![],
             dictionary_bucket_sizes: vec![],
         });
     }
 
     let dictionary_bucket_sizes = payload.dictionary_bucket_sizes(&state.tokenizer);
+    let invalid_v7_codes = payload.invalid_v7_codes(&state.tokenizer);
     let result = payload.perform(&state.tokenizer, &state.model, 100);
 
     match result {
         Ok(candidates) => Json(InferResponse {
             candidates,
+            invalid_v7_codes,
             dictionary_bucket_sizes,
         }),
         Err(e) => {
             eprintln!("Inference error: {}", e);
             Json(InferResponse {
                 candidates: vec![],
+                invalid_v7_codes: vec![],
                 dictionary_bucket_sizes: vec![],
             })
         }
@@ -1561,6 +1568,26 @@ impl InferRequest {
             })
             .collect()
     }
+
+    fn invalid_v7_codes(&self, tokenizer: &Tokenizer) -> Vec<bool> {
+        self.islands
+            .iter()
+            .filter_map(|island| {
+                let InferIsland::Typed(TypedInferIsland::V7 { code, .. }) = island else {
+                    return None;
+                };
+                let invalid = parse_v7_string(code, tokenizer)
+                    .map(|templates| {
+                        templates.is_empty()
+                            || templates.iter().any(|template| {
+                                get_candidates(template, tokenizer).map_or(true, Vec::is_empty)
+                            })
+                    })
+                    .unwrap_or(true);
+                Some(invalid)
+            })
+            .collect()
+    }
 }
 
 pub(crate) struct EmbeddedInference {
@@ -1594,6 +1621,7 @@ impl EmbeddedInference {
         };
         Ok(serde_json::to_string(&InferResponse {
             candidates,
+            invalid_v7_codes: payload.invalid_v7_codes(&self.tokenizer),
             dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&self.tokenizer),
         })?)
     }
@@ -1649,6 +1677,7 @@ async fn main() -> Result<()> {
                     &mut stdout,
                     &InferResponse {
                         candidates,
+                        invalid_v7_codes: payload.invalid_v7_codes(&tokenizer),
                         dictionary_bucket_sizes: payload.dictionary_bucket_sizes(&tokenizer),
                     },
                 )?;
