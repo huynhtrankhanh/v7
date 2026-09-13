@@ -1,15 +1,13 @@
-# Android IME native popup behavior
+# Dictionary mode reform
 
-Native Stripped Plover command dialogs support touch and complete hardware-keyboard navigation. Tab and Shift+Tab cycle through every field, populated result/error region, dictionary choice, and action; Escape closes the dialog; Enter submits; and numbered shortcuts plus radio-button arrow navigation select writable dictionaries.
-
-Dictionary choices use full-width 48 dp targets and select on the first tap. When focus leaves an editor for a radio button or action, the IME relinquishes dialog-navigation keys to the native activity instead of interpreting them through the former Raw outline editor. V7's Ctrl+Shift mode chord remains owned by the IME. In add-translation, Enter advances from outline to translation and then submits.
-
-The IME surface is requested when a popup editor receives focus and remains available as focus moves. Outside touches do not silently dismiss an unfinished form.
-
-Outline fields use Raw outline mode. Translation and lookup-text fields use standard V7 behavior and preserve the user's STENO/Normal selection; the dialog never forces Normal typing.
-
-## Root cause
-
-The popup activity declared `stateAlwaysHidden` while only requesting focus, which prevented the IME surface from appearing on launch. It later overcorrected by tagging translation fields as forced plain text, suppressing standard V7 and its Ctrl+Shift mode control. The dialog now requests a visible, resizing IME, marks only outline editors specially, and otherwise leaves the persistent user mode untouched.
-
-Dictionary keyboard selection remained broken because Android can retain the last `EditText` input connection after focus moves to a native radio button. V7 therefore continued consuming number and navigation keys as Raw outline input before the activity could see them. Native-control focus is now explicit process state: it makes the IME pass hardware events through, while returning to either editor restores that editor's routing mode. The undersized implicit radio interaction was also replaced with an explicit full-row first-tap selection contract.
+1. There is an inappropriate note on dictionary mode in README.md. Remove it.
+2. Rework README_WEB.md to reflect the new changes.
+3. The changes are as follows:
+   * If there is a dictionary mode, inference is to infer the word with **zero context** using KenLM.
+   * Intermediate pre-inference form in IME:
+     * V7 (non dictionary mode): [code1code2]
+     * V7 (dictionary mode, hit): [DH: code1code2]
+     * V7 (dictionary mode, miss): [DM: code1code2]
+     * **ILLEGAL V7 CODE (for when at least one constituent code has zero inference candidates)**:
+       * If dictionary mode: [DI: code1code2]
+       * If not: [I: code1code2]
