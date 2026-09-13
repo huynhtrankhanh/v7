@@ -286,10 +286,14 @@ export function renderVisibleText(
       text += " ";
     }
     if (curr.isV7) {
-      text +=
-        curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
-          ? `[dictionary miss: ${curr.value}]`
-          : `[${curr.value}]`;
+      const prefix = curr.invalidV7Code
+        ? curr.v7Mode === "dictionary"
+          ? "DI: "
+          : "I: "
+        : curr.v7Mode === "dictionary"
+          ? "D: "
+          : "";
+      text += `[${prefix}${curr.value}]`;
     } else {
       text += curr.value;
     }
@@ -337,10 +341,14 @@ export function renderVisibleTextSegments(
           ),
         );
       } else {
-        const unresolvedPrefix =
-          curr.v7Mode === "dictionary" && curr.dictionaryBucketSize === 0
-            ? "[dictionary miss: "
-            : "[";
+        const marker = curr.invalidV7Code
+          ? curr.v7Mode === "dictionary"
+            ? "DI: "
+            : "I: "
+          : curr.v7Mode === "dictionary"
+            ? "D: "
+            : "";
+        const unresolvedPrefix = `[${marker}`;
         segments.push(
           ...renderIslandWithPiecemealTargets(
             `${unresolvedPrefix}${curr.value}]`,

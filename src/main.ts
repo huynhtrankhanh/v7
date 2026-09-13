@@ -2128,8 +2128,12 @@ async function runInference() {
   state.candidates = [];
   buffer.setIslands(
     state.islands.map((island) => {
-      if (island.v7Mode !== "dictionary") return island;
-      const { dictionaryBucketSize: _stale, ...pendingIsland } = island;
+      if (!island.isV7) return island;
+      const {
+        dictionaryBucketSize: _stale,
+        invalidV7Code: _invalid,
+        ...pendingIsland
+      } = island;
       return pendingIsland;
     }),
   );
@@ -2164,16 +2168,21 @@ async function runInference() {
     }
     state.candidates = getInferenceCandidates(data);
     const bucketSizes = getDictionaryBucketSizes(data);
+    const invalidV7Codes = getInvalidV7Codes(data);
     let dictionaryIndex = 0;
+    let v7Index = 0;
     buffer.setIslands(
-      state.islands.map((island) =>
-        island.v7Mode === "dictionary"
+      state.islands.map((island) => {
+        if (!island.isV7) return island;
+        const invalidV7Code = invalidV7Codes[v7Index++];
+        return island.v7Mode === "dictionary"
           ? {
               ...island,
+              invalidV7Code,
               dictionaryBucketSize: bucketSizes[dictionaryIndex++],
             }
-          : island,
-      ),
+          : { ...island, invalidV7Code };
+      }),
     );
     inferenceErrorMessage = "";
     updateDisplay();
@@ -2232,6 +2241,19 @@ function getDictionaryBucketSizes(data: unknown): number[] {
     throw new Error("Inference response has invalid dictionary bucket sizes");
   }
   return sizes as number[];
+}
+
+function getInvalidV7Codes(data: unknown): boolean[] {
+  if (!data || typeof data !== "object") return [];
+  const invalid = (data as { invalidV7Codes?: unknown }).invalidV7Codes;
+  if (invalid === undefined) return [];
+  if (
+    !Array.isArray(invalid) ||
+    !invalid.every((value) => typeof value === "boolean")
+  ) {
+    throw new Error("Inference response has invalid V7-code statuses");
+  }
+  return invalid as boolean[];
 }
 
 type SelectCandidateOptions = {

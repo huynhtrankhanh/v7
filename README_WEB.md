@@ -341,7 +341,9 @@ To enter a syllable with certainty:
 
 ## V7 Island Rules (Two-Syllable Islands)
 
-A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. Ordinary, compositional V7 uses `*` (Spacebar). Dictionary mode carries the same two-syllable code but restricts inference to lexical dictionary pairs: flip both `D` and `Z` on the ordinary chord. When both vowels are `e` or `u`, use the symmetric starless forms `* → -DZ`, `*Z → EDZ`, `*D → ODZ`, and `*DZ → OEDZ`. Redundant `D` with left `A/O` and `Z` with right `E/U` are therefore dictionary forms, not ordinary aliases.
+A V7 Island allows encoding two syllables in a single stroke by using the keyboard as two separate halves. Ordinary, compositional V7 uses `*` (Spacebar). Dictionary mode carries the same two-syllable code but first restricts inference to lexical dictionary pairs: flip both `D` and `Z` on the ordinary chord. When both vowels are `e` or `u`, use the symmetric starless forms `* → -DZ`, `*Z → EDZ`, `*D → ODZ`, and `*DZ → OEDZ`. Redundant `D` with left `A/O` and `Z` with right `E/U` are therefore dictionary forms, not ordinary aliases.
+
+If the selected dictionary has no entry for a dictionary-mode code, the engine falls back to the full compositional candidates and ranks them with KenLM using zero preceding context. Thus a missing lexical entry does not produce a dictionary miss. Before inference completes, the IME displays ordinary codes as `[code1code2]` and dictionary codes as `[D: code1code2]`. If either constituent code has no inference candidates, the corresponding illegal form is `[I: code1code2]` or `[DI: code1code2]` in dictionary mode.
 
 **Structure:** `[Left Syllable]*[Right Syllable]`
 
