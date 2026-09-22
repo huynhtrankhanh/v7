@@ -30,10 +30,16 @@ imports.
   must contain exactly two words; malformed and non-V7 entries are ignored.
   The optional file is opened only for dictionary-mode requests, so an
   unavailable provider cannot disable compositional inference. Provider
-  modification metadata invalidates the in-process cache after file edits.
+  modification metadata is checked in the background at most once per second
+  during dictionary-mode typing. Edits become visible on a subsequent stroke
+  after the refresh completes; reselection invalidates the cache immediately.
+  The first use loads the dictionary, while unchanged dictionaries are neither
+  reread nor copied into Rust on subsequent strokes.
 - The language model is not bundled. Android retains a Storage Access Framework
   document grant and passes its seekable file descriptor directly to KenLM,
   which memory-maps it without copying the model into app-private storage.
+  The descriptor is opened only when loading or switching models; subsequent
+  inference requests reuse the native engine without contacting the provider.
 - Stripped Plover is bundled as a local browser runtime in a process-wide,
   non-visual WebView separate from both the IME interface and dictionary
   manager. Its persistence bridge uses Android's private native SQLite

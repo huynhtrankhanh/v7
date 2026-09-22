@@ -60,13 +60,10 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
     request_body: JString,
 ) -> jstring {
     let result = (|| -> anyhow::Result<String> {
-        if model_fd < 0 {
-            anyhow::bail!("The selected language model could not be opened");
-        }
-        let model_fd = OwnedFd(model_fd);
+        // -1 reuses the already loaded model; own real descriptors even on error.
+        let model_fd = (model_fd >= 0).then(|| OwnedFd(model_fd));
         let model_id = java_string(&mut env, &model_id)?;
         let dictionary_id = java_string(&mut env, &dictionary_id)?;
-        let dictionary_source = java_string(&mut env, &dictionary_source)?;
         let request_body = java_string(&mut env, &request_body)?;
         let cache = INFERENCE.get_or_init(|| Mutex::new(None));
         let mut guard = cache
@@ -78,13 +75,17 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
             .map(|cached| cached.model_id != model_id)
             .unwrap_or(true);
         if needs_load {
+            let model_fd = model_fd
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("The selected language model is not loaded"))?;
             let mut engine = EmbeddedInference::from_fd(model_fd.0, &model_id).map_err(|error| {
                 anyhow::anyhow!(
                     "Unable to memory-map the selected lm.binary file. The document provider must expose a seekable, mappable descriptor; the model is not copied: {error}"
                 )
             })?;
             if !dictionary_id.is_empty() && dictionary_id != "__unchanged__" {
-                engine.set_lexical_dictionary(Some(&dictionary_source));
+                let source = java_string(&mut env, &dictionary_source)?;
+                engine.set_lexical_dictionary(Some(&source));
             }
             *guard = Some(CachedInference {
                 model_id,
@@ -100,13 +101,14 @@ pub extern "system" fn Java_com_huynhtrankhanh_v7ime_NativeInference_inferNative
                 != Some(dictionary_id.as_str())
         {
             let cached = guard.as_mut().expect("inference cache was initialized");
-            cached
-                .engine
-                .set_lexical_dictionary(if dictionary_id.is_empty() {
-                    None
-                } else {
-                    Some(&dictionary_source)
-                });
+            // Do not copy the Java dictionary string on cache hits. It can be
+            // many megabytes, even though the request itself is only a few bytes.
+            let source = if dictionary_id.is_empty() {
+                None
+            } else {
+                Some(java_string(&mut env, &dictionary_source)?)
+            };
+            cached.engine.set_lexical_dictionary(source.as_deref());
             cached.dictionary_id = dictionary_id;
         }
 
