@@ -9,15 +9,13 @@ import {
   getSelectedCandidateText,
   groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
-  normalizeQwertyDisplayKey,
-  qwertyKeyboardLayout,
   renderVisibleTextSegments,
   renderVisibleText,
   replacePiecemealSyllable,
   serializeStrokeKeys,
   selectCandidateIslands,
   stripVisibleTextSegments,
-} from "../src/webCore";
+} from "../src/editorCore";
 import { convertIslandsForInference, createIsland } from "../src/textBuffer";
 
 describe("stripped display segments", () => {
@@ -149,7 +147,7 @@ function splitIntoThreeChunks<T>(
   );
 }
 
-describe("webCore keyboard input", () => {
+describe("editorCore keyboard input", () => {
   test("maps qwerty keys to steno symbols", () => {
     expect(mapKeyUnique("a")).toBe("S-");
     expect(mapKeyUnique(" ")).toBe("*");
@@ -191,50 +189,9 @@ describe("webCore keyboard input", () => {
     expect(tracker.keyUp("q")).toBeNull();
     expect(tracker.keyUp("w")).toBeNull();
   });
-
-  test("defines the on-screen keyboard as QWERTY rows", () => {
-    const rows = qwertyKeyboardLayout.map((row) => row.map((key) => key.key));
-
-    expect(rows[0]).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"]);
-    expect(rows[1]).toEqual(["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);
-    expect(rows[2]).toEqual([
-      "a",
-      "s",
-      "d",
-      "f",
-      "g",
-      "h",
-      "j",
-      "k",
-      "l",
-      ";",
-      "Enter",
-    ]);
-    expect(rows[3]).toEqual([
-      "Shift",
-      "z",
-      "x",
-      "c",
-      "v",
-      "b",
-      "n",
-      "m",
-      "Shift",
-    ]);
-    expect(rows[4]).toEqual([" "]);
-  });
-
-  test("normalizes physical keys for pressed-key display", () => {
-    expect(normalizeQwertyDisplayKey("A", "KeyA")).toBe("a");
-    expect(normalizeQwertyDisplayKey("!", "Digit1")).toBe("1");
-    expect(normalizeQwertyDisplayKey(" ", "Space")).toBe(" ");
-    expect(normalizeQwertyDisplayKey("Shift", "ShiftLeft")).toBe("Shift");
-    expect(normalizeQwertyDisplayKey("Enter", "Enter")).toBe("Enter");
-    expect(normalizeQwertyDisplayKey("ArrowLeft", "ArrowLeft")).toBeNull();
-  });
 });
 
-describe("webCore candidate selection", () => {
+describe("editorCore candidate selection", () => {
   test("renders dictionary and illegal pre-inference markers", () => {
     const islands = [
       createIsland("vietnamese", "tro2ma1", true, {
@@ -360,7 +317,7 @@ describe("webCore candidate selection", () => {
   });
 });
 
-describe("webCore candidate diff sections", () => {
+describe("editorCore candidate diff sections", () => {
   test("uses zero sections when visible candidates do not differ", () => {
     const plan = buildCandidateTextDiffPlan([
       "ta mà ca trời mắm",
@@ -567,7 +524,7 @@ describe("webCore candidate diff sections", () => {
   });
 });
 
-describe("webCore screen output", () => {
+describe("editorCore screen output", () => {
   test("uses top candidate as preview when candidates exist", () => {
     const islands = [createIsland("vietnamese", "raw", true)];
     const candidates = [["đã suy luận"]];
@@ -594,7 +551,7 @@ describe("webCore screen output", () => {
   });
 });
 
-describe("webCore piecemeal syllable edit", () => {
+describe("editorCore piecemeal syllable edit", () => {
   test("maps entry strokes to the nine rightmost syllable slots", () => {
     expect(getPiecemealEntryIndex("T")).toBe(0);
     expect(getPiecemealEntryIndex("TK")).toBe(3);

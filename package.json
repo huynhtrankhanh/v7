@@ -1,26 +1,21 @@
 {
-  "name": "v7-web-test",
+  "name": "v7-android-ime",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "vite",
     "build": "vite build",
     "format": "prettier --write \"**/*.{ts,js,html,css}\"",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.jest.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
     "test:unit": "jest",
-    "test:e2e": "npm run build && node scripts/fullstack-e2e.js",
-    "test:e2e:v7-piecemeal": "npm run build && node scripts/v7-piecemeal-e2e.js",
+    "test:e2e": "npm run test:android-ime && npm run test:clipboard-slots && npm run test:dictionary-layout && npm run test:practice-focus && npm run test:practice-zoom",
     "test:practice-focus": "node scripts/practice-focus-e2e.js",
-    "test:keyboard-layout": "npm run build && node scripts/keyboard-layout-e2e.js",
-    "test:zoom": "npm run build && node scripts/text-zoom-e2e.js",
+    "test:practice-zoom": "npm run build && node scripts/practice-zoom-e2e.js",
     "test:clipboard-slots": "npm run build && node scripts/clipboard-slots-e2e.js",
-    "test:stripped-display": "npm run build && node scripts/stripped-display-e2e.js",
     "test:android-ime": "npm run build && node scripts/android-ime-e2e.js",
+    "test:inference-api": "node scripts/inference-api-e2e.js",
     "test:dictionary-layout": "npm run build && node scripts/dictionary-layout-e2e.js",
     "test:android-stripped-plover": "npm run build && node scripts/android-stripped-plover-e2e.js && V7_TEST_NON_ISOLATED_WEBVIEW=1 node scripts/android-stripped-plover-e2e.js",
-    "test": "npm run typecheck && npm run test:unit",
-    "build:evaluation-server": "esbuild evaluation-server/src/server.ts --bundle --platform=node --target=node22 --format=cjs --outfile=evaluation-server/dist/server.cjs",
-    "start:evaluation-server": "node evaluation-server/dist/server.cjs"
+    "test": "npm run typecheck && npm run test:unit"
   },
   "dependencies": {
     "glob": "^10.5.0",

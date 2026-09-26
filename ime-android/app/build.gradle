@@ -82,7 +82,6 @@ tasks.register("buildWebUi", Exec) {
     commandLine "npm", "run", "build"
     inputs.files(
             fileTree("${webRoot}/src") { include "**/*.ts" },
-            "${webRoot}/static/index.html",
             "${webRoot}/static/dictionary.html",
             "${webRoot}/static/ime.html",
             "${webRoot}/static/ime.css",
@@ -97,7 +96,6 @@ tasks.register("buildWebUi", Exec) {
 tasks.register("syncWebUi", Sync) {
     dependsOn "buildWebUi"
     from("${webRoot}/static") {
-        include "index.html"
         include "dictionary.html"
         include "ime.html"
         include "ime.css"
@@ -202,6 +200,7 @@ tasks.register("buildNativeInference", Exec) {
                 include "src/**"
                 include "cpp/**"
             },
+            "${webRoot}/data/two_syllable_dictionary.txt",
             rootProject.file("scripts/build-native.sh"),
             rootProject.file("KENLM_REVISION")
     )

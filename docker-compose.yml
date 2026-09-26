@@ -1,9 +1,6 @@
 services:
   inference:
     build: .
-    environment:
-      STRIPPED_PLOVER_HOST: stripped-plover
-      STRIPPED_PLOVER_PORT: "4020"
     volumes:
       # Mount the model file from the host to the container
       # This file is expected to exist at runtime.
@@ -13,38 +10,16 @@ services:
     ports:
       - "3000:3000"
     restart: unless-stopped
-  stripped-plover:
-    build:
-      context: .
-      dockerfile: Dockerfile.stripped-plover
-    environment:
-      STRIPPED_PLOVER_DB: /data/stripped-plover.sqlite
-      STRIPPED_PLOVER_PORT: "4020"
-    volumes:
-      - stripped-plover-data:/data
-    ports:
-      - "4020:4020"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "const net=require('net');const s=net.connect(4020,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),3000)",
-        ]
-      interval: 10s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    restart: unless-stopped
   train:
     build:
       context: .
       target: train
+    environment:
+      V7_MODEL_OUTPUT: /output/lm.binary
     volumes:
       # Mount the data directory (corpus input) and repo root (artifacts output)
       - ./data:/app/data
-      - ./lm.binary:/app/lm.binary
+      - ./:/output
     # Override with: docker compose run --rm train bash train_lm.sh
   practice-android:
     build:
@@ -53,44 +28,3 @@ services:
     volumes:
       - ./android-artifacts:/workspace/artifacts
     command: ["sleep", "infinity"]
-  trainer:
-    build:
-      context: .
-      dockerfile: trainer/Dockerfile
-    environment:
-      V7_INFERENCE_URL: http://inference:3000/infer
-      V7_TRAINER_DB: /data/trainer.sqlite3
-    volumes:
-      - trainer-data:/data
-    ports:
-      - "3001:3001"
-    depends_on:
-      inference:
-        condition: service_healthy
-    restart: unless-stopped
-  evaluator-sandbox:
-    image: v7-evaluator-sandbox:latest
-    build:
-      context: .
-      dockerfile: evaluation-server/sandbox.Dockerfile
-    command: ["/bin/true"]
-  evaluation-server:
-    build:
-      context: .
-      dockerfile: evaluation-server/server.Dockerfile
-    environment:
-      EVALUATION_PORT: "3002"
-      EVALUATION_SANDBOX_IMAGE: v7-evaluator-sandbox:latest
-      EVALUATION_MODEL_HOST_PATH: ${PWD}/lm.binary
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    ports:
-      - "3002:3002"
-    depends_on:
-      evaluator-sandbox:
-        condition: service_completed_successfully
-    restart: unless-stopped
-
-volumes:
-  stripped-plover-data:
-  trainer-data:

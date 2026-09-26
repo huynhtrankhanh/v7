@@ -383,10 +383,6 @@ body.stripped-plover-paused .ime-status-dot {
   transform: translateY(0.14em);
 }
 
-#text-input {
-  display: none;
-}
-
 #inference-error {
   background: rgb(255 142 130 / 10%);
   border: 1px solid rgb(255 142 130 / 32%);

@@ -8,7 +8,7 @@ import {
   createIsland,
   convertIslandsForInference,
 } from "../src/textBuffer";
-import { renderVisibleText } from "../src/webCore";
+import { renderVisibleText } from "../src/editorCore";
 import { createUndoManager } from "../src/undoManager";
 
 beforeEach(() => localStorage.clear());

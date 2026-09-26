@@ -10,6 +10,8 @@ including across editor changes.
 | ---------------------------- | ---------------------------------------------------------------- | ----------------------------------------------- | ------------------------------- |
 | `Ctrl+Shift` chord           | Toggle on release and finalize the current PREEDIT               | Enter Normal mode and finalize PREEDIT          | Toggle to STENO on release      |
 | `Ctrl+Tab` chord             | Enter Telex and finalize PREEDIT                                 | Return to STENO and finalize PREEDIT             | Enter Telex                     |
+| `Ctrl+0–9`                   | Paste clipboard slot in V7 composition; pass through in Plover   | Pass through normally                           | Pass through normally           |
+| `Alt+0–9`                    | Copy composition/selection to a slot in V7; pass through in Plover | Use ordinary Telex printable-key routing         | Pass through normally           |
 | `Ctrl+Shift` plus other key  | Pass through without toggling (including `Ctrl+Shift+Tab`)        | Pass through without toggling                   | Pass through without toggling   |
 | Solo `Ctrl` or `Shift`       | Preserve the modifier's ordinary key-down/key-up behavior        | Preserve ordinary modifier behavior             | Pass through normally           |
 | `META`                       | No mode action; use Android's ordinary handling                  | Pass through normally                           | Pass through normally           |
@@ -75,13 +77,16 @@ Android native key handling runs before WebView dispatch:
 1. track the native `Ctrl+Shift` mode chord and toggle only after its release;
 2. while in STENO, resolve and consume `[` and apostrophe PREEDIT actions;
 3. while in normal typing mode, pass all other events back to the editor;
-4. while in STENO, forward captured steno keys to the WebUI;
-5. carry the current native Caps Lock state with every event and uppercase
+4. while in V7 composition, capture exact Ctrl+digit/Alt+digit slot shortcuts
+   (including the numeric keypad) when `setClipboardSlotsEnabled` reports
+   availability; other Ctrl/Alt/Meta shortcuts pass back to the editor;
+5. while in STENO, forward captured steno keys to the WebUI;
+6. carry the current native Caps Lock state with every event and uppercase
    every cased character emitted anywhere in the steno pipeline while it is
    active, including V7, Emily, Stripped Plover, rendered candidates,
    and piecemeal edits; candidate selection preserves the casing attached when
    each output was produced and never retroactively uppercases older text;
-6. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
+7. after chord aggregation, reserve `Q+A`/`#S` for the input-method picker.
 
 This ordering keeps the mode-control chord out of steno aggregation while
 preserving balanced modifier events and ordinary modified editor shortcuts.

@@ -6,9 +6,9 @@ export default defineConfig({
     outDir: "static",
     emptyOutDir: false,
     lib: {
-      entry: path.resolve(__dirname, "src/main.ts"),
+      entry: path.resolve(__dirname, "src/ime.ts"),
       formats: ["iife"],
-      name: "app",
+      name: "v7Ime",
       fileName: () => "script.js",
     },
     rollupOptions: {

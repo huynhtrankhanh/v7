@@ -57,12 +57,14 @@ async function installAndroidBridge(page) {
             dictionaries: [
               {
                 identifier: "main.json",
+                type: "json",
                 enabled: true,
                 readonly: false,
                 entries: 2,
               },
               {
                 identifier: "very-long-user-dictionary-name.json",
+                type: "json",
                 enabled: false,
                 readonly: false,
                 entries: 12345,
@@ -239,7 +241,7 @@ async function main() {
       await client.send("Emulation.setSafeAreaInsetsOverride", {
         insets: { top: 80, right: 0, bottom: 0, left: 0 },
       });
-      await page.goto(`${url}/dictionary.html?dictionary-management=1`, {
+      await page.goto(`${url}/dictionary.html`, {
         waitUntil: "networkidle0",
       });
       await page.waitForFunction(

@@ -1,6 +1,6 @@
 # V7 clipboard slots
 
-V7 has ten private clipboard slots, numbered 0–9. They are independent of the system clipboard; normal Ctrl+C keeps its existing behavior. Open **Clipboard slots** above the editor to see previews and use the same actions with buttons.
+V7 has ten private clipboard slots, numbered 0–9. They are independent of the system clipboard; Ctrl+C keeps its Android host-editor behavior. Open **Clipboard slots** above the editor to see previews and use the same actions with buttons.
 
 | Action | Shortcut | Result |
 | --- | --- | --- |
@@ -19,7 +19,7 @@ Each successful paste saves one normal history frame. The normal `*` undo stroke
 
 ## Availability and keyboard behavior
 
-The feature appears only in V7 composition mode, including its compositional and dictionary strokes. The panel and slot shortcuts are unavailable in raw-text editing, Stripped Plover, Android plain typing, Telex, raw-outline mode, and dictionary management pages. Existing slots survive mode changes. Browser stripped displays follow the existing `copyAllowed` policy; Android V7 composition always permits copying into private slots, independent of OS clipboard permissions.
+The feature appears only in V7 composition mode, including its compositional and dictionary strokes. The panel and slot shortcuts are unavailable in Stripped Plover, Android plain typing, Telex, raw-outline mode, and dictionary management pages. Existing slots survive mode changes. V7 composition permits copying into private slots independently of OS clipboard permissions.
 
 ## Android IME
 
@@ -41,6 +41,6 @@ Clear removes the item from the current page and saves the cleared state immedia
 
 ## Implementation and validation
 
-`src/slottedClipboard.ts` owns slot storage, shortcut recognition, and the panel. `src/main.ts` applies mode and selection policies and inserts fixed islands through the existing buffer and undo manager. The `fixed` island type uses the existing fixed-text inference path, with explicit boundaries to preserve literal text.
+`src/slottedClipboard.ts` owns slot storage, shortcut recognition, and the panel. `src/ime.ts` applies mode and selection policies and inserts fixed islands through the existing buffer and undo manager. The `fixed` island type uses the existing fixed-text inference path, with explicit boundaries to preserve literal text.
 
-Run `npm run test:unit -- --runInBand tests/slottedClipboard.test.ts` for storage, modifier, rendering, inference, and undo coverage. Run `npm run test:clipboard-slots` for browser shortcut, selection, persistence, clearing, and mode coverage.
+Run `npm run test:unit -- --runInBand tests/slottedClipboard.test.ts` for storage, modifier, rendering, inference, and undo coverage. Run `npm run test:clipboard-slots` for Android bridge shortcuts, preedit updates, persistence, clearing, and mode coverage.

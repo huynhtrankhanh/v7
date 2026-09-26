@@ -27,14 +27,12 @@ import {
   getPiecemealEntryIndex,
   groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
-  normalizeQwertyDisplayKey,
-  qwertyKeyboardLayout,
   renderVisibleText,
   renderVisibleTextSegments,
   replacePiecemealSyllable,
   selectCandidateIslands,
   stripVisibleTextSegments,
-} from "./webCore";
+} from "./editorCore";
 import { handleEmilySymbol } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 import { ploverProtocolErrorMessage } from "./ploverProtocol";
@@ -80,11 +78,6 @@ interface PloverRpcResult {
   translation?: string;
   stroke?: string;
   strokes?: string[];
-}
-
-interface PloverPendingRequest {
-  resolve: (value: PloverRpcResult) => void;
-  reject: (reason: Error) => void;
 }
 
 type LoadingControl = HTMLButtonElement | HTMLSelectElement;
@@ -163,13 +156,7 @@ const state: AppState = {
   },
   candidates: [],
 };
-let isRawMode = false;
 let inferenceErrorMessage = "";
-let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
-  enabled: false,
-  copyAllowed: false,
-};
-
 interface AndroidImeBridge {
   setClipboardSlotsEnabled?(enabled: boolean): void;
   getInferenceModelError(): string;
@@ -198,12 +185,6 @@ interface AndroidDictionaryBridge {
   hasPloverConfiguration(): boolean;
   requestPlover(body: string, requestId: number): void;
   saveDictionaryFile(filename: string, content: string, mimeType: string): void;
-  enqueueDictionaryImport?(
-    name: string,
-    type: string,
-    source: string,
-    merge: boolean,
-  ): string;
   enqueueSelectedDictionaryImport?(
     name: string,
     type: string,
@@ -216,13 +197,12 @@ interface AndroidDictionaryBridge {
 const androidIme = window.AndroidIme;
 const androidDictionary = window.AndroidDictionary;
 const androidPloverBridge = androidDictionary ?? androidIme;
-const isDictionaryManagementPage = new URLSearchParams(
-  window.location.search,
-).has("dictionary-management");
-const isTrainerEmbedded = new URLSearchParams(window.location.search).has(
-  "trainer-embedded",
-);
-document.body.classList.toggle("trainer-embedded", isTrainerEmbedded);
+if (!androidPloverBridge) {
+  throw new Error(
+    "The V7 editor requires an Android IME or dictionary bridge.",
+  );
+}
+const isDictionaryManagementPage = Boolean(androidDictionary);
 let inferenceModelState = androidIme?.getInferenceModelState() ?? "ready";
 let androidStenoModeEnabled = androidIme?.isStenoModeEnabled?.() ?? true;
 let androidTelexModeEnabled = androidIme?.isTelexModeEnabled?.() ?? false;
@@ -259,8 +239,6 @@ const androidPloverPending = new Map<
 
 let piecemealCursorIndex: number | null = null;
 let inferenceAbortController: AbortController | null = null;
-let isKeyboardLayoutVisible = false;
-const pressedQwertyKeys = new Set<string>();
 const strippedPlover: {
   available: boolean;
   enabled: boolean;
@@ -275,11 +253,6 @@ const strippedPlover: {
   requestId: 0,
 };
 let ploverDictionaries: PloverDictionary[] = [];
-let ploverSocket: WebSocket | null = null;
-let ploverSocketReady: Promise<WebSocket> | null = null;
-let ploverSocketReadyReject: ((reason: Error) => void) | null = null;
-let ploverRpcId = 1;
-const ploverPending = new Map<string, PloverPendingRequest>();
 const dictionaryInputIds = new Set([
   "plover-dict-name",
   "plover-new-dictionary-name",
@@ -341,12 +314,11 @@ function restoreState(): void {
 function isV7ClipboardMode(): boolean {
   return (
     !isDictionaryManagementPage &&
-    !isRawMode &&
     !strippedPlover.enabled &&
     !androidPlainTextMode &&
     !androidRawOutlineMode &&
     !isAndroidEffectiveTelexMode() &&
-    (!androidIme || androidStenoModeEnabled)
+    androidStenoModeEnabled
   );
 }
 
@@ -362,10 +334,6 @@ function clipboardMessage(message: string): void {
 
 function copyClipboardSlot(slot: number): void {
   if (!isV7ClipboardMode()) return;
-  if (strippedDisplay.enabled && !strippedDisplay.copyAllowed && !androidIme) {
-    clipboardMessage("Copy is disabled in this display.");
-    return;
-  }
   const selection = window.getSelection();
   const display = document.getElementById("text-display");
   const selected =
@@ -502,27 +470,21 @@ function updatePloverSoloUI(): void {
 
 function updatePloverStatusUI(): void {
   const statusEl = document.getElementById("plover-status");
-  const dictionaryButton = document.getElementById(
-    "plover-dictionary-open",
-  ) as HTMLButtonElement | null;
   if (statusEl) {
     if (androidPloverPaused) {
       statusEl.textContent = "PAUSED";
       statusEl.classList.remove("unavailable");
       statusEl.classList.add("available", "paused");
-      if (dictionaryButton) dictionaryButton.disabled = true;
     } else if (strippedPlover.available) {
       statusEl.textContent = strippedPlover.enabled ? "Enabled" : "Available";
       statusEl.classList.remove("unavailable");
       statusEl.classList.remove("paused");
       statusEl.classList.add("available");
-      if (dictionaryButton) dictionaryButton.disabled = false;
     } else {
       statusEl.textContent = "Unavailable";
       statusEl.classList.remove("available");
       statusEl.classList.remove("paused");
       statusEl.classList.add("unavailable");
-      if (dictionaryButton) dictionaryButton.disabled = true;
     }
   }
   const banner = document.querySelector<HTMLElement>(
@@ -539,17 +501,11 @@ function updatePloverStatusUI(): void {
 
 async function fetchPloverStatus(): Promise<void> {
   try {
-    if (androidPloverBridge) {
-      if (androidPloverBridge.hasPloverConfiguration()) {
-        await requestAndroidPlover("get_starting_stroke_state", {});
-        strippedPlover.available = true;
-      } else {
-        strippedPlover.available = false;
-      }
+    if (androidPloverBridge!.hasPloverConfiguration()) {
+      await requestAndroidPlover("get_starting_stroke_state", {});
+      strippedPlover.available = true;
     } else {
-      const resp = await fetch("/plover/status");
-      const data = (await resp.json()) as { available?: boolean };
-      strippedPlover.available = !!data.available;
+      strippedPlover.available = false;
     }
     if (!strippedPlover.available) {
       strippedPlover.enabled = false;
@@ -608,125 +564,6 @@ async function ensurePloverAvailability(): Promise<void> {
   } finally {
     ploverStatusCheckInFlight = false;
   }
-}
-
-function resetPloverSocket(message: string): void {
-  const error = new Error(message || "Stripped Plover connection lost");
-  if (ploverSocket) {
-    try {
-      ploverSocket.close();
-    } catch (e) {
-      /* ignore */
-    }
-  }
-  ploverSocket = null;
-  if (ploverSocketReady) {
-    if (ploverSocketReadyReject) {
-      ploverSocketReadyReject(error);
-    }
-    ploverSocketReady = null;
-    ploverSocketReadyReject = null;
-  }
-  for (const [, { reject }] of ploverPending) {
-    reject(error);
-  }
-  ploverPending.clear();
-  strippedPlover.available = false;
-  strippedPlover.enabled = false;
-  strippedPlover.solo = false;
-  strippedPlover.preeditIndex = null;
-  ploverDictionarySignature = "";
-  ploverDictionaries = [];
-  renderPloverDictionaries();
-  updatePloverStatusUI();
-  schedulePloverStatusRetry();
-}
-
-function ensurePloverSocket(): Promise<WebSocket> {
-  if (androidPloverBridge) {
-    return Promise.reject(
-      new Error("Android uses its native Stripped Plover bridge"),
-    );
-  }
-  if (ploverSocketReady) return ploverSocketReady;
-  ploverSocketReady = new Promise<WebSocket>((resolve, reject) => {
-    ploverSocketReadyReject = reject;
-    const protocol = location.protocol === "https:" ? "wss://" : "ws://";
-    const ws = new WebSocket(`${protocol}${location.host}/plover/ws`);
-    ploverSocket = ws;
-
-    ws.addEventListener("open", () => {
-      strippedPlover.available = true;
-      updatePloverStatusUI();
-      resolve(ws);
-    });
-    ws.addEventListener("message", (event) => {
-      try {
-        const data = JSON.parse(String(event.data)) as {
-          id?: unknown;
-          ok?: boolean;
-          result?: PloverRpcResult;
-          error?: string;
-          dictionaries?: PloverDictionary[];
-          solo?: boolean;
-        };
-        if (!data.id) {
-          const dictionaries = data.dictionaries || data.result?.dictionaries;
-          if (Array.isArray(dictionaries)) {
-            if (typeof data.solo === "boolean") {
-              strippedPlover.solo = data.solo;
-            } else if (typeof data?.result?.solo === "boolean") {
-              strippedPlover.solo = data.result.solo;
-            }
-            updatePloverDictionaries(dictionaries);
-            setPloverMessage("");
-          }
-          return;
-        }
-        const key = JSON.stringify(data.id);
-        const pending = ploverPending.get(key);
-        if (pending) {
-          ploverPending.delete(key);
-          if (data.ok) {
-            pending.resolve(data.result ?? {});
-          } else {
-            pending.reject(new Error(data.error || "Stripped Plover error"));
-          }
-        }
-      } catch (e) {
-        // Ignore malformed messages
-      }
-    });
-    ws.addEventListener("close", () => {
-      resetPloverSocket("Stripped Plover connection closed");
-    });
-    ws.addEventListener("error", (e) => {
-      resetPloverSocket("Stripped Plover WebSocket error");
-      reject(new Error("Failed to connect to Stripped Plover"));
-    });
-  });
-  return ploverSocketReady;
-}
-
-async function ploverRpc(
-  method: string,
-  params: Record<string, unknown>,
-): Promise<PloverRpcResult> {
-  if (androidPloverBridge) {
-    return requestAndroidPlover(method, params);
-  }
-  const socket = await ensurePloverSocket();
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
-    throw new Error("Stripped Plover unavailable");
-  }
-  const id = ploverRpcId++;
-  const payload = { id, method, params };
-  const promise = new Promise<PloverRpcResult>((resolve, reject) => {
-    const key = JSON.stringify(id);
-    socket.send(JSON.stringify(payload));
-    ploverPending.set(key, { resolve, reject });
-  });
-  return promise;
 }
 
 function clearPloverPreedit(): void {
@@ -842,7 +679,7 @@ async function handlePloverStroke(
   const currentRequest = ++strippedPlover.requestId;
   const uppercase = keyboardCapsLockActive;
   try {
-    const result = await ploverRpc("translate", { stroke });
+    const result = await requestAndroidPlover("translate", { stroke });
     if (currentRequest !== strippedPlover.requestId) return;
     applyPloverOutput(result.output ?? [], {
       recordHistory: oneShot,
@@ -851,7 +688,7 @@ async function handlePloverStroke(
       uppercase,
     });
     if (oneShot) {
-      await ploverRpc("reset_state", {});
+      await requestAndroidPlover("reset_state", {});
     }
   } catch (e) {
     if (currentRequest !== strippedPlover.requestId) return;
@@ -867,7 +704,7 @@ async function togglePloverMode(): Promise<void> {
   if (!strippedPlover.enabled) {
     finalizePloverPreedit();
     try {
-      await ploverRpc("reset_state", {});
+      await requestAndroidPlover("reset_state", {});
     } catch (e) {
       console.log(e);
       setPloverMessage(errorMessage(e, "Failed to reset Stripped Plover."));
@@ -885,7 +722,7 @@ async function refreshPloverDictionaries({
 }: { force?: boolean } = {}): Promise<void> {
   if (!strippedPlover.available) return;
   try {
-    const result = await ploverRpc("get_dictionary_state", {});
+    const result = await requestAndroidPlover("get_dictionary_state", {});
     strippedPlover.solo = !!result.solo;
     const dictionaries = result.dictionaries || [];
     updatePloverDictionaries(dictionaries, { force });
@@ -927,7 +764,7 @@ async function createBlankJsonDictionary(
 
   setButtonLoading(button, true, "Creating...");
   try {
-    await ploverRpc("import_dictionary", {
+    await requestAndroidPlover("import_dictionary", {
       name,
       type: "json",
       data: {},
@@ -1083,20 +920,6 @@ function inferDictionaryImportType(
   return null;
 }
 
-function readDictionaryFile(file: File): Promise<string> {
-  if (typeof file.text === "function") {
-    return file.text();
-  }
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(String(reader.result ?? "")));
-    reader.addEventListener("error", () =>
-      reject(reader.error || new Error("Unable to read the dictionary file.")),
-    );
-    reader.readAsText(file);
-  });
-}
-
 interface AndroidDictionaryImportState {
   id: string;
   name: string;
@@ -1178,18 +1001,14 @@ function pollAndroidDictionaryImport(
 function enqueueAndroidDictionaryImport(
   name: string,
   type: string,
-  content: string,
   merge: boolean,
-): boolean {
-  const enqueue = androidDictionary?.enqueueSelectedDictionaryImport
-    ? () =>
-        androidDictionary.enqueueSelectedDictionaryImport!(name, type, merge)
-    : androidDictionary?.enqueueDictionaryImport
-      ? () =>
-          androidDictionary.enqueueDictionaryImport!(name, type, content, merge)
-      : null;
-  if (!enqueue) return false;
-  const result = JSON.parse(enqueue()) as { id?: string; error?: string };
+): void {
+  if (!androidDictionary?.enqueueSelectedDictionaryImport) {
+    throw new Error("The Android dictionary import bridge is unavailable.");
+  }
+  const result = JSON.parse(
+    androidDictionary.enqueueSelectedDictionaryImport(name, type, merge),
+  ) as { id?: string; error?: string };
   if (result.error || !result.id) {
     throw new Error(
       result.error || "Could not schedule the dictionary import.",
@@ -1197,7 +1016,6 @@ function enqueueAndroidDictionaryImport(
   }
   androidDictionaryImportTaskId = result.id;
   pollAndroidDictionaryImport(result.id);
-  return true;
 }
 
 function downloadDictionaryFile(
@@ -1205,19 +1023,7 @@ function downloadDictionaryFile(
   content: string,
   mimeType: string,
 ): void {
-  if (androidDictionary) {
-    androidDictionary.saveDictionaryFile(filename, content, mimeType);
-    return;
-  }
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  androidDictionary?.saveDictionaryFile(filename, content, mimeType);
 }
 
 async function exportDictionary(
@@ -1228,7 +1034,7 @@ async function exportDictionary(
   if (!name) return;
   setButtonLoading(button, true, "Exporting...");
   try {
-    const result = await ploverRpc("export_dictionary", { name });
+    const result = await requestAndroidPlover("export_dictionary", { name });
     const type = result.type ?? "json";
     if (type === "python") {
       const filename = getDictionaryFilename(dict, "py");
@@ -1264,15 +1070,15 @@ async function renameDictionary(
   setButtonLoading(button, true, "Renaming...");
   try {
     const renamed = nextName.trim();
-    const exported = await ploverRpc("export_dictionary", { name });
+    const exported = await requestAndroidPlover("export_dictionary", { name });
     if (exported.type === "python") {
-      await ploverRpc("import_dictionary", {
+      await requestAndroidPlover("import_dictionary", {
         name: renamed,
         type: "python",
         pythonCode: exported.pythonCode || "",
       });
     } else {
-      await ploverRpc("import_dictionary", {
+      await requestAndroidPlover("import_dictionary", {
         name: renamed,
         type: "json",
         data: exported.data || {},
@@ -1280,12 +1086,12 @@ async function renameDictionary(
       });
     }
     if (!dict.enabled) {
-      await ploverRpc("set_dictionary_enabled", {
+      await requestAndroidPlover("set_dictionary_enabled", {
         identifier: renamed,
         enabled: false,
       });
     }
-    await ploverRpc("remove_dictionary", { name });
+    await requestAndroidPlover("remove_dictionary", { name });
     await refreshPloverDictionaries({ force: true });
     setPloverMessage("");
   } catch (e) {
@@ -1305,7 +1111,7 @@ async function deleteDictionary(
   if (!window.confirm(`Delete dictionary "${dict.identifier}"?`)) return;
   setButtonLoading(button, true, "Deleting...");
   try {
-    await ploverRpc("remove_dictionary", { name });
+    await requestAndroidPlover("remove_dictionary", { name });
     await refreshPloverDictionaries({ force: true });
     setPloverMessage("");
   } catch (e) {
@@ -1325,7 +1131,7 @@ async function setDictionaryEnabled(
   if (!identifier) return;
   setButtonLoading(button, true, enabled ? "Enabling..." : "Disabling...");
   try {
-    const result = await ploverRpc("set_dictionary_enabled", {
+    const result = await requestAndroidPlover("set_dictionary_enabled", {
       identifier,
       enabled,
     });
@@ -1351,7 +1157,9 @@ async function prioritizeDictionaryOrder(
   if (identifiers.length === 0) return;
   setButtonLoading(button, true, "Moving...");
   try {
-    const result = await ploverRpc("prioritize_dictionaries", { identifiers });
+    const result = await requestAndroidPlover("prioritize_dictionaries", {
+      identifiers,
+    });
     updatePloverDictionaries(result.dictionaries || [], { force: true });
     setPloverMessage("");
   } catch (e) {
@@ -1382,7 +1190,7 @@ async function soloDictionary(
   if (!identifier) return;
   setButtonLoading(button, true, "Solo...");
   try {
-    const result = await ploverRpc("solo_dictionaries", {
+    const result = await requestAndroidPlover("solo_dictionaries", {
       toggles: [`+${identifier}`],
     });
     strippedPlover.solo = !!result.solo;
@@ -1399,7 +1207,7 @@ async function soloDictionary(
 async function endSoloDictionaries(button: LoadingControl): Promise<void> {
   setButtonLoading(button, true, "Ending...");
   try {
-    const result = await ploverRpc("end_solo_dictionaries", {});
+    const result = await requestAndroidPlover("end_solo_dictionaries", {});
     strippedPlover.solo = !!result.solo;
     updatePloverDictionaries(result.dictionaries || [], { force: true });
     setPloverMessage("");
@@ -1714,7 +1522,7 @@ async function runEntrySearch({
   try {
     const { params, hasSearchQuery } = getEntrySearchParams(page);
     const method = hasSearchQuery ? "search_entries" : "enumerate_entries";
-    const result = await ploverRpc(method, params);
+    const result = await requestAndroidPlover(method, params);
     ploverEntrySearchPage = result.page || page;
     renderEntryRows(resultsEl, result.entries ?? []);
     updateEntryPagination(result);
@@ -1750,7 +1558,7 @@ async function runStrokeLookup(button: LoadingControl): Promise<void> {
   }
   setButtonLoading(button, true, "Looking...");
   try {
-    const result = await ploverRpc("lookup", { stroke });
+    const result = await requestAndroidPlover("lookup", { stroke });
     renderLookupRows(
       result.translation
         ? [
@@ -1786,7 +1594,9 @@ async function runReverseLookup(button: LoadingControl): Promise<void> {
   }
   setButtonLoading(button, true, "Looking...");
   try {
-    const result = await ploverRpc("reverse_lookup", { translation });
+    const result = await requestAndroidPlover("reverse_lookup", {
+      translation,
+    });
     const entries: PloverEntry[] = (result.strokes ?? []).map((stroke) => ({
       stroke,
       translation: result.translation || translation,
@@ -1886,26 +1696,6 @@ async function handleChord(stroke: string): Promise<void> {
 
   if (strippedPlover.enabled && !androidPlainTextMode) {
     await handlePloverStroke(stroke, { oneShot: false });
-    return;
-  }
-
-  // 1. Escape Hatch: #S
-  if (!strippedDisplay.enabled && (stroke === "#S-" || stroke === "#S")) {
-    if (state.candidates.length > 0) {
-      selectCandidate(0); // Select top candidate
-    }
-    piecemealCursorIndex = null;
-    isRawMode = true;
-    buffer.clearHistory();
-    updateDisplay();
-    const textArea = document.getElementById(
-      "text-input",
-    ) as HTMLTextAreaElement | null;
-    if (textArea) {
-      textArea.focus();
-      textArea.selectionStart = textArea.value.length;
-      textArea.selectionEnd = textArea.value.length;
-    }
     return;
   }
 
@@ -2222,22 +2012,7 @@ async function runInference() {
     const serverIslands = convertIslandsForInference(state.islands);
 
     const requestBody = JSON.stringify({ version: 2, islands: serverIslands });
-    let data;
-    if (androidIme) {
-      data = await requestAndroidInference(requestBody, controller?.signal);
-    } else {
-      const fetchOptions = {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: requestBody,
-        ...(controller ? { signal: controller.signal } : {}),
-      };
-      const resp = await fetch("/infer", fetchOptions);
-      if (!resp.ok) {
-        throw new Error(`Inference server returned HTTP ${resp.status}`);
-      }
-      data = await resp.json();
-    }
+    const data = await requestAndroidInference(requestBody, controller?.signal);
     if (isStaleInference(controller)) {
       // A newer inference request has started; discard this response.
       return;
@@ -2359,97 +2134,11 @@ function selectCandidate(
   return true;
 }
 
-function updateInputPadding(
-  display: HTMLElement,
-  textArea: HTMLTextAreaElement,
-  candidateArea: HTMLElement,
-): void {
-  if (!display.dataset.basePaddingBottom) {
-    display.dataset.basePaddingBottom = String(
-      parseFloat(getComputedStyle(display).paddingBottom) || 0,
-    );
-  }
-  if (!textArea.dataset.basePaddingBottom) {
-    textArea.dataset.basePaddingBottom = String(
-      parseFloat(getComputedStyle(textArea).paddingBottom) || 0,
-    );
-  }
-
-  const candidateHeight = Math.ceil(
-    candidateArea.getBoundingClientRect().height,
-  );
-  const configuredDisplayBase = parseFloat(
-    getComputedStyle(display).getPropertyValue("--input-padding-bottom"),
-  );
-  const displayBase = Number.isFinite(configuredDisplayBase)
-    ? configuredDisplayBase
-    : parseFloat(display.dataset.basePaddingBottom) || 0;
-  const textAreaBase = parseFloat(textArea.dataset.basePaddingBottom) || 0;
-
-  display.style.paddingBottom = `${
-    displayBase + (strippedDisplay.enabled ? 0 : candidateHeight)
-  }px`;
-  textArea.style.paddingBottom = `${textAreaBase + candidateHeight}px`;
-}
-
 function scrollToBottom(element: HTMLElement): void {
   element.scrollTop = element.scrollHeight;
   requestAnimationFrame(() => {
     element.scrollTop = element.scrollHeight;
   });
-}
-
-function formatKeyboardKeyLabel(key: string): string {
-  if (key === " ") return "Spacebar";
-  if (key.length === 1) return key.toUpperCase();
-  return key;
-}
-
-function renderKeyboardLayout(): void {
-  const board = document.getElementById("qwerty-board");
-  if (!board) return;
-  board.replaceChildren();
-
-  for (const row of qwertyKeyboardLayout) {
-    const rowEl = document.createElement("div");
-    rowEl.className = "qwerty-row";
-    for (const key of row) {
-      const keyEl = document.createElement("div");
-      keyEl.className = "qwerty-key";
-      keyEl.dataset.key = key.key;
-      keyEl.style.setProperty("--key-width", String(key.width ?? 1));
-      keyEl.textContent = key.label;
-      keyEl.setAttribute("aria-label", `${key.label} key`);
-      rowEl.appendChild(keyEl);
-    }
-    board.appendChild(rowEl);
-  }
-}
-
-function updateKeyboardLayout(): void {
-  const layout = document.getElementById("keyboard-layout");
-  if (!layout) return;
-
-  layout.classList.toggle("visible", isKeyboardLayoutVisible);
-  layout.setAttribute(
-    "aria-hidden",
-    isKeyboardLayoutVisible ? "false" : "true",
-  );
-  for (const keyEl of layout.querySelectorAll<HTMLElement>(".qwerty-key")) {
-    const key = keyEl.dataset.key || "";
-    keyEl.classList.toggle("is-pressed", pressedQwertyKeys.has(key));
-  }
-
-  const summary = document.getElementById("keyboard-pressed-summary");
-  if (summary) {
-    const labels = Array.from(pressedQwertyKeys, formatKeyboardKeyLabel);
-    summary.textContent =
-      labels.length > 0
-        ? labels.join(" + ")
-        : isTrainerEmbedded
-          ? "Chưa bấm phím"
-          : "No keys pressed";
-  }
 }
 
 function renderVisibleSegmentFragment(
@@ -2482,23 +2171,12 @@ function renderVisibleSegmentFragment(
   return fragment;
 }
 
-function setKeyboardLayoutVisible(visible: boolean): void {
-  isKeyboardLayoutVisible = visible;
-  updateKeyboardLayout();
-}
-
-function toggleKeyboardLayout(): void {
-  setKeyboardLayoutVisible(!isKeyboardLayoutVisible);
-}
-
 function updateInferenceErrorUI(): void {
   const inferenceError = document.getElementById("inference-error");
   if (!inferenceError) return;
   inferenceError.hidden = inferenceErrorMessage === "";
   inferenceError.textContent = inferenceErrorMessage
-    ? isTrainerEmbedded
-      ? `Không lấy được các cách viết: ${inferenceErrorMessage}`
-      : `Inference error: ${inferenceErrorMessage}`
+    ? `Inference error: ${inferenceErrorMessage}`
     : "";
 }
 
@@ -2532,23 +2210,8 @@ function updateInferenceStatusUI(): void {
   status.title = "";
 }
 
-function trackQwertyKey(event: KeyboardEvent, isPressed: boolean): void {
-  const key = normalizeQwertyDisplayKey(event.key, event.code || "");
-  if (!key) return;
-  if (isPressed) {
-    pressedQwertyKeys.add(key);
-  } else {
-    pressedQwertyKeys.delete(key);
-  }
-  updateKeyboardLayout();
-}
-
 function resetHardwareKeyboardState(): void {
   keyboardStrokeTracker.reset();
-  if (pressedQwertyKeys.size !== 0) {
-    pressedQwertyKeys.clear();
-    updateKeyboardLayout();
-  }
 }
 
 function updateDisplay(): void {
@@ -2558,13 +2221,10 @@ function updateDisplay(): void {
     updateInferenceStatusUI();
   }
   const display = document.getElementById("text-display") as HTMLElement | null;
-  const textArea = document.getElementById(
-    "text-input",
-  ) as HTMLTextAreaElement | null;
   const candArea = document.getElementById(
     "candidate-area",
   ) as HTMLElement | null;
-  if (!display || !textArea || !candArea) return;
+  if (!display || !candArea) return;
 
   const text = renderVisibleText(state.islands, state.candidates);
   const candidateDiffPlan =
@@ -2572,23 +2232,20 @@ function updateDisplay(): void {
       ? buildCandidateDiffPlan(state.islands, state.candidates)
       : null;
 
-  document.body.classList.toggle("stripped-display", strippedDisplay.enabled);
+  document.body.classList.add("stripped-display");
   document.body.classList.toggle(
     "android-normal-typing",
-    strippedDisplay.enabled &&
-      (!androidStenoModeEnabled || androidPlainTextMode) &&
+    (!androidStenoModeEnabled || androidPlainTextMode) &&
       !androidTelexModeEnabled &&
       !androidRawOutlineMode,
   );
   document.body.classList.toggle(
     "android-telex",
-    strippedDisplay.enabled &&
-      androidTelexModeEnabled &&
-      !androidRawOutlineMode,
+    androidTelexModeEnabled && !androidRawOutlineMode,
   );
   document.body.classList.toggle(
     "android-telex-degraded",
-    strippedDisplay.enabled && androidTelexModeEnabled && !androidTelexReady,
+    androidTelexModeEnabled && !androidTelexReady,
   );
   const telexBannerLabel = document.querySelector<HTMLElement>(
     ".ime-telex-banner strong",
@@ -2598,12 +2255,9 @@ function updateDisplay(): void {
       ? "Telex"
       : "Telex unavailable — Latin fallback";
   }
-  document.body.classList.toggle(
-    "android-raw-outline",
-    strippedDisplay.enabled && androidRawOutlineMode,
-  );
+  document.body.classList.toggle("android-raw-outline", androidRawOutlineMode);
   const modeTitle = document.querySelector<HTMLElement>(".ime-mode-title");
-  if (modeTitle && strippedDisplay.enabled) {
+  if (modeTitle) {
     modeTitle.textContent = androidRawOutlineMode
       ? "Raw outline mode"
       : androidTelexModeEnabled
@@ -2614,14 +2268,13 @@ function updateDisplay(): void {
   }
   document.body.classList.toggle(
     "stripped-plover-active",
-    strippedDisplay.enabled &&
-      androidStenoModeEnabled &&
+    androidStenoModeEnabled &&
       !androidRawOutlineMode &&
       !androidPlainTextMode &&
       strippedPlover.enabled,
   );
   updateInferenceErrorUI();
-  if (strippedDisplay.enabled && candidateDiffPlan?.sections.length) {
+  if (candidateDiffPlan?.sections.length) {
     console.info(
       "Candidate diff regions:",
       candidateDiffPlan.sections.map(({ role, start, end }) => ({
@@ -2632,170 +2285,139 @@ function updateDisplay(): void {
     );
   }
 
-  if (isRawMode) {
-    // Raw Mode: Show textarea
-    display.style.display = "none";
-    textArea.style.display = "block";
-    if (textArea.value !== text) {
-      // Only update if changed to avoid cursor jumps if loop?
-      textArea.value = text;
-    }
-    candArea.style.display = "none"; // Hide candidates in raw mode? Usually yes.
+  display.style.display = "block";
+  candArea.style.display = state.candidates.length > 1 ? "flex" : "none";
+
+  // Check if empty (single empty Viet island)
+  const isEmpty =
+    state.islands.length === 1 &&
+    state.islands[0].value === "" &&
+    !state.islands[0].isV7;
+
+  display.replaceChildren();
+  // Keep the compact buffer in a single inline context so literal spaces
+  // do not become individual flex items.
+  const textFlow = document.createElement("div");
+  textFlow.className = isEmpty
+    ? "text-display-flow empty-text-display-flow"
+    : "text-display-flow";
+  display.appendChild(textFlow);
+
+  // Fix: Cursor should be at the start if placeholder is present
+  const cursor = document.createElement("span");
+  cursor.id = "cursor";
+  textFlow.appendChild(cursor);
+
+  if (text === "" && isEmpty) {
+    const placeholder = document.createElement("span");
+    placeholder.textContent = "👋";
+    placeholder.className = "empty-wave";
+    textFlow.appendChild(placeholder);
   } else {
-    // Steno Mode: Show div
-    display.style.display = "block";
-    textArea.style.display = "none";
-    const candidatesVisible =
-      state.candidates.length > (strippedDisplay.enabled ? 1 : 0);
-    candArea.style.display = candidatesVisible ? "flex" : "none";
-
-    // Check if empty (single empty Viet island)
-    const isEmpty =
-      state.islands.length === 1 &&
-      state.islands[0].value === "" &&
-      !state.islands[0].isV7;
-
-    display.replaceChildren();
-    let textFlow: HTMLElement = display;
-    if (strippedDisplay.enabled) {
-      // Stripped display uses flex layout to anchor the buffer to the bottom.
-      // Keep its contents in one normal inline formatting context so text
-      // nodes, especially spaces, do not become individual flex items.
-      textFlow = document.createElement("div");
-      textFlow.className = isEmpty
-        ? "text-display-flow empty-text-display-flow"
-        : "text-display-flow";
-      display.appendChild(textFlow);
-    }
-
-    // Fix: Cursor should be at the start if placeholder is present
-    const cursor = document.createElement("span");
-    cursor.id = "cursor";
-    textFlow.appendChild(cursor);
-
-    if (text === "" && isEmpty) {
-      const placeholder = document.createElement("span");
-      placeholder.textContent = strippedDisplay.enabled
-        ? "👋"
-        : isTrainerEmbedded
-          ? "Bắt đầu gõ bằng bàn phím V7…"
-          : "Start typing with your steno keyboard...";
-      placeholder.className = strippedDisplay.enabled ? "empty-wave" : "";
-      placeholder.style.color = strippedDisplay.enabled ? "" : "#999";
-      textFlow.appendChild(placeholder);
-    } else {
-      let visibleSegments = renderVisibleTextSegments(
-        state.islands,
-        state.candidates,
-        piecemealCursorIndex,
-        candidateDiffPlan?.sections ?? [],
-      );
-      if (strippedDisplay.enabled) {
-        visibleSegments = stripVisibleTextSegments(visibleSegments);
-      }
-      for (const group of groupVisibleTextSegmentsByCandidateSection(
-        visibleSegments,
-      )) {
-        if (group.candidateSection) {
-          const sectionSpan = document.createElement("span");
-          sectionSpan.className = `candidate-section candidate-section-${group.candidateSection}`;
-          for (const segment of group.segments) {
-            sectionSpan.appendChild(renderVisibleSegmentFragment(segment));
-          }
-          textFlow.insertBefore(sectionSpan, cursor);
-        } else {
-          for (const segment of group.segments) {
-            textFlow.insertBefore(
-              renderVisibleSegmentFragment(segment),
-              cursor,
-            );
-          }
+    let visibleSegments = renderVisibleTextSegments(
+      state.islands,
+      state.candidates,
+      piecemealCursorIndex,
+      candidateDiffPlan?.sections ?? [],
+    );
+    visibleSegments = stripVisibleTextSegments(visibleSegments);
+    for (const group of groupVisibleTextSegmentsByCandidateSection(
+      visibleSegments,
+    )) {
+      if (group.candidateSection) {
+        const sectionSpan = document.createElement("span");
+        sectionSpan.className = `candidate-section candidate-section-${group.candidateSection}`;
+        for (const segment of group.segments) {
+          sectionSpan.appendChild(renderVisibleSegmentFragment(segment));
+        }
+        textFlow.insertBefore(sectionSpan, cursor);
+      } else {
+        for (const segment of group.segments) {
+          textFlow.insertBefore(renderVisibleSegmentFragment(segment), cursor);
         }
       }
-      display.style.color = "#000";
     }
-    // Render Candidates
-    candArea.replaceChildren();
-    if (candidateDiffPlan && state.candidates.length > 0) {
-      const visibleCandidates = candidateDiffPlan.candidates.slice(0, 5);
-      const maxSummaryLength = Math.max(
-        ...visibleCandidates.map((candidate) => {
-          const changedSections = candidate.sections.filter(
-            (section) => section.changes,
-          );
-          if (candidateDiffPlan.sections.length === 0)
-            return candidate.text.length;
-          if (changedSections.length === 0) return "current".length;
-          return changedSections.reduce(
-            (sum, section) => sum + Math.max(section.text.length, 7),
-            0,
-          );
-        }),
-      );
-
-      const useCompactCandidates =
-        candidateDiffPlan.sections.length > 0 && maxSummaryLength < 24;
-      candArea.classList.toggle("horizontal", useCompactCandidates);
-      candArea.classList.toggle("compact", useCompactCandidates);
-
-      const firstVisibleCandidate = strippedDisplay.enabled ? 1 : 0;
-      for (let i = firstVisibleCandidate; i < visibleCandidates.length; i++) {
-        const candidate = visibleCandidates[i];
-        const div = document.createElement("div");
-        div.className = "candidate";
-
-        const sup = document.createElement("sup");
-        sup.textContent = String(i + 1);
-        div.appendChild(sup);
-
-        div.appendChild(document.createTextNode(" "));
-
-        const span = document.createElement("span");
-        span.className = "candidate-text candidate-diff-summary";
+    display.style.color = "#000";
+  }
+  // Render Candidates
+  candArea.replaceChildren();
+  if (candidateDiffPlan && state.candidates.length > 0) {
+    const visibleCandidates = candidateDiffPlan.candidates.slice(0, 5);
+    const maxSummaryLength = Math.max(
+      ...visibleCandidates.map((candidate) => {
         const changedSections = candidate.sections.filter(
           (section) => section.changes,
         );
+        if (candidateDiffPlan.sections.length === 0)
+          return candidate.text.length;
+        if (changedSections.length === 0) return "current".length;
+        return changedSections.reduce(
+          (sum, section) => sum + Math.max(section.text.length, 7),
+          0,
+        );
+      }),
+    );
 
-        if (candidateDiffPlan.sections.length === 0) {
-          span.textContent = candidate.text;
-        } else if (changedSections.length === 0) {
-          const unchanged = document.createElement("span");
-          unchanged.className = "candidate-unchanged";
-          unchanged.textContent = "current";
-          span.appendChild(unchanged);
-        } else {
-          for (const section of changedSections) {
-            const sectionSpan = document.createElement("span");
-            sectionSpan.className = `candidate-section candidate-section-${section.role}`;
-            sectionSpan.textContent = section.text || "(empty)";
-            span.appendChild(sectionSpan);
-          }
-        }
+    const useCompactCandidates =
+      candidateDiffPlan.sections.length > 0 && maxSummaryLength < 24;
+    candArea.classList.toggle("horizontal", useCompactCandidates);
+    candArea.classList.toggle("compact", useCompactCandidates);
 
-        div.appendChild(span);
-        div.onclick = () => selectCandidate(i);
-        candArea.appendChild(div);
-      }
-    } else {
-      candArea.classList.remove("horizontal");
-      candArea.classList.remove("compact");
+    const firstVisibleCandidate = 1;
+    for (let i = firstVisibleCandidate; i < visibleCandidates.length; i++) {
+      const candidate = visibleCandidates[i];
       const div = document.createElement("div");
       div.className = "candidate";
-      div.style.cursor = "default";
+
+      const sup = document.createElement("sup");
+      sup.textContent = String(i + 1);
+      div.appendChild(sup);
+
+      div.appendChild(document.createTextNode(" "));
 
       const span = document.createElement("span");
-      span.className = "candidate-text";
-      span.style.color = "#999";
-      span.style.textAlign = "center";
-      span.textContent = "No candidates";
+      span.className = "candidate-text candidate-diff-summary";
+      const changedSections = candidate.sections.filter(
+        (section) => section.changes,
+      );
+
+      if (candidateDiffPlan.sections.length === 0) {
+        span.textContent = candidate.text;
+      } else if (changedSections.length === 0) {
+        const unchanged = document.createElement("span");
+        unchanged.className = "candidate-unchanged";
+        unchanged.textContent = "current";
+        span.appendChild(unchanged);
+      } else {
+        for (const section of changedSections) {
+          const sectionSpan = document.createElement("span");
+          sectionSpan.className = `candidate-section candidate-section-${section.role}`;
+          sectionSpan.textContent = section.text || "(empty)";
+          span.appendChild(sectionSpan);
+        }
+      }
 
       div.appendChild(span);
+      div.onclick = () => selectCandidate(i);
       candArea.appendChild(div);
     }
-  }
+  } else {
+    candArea.classList.remove("horizontal");
+    candArea.classList.remove("compact");
+    const div = document.createElement("div");
+    div.className = "candidate";
+    div.style.cursor = "default";
 
-  updateInputPadding(display, textArea, candArea);
-  scrollToBottom(isRawMode ? textArea : display);
+    const span = document.createElement("span");
+    span.className = "candidate-text";
+    span.style.color = "#999";
+    span.style.textAlign = "center";
+    span.textContent = "No candidates";
+
+    div.appendChild(span);
+    candArea.appendChild(div);
+  }
+  scrollToBottom(display);
   syncAndroidKeyboardHeight(candArea);
   syncAndroidPreedit(candidateDiffPlan);
   window.dispatchEvent(
@@ -2843,66 +2465,13 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (clipboardUi?.contains(target)) return;
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-    resetHardwareKeyboardState();
-    if (!e.repeat) {
-      toggleKeyboardLayout();
-    }
-    e.preventDefault();
-    return;
-  }
-
-  // Global Shortcuts
-  if (e.ctrlKey && e.key === "c") {
-    resetHardwareKeyboardState();
-    // Copy entire buffer if nothing selected
-    if (
-      (!strippedDisplay.enabled || strippedDisplay.copyAllowed) &&
-      !window.getSelection()?.toString()
-    ) {
-      const textToCopy = renderVisibleText(state.islands, state.candidates);
-
-      navigator.clipboard.writeText(textToCopy).catch((err) => {
-        console.error("Failed to copy: ", err);
-      });
-      // We can prevent default if we want, but let's allow it to be safe?
-      // Actually request says "Ctrl+C copies the whole buffer when nothing is selected."
-      // Standard behavior is copy selected.
-    }
-    return; // Allow default processing
-  }
-
   if (hasOsPassthroughModifier(e)) {
     resetHardwareKeyboardState();
     return;
   }
 
-  trackQwertyKey(e, true);
-
   if (isDictionaryTextInputFocused(e.target as Element | null)) {
     return; // Allow normal typing in dictionary text boxes
-  }
-
-  if (isRawMode) {
-    if (e.key === "Escape") {
-      // Exit Raw Mode
-      const textArea = document.getElementById(
-        "text-input",
-      ) as HTMLTextAreaElement | null;
-      if (!textArea) return;
-      const newText = textArea.value;
-
-      // Update state
-      buffer.setIslands([createIsland("vietnamese", newText)]);
-      state.candidates = [];
-      piecemealCursorIndex = null;
-      buffer.clearHistory();
-      isRawMode = false;
-
-      updateDisplay();
-      e.preventDefault();
-    }
-    return; // Let other keys pass to textarea
   }
 
   if (e.repeat) return;
@@ -2971,10 +2540,6 @@ document.addEventListener("keyup", (e) => {
     return;
   }
 
-  trackQwertyKey(e, false);
-
-  if (isRawMode) return; // Don't process steno in raw mode
-
   if (isDictionaryTextInputFocused(e.target as Element | null)) {
     return;
   }
@@ -2995,9 +2560,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 function setupPloverControls(): void {
-  const dictionaryOpenButton = document.getElementById(
-    "plover-dictionary-open",
-  ) as HTMLButtonElement | null;
   const dictionaryDialog = document.getElementById(
     "plover-dictionary-dialog",
   ) as HTMLDialogElement | null;
@@ -3074,55 +2636,13 @@ function setupPloverControls(): void {
     });
   }
 
-  if (dictionaryOpenButton && dictionaryDialog) {
-    dictionaryOpenButton.addEventListener("click", () => {
-      document.body.classList.add("plover-dictionary-open");
-      if (typeof dictionaryDialog.showModal === "function") {
-        dictionaryDialog.showModal();
-      } else {
-        dictionaryDialog.setAttribute("open", "");
-      }
-      void refreshPloverDictionaries({ force: true }).then(() =>
-        runEntrySearch({ page: 1 }),
-      );
-    });
-  }
-  if (dictionaryCloseButton && dictionaryDialog) {
-    dictionaryCloseButton.addEventListener("click", () => {
-      if (isDictionaryManagementPage && androidDictionary) {
-        androidDictionary.close();
-        return;
-      }
-      if (typeof dictionaryDialog.close === "function") {
-        dictionaryDialog.close();
-      } else {
-        dictionaryDialog.removeAttribute("open");
-      }
-      document.body.classList.remove("plover-dictionary-open");
-      updateDisplay();
-    });
-  }
-  if (dictionaryDialog) {
-    dictionaryDialog.addEventListener("click", (event) => {
-      if (event.target === dictionaryDialog) {
-        if (typeof dictionaryDialog.close === "function") {
-          dictionaryDialog.close();
-        } else {
-          dictionaryDialog.removeAttribute("open");
-        }
-        document.body.classList.remove("plover-dictionary-open");
-        updateDisplay();
-      }
-    });
-    dictionaryDialog.addEventListener("cancel", () => {
-      if (isDictionaryManagementPage && androidDictionary) {
-        androidDictionary.close();
-        return;
-      }
-      document.body.classList.remove("plover-dictionary-open");
-      updateDisplay();
-    });
-  }
+  dictionaryCloseButton?.addEventListener("click", () =>
+    androidDictionary?.close(),
+  );
+  dictionaryDialog?.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    androidDictionary?.close();
+  });
   if (refreshButton) {
     refreshButton.addEventListener("click", async () => {
       if (!strippedPlover.available) {
@@ -3181,38 +2701,8 @@ function setupPloverControls(): void {
         "json";
       setButtonLoading(uploadButton, true, "Uploading...");
       try {
-        const selectedImport =
-          androidDictionary?.enqueueSelectedDictionaryImport;
-        const content = selectedImport ? "" : await readDictionaryFile(file);
-        if (
-          enqueueAndroidDictionaryImport(
-            name,
-            type,
-            content,
-            !!mergeToggle?.checked,
-          )
-        ) {
-          if (dictionaryFileInput) dictionaryFileInput.value = "";
-          setPloverMessage("");
-          return;
-        }
-        if (type === "json") {
-          const data = JSON.parse(content);
-          await ploverRpc("import_dictionary", {
-            name,
-            type: "json",
-            data,
-            merge: !!mergeToggle?.checked,
-          });
-        } else {
-          await ploverRpc("import_dictionary", {
-            name,
-            type: "python",
-            pythonCode: content,
-          });
-        }
-        await refreshPloverDictionaries({ force: true });
-        await runEntrySearch({ page: 1 });
+        enqueueAndroidDictionaryImport(name, type, !!mergeToggle?.checked);
+        if (dictionaryFileInput) dictionaryFileInput.value = "";
         setPloverMessage("");
       } catch (e) {
         console.log(e);
@@ -3302,7 +2792,7 @@ function setupPloverControls(): void {
           setEntryMessage("Provide a translation to add an entry.");
           return;
         }
-        const result = await ploverRpc("add_entry_safely", {
+        const result = await requestAndroidPlover("add_entry_safely", {
           ...params,
           translation,
         });
@@ -3325,7 +2815,7 @@ function setupPloverControls(): void {
           setEntryMessage("Provide a translation to update an entry.");
           return;
         }
-        const lookup = await ploverRpc("search_entries", {
+        const lookup = await requestAndroidPlover("search_entries", {
           dictionary: name,
           stroke,
           match: "exact",
@@ -3341,7 +2831,7 @@ function setupPloverControls(): void {
           setEntryMessage(`Entry not found: ${stroke}`);
           return;
         }
-        const result = await ploverRpc("replace_entry", {
+        const result = await requestAndroidPlover("replace_entry", {
           ...params,
           translation,
           expected_translation: expectedTranslation,
@@ -3358,7 +2848,7 @@ function setupPloverControls(): void {
           return;
         }
       } else if (action === "remove") {
-        await ploverRpc("remove_entry", params);
+        await requestAndroidPlover("remove_entry", params);
       }
       setEntryMessage("");
       await refreshPloverDictionaries();
@@ -3413,11 +2903,6 @@ if (isDictionaryManagementPage) {
   mountPloverDictionaryUi();
   setupPloverControls();
 } else {
-  if (document.getElementById("plover-dictionary-open")) {
-    mountPloverDictionaryUi();
-  }
-  renderKeyboardLayout();
-  updateKeyboardLayout();
   setupImeControls();
   setupPloverControls();
 }
@@ -3458,7 +2943,6 @@ declare global {
       capsLockActive: boolean,
       epoch: number,
     ) => void;
-    setStrippedDisplay: (options?: { copyAllowed?: boolean }) => void;
   }
 }
 
@@ -3723,7 +3207,7 @@ window.clearPreeditFromAndroid = (epoch) => {
   strippedPlover.requestId += 1;
   strippedPlover.preeditIndex = null;
   if (strippedPlover.available) {
-    void ploverRpc("reset_state", {}).catch((error) => {
+    void requestAndroidPlover("reset_state", {}).catch((error) => {
       console.error("Failed to reset Stripped Plover preedit state:", error);
     });
   }
@@ -3734,7 +3218,6 @@ window.clearPreeditFromAndroid = (epoch) => {
       ? androidIme.getInferenceModelError()
       : "";
   piecemealCursorIndex = null;
-  isRawMode = false;
   updateDisplay();
 };
 
@@ -3769,15 +3252,6 @@ window.handleAndroidKeyEvent = (
   );
 };
 
-window.setStrippedDisplay = (options = {}) => {
-  isRawMode = false;
-  strippedDisplay = {
-    enabled: true,
-    copyAllowed: options.copyAllowed === true,
-  };
-  updateDisplay();
-};
-
 if (!isDictionaryManagementPage) {
   clipboardUi = mountClipboardSlots({
     copy: copyClipboardSlot,
@@ -3792,7 +3266,6 @@ if (!isDictionaryManagementPage) {
     },
   });
   if (androidIme) {
-    window.setStrippedDisplay();
     updateInferenceStatusUI();
   }
   updateDisplay();

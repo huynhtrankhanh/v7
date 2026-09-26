@@ -10,14 +10,14 @@ set -e
 # Expected inputs (mounted into the container via docker-compose.yml):
 #   data/corpus-full.txt  – raw Vietnamese text corpus (one sentence per line)
 #
-# Outputs (written to /app, also mounted as the repo root):
+# Outputs (written to V7_MODEL_OUTPUT, mounted as the repo root by Compose):
 #   lm.binary  – compiled KenLM binary model
 
 DATA_DIR="data"
 CORPUS="${DATA_DIR}/corpus-full.txt"
 TOK="${DATA_DIR}/corpus.tok"
 ARPA="lm.arpa"
-BINARY="lm.binary"
+BINARY="${V7_MODEL_OUTPUT:-lm.binary}"
 KENLM_BIN="./kenlm/build/bin"
 
 # 1. Preprocess

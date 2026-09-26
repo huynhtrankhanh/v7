@@ -1,18 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-FROM node:22 AS frontend-deps
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-
-FROM frontend-deps AS frontend
-WORKDIR /app
-# Build configuration and application sources change more often than dependencies.
-COPY tsconfig.json tsconfig.jest.json vite.config.ts ./
-COPY src ./src
-COPY static ./static
-RUN npm run build
-
 FROM rust:1.88-bookworm AS kenlm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -32,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Keep KenLM in its own stage so Rust or frontend changes do not rebuild it.
+# Keep KenLM in its own stage so Rust changes do not rebuild it.
 ARG KENLM_REF=master
 RUN git clone --depth 1 --branch "${KENLM_REF}" https://github.com/kpu/kenlm.git /app/kenlm
 WORKDIR /app/kenlm
@@ -65,6 +52,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 COPY inference-rs/build.rs ./
 COPY inference-rs/cpp ./cpp
 COPY inference-rs/src ./src
+COPY data/two_syllable_dictionary.txt /app/data/two_syllable_dictionary.txt
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/app/inference-rs/target \
@@ -112,13 +100,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
-# Runtime deps for inference binary only (KenLM and web assets copied from builders)
+# Runtime dependencies for headless inference and the separate practice page.
 COPY --from=builder /tmp/inference-rs ./inference-rs/target/release/inference-rs
 COPY --from=kenlm /app/kenlm ./kenlm
-COPY --from=frontend /app/static ./static
+COPY static/practice.html ./static/practice.html
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3 \
-    CMD curl --fail --silent --show-error http://localhost:3000/ > /dev/null || exit 1
+    CMD curl --fail --silent --show-error http://localhost:3000/health > /dev/null || exit 1
 
 # Entrypoint runs the binary
 # Usage: docker run ... <v7_string>

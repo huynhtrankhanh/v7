@@ -635,7 +635,7 @@ async function main() {
       };
     });
     await managementPage.goto(
-      `http://127.0.0.1:${port}/assets/dictionary.html?dictionary-management=1`,
+      `http://127.0.0.1:${port}/assets/dictionary.html`,
       { waitUntil: "load" },
     );
     await managementPage.waitForSelector("#plover-dictionary-dialog[open]");

@@ -18,7 +18,7 @@ function startStaticServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
     const pathname = decodeURIComponent(
-      url.pathname === "/" ? "/index.html" : url.pathname,
+      url.pathname === "/" ? "/practice.html" : url.pathname,
     );
     const filePath = path.normalize(path.join(STATIC_DIR, pathname));
 

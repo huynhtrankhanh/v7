@@ -1,26 +1,20 @@
 #![allow(dead_code)]
 use anyhow::Result;
 use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
     extract::{Json, State},
-    http::StatusCode,
-    response::IntoResponse,
     routing::{get, post},
     Router,
 };
 use clap::Parser;
-use futures_util::StreamExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, Write};
 use std::sync::{Arc, OnceLock};
-use std::time::{Duration, Instant};
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeFile;
 use unicode_normalization::UnicodeNormalization;
 
 mod kenlm;
-mod plover;
 mod regex_enum;
 
 #[derive(Parser, Debug)]
@@ -46,12 +40,6 @@ struct Args {
 
     #[arg(long, default_value = "static")]
     static_dir: String,
-
-    #[arg(long)]
-    stripped_plover_host: Option<String>,
-
-    #[arg(long, default_value = "4020")]
-    stripped_plover_port: u16,
 }
 
 struct Tokenizer {
@@ -1289,20 +1277,10 @@ mod tests {
     }
 }
 
-#[derive(Clone)]
-struct PloverConfig {
-    host: String,
-    port: u16,
-}
-
 struct AppState {
     tokenizer: Tokenizer,
     model: kenlm::Model,
-    plover: Option<PloverConfig>,
-    plover_status_cache: tokio::sync::Mutex<Option<(Instant, bool)>>,
 }
-
-const PLOVER_STATUS_CACHE_SECONDS: u64 = 2;
 
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -1344,19 +1322,6 @@ struct InferResponse {
     dictionary_bucket_sizes: Vec<usize>,
 }
 
-#[derive(Deserialize)]
-struct PloverRequest {
-    #[serde(default)]
-    id: Option<serde_json::Value>,
-    method: String,
-    params: Option<serde_json::Value>,
-}
-
-#[derive(Serialize)]
-struct PloverStatusResponse {
-    available: bool,
-}
-
 async fn infer_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<InferRequest>,
@@ -1387,101 +1352,6 @@ async fn infer_handler(
                 dictionary_bucket_sizes: vec![],
             })
         }
-    }
-}
-
-async fn plover_status_handler(State(state): State<Arc<AppState>>) -> Json<PloverStatusResponse> {
-    let Some(config) = state.plover.as_ref() else {
-        return Json(PloverStatusResponse { available: false });
-    };
-
-    {
-        let cache = state.plover_status_cache.lock().await;
-        if let Some((ts, cached)) = *cache {
-            if ts.elapsed() < Duration::from_secs(PLOVER_STATUS_CACHE_SECONDS) {
-                return Json(PloverStatusResponse { available: cached });
-            }
-        }
-    }
-
-    let client = plover::PloverClient::new(config.host.clone(), config.port);
-    let available = client.check().await.is_ok();
-    {
-        let mut cache = state.plover_status_cache.lock().await;
-        *cache = Some((Instant::now(), available));
-    }
-    Json(PloverStatusResponse { available })
-}
-
-#[derive(Serialize)]
-struct PloverProxyResponse {
-    ok: bool,
-    result: Option<serde_json::Value>,
-    error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    id: Option<serde_json::Value>,
-}
-
-async fn plover_ws_handler(
-    State(state): State<Arc<AppState>>,
-    ws: WebSocketUpgrade,
-) -> impl IntoResponse {
-    let Some(config) = state.plover.clone() else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Stripped Plover is disabled",
-        )
-            .into_response();
-    };
-
-    ws.on_upgrade(|socket| handle_plover_socket(socket, config))
-}
-
-async fn handle_plover_socket(stream: WebSocket, config: PloverConfig) {
-    let mut socket = stream;
-    let client = plover::PloverClient::new(config.host, config.port);
-
-    while let Some(Ok(message)) = socket.next().await {
-        let Message::Text(text) = message else {
-            continue;
-        };
-
-        let parsed: Result<PloverRequest, _> = serde_json::from_str(&text);
-        let response = match parsed {
-            Ok(req) => {
-                let params = req.params.unwrap_or_else(|| serde_json::json!({}));
-                let id = req.id.clone();
-                let resp = match client.send_request(&req.method, params).await {
-                    Ok(result) => PloverProxyResponse {
-                        ok: true,
-                        result: Some(result),
-                        error: None,
-                        id,
-                    },
-                    Err(e) => PloverProxyResponse {
-                        ok: false,
-                        result: None,
-                        error: Some(e.to_string()),
-                        id,
-                    },
-                };
-                resp
-            }
-            Err(e) => PloverProxyResponse {
-                ok: false,
-                result: None,
-                error: Some(format!("Invalid request: {}", e)),
-                id: None,
-            },
-        };
-
-        let _ = socket
-            .send(Message::Text(
-                serde_json::to_string(&response).unwrap_or_else(|_| {
-                    "{\"ok\":false,\"error\":\"Response serialization failed\"}".to_string()
-                }),
-            ))
-            .await;
     }
 }
 
@@ -1686,32 +1556,16 @@ async fn main() -> Result<()> {
             stdout.flush()?;
         }
     } else if args.server {
-        let plover_host = args
-            .stripped_plover_host
-            .or_else(|| std::env::var("STRIPPED_PLOVER_HOST").ok());
-        let plover_port = std::env::var("STRIPPED_PLOVER_PORT")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or(args.stripped_plover_port);
-        let plover = plover_host.map(|host| PloverConfig {
-            host,
-            port: plover_port,
-        });
-        let app_state = Arc::new(AppState {
-            tokenizer,
-            model,
-            plover,
-            plover_status_cache: tokio::sync::Mutex::new(None),
-        });
-
+        let app_state = Arc::new(AppState { tokenizer, model });
         let practice_page_path = format!("{}/practice.html", args.static_dir);
+        // This is a headless inference API plus the separate practice game.
+        // Android IME assets are packaged into the APK and never served here.
         let app = Router::new()
+            .route("/health", get(|| async { "ready" }))
             .route("/infer", post(infer_handler))
-            .route("/plover/status", get(plover_status_handler))
-            .route("/plover/ws", get(plover_ws_handler))
             .route_service("/practice", ServeFile::new(&practice_page_path))
-            .route_service("/practice/", ServeFile::new(practice_page_path))
-            .nest_service("/", ServeDir::new(&args.static_dir))
+            .route_service("/practice/", ServeFile::new(&practice_page_path))
+            .route_service("/practice.html", ServeFile::new(practice_page_path))
             .with_state(app_state);
 
         let addr = format!("0.0.0.0:{}", args.port);

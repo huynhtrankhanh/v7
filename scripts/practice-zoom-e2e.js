@@ -19,7 +19,7 @@ function startStaticServer() {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://localhost");
     const pathname = decodeURIComponent(
-      url.pathname === "/" ? "/index.html" : url.pathname,
+      url.pathname === "/" ? "/practice.html" : url.pathname,
     );
     const filePath = path.normalize(path.join(STATIC_DIR, pathname));
 
@@ -147,50 +147,6 @@ async function assertScrollable(page, selector, label) {
   }
 }
 
-async function exerciseMainWebUi(baseUrl, browser) {
-  const page = await browser.newPage();
-  await page.setViewport({ width: 390, height: 640, deviceScaleFactor: 1 });
-  await page.goto(`${baseUrl}/index.html`, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector("#candidate-area");
-  await applyTextZoom(page);
-
-  await page.evaluate(() => {
-    const display = document.querySelector("#text-display");
-    const candidates = document.querySelector("#candidate-area");
-    if (!display || !candidates) throw new Error("Main UI targets not found");
-
-    display.replaceChildren();
-    display.appendChild(
-      document.createTextNode(
-        Array.from({ length: 90 }, (_, i) => `dong-${i} tieng-viet`).join(" "),
-      ),
-    );
-
-    candidates.classList.add("horizontal");
-    // updateDisplay intentionally hides this panel when application state has
-    // no candidates. This synthetic layout fixture supplies its own rows, so
-    // make the corresponding visible state explicit as well.
-    candidates.style.display = "flex";
-    candidates.replaceChildren();
-    for (let i = 0; i < 12; i += 1) {
-      const row = document.createElement("div");
-      row.className = "candidate";
-      const number = document.createElement("sup");
-      number.textContent = String(i + 1);
-      const text = document.createElement("span");
-      text.className = "candidate-text";
-      text.textContent = `ung-vien-${i}-voi-chuoi-goi-y-dai-de-kiem-tra-wrap-va-scroll`;
-      row.append(number, document.createTextNode(" "), text);
-      candidates.appendChild(row);
-    }
-  });
-
-  await assertNoHorizontalOverflow(page, "main web UI");
-  await assertScrollable(page, "#text-display", "main text display");
-  await assertScrollable(page, "#candidate-area", "candidate area");
-  await page.close();
-}
-
 async function exercisePracticeUi(baseUrl, browser) {
   const page = await browser.newPage();
   await page.setViewport({ width: 390, height: 640, deviceScaleFactor: 1 });
@@ -268,7 +224,6 @@ async function main() {
       headless: "new",
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
-    await exerciseMainWebUi(baseUrl, browser);
     await exercisePracticeUi(baseUrl, browser);
   } finally {
     if (browser) await browser.close();

@@ -134,11 +134,9 @@ export function mountClipboardSlots(actions: {
     if ((event.target as Element).closest("button")) event.preventDefault();
   });
   const shell = document.getElementById("inference-shell");
-  if (document.body.classList.contains("ime-surface") && shell) {
-    shell.insertBefore(panel, document.getElementById("workbench"));
-  } else {
-    document.body.insertBefore(panel, shell);
-  }
+  if (!shell)
+    throw new Error("The clipboard panel requires the Android IME surface.");
+  shell.insertBefore(panel, document.getElementById("workbench"));
   return {
     contains: (target: Element | null) => !!target && panel.contains(target),
     update(visible: boolean, get: (slot: number) => string | null) {

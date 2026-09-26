@@ -1,20 +1,7 @@
-#plover-dictionary-dialog {
-  border: none;
-  border-radius: 8px;
-  box-shadow: 0 16px 40px rgb(0 0 0 / 20%);
-  max-width: 980px;
-  padding: 0;
-  width: min(94vw, 980px);
-}
-
 body.dictionary-management-page {
   background: #f8fafc;
   margin: 0;
   overflow: hidden;
-}
-
-body.dictionary-management-page #inference-shell {
-  display: none;
 }
 
 body.dictionary-management-page #plover-dictionary-dialog {
@@ -47,10 +34,6 @@ body.dictionary-management-page #plover-entry-results,
 body.dictionary-management-page #plover-lookup-results {
   max-height: none;
   overflow: visible;
-}
-
-#plover-dictionary-dialog::backdrop {
-  background: rgb(15 23 42 / 50%);
 }
 
 #plover-dictionary-dialog button {

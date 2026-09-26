@@ -16,7 +16,7 @@ function startStaticServer() {
   const server = http.createServer((req, res) => {
     requests.push(req.url);
     const pathname = new URL(req.url || "/", "http://localhost").pathname;
-    const requested = pathname === "/" ? "/index.html" : pathname;
+    const requested = pathname === "/" ? "/ime.html" : pathname;
     const file = path.normalize(path.join(STATIC_DIR, requested));
     if (!file.startsWith(`${STATIC_DIR}${path.sep}`)) {
       res.writeHead(403).end();
@@ -121,6 +121,7 @@ async function main() {
       window.__androidDictionaries = [
         {
           identifier: "main.json",
+          type: "json",
           enabled: true,
           readonly: false,
           entries: 2,
@@ -216,6 +217,7 @@ async function main() {
           ) {
             window.__androidDictionaries.push({
               identifier: request.params.name,
+              type: request.params.type,
               enabled: true,
               readonly: false,
               entries: Object.keys(request.params.data || {}).length,
@@ -289,9 +291,7 @@ async function main() {
           window.__androidKeyboardSwitches += 1;
         },
       };
-      if (
-        new URL(window.location.href).searchParams.has("dictionary-management")
-      ) {
+      if (window.location.pathname.endsWith("/dictionary.html")) {
         const imeBridge = window.AndroidIme;
         window.AndroidDictionary = {
           hasPloverConfiguration: () => imeBridge.hasPloverConfiguration(),
@@ -987,7 +987,7 @@ async function main() {
     // The dictionary manager opens in a full Settings activity rather than the
     // compact IME-height viewport used by the preceding keyboard assertions.
     await page.setViewport({ width: 412, height: 400, deviceScaleFactor: 1 });
-    await page.goto(`${url}/dictionary.html?dictionary-management=1`, {
+    await page.goto(`${url}/dictionary.html`, {
       waitUntil: "networkidle0",
     });
     await page.waitForFunction(

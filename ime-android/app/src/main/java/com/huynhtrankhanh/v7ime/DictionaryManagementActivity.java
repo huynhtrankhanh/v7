@@ -65,7 +65,7 @@ public class DictionaryManagementActivity extends Activity {
                 "AndroidDictionary"
         );
         BundledStrippedPloverRuntime.get(this).attachTo(rootView);
-        webView.loadUrl("file:///android_asset/dictionary.html?dictionary-management=1");
+        webView.loadUrl("file:///android_asset/dictionary.html");
     }
 
     @Override

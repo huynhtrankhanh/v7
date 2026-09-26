@@ -2,25 +2,19 @@
 *
 
 # Unignore the specific directories needed by the Dockerfiles.
-!ai/
 !inference-rs/
+!data/
+data/**
+!data/two_syllable_dictionary.txt
 !practice-android/
 !practice-android/**
-!trainer/
-!trainer/**
-!evaluator/
-!evaluator/**
-!evaluation-server/
-!evaluation-server/**
 !src/
 !static/
 !scripts/
-!scripts/stripped-plover-agent.cjs
 
 # Unignore build configuration files.
 !Dockerfile
 !Dockerfile.practice-android
-!Dockerfile.stripped-plover
 !docker-compose.yml
 !.dockerignore
 !package.json

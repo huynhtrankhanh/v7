@@ -1,9 +1,8 @@
 # Stripped Plover dictionary management on Android
 
-Android reuses the browser WebUI's existing **Dictionary Management** surface.
+Android owns the **Dictionary Management** WebView surface.
 The dialog markup lives in `src/ploverDictionaryUi.ts`, its styling lives in
-`static/plover-dictionary.css`, and the same tabs and actions are mounted on
-both platforms.
+`static/plover-dictionary.css`, and its tabs and actions are mounted only in the Android settings activity.
 
 ## Settings activity, not the IME
 
@@ -32,8 +31,7 @@ forms, validation, and search/edit state. Its `<input type="file">` uses
 WebView's standard file-chooser callback, and the selected filename or MIME
 type chooses JSON versus Python import semantics. On Android, native code
 retains the selected document URI and streams it directly into private staging;
-dictionary contents never cross `@JavascriptInterface` as a large string. The
-browser-only UI still uses `File.text()` or a `FileReader` fallback.
+dictionary contents never cross `@JavascriptInterface` as a large string.
 
 The separate `AndroidDictionary` bridge is intentionally small:
 
@@ -53,8 +51,7 @@ input-method switching.
 
 ## Available operations
 
-Android uses the same controller and Stripped Plover RPC methods as the browser
-surface:
+The Android controller offers these Stripped Plover operations:
 
 - refresh, enable/disable, reprioritize, solo, rename, and remove dictionaries;
 - create a named, writable blank JSON dictionary without selecting or
@@ -109,9 +106,7 @@ The Settings-hosted dictionary manager uses the shared dialog markup as a
 full-viewport, non-modal page. Its content area is the single primary vertical
 scroll container; dictionary lists and lookup results expand into that page
 instead of creating competing nested scrollers. This keeps touch scrolling
-reliable in Android WebView when a panel exceeds the available height. The
-ordinary browser UI still uses the bounded modal dialog and its compact inner
-result regions.
+reliable in Android WebView when a panel exceeds the available height.
 
 At phone widths, the full-screen manager also keeps its header and three tabs
 sticky, uses the Activity's existing top system-bar inset without applying it
