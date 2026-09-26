@@ -7,6 +7,11 @@ import {
 } from "./textBuffer";
 import { createUndoManager } from "./undoManager";
 import {
+  clipboardShortcut,
+  createSlottedClipboard,
+  mountClipboardSlots,
+} from "./slottedClipboard";
+import {
   getCandidateSelectionMatch,
   getFirstCandidateAppendStroke,
   isLoneCandidateSelectionStroke,
@@ -135,6 +140,8 @@ function applyRetroactiveSpace(
 // --- App State ---
 
 const buffer = new TextBuffer();
+const clipboardSlots = createSlottedClipboard(() => window.localStorage);
+let clipboardUi: ReturnType<typeof mountClipboardSlots> | null = null;
 interface AppState {
   islands: Island[];
   pendingCapitalization: boolean;
@@ -164,6 +171,7 @@ let strippedDisplay: { enabled: boolean; copyAllowed: boolean } = {
 };
 
 interface AndroidImeBridge {
+  setClipboardSlotsEnabled?(enabled: boolean): void;
   getInferenceModelError(): string;
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
@@ -328,6 +336,74 @@ function saveState(group?: string): void {
 
 function restoreState(): void {
   undoManager.undo();
+}
+
+function isV7ClipboardMode(): boolean {
+  return (
+    !isDictionaryManagementPage &&
+    !isRawMode &&
+    !strippedPlover.enabled &&
+    !androidPlainTextMode &&
+    !androidRawOutlineMode &&
+    !isAndroidEffectiveTelexMode() &&
+    (!androidIme || androidStenoModeEnabled)
+  );
+}
+
+function clipboardMessage(message: string): void {
+  clipboardUi?.update(isV7ClipboardMode(), clipboardSlots.get);
+  clipboardUi?.message(
+    message +
+      (clipboardSlots.isPersistent()
+        ? ""
+        : " Local storage is unavailable; changes are kept only for this session."),
+  );
+}
+
+function copyClipboardSlot(slot: number): void {
+  if (!isV7ClipboardMode()) return;
+  if (strippedDisplay.enabled && !strippedDisplay.copyAllowed && !androidIme) {
+    clipboardMessage("Copy is disabled in this display.");
+    return;
+  }
+  const selection = window.getSelection();
+  const display = document.getElementById("text-display");
+  const selected =
+    selection &&
+    display?.contains(selection.anchorNode) &&
+    display.contains(selection.focusNode)
+      ? selection.toString()
+      : "";
+  const text = selected || renderVisibleText(state.islands, state.candidates);
+  if (!text) {
+    clipboardMessage(`Nothing to copy; slot ${slot} unchanged.`);
+    return;
+  }
+  clipboardSlots.set(slot, text);
+  clipboardMessage(`Copied to slot ${slot} (${text.length} characters).`);
+}
+
+function pasteClipboardSlot(slot: number): void {
+  if (!isV7ClipboardMode()) return;
+  const text = clipboardSlots.get(slot);
+  if (text === null) {
+    clipboardMessage(`Slot ${slot} is empty.`);
+    return;
+  }
+  resetHardwareKeyboardState();
+  saveState();
+  piecemealCursorIndex = null;
+  // Preserve literal whitespace at both boundaries and keep it out of V7 decoding.
+  buffer.appendIsland(
+    createIsland("fixed", text, false, { explicitSpacing: true }),
+  );
+  state.candidates = [];
+  runInference();
+  updateDisplay();
+  clipboardMessage(`Pasted slot ${slot}. Undo with *.`);
+  if (clipboardUi?.contains(document.activeElement)) {
+    (document.activeElement as HTMLElement).blur();
+  }
 }
 
 function setPloverMessage(message: string): void {
@@ -2476,6 +2552,8 @@ function resetHardwareKeyboardState(): void {
 }
 
 function updateDisplay(): void {
+  androidIme?.setClipboardSlotsEnabled?.(isV7ClipboardMode());
+  clipboardUi?.update(isV7ClipboardMode(), clipboardSlots.get);
   if (androidIme) {
     updateInferenceStatusUI();
   }
@@ -2745,6 +2823,26 @@ document.addEventListener("keydown", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
+  const slotShortcut = clipboardShortcut(e);
+  const target = e.target instanceof Element ? e.target : null;
+  const editable = target?.closest(
+    "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+  );
+  if (
+    slotShortcut &&
+    isV7ClipboardMode() &&
+    !editable &&
+    !isDictionaryTextInputFocused(target)
+  ) {
+    e.preventDefault();
+    resetHardwareKeyboardState();
+    if (!e.repeat) {
+      if (slotShortcut.copy) copyClipboardSlot(slotShortcut.slot);
+      else pasteClipboardSlot(slotShortcut.slot);
+    }
+    return;
+  }
+  if (clipboardUi?.contains(target)) return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
     resetHardwareKeyboardState();
     if (!e.repeat) {
@@ -2863,6 +2961,7 @@ document.addEventListener("keyup", (e) => {
   if (!androidIme) {
     keyboardCapsLockActive = e.getModifierState("CapsLock");
   }
+  if (clipboardUi?.contains(e.target as Element | null)) return;
   if (isAndroidEffectiveTelexMode()) {
     e.preventDefault();
     return;
@@ -3593,6 +3692,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
       112,
       Math.ceil(
         toolbar.offsetHeight +
+          (document.getElementById("clipboard-slots")?.offsetHeight ?? 0) +
           verticalPadding +
           labelHeight +
           displayPadding +
@@ -3679,6 +3779,18 @@ window.setStrippedDisplay = (options = {}) => {
 };
 
 if (!isDictionaryManagementPage) {
+  clipboardUi = mountClipboardSlots({
+    copy: copyClipboardSlot,
+    paste: pasteClipboardSlot,
+    clear(slot) {
+      clipboardSlots.set(slot, null);
+      clipboardMessage(`Cleared slot ${slot}.`);
+    },
+    clearAll() {
+      clipboardSlots.clearAll();
+      clipboardMessage("Cleared all slots.");
+    },
+  });
   if (androidIme) {
     window.setStrippedDisplay();
     updateInferenceStatusUI();

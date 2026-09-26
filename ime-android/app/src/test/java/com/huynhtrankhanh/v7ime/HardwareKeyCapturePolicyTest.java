@@ -39,4 +39,26 @@ public class HardwareKeyCapturePolicyTest {
         assertFalse(policy.capturesModifiedPrintable(true, 'x', true, true));
         assertFalse(policy.capturesModifiedPrintable(false, '€', true, false));
     }
+
+    @Test
+    public void clipboardDigitsAreCapturedOnlyInV7WithOneModifier() {
+        for (int digit = 0; digit <= 9; digit++) {
+            for (int base : new int[]{KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0}) {
+                for (int modifier : new int[]{KeyEvent.META_CTRL_ON, KeyEvent.META_ALT_ON}) {
+                    KeyEvent event = new KeyEvent(0, 0, KeyEvent.ACTION_DOWN,
+                            base + digit, 0, modifier);
+                    assertTrue(policy.capturesClipboardSlot(event, true));
+                    assertFalse(policy.capturesClipboardSlot(event, false));
+                    assertTrue(policy.isCaptured(base + digit, 0, false));
+                }
+            }
+        }
+        for (int modifier : new int[]{0, KeyEvent.META_CTRL_ON | KeyEvent.META_ALT_ON,
+                KeyEvent.META_CTRL_ON | KeyEvent.META_SHIFT_ON, KeyEvent.META_META_ON}) {
+            assertFalse(policy.capturesClipboardSlot(new KeyEvent(0, 0,
+                    KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_1, 0, modifier), true));
+        }
+        assertFalse(policy.capturesClipboardSlot(new KeyEvent(0, 0,
+                KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_C, 0, KeyEvent.META_CTRL_ON), true));
+    }
 }

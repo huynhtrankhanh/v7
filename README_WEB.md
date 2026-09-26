@@ -129,6 +129,8 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 
 ### Shortcuts
 - `Ctrl+C`: Copies the entire text buffer to the clipboard if no text is selected.
+- `Alt+0` through `Alt+9`: Copies selected editor text, or the whole visible buffer, into a persistent V7 clipboard slot.
+- `Ctrl+0` through `Ctrl+9`: Appends that slot as one fixed text island. Undo with the normal `*` stroke.
 - `Ctrl+K`: Toggles the pressed-key keyboard display. The display is informational only; it does not accept clicks or change input behavior. In landscape orientation it appears to the right of the text and candidates, and in portrait orientation it appears below the candidate list.
 
 ### Stripped Display Mode

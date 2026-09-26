@@ -82,6 +82,7 @@ public class V7ImeService extends InputMethodService {
             HardwareInputMode.V7_PLOVER;
     private volatile boolean telexHasPreedit = false;
     private volatile boolean rawOutlineMode = false;
+    private volatile boolean v7ClipboardShortcutsEnabled = false;
     private TelexJavaScriptSandbox telexSandbox;
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
     private String nativeTelexRendered = "";
@@ -120,6 +121,7 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public View onCreateInputView() {
+        v7ClipboardShortcutsEnabled = false;
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
         }
@@ -406,8 +408,10 @@ public class V7ImeService extends InputMethodService {
                         event.getUnicodeChar(),
                         event.isAltPressed(),
                         event.isMetaPressed());
+        boolean captureClipboardSlot = hardwareKeyCapturePolicy.capturesClipboardSlot(
+                event, isV7PloverMode() && !rawOutlineMode && v7ClipboardShortcutsEnabled);
         if (isOsPassthroughModifierKey(event.getKeyCode())
-                || (!captureModifiedPrintable
+                || (!captureModifiedPrintable && !captureClipboardSlot
                         && (event.isCtrlPressed()
                                 || event.isAltPressed()
                                 || event.isMetaPressed()))) {
@@ -820,6 +824,9 @@ public class V7ImeService extends InputMethodService {
         }
         if (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9) {
             return "Digit" + (keyCode - KeyEvent.KEYCODE_0);
+        }
+        if (keyCode >= KeyEvent.KEYCODE_NUMPAD_0 && keyCode <= KeyEvent.KEYCODE_NUMPAD_9) {
+            return "Numpad" + (keyCode - KeyEvent.KEYCODE_NUMPAD_0);
         }
         switch (keyCode) {
             case KeyEvent.KEYCODE_SEMICOLON:
@@ -1380,6 +1387,13 @@ public class V7ImeService extends InputMethodService {
         private boolean isCurrentInputView() {
             return owner == webView
                     && inputViewOwnership.isCurrent(owner, ownerGeneration);
+        }
+
+        @JavascriptInterface
+        public void setClipboardSlotsEnabled(boolean enabled) {
+            if (isCurrentInputView()) {
+                v7ClipboardShortcutsEnabled = enabled;
+            }
         }
 
         @JavascriptInterface

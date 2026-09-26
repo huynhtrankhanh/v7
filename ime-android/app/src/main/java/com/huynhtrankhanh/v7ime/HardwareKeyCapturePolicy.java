@@ -9,6 +9,7 @@ final class HardwareKeyCapturePolicy {
             boolean telexModeEnabled) {
         if ((keyCode >= KeyEvent.KEYCODE_A && keyCode <= KeyEvent.KEYCODE_Z)
                 || (keyCode >= KeyEvent.KEYCODE_0 && keyCode <= KeyEvent.KEYCODE_9)
+                || (keyCode >= KeyEvent.KEYCODE_NUMPAD_0 && keyCode <= KeyEvent.KEYCODE_NUMPAD_9)
                 || keyCode == KeyEvent.KEYCODE_SEMICOLON
                 || keyCode == KeyEvent.KEYCODE_SPACE
                 || keyCode == KeyEvent.KEYCODE_SHIFT_LEFT
@@ -43,5 +44,14 @@ final class HardwareKeyCapturePolicy {
                 && unicodeChar != 0
                 && altPressed
                 && !metaPressed;
+    }
+
+    boolean capturesClipboardSlot(KeyEvent event, boolean v7Mode) {
+        boolean digit = (event.getKeyCode() >= KeyEvent.KEYCODE_0
+                && event.getKeyCode() <= KeyEvent.KEYCODE_9)
+                || (event.getKeyCode() >= KeyEvent.KEYCODE_NUMPAD_0
+                && event.getKeyCode() <= KeyEvent.KEYCODE_NUMPAD_9);
+        return v7Mode && digit && !event.isShiftPressed() && !event.isMetaPressed()
+                && (event.isCtrlPressed() != event.isAltPressed());
     }
 }

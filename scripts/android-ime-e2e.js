@@ -425,7 +425,13 @@ async function main() {
       "Android did not load the dedicated IME UI",
     );
     assert(
-      initial.height >= 112 && initial.height < 160,
+      initial.height >= 112 &&
+        initial.height <
+          160 +
+            (await page.$eval(
+              "#clipboard-slots",
+              (element) => element.offsetHeight,
+            )),
       `Empty IME did not request a compact content height: ${initial.height}`,
     );
     assert(

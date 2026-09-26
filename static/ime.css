@@ -45,6 +45,31 @@ button {
   font: inherit;
 }
 
+.ime-surface #clipboard-slots {
+  background: var(--ime-panel);
+  color: var(--ime-text);
+  border-color: var(--ime-line);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.ime-surface #clipboard-slots .slot-row {
+  border-color: var(--ime-line);
+}
+.ime-surface #clipboard-slots button {
+  background: var(--ime-panel-raised);
+  color: var(--ime-text);
+  border: 1px solid var(--ime-line);
+  border-radius: 6px;
+  min-height: 44px;
+}
+.ime-surface #clipboard-slots button:disabled {
+  color: var(--ime-muted);
+}
+.ime-surface #clipboard-slots summary {
+  min-height: 32px;
+  align-content: center;
+}
+
 #inference-shell {
   display: flex;
   flex-direction: column;

@@ -3,6 +3,13 @@
 `ime-android` packages the V7 WebUI as an Android input method with application ID
 `com.huynhtrankhanh.v7ime`.
 
+V7 composition includes ten persistent clipboard slots: **Alt+0–9** copies the
+composition or its selection, and **Ctrl+0–9** appends exact fixed text with normal
+`*` undo. Open **Clipboard slots** beneath the toolbar to preview, paste, or clear
+items by touch. Slots remain available after IME restarts and are hidden outside
+V7 mode. See [clipboard slot UX and behavior](../CLIPBOARD_SLOTS.md), including
+Android hardware routing and persistence details.
+
 The IME requires Android 8.0 (API 26) or newer. API 26 is the minimum supported
 by AndroidX JavaScriptEngine, which owns durable out-of-process dictionary
 imports.

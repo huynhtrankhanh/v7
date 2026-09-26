@@ -1,7 +1,7 @@
 import { Rope } from "./rope";
 
 export type IslandType =
-  "vietnamese" | "punctuation" | "capital" | "spacing" | "emily";
+  "vietnamese" | "punctuation" | "capital" | "spacing" | "emily" | "fixed";
 export type V7Mode = "compositional" | "dictionary";
 export type InferenceIsland =
   { kind: "fixed"; text: string } | { kind: "v7"; code: string; mode: V7Mode };
