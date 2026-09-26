@@ -301,7 +301,9 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 `Island` in `src/textBuffer.ts` is a discriminated union: narrow `island.type`
 before accessing variant-specific fields. Construct islands with
 `createIsland(type, value, options)`; its options and return type follow the
-chosen type. V7 islands require one `capitalization` choice (`none`, `initial`,
+chosen type. The complete argument tuple must match one island variant; narrow
+a union-valued type before calling the constructor with variant-specific options.
+V7 islands require one `capitalization` choice (`none`, `initial`,
 or `upper`) and one `validation` state (`pending`, `valid`, or `invalid`). The
 factory defaults to compositional mode, no capitalization, and pending
 validation. Only dictionary mode exposes `dictionaryBucketSize`; starting a

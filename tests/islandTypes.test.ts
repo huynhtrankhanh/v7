@@ -3,6 +3,8 @@ import {
   convertIslandsForInference,
   Island,
   TextBuffer,
+  V7Island,
+  PloverIsland,
 } from "../src/textBuffer";
 import {
   findPiecemealSyllableTargets,
@@ -34,6 +36,26 @@ function checkIslandTypes(island: Island): void {
   }
 }
 void checkIslandTypes;
+
+function checkUnionConstructor(type: "v7" | "plover"): void {
+  // @ts-expect-error A union discriminator cannot guarantee Plover options.
+  createIsland(type, "text", { phase: "preedit" });
+  // @ts-expect-error Explicit generic unions must not bypass tuple correlation.
+  createIsland<"v7" | "plover">(type, "text", { phase: "preedit" });
+  const options = { phase: "preedit" as const };
+  // @ts-expect-error Correlation is required for variables as well as literals.
+  createIsland(type, "text", options);
+  // @ts-expect-error V7 options cannot accompany a possible Plover discriminator.
+  createIsland(type, "text", { mode: "dictionary" });
+  if (type === "v7") {
+    const v7: V7Island = createIsland(type, "ma1", { mode: "dictionary" });
+    void v7;
+  } else {
+    const plover: PloverIsland = createIsland(type, "text", options);
+    void plover;
+  }
+}
+void checkUnionConstructor;
 
 test("mixed island kinds retain spacing, literal clipboard bytes, and wire format", () => {
   const islands = [

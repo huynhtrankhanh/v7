@@ -125,12 +125,36 @@ const islandFactories: {
   },
 };
 
+type IslandConstructorArguments = {
+  [K in IslandType]: [type: K, value: string, options?: IslandOptionsByType[K]];
+}[IslandType];
+
+// The complete argument tuple must match one variant. Checking only each
+// argument through a generic K would lose this correlation when K is a union.
 export function createIsland<K extends IslandType>(
-  type: K,
-  value: string,
-  options: IslandOptionsByType[K] = {},
-): IslandByType[K] {
-  return islandFactories[type](value, options);
+  ...args: [type: K, value: string, options?: IslandOptionsByType[K]] &
+    IslandConstructorArguments
+): IslandByType[K];
+export function createIsland(...args: IslandConstructorArguments): Island {
+  const [type, value, options] = args;
+  switch (type) {
+    case "vietnamese":
+      return islandFactories.vietnamese(value, options ?? {});
+    case "v7":
+      return islandFactories.v7(value, options ?? {});
+    case "plover":
+      return islandFactories.plover(value, options ?? {});
+    case "punctuation":
+      return islandFactories.punctuation(value, options ?? {});
+    case "capital":
+      return islandFactories.capital(value, options ?? {});
+    case "spacing":
+      return islandFactories.spacing(value, options ?? {});
+    case "emily":
+      return islandFactories.emily(value, options ?? {});
+    case "fixed":
+      return islandFactories.fixed(value, options ?? {});
+  }
 }
 
 export function shouldAddSpace(
