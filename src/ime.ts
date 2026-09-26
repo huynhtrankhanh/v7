@@ -119,8 +119,10 @@ function applyRetroactiveSpace(
     if (
       buffer.replaceIslandAt(lastIndex, {
         ...last,
-        explicitSpacing: true,
-        leftSpace: action === "insert",
+        spacing: {
+          before: action === "insert",
+          after: last.spacing?.after ?? false,
+        },
       })
     ) {
       changed = true;
@@ -362,9 +364,7 @@ function pasteClipboardSlot(slot: number): void {
   saveState();
   piecemealCursorIndex = null;
   // Preserve literal whitespace at both boundaries and keep it out of V7 decoding.
-  buffer.appendIsland(
-    createIsland("fixed", text, false, { explicitSpacing: true }),
-  );
+  buffer.appendIsland(createIsland("fixed", text));
   state.candidates = [];
   runInference();
   updateDisplay();
@@ -580,7 +580,8 @@ function syncPloverPreeditIndex(): void {
   const islands = buffer.getIslands();
   strippedPlover.preeditIndex = null;
   for (let i = islands.length - 1; i >= 0; i--) {
-    if (islands[i]?.ploverPreedit) {
+    const island = islands[i];
+    if (island.type === "plover" && island.phase === "preedit") {
       strippedPlover.preeditIndex = i;
       break;
     }
@@ -592,8 +593,8 @@ function finalizePloverPreedit(): void {
     const index = strippedPlover.preeditIndex;
     if (index >= 0 && index < buffer.getIslandCount()) {
       const island = buffer.getIslandAt(index);
-      if (island) {
-        buffer.replaceIslandAt(index, { ...island, ploverPreedit: false });
+      if (island?.type === "plover") {
+        buffer.replaceIslandAt(index, { ...island, phase: "committed" });
       }
     }
     strippedPlover.preeditIndex = null;
@@ -647,18 +648,13 @@ function applyPloverOutput(
   clearPloverPreedit();
 
   if (committedText) {
-    buffer.appendIsland(
-      createIsland("vietnamese", committedText, false, { plover: true }),
-    );
+    buffer.appendIsland(createIsland("plover", committedText));
   }
 
   if (!finalizePreedit) {
     if (normalizedPreedit) {
       buffer.appendIsland(
-        createIsland("vietnamese", normalizedPreedit, false, {
-          plover: true,
-          ploverPreedit: true,
-        }),
+        createIsland("plover", normalizedPreedit, { phase: "preedit" }),
       );
       strippedPlover.preeditIndex = buffer.getIslandCount() - 1;
     }
@@ -1816,10 +1812,9 @@ async function handleChord(stroke: string): Promise<void> {
     const capitalize = !uppercase && state.pendingCapitalization;
     state.pendingCapitalization = false;
     buffer.appendIsland(
-      createIsland("vietnamese", twoSyllableDecode.v7Code, true, {
-        capitalize,
-        uppercase,
-        v7Mode: dictionaryDecode ? "dictionary" : "compositional",
+      createIsland("v7", twoSyllableDecode.v7Code, {
+        capitalization: uppercase ? "upper" : capitalize ? "initial" : "none",
+        mode: dictionaryDecode ? "dictionary" : "compositional",
       }),
     );
     runInference();
@@ -1848,16 +1843,12 @@ async function handleChord(stroke: string): Promise<void> {
     saveState();
     // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
     buffer.appendIsland(
-      createIsland(
-        emilyResult.type,
-        applyCapsLockToText(emilyResult.value),
-        false,
-        {
-          leftSpace: emilyResult.leftSpace,
-          rightSpace: emilyResult.rightSpace,
-          explicitSpacing: emilyResult.explicitSpacing,
+      createIsland(emilyResult.type, applyCapsLockToText(emilyResult.value), {
+        spacing: {
+          before: !!emilyResult.leftSpace,
+          after: !!emilyResult.rightSpace,
         },
-      ),
+      }),
     );
     state.pendingCapitalization = emilyResult.capNext || false;
     piecemealCursorIndex = null;
@@ -1972,7 +1963,7 @@ async function handleChord(stroke: string): Promise<void> {
 
 async function runInference() {
   // Optimization: If no V7 islands, skip inference
-  const hasV7 = state.islands.some((i) => i.isV7);
+  const hasV7 = state.islands.some((i) => i.type === "v7");
   if (!hasV7) {
     inferenceRunGeneration += 1;
     abortInferenceRequest(true);
@@ -1994,13 +1985,12 @@ async function runInference() {
   state.candidates = [];
   buffer.setIslands(
     state.islands.map((island) => {
-      if (!island.isV7) return island;
-      const {
-        dictionaryBucketSize: _stale,
-        invalidV7Code: _invalid,
-        ...pendingIsland
-      } = island;
-      return pendingIsland;
+      if (island.type !== "v7") return island;
+      return createIsland("v7", island.value, {
+        mode: island.mode,
+        capitalization: island.capitalization,
+        spacing: island.spacing,
+      });
     }),
   );
   if (!shouldDeferAndroidInferenceRender()) {
@@ -2024,15 +2014,15 @@ async function runInference() {
     let v7Index = 0;
     buffer.setIslands(
       state.islands.map((island) => {
-        if (!island.isV7) return island;
+        if (island.type !== "v7") return island;
         const invalidV7Code = invalidV7Codes[v7Index++];
-        return island.v7Mode === "dictionary"
+        return island.mode === "dictionary"
           ? {
               ...island,
-              invalidV7Code,
+              validation: invalidV7Code ? "invalid" : "valid",
               dictionaryBucketSize: bucketSizes[dictionaryIndex++],
             }
-          : { ...island, invalidV7Code };
+          : { ...island, validation: invalidV7Code ? "invalid" : "valid" };
       }),
     );
     inferenceErrorMessage = "";
@@ -2292,7 +2282,7 @@ function updateDisplay(): void {
   const isEmpty =
     state.islands.length === 1 &&
     state.islands[0].value === "" &&
-    !state.islands[0].isV7;
+    state.islands[0].type !== "v7";
 
   display.replaceChildren();
   // Keep the compact buffer in a single inline context so literal spaces
@@ -2431,8 +2421,8 @@ function updateDisplay(): void {
         inferencePending: inferenceAbortController !== null,
         inferenceError: inferenceErrorMessage,
         v7Modes: state.islands
-          .filter((island) => island.isV7)
-          .map((island) => island.v7Mode ?? "compositional"),
+          .filter((island) => island.type === "v7")
+          .map((island) => island.mode),
       },
     }),
   );

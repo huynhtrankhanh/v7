@@ -276,7 +276,9 @@ and is never copied into `android-artifacts/`.
 
 The frontend organizes text into "islands" to manage spacing intelligently. The types are:
 
-*   **Vietnamese:** Whole syllables or V7 partially specified syllable pairs.
+*   **Vietnamese (`vietnamese`):** Literal syllable text.
+*   **V7 (`v7`):** Predictive codes with compositional or dictionary inference.
+*   **Plover (`plover`):** Literal output with a committed or preedit phase.
 *   **Punctuation:** `.` `,` `!` `?`.
 *   **Capital Letter:** Literal uppercase letters.
 *   **Spacing:** Explicit Space or Newline.
@@ -293,6 +295,27 @@ The frontend organizes text into "islands" to manage spacing intelligently. The 
 *   **Punctuation → Punctuation:** No space.
 *   **Any ↔ Spacing:** No extra space added.
 *   **Emily Symbols:** Explicit attachment metadata controls whether spacing is added around the symbol.
+
+### Island model for contributors
+
+`Island` in `src/textBuffer.ts` is a discriminated union: narrow `island.type`
+before accessing variant-specific fields. Construct islands with
+`createIsland(type, value, options)`; its options and return type follow the
+chosen type. V7 islands require one `capitalization` choice (`none`, `initial`,
+or `upper`) and one `validation` state (`pending`, `valid`, or `invalid`). The
+factory defaults to compositional mode, no capitalization, and pending
+validation. Only dictionary mode exposes `dictionaryBucketSize`; starting a
+new inference request discards the previous result metadata. Plover islands
+carry `phase: "committed" | "preedit"` and default to committed.
+
+An optional `spacing: { before, after }` overrides automatic boundary spacing.
+The right island's `before` takes precedence over the left island's `after`;
+explicit space/newline islands always suppress extra spacing. Vietnamese, V7,
+and Plover islands share the normal syllable spacing and piecemeal rules.
+Clipboard islands default to `{ before: false, after: false }` and remain
+literal, including their whitespace. Undo retains the complete island variant
+and its metadata. The Android inference wire format remains version 2 with
+`kind: "fixed"` and `kind: "v7"`; frontend variants are converted at that boundary.
 
 ## Stenographic Layout
 

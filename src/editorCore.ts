@@ -1,4 +1,10 @@
-import { Island, createIsland, shouldAddSpace } from "./textBuffer";
+import {
+  Island,
+  V7Island,
+  isSyllableIsland,
+  createIsland,
+  shouldAddSpace,
+} from "./textBuffer";
 import { isValidVietnameseSyllable } from "./vietnameseSyllables";
 
 export interface PiecemealSyllableTarget {
@@ -236,14 +242,15 @@ export function renderVisibleText(
     if (prev && shouldAddSpace(prev, curr)) {
       text += " ";
     }
-    if (curr.isV7) {
-      const prefix = curr.invalidV7Code
-        ? curr.v7Mode === "dictionary"
-          ? "DI: "
-          : "I: "
-        : curr.v7Mode === "dictionary"
-          ? "D: "
-          : "";
+    if (curr.type === "v7") {
+      const prefix =
+        curr.validation === "invalid"
+          ? curr.mode === "dictionary"
+            ? "DI: "
+            : "I: "
+          : curr.mode === "dictionary"
+            ? "D: "
+            : "";
       text += `[${prefix}${curr.value}]`;
     } else {
       text += curr.value;
@@ -278,7 +285,7 @@ export function renderVisibleTextSegments(
     if (prev && shouldAddSpace(prev, curr)) {
       segments.push({ text: " " });
     }
-    if (curr.isV7) {
+    if (curr.type === "v7") {
       const inferredPart = inferredV7Parts.get(i);
       if (inferredPart) {
         segments.push(
@@ -292,13 +299,14 @@ export function renderVisibleTextSegments(
           ),
         );
       } else {
-        const marker = curr.invalidV7Code
-          ? curr.v7Mode === "dictionary"
-            ? "DI: "
-            : "I: "
-          : curr.v7Mode === "dictionary"
-            ? "D: "
-            : "";
+        const marker =
+          curr.validation === "invalid"
+            ? curr.mode === "dictionary"
+              ? "DI: "
+              : "I: "
+            : curr.mode === "dictionary"
+              ? "D: "
+              : "";
         const unresolvedPrefix = `[${marker}`;
         segments.push(
           ...renderIslandWithPiecemealTargets(
@@ -404,8 +412,8 @@ export function findPiecemealSyllableTargets(
   const targets: PiecemealSyllableTarget[] = [];
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
     const island = islands[islandIndex];
-    if (island.type !== "vietnamese") continue;
-    if (island.isV7) {
+    if (!isSyllableIsland(island)) continue;
+    if (island.type === "v7") {
       targets.push(...findV7Syllables(island.value, islandIndex));
     } else {
       targets.push(...findFixedVietnameseSyllables(island.value, islandIndex));
@@ -423,6 +431,7 @@ export function replacePiecemealSyllable(
   if (!island) return islands;
 
   if (target.isV7) {
+    if (island.type !== "v7") return islands;
     const next = [
       ...islands.slice(0, target.islandIndex),
       ...splitV7IslandForReplacement(island, target, replacement),
@@ -431,6 +440,7 @@ export function replacePiecemealSyllable(
     return next.length > 0 ? next : [createIsland("vietnamese", "")];
   }
 
+  if (!isSyllableIsland(island) || island.type === "v7") return islands;
   const value =
     island.value.slice(0, target.start) +
     replacement +
@@ -519,31 +529,34 @@ function findInferredVietnameseSyllables(
 }
 
 function splitV7IslandForReplacement(
-  island: Island,
+  island: V7Island,
   target: PiecemealSyllableTarget,
   replacement: string,
 ): Island[] {
   const pieces: Island[] = [];
-  const residualMode =
-    island.v7Mode === "dictionary" ? { v7Mode: "compositional" as const } : {};
   const before = island.value.slice(0, target.start);
   const after = island.value.slice(target.end);
-  if (before) pieces.push({ ...island, value: before, ...residualMode });
+  const residualOptions = {
+    capitalization: island.capitalization,
+    validation: island.validation,
+    ...(island.spacing ? { spacing: island.spacing } : {}),
+  };
+  if (before) pieces.push(createIsland("v7", before, residualOptions));
   pieces.push(
     createIsland(
       "vietnamese",
-      island.uppercase || target.syllableIndex === 0
+      island.capitalization === "upper" || target.syllableIndex === 0
         ? applyIslandCapitalization(island, replacement)
         : replacement,
     ),
   );
   if (after)
-    pieces.push({
-      ...island,
-      value: after,
-      capitalize: false,
-      ...residualMode,
-    });
+    pieces.push(
+      createIsland("v7", after, {
+        ...residualOptions,
+        capitalization: island.capitalization === "upper" ? "upper" : "none",
+      }),
+    );
   return pieces;
 }
 
@@ -555,12 +568,12 @@ function renderIslandWithPiecemealTargets(
   offset: number,
   displayTargets?: PiecemealSyllableTarget[],
 ): VisibleTextSegment[] {
-  if (targetIds.size === 0 || island.type !== "vietnamese") {
+  if (targetIds.size === 0 || !isSyllableIsland(island)) {
     return [{ text: renderedValue }];
   }
   const targets =
     displayTargets ??
-    (island.isV7
+    (island.type === "v7"
       ? findV7Syllables(island.value, islandIndex)
       : findFixedVietnameseSyllables(island.value, islandIndex));
   const activeTargets = targets.filter((target) =>
@@ -638,12 +651,13 @@ export function renderCandidateText(
     if (prev && shouldAddSpace(prev, curr)) {
       text += " ";
     }
-    text += curr.isV7
-      ? applyIslandCapitalization(
-          curr,
-          topCandidate[v7PartIndex++] ?? `[${curr.value}]`,
-        )
-      : curr.value;
+    text +=
+      curr.type === "v7"
+        ? applyIslandCapitalization(
+            curr,
+            topCandidate[v7PartIndex++] ?? `[${curr.value}]`,
+          )
+        : curr.value;
   }
   return text;
 }
@@ -855,7 +869,7 @@ function renderCandidateWithV7Parts(
       text += " ";
     }
 
-    if (curr.isV7) {
+    if (curr.type === "v7") {
       const partText = applyIslandCapitalization(
         curr,
         candidate[v7PartIndex++] ?? `[${curr.value}]`,
@@ -1321,8 +1335,9 @@ function applyIslandCapitalization(
   island: Island | undefined,
   value: string,
 ): string {
-  if (island?.uppercase) return value.toLocaleUpperCase("vi");
-  if (!island?.capitalize || value.length === 0) return value;
+  if (island?.type !== "v7") return value;
+  if (island.capitalization === "upper") return value.toLocaleUpperCase("vi");
+  if (island.capitalization !== "initial" || value.length === 0) return value;
   return value.charAt(0).toLocaleUpperCase("vi") + value.slice(1);
 }
 
@@ -1333,7 +1348,7 @@ function getV7CandidateSlots(
   let candidatePartIndex = 0;
   for (let islandIndex = 0; islandIndex < islands.length; islandIndex++) {
     const island = islands[islandIndex];
-    if (!island.isV7) continue;
+    if (island.type !== "v7") continue;
     v7Slots.push({ islandIndex, fullCandidateIndex: candidatePartIndex + 1 });
     candidatePartIndex += 2;
   }

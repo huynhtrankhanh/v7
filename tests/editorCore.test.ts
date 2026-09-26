@@ -194,8 +194,8 @@ describe("editorCore keyboard input", () => {
 describe("editorCore candidate selection", () => {
   test("renders dictionary and illegal pre-inference markers", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, {
-        v7Mode: "dictionary",
+      createIsland("v7", "tro2ma1", {
+        mode: "dictionary",
         dictionaryBucketSize: 0,
       }),
     ];
@@ -206,13 +206,13 @@ describe("editorCore candidate selection", () => {
         .map((segment) => segment.text),
     ).toEqual(["tro2", "ma1"]);
     expect(
-      renderVisibleText([{ ...islands[0], invalidV7Code: true }], []),
+      renderVisibleText([{ ...islands[0], validation: "invalid" }], []),
     ).toBe("[DI: tro2ma1]");
     expect(
       renderVisibleText(
         [
-          createIsland("vietnamese", "bad0code0", true, {
-            invalidV7Code: true,
+          createIsland("v7", "bad0code0", {
+            validation: "invalid",
           }),
         ],
         [],
@@ -221,16 +221,16 @@ describe("editorCore candidate selection", () => {
   });
   test("does not report a dictionary miss before bucket lookup completes", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, {
-        v7Mode: "dictionary",
+      createIsland("v7", "tro2ma1", {
+        mode: "dictionary",
       }),
     ];
     expect(renderVisibleText(islands, [])).toBe("[D: tro2ma1]");
   });
   test("capitalizes inferred V7 text without changing the decoder request", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
-      createIsland("vietnamese", "ko0", true),
+      createIsland("v7", "tro2ma1", { capitalization: "initial" }),
+      createIsland("v7", "ko0"),
     ];
 
     expect(convertIslandsForInference(islands)).toEqual([
@@ -251,7 +251,7 @@ describe("editorCore candidate selection", () => {
   test("capitalizes V7 parts in complete alternating candidates", () => {
     const islands = [
       createIsland("vietnamese", "xin"),
-      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
+      createIsland("v7", "tro2ma1", { capitalization: "initial" }),
     ];
 
     expect(renderVisibleText(islands, [["xin ", "trời mà", ""]])).toBe(
@@ -261,8 +261,8 @@ describe("editorCore candidate selection", () => {
 
   test("uppercases every inferred V7 character for active Caps Lock", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
-      createIsland("vietnamese", "ko0", true, { uppercase: true }),
+      createIsland("v7", "tro2ma1", { capitalization: "upper" }),
+      createIsland("v7", "ko0", { capitalization: "upper" }),
     ];
 
     expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
@@ -276,7 +276,7 @@ describe("editorCore candidate selection", () => {
   test("candidate selection preserves older fixed text casing", () => {
     const islands = [
       createIsland("vietnamese", "fixed words"),
-      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
+      createIsland("v7", "tro2ma1", { capitalization: "upper" }),
     ];
     const candidates = [["fixed words ", "trời mà", ""]];
 
@@ -304,10 +304,7 @@ describe("editorCore candidate selection", () => {
   });
 
   test("builds selected text from replacement-only v7 candidates", () => {
-    const islands = [
-      createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true),
-    ];
+    const islands = [createIsland("v7", "tro2ma1"), createIsland("v7", "ko0")];
     expect(getSelectedCandidateText([["trời mà", "không"]], 0, islands)).toBe(
       "trời mà không",
     );
@@ -464,9 +461,9 @@ describe("editorCore candidate diff sections", () => {
     const fixedContext = Array.from({ length: 200 }, () => "giữ").join(" ");
     const islands = [
       createIsland("vietnamese", fixedContext),
-      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("v7", "tro2ma1"),
       createIsland("vietnamese", fixedContext),
-      createIsland("vietnamese", "ko0", true),
+      createIsland("v7", "ko0"),
     ];
     const plan = buildCandidateDiffPlan(islands, [
       ["trời mà", "không"],
@@ -500,9 +497,9 @@ describe("editorCore candidate diff sections", () => {
   test("uses v7 candidate parts for full-shape candidate sections", () => {
     const islands = [
       createIsland("vietnamese", "tôi"),
-      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("v7", "tro2ma1"),
       createIsland("vietnamese", "ăn"),
-      createIsland("vietnamese", "ko0", true),
+      createIsland("v7", "ko0"),
       createIsland("punctuation", "."),
     ];
     const plan = buildCandidateDiffPlan(islands, [
@@ -526,16 +523,13 @@ describe("editorCore candidate diff sections", () => {
 
 describe("editorCore screen output", () => {
   test("uses top candidate as preview when candidates exist", () => {
-    const islands = [createIsland("vietnamese", "raw", true)];
+    const islands = [createIsland("v7", "raw")];
     const candidates = [["đã suy luận"]];
     expect(renderVisibleText(islands, candidates)).toBe("đã suy luận");
   });
 
   test("renders replacement-only v7 candidates with island spacing", () => {
-    const islands = [
-      createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true),
-    ];
+    const islands = [createIsland("v7", "tro2ma1"), createIsland("v7", "ko0")];
     expect(renderVisibleText(islands, [["trời mà", "không"]])).toBe(
       "trời mà không",
     );
@@ -544,7 +538,7 @@ describe("editorCore screen output", () => {
   test("renders unresolved v7 islands as raw blocks when no candidates exist", () => {
     const islands = [
       createIsland("vietnamese", "xin"),
-      createIsland("vietnamese", "tro2", true),
+      createIsland("v7", "tro2"),
       createIsland("punctuation", "."),
     ];
     expect(renderVisibleText(islands, [])).toBe("xin [tro2].");
@@ -581,7 +575,7 @@ describe("editorCore piecemeal syllable edit", () => {
   test("keeps only the nine rightmost syllables across fixed text and v7 islands", () => {
     const targets = findPiecemealSyllableTargets([
       createIsland("vietnamese", "a à ả ã á ạ ai"),
-      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("v7", "tro2ma1"),
       createIsland("vietnamese", "tôi"),
     ]);
 
@@ -601,7 +595,7 @@ describe("editorCore piecemeal syllable edit", () => {
   test("renders fixed and v7 syllables as one shared nine-slot highlight sequence", () => {
     const islands = [
       createIsland("vietnamese", "tôi không"),
-      createIsland("vietnamese", "tro2ma1", true),
+      createIsland("v7", "tro2ma1"),
       createIsland("vietnamese", "thẹn về"),
     ];
 
@@ -628,12 +622,8 @@ describe("editorCore piecemeal syllable edit", () => {
 
   test("parses every v7 code in long compact islands", () => {
     const islands = [
-      createIsland(
-        "vietnamese",
-        "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7",
-        true,
-      ),
-      createIsland("vietnamese", "đo7đa1ku3", true),
+      createIsland("v7", "na0tro2dde7la1nhu0ma2khi0tro2mu0thi2no1ra6me7"),
+      createIsland("v7", "đo7đa1ku3"),
     ];
 
     expect(
@@ -669,10 +659,7 @@ describe("editorCore piecemeal syllable edit", () => {
 
   test("renders inferred v7 text while candidates are active", () => {
     const segments = renderVisibleTextSegments(
-      [
-        createIsland("vietnamese", "tôi"),
-        createIsland("vietnamese", "tro2ma1", true),
-      ],
+      [createIsland("vietnamese", "tôi"), createIsland("v7", "tro2ma1")],
       [["tôi ", "trời mà"]],
       0,
     );
@@ -687,7 +674,7 @@ describe("editorCore piecemeal syllable edit", () => {
   });
 
   test("maps full-shape inference candidates back to all-v7 syllable highlights", () => {
-    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+    const islands = [createIsland("v7", "tro2ma1")];
     expect(convertIslandsForInference(islands)).toEqual([
       { kind: "fixed", text: "" },
       { kind: "v7", code: "tro2ma1", mode: "compositional" },
@@ -704,10 +691,7 @@ describe("editorCore piecemeal syllable edit", () => {
   });
 
   test("maps replacement-only model candidates back to all-v7 syllable highlights", () => {
-    const islands = [
-      createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true),
-    ];
+    const islands = [createIsland("v7", "tro2ma1"), createIsland("v7", "ko0")];
     const candidates = [["trời mà", "không"]];
 
     expect(renderVisibleTextSegments(islands, candidates, 1)).toEqual([
@@ -728,10 +712,7 @@ describe("editorCore piecemeal syllable edit", () => {
   });
 
   test("preserves one highlight per editable v7 syllable for every cursor position", () => {
-    const islands = [
-      createIsland("vietnamese", "tro2ma1", true),
-      createIsland("vietnamese", "ko0", true),
-    ];
+    const islands = [createIsland("v7", "tro2ma1"), createIsland("v7", "ko0")];
     const candidates = [["trời mà", "không"]];
     const targetCount = findPiecemealSyllableTargets(islands).length;
 
@@ -753,7 +734,7 @@ describe("editorCore piecemeal syllable edit", () => {
   });
 
   test("does not drop inferred v7 highlights for syllables outside the fixed-stroke dictionary", () => {
-    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+    const islands = [createIsland("v7", "tro2ma1")];
 
     expect(markedSegments(islands, [["hello xyz"]], 1)).toEqual([
       { text: "hello", number: 2, cursor: true },
@@ -766,7 +747,7 @@ describe("editorCore piecemeal syllable edit", () => {
       fc.property(
         fc.array(v7CodeArbitrary, { minLength: 1, maxLength: 30 }),
         (codes) => {
-          const islands = [createIsland("vietnamese", codes.join(""), true)];
+          const islands = [createIsland("v7", codes.join(""))];
           const expected = codes.slice(-9).reverse();
 
           expect(
@@ -787,7 +768,7 @@ describe("editorCore piecemeal syllable edit", () => {
         (codes, firstCut, secondCut) => {
           const chunks = splitIntoThreeChunks(codes, firstCut, secondCut);
           const islands = chunks.map((chunk) =>
-            createIsland("vietnamese", chunk.join(""), true),
+            createIsland("v7", chunk.join("")),
           );
           const candidateParts = chunks.map((chunk, chunkIndex) =>
             chunk
@@ -825,9 +806,7 @@ describe("editorCore piecemeal syllable edit", () => {
           const chunks = splitIntoThreeChunks(codes, cut, cut);
           const islands = [
             createIsland("vietnamese", fixed.join(" ")),
-            ...chunks.map((chunk) =>
-              createIsland("vietnamese", chunk.join(""), true),
-            ),
+            ...chunks.map((chunk) => createIsland("v7", chunk.join(""))),
           ];
           const candidates = [
             [
@@ -867,54 +846,54 @@ describe("editorCore piecemeal syllable edit", () => {
   });
 
   test("splits v7 islands when replacing a v7 syllable", () => {
-    const islands = [createIsland("vietnamese", "tro2ma1", true)];
+    const islands = [createIsland("v7", "tro2ma1")];
     const target = findPiecemealSyllableTargets(islands)[0];
     const next = replacePiecemealSyllable(islands, target, "tôi");
 
     expect(next).toEqual([
-      createIsland("vietnamese", "tro2", true),
+      createIsland("v7", "tro2"),
       createIsland("vietnamese", "tôi"),
     ]);
   });
 
   test("demotes dictionary remnants after piecemeal replacement", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, {
-        v7Mode: "dictionary",
+      createIsland("v7", "tro2ma1", {
+        mode: "dictionary",
       }),
     ];
     const target = findPiecemealSyllableTargets(islands)[1];
     expect(replacePiecemealSyllable(islands, target, "mà")).toEqual([
       createIsland("vietnamese", "mà"),
-      createIsland("vietnamese", "ma1", true, {
-        capitalize: false,
-        v7Mode: "compositional",
+      createIsland("v7", "ma1", {
+        capitalization: "none",
+        mode: "compositional",
       }),
     ]);
   });
 
   test("consumes V7 island capitalization in a first-syllable replacement", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, { capitalize: true }),
+      createIsland("v7", "tro2ma1", { capitalization: "initial" }),
     ];
     const target = findPiecemealSyllableTargets(islands).at(-1);
     expect(target).toBeDefined();
 
     expect(replacePiecemealSyllable(islands, target!, "trời")).toEqual([
       createIsland("vietnamese", "Trời"),
-      createIsland("vietnamese", "ma1", true, { capitalize: false }),
+      createIsland("v7", "ma1", { capitalization: "none" }),
     ]);
   });
 
   test("keeps every syllable uppercase in Caps Lock piecemeal replacement", () => {
     const islands = [
-      createIsland("vietnamese", "tro2ma1", true, { uppercase: true }),
+      createIsland("v7", "tro2ma1", { capitalization: "upper" }),
     ];
     const target = findPiecemealSyllableTargets(islands)[0];
     expect(target).toBeDefined();
 
     expect(replacePiecemealSyllable(islands, target!, "mà")).toEqual([
-      createIsland("vietnamese", "tro2", true, { uppercase: true }),
+      createIsland("v7", "tro2", { capitalization: "upper" }),
       createIsland("vietnamese", "MÀ"),
     ]);
   });

@@ -1,25 +1,71 @@
 import { Rope } from "./rope";
 
-export type IslandType =
-  "vietnamese" | "punctuation" | "capital" | "spacing" | "emily" | "fixed";
 export type V7Mode = "compositional" | "dictionary";
 export type InferenceIsland =
   { kind: "fixed"; text: string } | { kind: "v7"; code: string; mode: V7Mode };
 
-export interface Island {
-  type: IslandType;
+export interface IslandSpacing {
+  before: boolean;
+  after: boolean;
+}
+interface TextIslandFields {
   value: string;
-  isV7?: boolean;
-  v7Mode?: V7Mode;
-  dictionaryBucketSize?: number;
-  invalidV7Code?: boolean;
-  leftSpace?: boolean;
-  rightSpace?: boolean;
-  explicitSpacing?: boolean;
-  plover?: boolean;
-  ploverPreedit?: boolean;
-  capitalize?: boolean;
-  uppercase?: boolean;
+  spacing?: IslandSpacing;
+}
+export type V7Capitalization = "none" | "initial" | "upper";
+export type V7Validation = "pending" | "valid" | "invalid";
+export type V7Island = TextIslandFields & {
+  type: "v7";
+  capitalization: V7Capitalization;
+  validation: V7Validation;
+} & (
+    | { mode: "compositional" }
+    | { mode: "dictionary"; dictionaryBucketSize?: number }
+  );
+export type VietnameseIsland = TextIslandFields & { type: "vietnamese" };
+export type PloverIsland = TextIslandFields & {
+  type: "plover";
+  phase: "committed" | "preedit";
+};
+export interface IslandByType {
+  vietnamese: VietnameseIsland;
+  v7: V7Island;
+  plover: PloverIsland;
+  punctuation: TextIslandFields & { type: "punctuation" };
+  capital: TextIslandFields & { type: "capital" };
+  spacing: TextIslandFields & { type: "spacing" };
+  emily: TextIslandFields & { type: "emily" };
+  fixed: TextIslandFields & { type: "fixed"; spacing: IslandSpacing };
+}
+export type IslandType = keyof IslandByType;
+export type Island = IslandByType[IslandType];
+type SpacingOptions = { spacing?: IslandSpacing };
+export type V7IslandOptions = SpacingOptions & {
+  capitalization?: V7Capitalization;
+  validation?: V7Validation;
+} & (
+    | { mode?: "compositional" }
+    | { mode: "dictionary"; dictionaryBucketSize?: number }
+  );
+interface IslandOptionsByType {
+  vietnamese: SpacingOptions;
+  v7: V7IslandOptions;
+  plover: SpacingOptions & { phase?: PloverIsland["phase"] };
+  punctuation: SpacingOptions;
+  capital: SpacingOptions;
+  spacing: SpacingOptions;
+  emily: SpacingOptions;
+  fixed: SpacingOptions;
+}
+
+export function isSyllableIsland(
+  island: Island,
+): island is VietnameseIsland | V7Island | PloverIsland {
+  return (
+    island.type === "vietnamese" ||
+    island.type === "v7" ||
+    island.type === "plover"
+  );
 }
 
 export interface BufferSnapshot {
@@ -37,13 +83,54 @@ export type HistorySaveOptions = HistoryFrameFields & {
 
 type HistoryEntry = BufferSnapshot & HistorySaveOptions;
 
-export function createIsland(
-  type: IslandType,
+const islandFactories: {
+  [K in IslandType]: (
+    value: string,
+    options: IslandOptionsByType[K],
+  ) => IslandByType[K];
+} = {
+  vietnamese: (value, options) => ({ type: "vietnamese", value, ...options }),
+  punctuation: (value, options) => ({ type: "punctuation", value, ...options }),
+  capital: (value, options) => ({ type: "capital", value, ...options }),
+  spacing: (value, options) => ({ type: "spacing", value, ...options }),
+  emily: (value, options) => ({ type: "emily", value, ...options }),
+  fixed: (value, options) => ({
+    type: "fixed",
+    value,
+    spacing: options.spacing ?? { before: false, after: false },
+  }),
+  plover: (value, options) => ({
+    type: "plover",
+    value,
+    ...options,
+    phase: options.phase ?? "committed",
+  }),
+  v7: (value, options) => {
+    const fields = {
+      type: "v7" as const,
+      value,
+      ...(options.spacing ? { spacing: options.spacing } : {}),
+      capitalization: options.capitalization ?? "none",
+      validation: options.validation ?? "pending",
+    };
+    return options.mode === "dictionary"
+      ? {
+          ...fields,
+          mode: "dictionary",
+          ...(options.dictionaryBucketSize === undefined
+            ? {}
+            : { dictionaryBucketSize: options.dictionaryBucketSize }),
+        }
+      : { ...fields, mode: "compositional" };
+  },
+};
+
+export function createIsland<K extends IslandType>(
+  type: K,
   value: string,
-  isV7 = false,
-  meta: Partial<Island> = {},
-): Island {
-  return { type, value, isV7, ...meta };
+  options: IslandOptionsByType[K] = {},
+): IslandByType[K] {
+  return islandFactories[type](value, options);
 }
 
 export function shouldAddSpace(
@@ -51,14 +138,14 @@ export function shouldAddSpace(
   curr: Island | null,
 ): boolean {
   if (!prev || !curr) return false;
-  if (prev.value === "" && !prev.isV7) return false;
+  if (prev.value === "" && prev.type !== "v7") return false;
   if (prev.type === "spacing" || curr.type === "spacing") return false;
 
-  if (prev.explicitSpacing || curr.explicitSpacing) {
-    if (curr.explicitSpacing) {
-      return !!curr.leftSpace;
+  if (prev.spacing || curr.spacing) {
+    if (curr.spacing) {
+      return curr.spacing.before;
     }
-    return !!prev.rightSpace;
+    return prev.spacing?.after ?? false;
   }
 
   if (curr.type === "punctuation") return false;
@@ -69,8 +156,8 @@ export function shouldAddSpace(
     return true;
   }
 
-  if (prev.type === "vietnamese") {
-    if (curr.type === "vietnamese") return true;
+  if (isSyllableIsland(prev)) {
+    if (isSyllableIsland(curr)) return true;
     if (curr.type === "capital") return true;
   }
 
@@ -86,7 +173,7 @@ export function convertIslandsForInference(
   for (let i = 0; i < islands.length; i++) {
     const curr = islands[i];
 
-    if (curr.isV7) {
+    if (curr.type === "v7") {
       const prev = i > 0 ? islands[i - 1] : null;
       if (prev && shouldAddSpace(prev, curr)) {
         currentFixed.append(" ");
@@ -97,7 +184,7 @@ export function convertIslandsForInference(
       serverIslands.push({
         kind: "v7",
         code: curr.value,
-        mode: curr.v7Mode ?? "compositional",
+        mode: curr.mode,
       });
     } else {
       const prev = i > 0 ? islands[i - 1] : null;
@@ -126,7 +213,7 @@ export class TextBuffer {
       initialIslands && initialIslands.length > 0
         ? initialIslands
         : [createIsland("vietnamese", "")];
-    this.islands = Rope.fromArray(seeds, () => 1);
+    this.islands = Rope.fromArray<Island>(seeds, () => 1);
   }
 
   get pendingCapitalization(): boolean {
@@ -150,7 +237,7 @@ export class TextBuffer {
   }
 
   setIslands(next: Island[]): void {
-    this.islands = Rope.fromArray(next, () => 1);
+    this.islands = Rope.fromArray<Island>(next, () => 1);
   }
 
   appendIsland(value: Island): void {
@@ -161,7 +248,7 @@ export class TextBuffer {
     const lastIndex = this.islands.length() - 1;
     if (lastIndex < 0) return false;
     const last = this.islands.getAt(lastIndex);
-    if (!last || last.type !== "vietnamese" || !last.value.endsWith(" "))
+    if (!last || !isSyllableIsland(last) || !last.value.endsWith(" "))
       return false;
     const trimmedValue = last.value.slice(0, -1);
     return this.islands.replaceAt(lastIndex, { ...last, value: trimmedValue });
@@ -176,7 +263,10 @@ export class TextBuffer {
   }
 
   reset(): void {
-    this.islands = Rope.fromArray([createIsland("vietnamese", "")], () => 1);
+    this.islands = Rope.fromArray<Island>(
+      [createIsland("vietnamese", "")],
+      () => 1,
+    );
     this._pendingCapitalization = false;
     this.history = [];
   }
@@ -223,15 +313,15 @@ export class TextBuffer {
       : { piecemealCursorIndex: snap.piecemealCursorIndex };
   }
 
-  appendVietnamese(text: string, meta: Partial<Island> = {}): void {
+  appendVietnamese(text: string, meta: SpacingOptions = {}): void {
     this.save();
     const value = this.applyCapitalization(text);
-    this.islands.append(createIsland("vietnamese", value, false, meta));
+    this.islands.append(createIsland("vietnamese", value, meta));
   }
 
   appendV7(code: string): void {
     this.save();
-    this.islands.append(createIsland("vietnamese", code, true));
+    this.islands.append(createIsland("v7", code));
   }
 
   appendSpacing(value: string): void {
@@ -249,10 +339,10 @@ export class TextBuffer {
     this.islands.append(createIsland("capital", value));
   }
 
-  replaceWithText(text: string, meta: Partial<Island> = {}): void {
+  replaceWithText(text: string, meta: SpacingOptions = {}): void {
     this.save();
-    this.islands = Rope.fromArray(
-      [createIsland("vietnamese", text, false, meta)],
+    this.islands = Rope.fromArray<Island>(
+      [createIsland("vietnamese", text, meta)],
       () => 1,
     );
     this._pendingCapitalization = false;

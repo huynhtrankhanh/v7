@@ -70,9 +70,7 @@ test("fixed paste preserves exact boundaries in rendering and inference and undo
   const buffer = new TextBuffer([createIsland("vietnamese", "xin")]);
   const undo = createUndoManager(buffer, () => {});
   undo.save();
-  buffer.appendIsland(
-    createIsland("fixed", "\n chào!  ", false, { explicitSpacing: true }),
-  );
+  buffer.appendIsland(createIsland("fixed", "\n chào!  "));
   buffer.appendIsland(createIsland("vietnamese", "bạn"));
   expect(renderVisibleText(buffer.getIslands(), [])).toBe("xin\n chào!  bạn");
   expect(convertIslandsForInference(buffer.getIslands())).toEqual([

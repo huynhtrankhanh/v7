@@ -57,14 +57,10 @@ describe("undoManager plover behavior", () => {
     const undoManager = createUndoManager(buffer, () => {});
 
     undoManager.savePlover({ recordHistory: false, hadPreedit: false });
-    buffer.appendIsland(
-      createIsland("vietnamese", "first", false, { plover: true }),
-    );
+    buffer.appendIsland(createIsland("plover", "first"));
 
     undoManager.savePlover({ recordHistory: false, hadPreedit: false });
-    buffer.appendIsland(
-      createIsland("vietnamese", "second", false, { plover: true }),
-    );
+    buffer.appendIsland(createIsland("plover", "second"));
 
     expect(undoManager.undo()).toBe(true);
     expect(buffer.getIslands().map((island) => island.value)).toEqual([
@@ -93,9 +89,7 @@ describe("undoManager plover behavior", () => {
           expectedUndoSteps += 1;
         }
         undoManager.savePlover({ recordHistory: false, hadPreedit });
-        buffer.appendIsland(
-          createIsland("vietnamese", `plover-${i}`, false, { plover: true }),
-        );
+        buffer.appendIsland(createIsland("plover", `plover-${i}`));
       }
 
       let undoSteps = 0;
@@ -117,9 +111,7 @@ describe("undoManager plover behavior", () => {
 
       for (const part of parts) {
         undoManager.savePlover({ recordHistory: true, hadPreedit: false });
-        buffer.appendIsland(
-          createIsland("vietnamese", part, false, { plover: true }),
-        );
+        buffer.appendIsland(createIsland("plover", part));
       }
 
       let undoSteps = 0;
