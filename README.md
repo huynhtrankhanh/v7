@@ -30,12 +30,13 @@ V7 is a Vietnamese input method for Android, designed for an external QWERTY or 
 `ime-android` packages the V7 WebUI as an Android input method with application ID
 `com.huynhtrankhanh.v7ime`.
 
-V7 composition includes ten persistent clipboard slots: **Alt+0–9** copies the
-composition or its selection, and **Ctrl+0–9** appends exact fixed text with normal
-`*` undo. Open **Clipboard slots** beneath the toolbar to preview, paste, or clear
-items by touch. Slots remain available after IME restarts and are hidden outside
-V7 mode. See [clipboard slot UX and behavior](CLIPBOARD_SLOTS.md), including
-Android hardware routing and persistence details.
+V7 and Plover composition share ten persistent clipboard slots. **Alt+0–9**
+copies selected host text or the visible IME buffer; **Ctrl+0–9** appends exact
+fixed text with `*` undo. Plover paste finishes its current preedit and starts a
+fresh translation context after the pasted text. Only occupied slots appear as
+compact paste buttons; empty slots consume no screen space. Edit or clear slots
+in **Settings → Manage clipboard slots**. Storage belongs to the native Android
+app and survives WebView resets. See [clipboard behavior](CLIPBOARD_SLOTS.md).
 
 The IME requires Android 8.0 (API 26) or newer. API 26 is the minimum supported
 by AndroidX JavaScriptEngine, which owns durable out-of-process dictionary
@@ -370,7 +371,7 @@ Spacing is not applied for `{*!}` and `{*?}` retrospective space macros.
 
 The composition view shows the nine rightmost Vietnamese syllables with piecemeal numbers and highlights. Intervening non-Vietnamese runs of up to three characters remain visible; longer runs become `…`. An empty buffer shows 👋. The candidate panel is hidden without alternatives and omits candidate 1 (`current`), which is already shown in the buffer. Red and black diff regions identify the two useful change sections; their ranges are also logged for debugging.
 
-There is no standalone editor, raw-text textarea, browser clipboard override, keyboard-debug display, or `setStrippedDisplay` embedding API. Q+A (`#S`) opens Android's input-method picker. Ctrl+C and other ordinary editor shortcuts retain their Android host behavior. Clipboard slots are app-private: Alt+0–9 copies the IME composition or its selection, Ctrl+0–9 appends exact fixed text, and normal `*` undo removes each paste. See [clipboard slots](CLIPBOARD_SLOTS.md) for selection, persistence, clearing, and native-routing details.
+There is no standalone editor, raw-text textarea, browser clipboard override, keyboard-debug display, or `setStrippedDisplay` embedding API. Q+A (`#S`) opens Android's input-method picker. Ctrl+C and other ordinary editor shortcuts retain their Android host behavior. Clipboard slots are app-private: Alt+0–9 copies selected host text or the IME composition, Ctrl+0–9 appends exact fixed text, and normal `*` undo removes each paste. See [clipboard slots](CLIPBOARD_SLOTS.md) for selection, persistence, clearing, and native-routing details.
 
 ## Stripped Plover controls
 

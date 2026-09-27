@@ -327,7 +327,15 @@ export class TextBuffer {
     });
   }
 
-  undo(): HistoryFrameFields | null {
+  undo(group?: string): HistoryFrameFields | null {
+    if (group !== undefined) {
+      let index = this.history.length - 1;
+      while (index >= 0 && this.history[index].group !== group) index--;
+      if (index < 0) return null;
+      // Plover manages translation undo itself. At a clipboard boundary its
+      // later buffer snapshots are obsolete; restore the paste's own frame.
+      this.history.splice(index + 1);
+    }
     const snap = this.history.pop();
     if (!snap) return null;
     this.islands = snap.islands.clone();

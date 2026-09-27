@@ -46,6 +46,7 @@ public class SettingsActivity extends Activity {
         Button chooseModel = findViewById(R.id.choose_model);
         Button chooseDictionaryMode = findViewById(R.id.choose_dictionary_mode);
         Button useBundledDictionary = findViewById(R.id.use_bundled_dictionary);
+        findViewById(R.id.manage_clipboard_slots).setOnClickListener(view -> manageClipboardSlots());
         Button manageDictionaries = findViewById(R.id.manage_dictionaries);
         exportAppData = findViewById(R.id.export_app_data);
         importAppData = findViewById(R.id.import_app_data);
@@ -74,6 +75,69 @@ public class SettingsActivity extends Activity {
                 manager.showInputMethodPicker();
             }
         });
+    }
+
+    private void manageClipboardSlots() {
+        ClipboardSlotStore store = new ClipboardSlotStore(this);
+        String[] items = new String[10];
+        for (int slot = 0; slot < 10; slot++) {
+            String text = store.get(slot);
+            String preview = text == null ? getString(R.string.clipboard_empty)
+                    : text.replaceAll("\\s+", " ");
+            if (preview.length() > 80) preview = preview.substring(0, 80) + "…";
+            items[slot] = slot + " · " + preview;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.clipboard_slots_heading)
+                .setItems(items, (dialog, slot) -> editClipboardSlot(slot))
+                .setPositiveButton(android.R.string.ok, null)
+                .setNeutralButton(R.string.clipboard_clear_all, (dialog, which) ->
+                        new AlertDialog.Builder(this)
+                                .setMessage(R.string.clipboard_clear_confirm)
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .setPositiveButton(R.string.clipboard_clear_all, (confirmation, button) -> {
+                                    if (!store.clear()) clipboardSaveFailed();
+                                    manageClipboardSlots();
+                                }).show())
+                .show();
+    }
+
+    private void editClipboardSlot(int slot) {
+        ClipboardSlotStore store = new ClipboardSlotStore(this);
+        android.widget.EditText text = new android.widget.EditText(this);
+        text.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        text.setMinLines(3);
+        text.setMaxLines(10);
+        text.setText(store.get(slot));
+        android.widget.LinearLayout container = new android.widget.LinearLayout(this);
+        int padding = (int) (20 * getResources().getDisplayMetrics().density);
+        container.setPadding(padding, padding / 2, padding, 0);
+        container.addView(text, new android.widget.LinearLayout.LayoutParams(-1, -2));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(getString(R.string.clipboard_slot_title, slot))
+                .setView(container)
+                .setPositiveButton(R.string.clipboard_save, null)
+                .setNeutralButton(R.string.clipboard_clear, null)
+                .setNegativeButton(android.R.string.cancel, (ignored, which) -> manageClipboardSlots())
+                .create();
+        dialog.setOnShowListener(ignored -> {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+                if (!store.set(slot, text.getText().toString())) { clipboardSaveFailed(); return; }
+                dialog.dismiss();
+                manageClipboardSlots();
+            });
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(view -> {
+                if (!store.set(slot, null)) { clipboardSaveFailed(); return; }
+                dialog.dismiss();
+                manageClipboardSlots();
+            });
+        });
+        dialog.show();
+    }
+
+    private void clipboardSaveFailed() {
+        Toast.makeText(this, R.string.clipboard_save_failed, Toast.LENGTH_LONG).show();
     }
 
     private void chooseModel() {

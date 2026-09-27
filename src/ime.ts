@@ -10,6 +10,7 @@ import {
   clipboardShortcut,
   createSlottedClipboard,
   mountClipboardSlots,
+  SLOT_STORAGE_KEY,
 } from "./slottedClipboard";
 import {
   getCandidateSelectionMatch,
@@ -135,7 +136,36 @@ function applyRetroactiveSpace(
 // --- App State ---
 
 const buffer = new TextBuffer();
-const clipboardSlots = createSlottedClipboard(() => window.localStorage);
+const clipboardSlots = createSlottedClipboard({
+  load: () => {
+    const bridge = window.AndroidIme;
+    if (!bridge?.getClipboardSlots)
+      throw new Error("Native clipboard storage unavailable");
+    return JSON.parse(bridge.getClipboardSlots());
+  },
+  save: (slot, text) =>
+    window.AndroidIme?.setClipboardSlot?.(slot, text) ?? false,
+  clear: () => false, // Management and clearing belong to native Settings.
+});
+const clipboardPasteIslands = new WeakMap<Island, string>();
+let clipboardPasteCounter = 0;
+let compositionOperations = Promise.resolve();
+function enqueueCompositionOperation(
+  operation: () => void | Promise<void>,
+): void {
+  const epoch = androidInputEpoch;
+  const capsLock = keyboardCapsLockActive;
+  compositionOperations = compositionOperations
+    .then(async () => {
+      if (epoch !== androidInputEpoch) return;
+      keyboardCapsLockActive = capsLock;
+      await operation();
+    })
+    .catch((error) => {
+      console.error("Composition operation failed", error);
+      clipboardMessage(errorMessage(error, "Operation failed."));
+    });
+}
 let clipboardUi: ReturnType<typeof mountClipboardSlots> | null = null;
 interface AppState {
   islands: Island[];
@@ -160,7 +190,10 @@ const state: AppState = {
 };
 let inferenceErrorMessage = "";
 interface AndroidImeBridge {
-  setClipboardSlotsEnabled?(enabled: boolean): void;
+  getClipboardSlots?(): string;
+  setClipboardSlot?(slot: number, text: string | null): boolean;
+  migrateClipboardSlots?(json: string): boolean;
+  showClipboardMessage?(message: string): void;
   getInferenceModelError(): string;
   getInferenceModelState(): string;
   hasPloverConfiguration(): boolean;
@@ -309,14 +342,13 @@ function saveState(group?: string): void {
   undoManager.save(group);
 }
 
-function restoreState(): void {
-  undoManager.undo();
+function restoreState(group?: string): void {
+  undoManager.undo(group);
 }
 
-function isV7ClipboardMode(): boolean {
+function isClipboardMode(): boolean {
   return (
     !isDictionaryManagementPage &&
-    !strippedPlover.enabled &&
     !androidPlainTextMode &&
     !androidRawOutlineMode &&
     !isAndroidEffectiveTelexMode() &&
@@ -325,17 +357,17 @@ function isV7ClipboardMode(): boolean {
 }
 
 function clipboardMessage(message: string): void {
-  clipboardUi?.update(isV7ClipboardMode(), clipboardSlots.get);
+  clipboardUi?.update(isClipboardMode(), clipboardSlots.snapshot());
   clipboardUi?.message(
     message +
       (clipboardSlots.isPersistent()
         ? ""
-        : " Local storage is unavailable; changes are kept only for this session."),
+        : " Saving failed; this change is kept only for this session."),
   );
 }
 
-function copyClipboardSlot(slot: number): void {
-  if (!isV7ClipboardMode()) return;
+function copyClipboardSlot(slot: number, hostSelection?: string | null): void {
+  if (!isClipboardMode()) return;
   const selection = window.getSelection();
   const display = document.getElementById("text-display");
   const selected =
@@ -344,7 +376,10 @@ function copyClipboardSlot(slot: number): void {
     display.contains(selection.focusNode)
       ? selection.toString()
       : "";
-  const text = selected || renderVisibleText(state.islands, state.candidates);
+  const text =
+    hostSelection ||
+    selected ||
+    renderVisibleText(state.islands, state.candidates);
   if (!text) {
     clipboardMessage(`Nothing to copy; slot ${slot} unchanged.`);
     return;
@@ -353,18 +388,27 @@ function copyClipboardSlot(slot: number): void {
   clipboardMessage(`Copied to slot ${slot} (${text.length} characters).`);
 }
 
-function pasteClipboardSlot(slot: number): void {
-  if (!isV7ClipboardMode()) return;
+async function pasteClipboardSlot(slot: number): Promise<void> {
+  if (!isClipboardMode()) return;
   const text = clipboardSlots.get(slot);
   if (text === null) {
     clipboardMessage(`Slot ${slot} is empty.`);
     return;
   }
   resetHardwareKeyboardState();
-  saveState();
+  if (strippedPlover.enabled) {
+    const epoch = androidInputEpoch;
+    await requestAndroidPlover("reset_state", {});
+    if (epoch !== androidInputEpoch) return;
+    finalizePloverPreedit();
+  }
+  const undoGroup = `clipboard:${++clipboardPasteCounter}`;
+  saveState(undoGroup);
   piecemealCursorIndex = null;
   // Preserve literal whitespace at both boundaries and keep it out of V7 decoding.
-  buffer.appendIsland(createIsland("fixed", text));
+  const pasted = createIsland("fixed", text);
+  clipboardPasteIslands.set(pasted, undoGroup);
+  buffer.appendIsland(pasted);
   state.candidates = [];
   runInference();
   updateDisplay();
@@ -1691,6 +1735,11 @@ async function handleChord(stroke: string): Promise<void> {
   }
 
   if (strippedPlover.enabled && !androidPlainTextMode) {
+    const last = state.islands[state.islands.length - 1];
+    if (stroke === "*" && last && clipboardPasteIslands.has(last)) {
+      restoreState(clipboardPasteIslands.get(last));
+      return;
+    }
     await handlePloverStroke(stroke, { oneShot: false });
     return;
   }
@@ -2205,8 +2254,7 @@ function resetHardwareKeyboardState(): void {
 }
 
 function updateDisplay(): void {
-  androidIme?.setClipboardSlotsEnabled?.(isV7ClipboardMode());
-  clipboardUi?.update(isV7ClipboardMode(), clipboardSlots.get);
+  clipboardUi?.update(isClipboardMode(), clipboardSlots.snapshot());
   if (androidIme) {
     updateInferenceStatusUI();
   }
@@ -2442,15 +2490,19 @@ document.addEventListener("keydown", (e) => {
   );
   if (
     slotShortcut &&
-    isV7ClipboardMode() &&
+    isClipboardMode() &&
     !editable &&
     !isDictionaryTextInputFocused(target)
   ) {
     e.preventDefault();
     resetHardwareKeyboardState();
     if (!e.repeat) {
-      if (slotShortcut.copy) copyClipboardSlot(slotShortcut.slot);
-      else pasteClipboardSlot(slotShortcut.slot);
+      if (slotShortcut.copy)
+        enqueueCompositionOperation(() => copyClipboardSlot(slotShortcut.slot));
+      else
+        enqueueCompositionOperation(() =>
+          pasteClipboardSlot(slotShortcut.slot),
+        );
     }
     return;
   }
@@ -2536,9 +2588,7 @@ document.addEventListener("keyup", (e) => {
 
   const strokeStr = keyboardStrokeTracker.keyUp(e.key);
   if (strokeStr) {
-    handleChord(strokeStr).catch((err) => {
-      console.error("Stroke handling failed", err);
-    });
+    enqueueCompositionOperation(() => handleChord(strokeStr));
   }
 });
 
@@ -2921,6 +2971,13 @@ declare global {
       epoch: number,
     ) => void;
     handleAndroidTelexAvailability?: (ready: boolean) => void;
+    refreshClipboardSlotsFromAndroid?: () => void;
+    handleAndroidClipboardSlot?: (
+      slot: number,
+      copy: boolean,
+      epoch: number,
+      selectedText?: string | null,
+    ) => void;
     handleAndroidKeyEvent?: (
       action: "keydown" | "keyup",
       key: string,
@@ -3213,6 +3270,23 @@ window.clearPreeditFromAndroid = (epoch) => {
 
 window.resetHardwareKeyboardStateFromAndroid = resetHardwareKeyboardState;
 
+window.refreshClipboardSlotsFromAndroid = updateDisplay;
+
+window.handleAndroidClipboardSlot = (slot, copy, epoch, selectedText) => {
+  if (
+    epoch !== androidInputEpoch ||
+    !isClipboardMode() ||
+    !Number.isInteger(slot) ||
+    slot < 0 ||
+    slot > 9
+  )
+    return;
+  resetHardwareKeyboardState();
+  enqueueCompositionOperation(() =>
+    copy ? copyClipboardSlot(slot, selectedText) : pasteClipboardSlot(slot),
+  );
+};
+
 window.handleAndroidKeyEvent = (
   action,
   key,
@@ -3243,17 +3317,18 @@ window.handleAndroidKeyEvent = (
 };
 
 if (!isDictionaryManagementPage) {
+  try {
+    const legacy = window.localStorage.getItem(SLOT_STORAGE_KEY);
+    if (legacy && androidIme?.migrateClipboardSlots?.(legacy)) {
+      window.localStorage.removeItem(SLOT_STORAGE_KEY);
+    }
+  } catch {
+    /* Native slots still work when WebView storage is unavailable. */
+  }
   clipboardUi = mountClipboardSlots({
-    copy: copyClipboardSlot,
-    paste: pasteClipboardSlot,
-    clear(slot) {
-      clipboardSlots.set(slot, null);
-      clipboardMessage(`Cleared slot ${slot}.`);
-    },
-    clearAll() {
-      clipboardSlots.clearAll();
-      clipboardMessage("Cleared all slots.");
-    },
+    paste: (slot) =>
+      enqueueCompositionOperation(() => pasteClipboardSlot(slot)),
+    message: (text) => androidIme?.showClipboardMessage?.(text),
   });
   if (androidIme) {
     updateInferenceStatusUI();

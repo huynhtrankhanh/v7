@@ -65,8 +65,8 @@ export function createUndoManager(
     );
   }
 
-  function undo(): boolean {
-    const fields = buffer.undo();
+  function undo(group?: string): boolean {
+    const fields = buffer.undo(group);
     if (fields) {
       hasActivePloverGroup = false;
       onUndoApplied(fields);

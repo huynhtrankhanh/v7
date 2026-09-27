@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 final class HardwareKeyPressOwnership {
-    enum Owner { WEB, NATIVE, EDITOR }
+    enum Owner { WEB, NATIVE, EDITOR, CLIPBOARD, FORWARDED }
 
     static final class Claim {
         final Owner owner;

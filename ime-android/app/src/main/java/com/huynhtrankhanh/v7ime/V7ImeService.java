@@ -2,6 +2,7 @@ package com.huynhtrankhanh.v7ime;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.content.pm.ApplicationInfo;
 import android.inputmethodservice.InputMethodService;
@@ -57,6 +58,14 @@ public class V7ImeService extends InputMethodService {
     private final HardwareKeyPressOwnership hardwareKeyPressOwnership =
             new HardwareKeyPressOwnership();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private SharedPreferences clipboardPreferences;
+    private final Runnable refreshClipboardSlots = () -> evaluateJavascript(
+            "window.refreshClipboardSlotsFromAndroid && window.refreshClipboardSlotsFromAndroid()");
+    private final SharedPreferences.OnSharedPreferenceChangeListener clipboardListener =
+            (preferences, key) -> {
+                mainHandler.removeCallbacks(refreshClipboardSlots);
+                mainHandler.post(refreshClipboardSlots);
+            };
     private FrameLayout inputContainer;
     private volatile WebView webView;
     private boolean inferenceWarmupScheduled = false;
@@ -82,7 +91,6 @@ public class V7ImeService extends InputMethodService {
             HardwareInputMode.V7_PLOVER;
     private volatile boolean telexHasPreedit = false;
     private volatile boolean rawOutlineMode = false;
-    private volatile boolean v7ClipboardShortcutsEnabled = false;
     private TelexJavaScriptSandbox telexSandbox;
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
     private String nativeTelexRendered = "";
@@ -109,6 +117,8 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onCreate() {
         super.onCreate();
+        clipboardPreferences = new ClipboardSlotStore(this).preferences();
+        clipboardPreferences.registerOnSharedPreferenceChangeListener(clipboardListener);
         telexSandbox = new TelexJavaScriptSandbox(this);
         warmTelexSandbox();
         serviceGeneration = SERVICE_OWNERSHIP.claim(this);
@@ -121,7 +131,6 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public View onCreateInputView() {
-        v7ClipboardShortcutsEnabled = false;
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
         }
@@ -275,6 +284,9 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        if (clipboardPreferences != null) {
+            clipboardPreferences.unregisterOnSharedPreferenceChangeListener(clipboardListener);
+        }
         SERVICE_OWNERSHIP.release(this, serviceGeneration);
         keyboardVisibilityController.finishInput();
         mainHandler.removeCallbacksAndMessages(null);
@@ -354,16 +366,24 @@ public class V7ImeService extends InputMethodService {
                         event.getRepeatCount()
                 );
         if (hardwareAction != HardwareKeyActionResolver.Action.PASS_THROUGH) {
-            return dispatchModeKeyAction(event, hardwareAction);
+            boolean handled = dispatchModeKeyAction(event, hardwareAction);
+            if (HardwareEditorKeyPolicy.isModifier(event.getKeyCode())) {
+                return forwardHardwareKeyToEditor(event);
+            }
+            return handled;
         }
         HardwareKeyPressOwnership.Claim keyClaim =
                 hardwareKeyPressOwnership.get(event.getKeyCode());
         if (event.getAction() == KeyEvent.ACTION_UP && keyClaim != null) {
             hardwareKeyPressOwnership.release(event.getKeyCode());
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.FORWARDED) {
+                return forwardHardwareKeyToEditor(event);
+            }
             if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
                 return false;
             }
             if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.CLIPBOARD) return true;
             if (keyClaim.owner == HardwareKeyPressOwnership.Owner.NATIVE) {
                 return dispatchNativeTelexKey(event);
             }
@@ -371,10 +391,14 @@ public class V7ImeService extends InputMethodService {
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() > 0 && keyClaim != null) {
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.FORWARDED) {
+                return forwardHardwareKeyToEditor(event);
+            }
             if (keyClaim.owner == HardwareKeyPressOwnership.Owner.EDITOR) {
                 return false;
             }
             if (!keyClaim.belongsTo(inputGeneration.get())) return true;
+            if (keyClaim.owner == HardwareKeyPressOwnership.Owner.CLIPBOARD) return true;
             if (keyClaim.owner == HardwareKeyPressOwnership.Owner.NATIVE) {
                 boolean handled = dispatchNativeTelexKey(event);
                 if (!handled) {
@@ -391,6 +415,19 @@ public class V7ImeService extends InputMethodService {
                 return handled;
             }
             return dispatchPhysicalKeyToWeb("keydown", event);
+        }
+        if (HardwareEditorKeyPolicy.isModifier(event.getKeyCode())
+                || HardwareEditorKeyPolicy.isSelectionNavigation(event)) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                // Finish before the editor changes its selection. A later
+                // composing update must never replace the selected host text.
+                if (HardwareEditorKeyPolicy.isSelectionNavigation(event)) {
+                    finishCurrentPreedit();
+                }
+                hardwareKeyPressOwnership.claim(event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.FORWARDED, inputGeneration.get());
+            }
+            return forwardHardwareKeyToEditor(event);
         }
         if (hardwareInputMode == HardwareInputMode.NORMAL && !rawOutlineMode) {
             if (event.getAction() == KeyEvent.ACTION_DOWN
@@ -409,7 +446,29 @@ public class V7ImeService extends InputMethodService {
                         event.isAltPressed(),
                         event.isMetaPressed());
         boolean captureClipboardSlot = hardwareKeyCapturePolicy.capturesClipboardSlot(
-                event, isV7PloverMode() && !rawOutlineMode && v7ClipboardShortcutsEnabled);
+                event, isV7PloverMode() && !rawOutlineMode);
+        if (captureClipboardSlot && webView != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                hardwareKeyPressOwnership.claim(event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.CLIPBOARD, inputGeneration.get());
+                if (event.getRepeatCount() == 0) {
+                    String signature = "clipboard-key:" + event.getKeyCode() + ":" + event.getEventTime();
+                    if (signature.equals(lastKeyEventSignature)) return true;
+                    lastKeyEventSignature = signature;
+                    int base = event.getKeyCode() >= KeyEvent.KEYCODE_NUMPAD_0
+                            ? KeyEvent.KEYCODE_NUMPAD_0 : KeyEvent.KEYCODE_0;
+                    InputConnection connection = getCurrentInputConnection();
+                    CharSequence selected = event.isAltPressed() && connection != null
+                            ? connection.getSelectedText(0) : null;
+                    String selectedJson = selected == null ? "null" : JSONObject.quote(selected.toString());
+                    webView.evaluateJavascript("window.handleAndroidClipboardSlot && "
+                            + "window.handleAndroidClipboardSlot("
+                            + (event.getKeyCode() - base) + "," + event.isAltPressed()
+                            + "," + inputGeneration.get() + "," + selectedJson + ")", null);
+                }
+            }
+            return true;
+        }
         if (isOsPassthroughModifierKey(event.getKeyCode())
                 || (!captureModifiedPrintable && !captureClipboardSlot
                         && (event.isCtrlPressed()
@@ -465,6 +524,15 @@ public class V7ImeService extends InputMethodService {
                     inputGeneration.get());
         }
         return captured;
+    }
+
+    private boolean forwardHardwareKeyToEditor(KeyEvent event) {
+        String signature = "editor-key:" + event.getAction() + ":"
+                + event.getKeyCode() + ":" + event.getEventTime();
+        if (signature.equals(lastKeyEventSignature)) return true;
+        lastKeyEventSignature = signature;
+        InputConnection connection = getCurrentInputConnection();
+        return connection != null && connection.sendKeyEvent(event);
     }
 
     private boolean dispatchNativeTelexKey(KeyEvent event) {
@@ -1390,10 +1458,25 @@ public class V7ImeService extends InputMethodService {
         }
 
         @JavascriptInterface
-        public void setClipboardSlotsEnabled(boolean enabled) {
-            if (isCurrentInputView()) {
-                v7ClipboardShortcutsEnabled = enabled;
-            }
+        public String getClipboardSlots() {
+            return new ClipboardSlotStore(V7ImeService.this).toJson();
+        }
+
+        @JavascriptInterface
+        public boolean setClipboardSlot(int slot, String text) {
+            return isCurrentInputView() && new ClipboardSlotStore(V7ImeService.this).set(slot, text);
+        }
+
+        @JavascriptInterface
+        public boolean migrateClipboardSlots(String json) {
+            return isCurrentInputView() && new ClipboardSlotStore(V7ImeService.this).migrate(json);
+        }
+
+        @JavascriptInterface
+        public void showClipboardMessage(String text) {
+            if (isCurrentInputView()) mainHandler.post(() ->
+                    android.widget.Toast.makeText(V7ImeService.this, text,
+                            android.widget.Toast.LENGTH_SHORT).show());
         }
 
         @JavascriptInterface

@@ -1,46 +1,41 @@
-# V7 clipboard slots
+# Clipboard slots
 
-V7 has ten private clipboard slots, numbered 0–9. They are independent of the system clipboard; Ctrl+C keeps its Android host-editor behavior. Open **Clipboard slots** above the editor to see previews and use the same actions with buttons.
+Android owns ten private text slots, numbered 0–9. They work in both V7 and Stripped Plover composition modes. They are independent of the system clipboard.
 
-| Action | Shortcut | Result |
-| --- | --- | --- |
-| Copy to slot | Alt+number | Save selected editor text; with no editor selection, save the whole visible buffer. |
-| Paste slot | Ctrl+number | Append saved text to the buffer as a new fixed text island. |
-| Clear slot | Clear button beside slot | Remove that saved item. |
-| Clear all | Clear all slots button | Remove all ten saved items. |
+## Copy and paste
 
-## Selection and insertion
+**Alt+number** copies the host editor's selected text when a selection exists. Otherwise it copies a selection inside the IME buffer, or the entire visible buffer. Empty text leaves the previous slot unchanged. Copying overwrites that slot and reports the result with a native toast.
 
-Copy stores plain rendered text, including accents, capitalization, spaces, and newlines. The currently displayed top inference candidate is used when copying the buffer. When inference is unavailable, visible V7 code markers are copied as displayed. Selections outside the editor do not supply slot text. Copying an empty buffer leaves the previous slot unchanged. Copy overwrites an occupied slot immediately, with a status message identifying the slot and character count.
+**Ctrl+number** appends the slot as one fixed island in the IME composition. It appends to the buffer instead of replacing a selection inside the IME. In the host editor, Android inserts composing text at its current cursor or selected range as usual. Text bypasses decoding, capitalization, automatic boundary spacing, and piecemeal syllable editing. Whitespace is exact: `world` after `hello` produces `helloworld`; use ` world` if a separator is wanted. Later predictive islands still receive the pasted text as fixed inference context.
 
-Paste always appends at the end of the island buffer, even when text is selected or the piecemeal cursor is active. It does not replace a selection. Each paste creates one independent fixed island and exits piecemeal navigation. Its text bypasses V7 decoding, capitalization, and automatic spacing at both boundaries. Include any desired separator in the saved text: pasting `world` after `hello` produces `helloworld`; pasting ` world` produces `hello world`. Later V7 islands are inferred normally, with the pasted text provided as fixed context. Fixed clipboard text is not a piecemeal syllable-edit target.
+The number row and numeric keypad both work. Shift, Meta, and combined Ctrl+Alt do not trigger slot shortcuts. Holding a shortcut performs it once. Native Android routing consumes its digit down, repeats, and release; digits never enter steno aggregation. Input-generation checks discard stale callbacks. Slots are unavailable in Telex, Normal typing, raw-outline entry, and dictionary management.
 
-Each successful paste saves one normal history frame. The normal `*` undo stroke (Spacebar by itself) removes that paste and restores the preceding buffer and piecemeal cursor. Repeated pastes undo individually. Empty-slot paste reports “Slot N is empty” and creates no history entry. Copy and clearing slots do not modify the buffer or its undo history; undoing a paste does not clear its source slot.
+## Plover boundary and undo
 
-## Availability and keyboard behavior
+A Plover paste waits for preceding translation operations to finish. It then resets Plover's translation context, marks the current visible preedit as committed buffer text, and appends the fixed island. Plover remains enabled. The next stroke begins a fresh translation after the literal paste; multi-stroke replacement cannot cross that boundary.
 
-The feature appears only in V7 composition mode, including its compositional and dictionary strokes. The panel and slot shortcuts are unavailable in Stripped Plover, Android plain typing, Telex, raw-outline mode, and dictionary management pages. Existing slots survive mode changes. V7 composition permits copying into private slots independently of OS clipboard permissions.
+Each paste creates one undo frame. `*` removes the most recent paste. In Plover mode, when the buffer ends at a clipboard island, this undo belongs to V7's buffer history rather than Plover's empty translation context. New Plover translations use Plover's usual undo; after they are undone back to a clipboard boundary, `*` can remove the paste. Undoing the paste preserves the preceding finalized text; it does not revive the old Plover translation context. Consecutive pastes undo individually. Empty-slot paste creates no undo entry and does not terminate Plover preedit. A failed Plover reset aborts paste before changing the buffer.
 
-## Android IME
+Copy, editing slots, and clearing slots do not change composition history. Undoing a paste never clears its source slot. A new host input session clears composition as usual but retains slots.
 
-Android is the primary client. Its dark clipboard panel sits beneath the IME toolbar, has touch targets of at least 44 pixels for actions, and contributes to the measured keyboard height. Opening the slot list requests a height update so the composition area remains available. Clear buttons provide a touch UI even with no hardware keyboard.
+## Screen layout and management
 
-The WebUI reports slot availability to the native service through `setClipboardSlotsEnabled`, so switching to Stripped Plover also releases the shortcuts. The native hardware key handler captures Ctrl+digit and Alt+digit only while slots are enabled in V7 mode. It forwards digit-down and digit-up events, modifier flags, repeat state, and the input-generation epoch through `handleAndroidKeyEvent`. The numeric keypad is supported too. Other modified keys keep their usual host-app routing. Stale events from earlier input sessions are ignored. Pasted text updates Android's composing text through the existing `setPreeditText` bridge; normal undo updates the same composition.
+The IME displays a single horizontally scrolling row of occupied slots, with a number and short text preview. Tap an item to paste. Touch targets are at least 44 pixels high. The row contributes to keyboard height only while visible. When every slot is empty it is hidden with zero height, including after an empty-slot shortcut. Feedback uses native toasts, so status messages do not reserve keyboard space.
 
-Alt+number copies the IME's composition buffer or a selection inside that buffer. It does not read selected text from the host app. A slot paste stays in the IME composition until committed through the usual editor flow. Changing host apps or starting a new composition clears the buffer according to existing IME rules but retains the slots. Android WebView DOM storage is enabled already; saved slots live in the app's WebView profile and survive WebView recreation and IME restarts. Clearing app data removes them.
+Open the Android app's **Settings → Manage clipboard slots** to view all ten slots. Choose one to edit exact multiline text, save it, or clear it. Empty text clears that slot. **Clear all slots** asks for confirmation. Clearing is permanent and does not participate in composition undo. Settings and the IME read the same native store; edits appear without recreating the WebView.
 
-Shortcuts use Ctrl for paste and Alt for copy on every platform. They work with the physical number row and numeric keypad; key-only digit events are also supported. Shift, Meta, AltGraph, combined Ctrl+Alt, and composing events are excluded. Holding a shortcut performs its action once. Shortcuts are handled before steno chord tracking so digits cannot leak into a chord. Text fields and dictionary controls retain their native shortcuts.
+## Persistence
 
-Browsers and operating systems sometimes reserve Ctrl+number or Alt+number. V7 prevents browser actions when it receives these shortcuts while in V7 mode. If the operating system intercepts a shortcut first, use the panel buttons. Buttons have slot-specific accessible names, empty slots disable Paste and Clear, and feedback is announced through a live status region. The collapsible list scrolls within a bounded height and wraps its controls on narrow screens. Previews truncate at 120 characters; copying and pasting retain the full text.
+`ClipboardSlotStore` uses app-private Android SharedPreferences named `clipboard_slots`. Each slot is saved individually with a synchronous commit whose result is reported to the caller. Slots survive WebView recreation, WebView storage deletion, and process restarts. Clearing Android app data or uninstalling removes them. They are not synced between devices and are not included in the existing Plover database export.
 
-## Persistence and clearing
+Existing `v7.clipboard-slots.v1` localStorage data is migrated once when accessible. Native storage remains authoritative afterward; clearing slots in Settings prevents migration from bringing them back. The legacy key is removed only after successful migration. New slot operations do not depend on localStorage. If a write fails, the IME retains that change for the session and reports that saving failed.
 
-Slots are stored under `v7.clipboard-slots.v1` in localStorage, scoped to this browser profile and site origin. They survive reloads and browser restarts where local storage is available. They are not sent to an OS clipboard or a slot-sync service; pasted text becomes part of the editor buffer and follows its usual inference flow. Do not expect slots to synchronize across devices or open tabs: each page loads its own snapshot and writes all ten slots on changes.
+## Host selection
 
-Clear removes the item from the current page and saves the cleared state immediately. Clearing slots is immediate and has no undo. Clearing browser site data also removes saved slots. If storage is blocked or full, the current page remains usable and reports that changes last only for the session. Malformed saved data is ignored safely.
+Shift+Left/Right/Up/Down and Ctrl+Shift+Left/Right/Up/Down belong to the host editor. Native routing sends balanced modifier events and finishes composition before forwarding the first selection navigation event. The editor then extends its selection over committed text; later composing updates from the old input generation cannot replace it. Using another key during Ctrl+Shift cancels the mode-toggle chord.
 
-## Implementation and validation
+## Implementation and checks
 
-`src/slottedClipboard.ts` owns slot storage, shortcut recognition, and the panel. `src/ime.ts` applies mode and selection policies and inserts fixed islands through the existing buffer and undo manager. The `fixed` island type uses the existing fixed-text inference path, with explicit boundaries to preserve literal text.
+`src/slottedClipboard.ts` handles slot snapshots, shortcut recognition, and the compact row. `src/ime.ts` serializes strokes and clipboard operations and inserts fixed islands. `V7ImeService` routes native shortcuts directly through `handleAndroidClipboardSlot`, supplies host selected text, and exposes the persistent store through the Android bridge. `SettingsActivity` manages that same store.
 
-Run `npm run test:unit -- --runInBand tests/slottedClipboard.test.ts` for storage, modifier, rendering, inference, and undo coverage. Run `npm run test:clipboard-slots` for Android bridge shortcuts, preedit updates, persistence, clearing, and mode coverage.
+`npm run test:clipboard-slots` covers native-bridge persistence with WebView storage disabled, host selection copy, V7 and Plover paste, a delayed Plover reset followed by an immediate stroke, undo, empty layout, Settings edits, modes, and stale callbacks. `tests/slottedClipboard.test.ts` covers storage failures, live Settings updates, shortcut modifiers, exact inference text, and buffer undo. Native tests cover persistence/migration, slot routing, selection modifiers, and cancellation of the mode chord.

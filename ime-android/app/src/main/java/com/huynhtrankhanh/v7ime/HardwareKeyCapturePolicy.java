@@ -46,12 +46,12 @@ final class HardwareKeyCapturePolicy {
                 && !metaPressed;
     }
 
-    boolean capturesClipboardSlot(KeyEvent event, boolean v7Mode) {
+    boolean capturesClipboardSlot(KeyEvent event, boolean stenoMode) {
         boolean digit = (event.getKeyCode() >= KeyEvent.KEYCODE_0
                 && event.getKeyCode() <= KeyEvent.KEYCODE_9)
                 || (event.getKeyCode() >= KeyEvent.KEYCODE_NUMPAD_0
                 && event.getKeyCode() <= KeyEvent.KEYCODE_NUMPAD_9);
-        return v7Mode && digit && !event.isShiftPressed() && !event.isMetaPressed()
+        return stenoMode && digit && !event.isShiftPressed() && !event.isMetaPressed()
                 && (event.isCtrlPressed() != event.isAltPressed());
     }
 }

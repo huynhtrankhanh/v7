@@ -77,4 +77,14 @@
     <string name="translation_changed_before_replace">The existing translation changed before replacement. Review it and try again.</string>
     <string name="plover_request_failed">Stripped Plover request failed.</string>
     <string name="close">Close</string>
+    <string name="clipboard_slots_heading">Clipboard slots</string>
+    <string name="clipboard_slots_description">Alt + 0–9 copies the IME buffer. Ctrl + 0–9 pastes in V7 or Plover mode. Saved items appear as shortcuts above the buffer; empty slots take no space. Edit or clear items here. Text and whitespace are preserved exactly.</string>
+    <string name="manage_clipboard_slots">Manage clipboard slots</string>
+    <string name="clipboard_empty">Empty</string>
+    <string name="clipboard_slot_title">Clipboard slot %1$d</string>
+    <string name="clipboard_save">Save</string>
+    <string name="clipboard_clear">Clear</string>
+    <string name="clipboard_clear_all">Clear all slots</string>
+    <string name="clipboard_clear_confirm">Remove all saved clipboard items? This cannot be undone.</string>
+    <string name="clipboard_save_failed">Could not save clipboard changes. Please try again.</string>
 </resources>

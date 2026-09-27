@@ -45,29 +45,34 @@ button {
   font: inherit;
 }
 
-.ime-surface #clipboard-slots {
+#clipboard-slots {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--ime-line);
+}
+#clipboard-slots[hidden],
+#clipboard-slots button[hidden] {
+  display: none;
+}
+#clipboard-slots button {
+  flex: 0 0 auto;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 10px;
+  min-height: 44px;
+  border: 1px solid var(--ime-line);
+  border-radius: 8px;
   background: var(--ime-panel);
-  color: var(--ime-text);
-  border-color: var(--ime-line);
-  padding: 6px 10px;
+  color: var(--ime-muted);
   font-size: 12px;
 }
-.ime-surface #clipboard-slots .slot-row {
-  border-color: var(--ime-line);
-}
-.ime-surface #clipboard-slots button {
-  background: var(--ime-panel-raised);
-  color: var(--ime-text);
-  border: 1px solid var(--ime-line);
-  border-radius: 6px;
-  min-height: 44px;
-}
-.ime-surface #clipboard-slots button:disabled {
-  color: var(--ime-muted);
-}
-.ime-surface #clipboard-slots summary {
-  min-height: 32px;
-  align-content: center;
+#clipboard-slots button:active {
+  color: var(--ime-accent);
 }
 
 #inference-shell {

@@ -6,7 +6,12 @@ import static org.junit.Assert.assertTrue;
 import android.view.KeyEvent;
 
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.robolectric.RobolectricTestRunner;
+import org.robolectric.annotation.Config;
 
+@RunWith(RobolectricTestRunner.class)
+@Config(manifest = Config.NONE, sdk = 35)
 public class HardwareKeyCapturePolicyTest {
     private final HardwareKeyCapturePolicy policy = new HardwareKeyCapturePolicy();
 
@@ -41,7 +46,7 @@ public class HardwareKeyCapturePolicyTest {
     }
 
     @Test
-    public void clipboardDigitsAreCapturedOnlyInV7WithOneModifier() {
+    public void clipboardDigitsAreCapturedInStenoModesWithOneModifier() {
         for (int digit = 0; digit <= 9; digit++) {
             for (int base : new int[]{KeyEvent.KEYCODE_0, KeyEvent.KEYCODE_NUMPAD_0}) {
                 for (int modifier : new int[]{KeyEvent.META_CTRL_ON, KeyEvent.META_ALT_ON}) {
