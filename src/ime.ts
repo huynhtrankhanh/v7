@@ -261,6 +261,7 @@ let androidInferenceRequestId = 1;
 let inferenceRunGeneration = 0;
 let lastRequestedAndroidKeyboardHeight = 0;
 let lastExpandedAndroidKeyboardHeight = 160;
+let wasCompactAndroidKeyboardHeight = false;
 let androidPloverRequestId = 1;
 const ANDROID_PLOVER_REQUEST_TIMEOUT_MS = 180_000;
 const androidPloverPending = new Map<
@@ -358,6 +359,8 @@ function isClipboardMode(): boolean {
 
 function clipboardMessage(message: string): void {
   clipboardUi?.update(isClipboardMode(), clipboardSlots.snapshot());
+  const candidateArea = document.getElementById("candidate-area");
+  if (candidateArea) syncAndroidKeyboardHeight(candidateArea);
   clipboardUi?.message(
     message +
       (clipboardSlots.isPersistent()
@@ -3165,17 +3168,21 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
     document.body.classList.contains("android-telex") ||
     document.body.classList.contains("android-raw-outline");
   if (compact) {
-    if (lastRequestedAndroidKeyboardHeight !== 48) {
-      lastRequestedAndroidKeyboardHeight = 48;
-      androidIme.setKeyboardHeight(48);
+    const compactHeight =
+      48 + (document.getElementById("clipboard-slots")?.offsetHeight ?? 0);
+    wasCompactAndroidKeyboardHeight = true;
+    if (lastRequestedAndroidKeyboardHeight !== compactHeight) {
+      lastRequestedAndroidKeyboardHeight = compactHeight;
+      androidIme.setKeyboardHeight(compactHeight);
     }
     return;
   }
 
   // Restore the last measured full surface before the browser paints the mode
-  // transition. Measuring from a 48 dp compact viewport first makes the full
+  // transition. Measuring from the compact viewport first makes the full
   // workbench flash through a squeezed intermediate layout.
-  if (lastRequestedAndroidKeyboardHeight === 48) {
+  if (wasCompactAndroidKeyboardHeight) {
+    wasCompactAndroidKeyboardHeight = false;
     lastRequestedAndroidKeyboardHeight = lastExpandedAndroidKeyboardHeight;
     androidIme.setKeyboardHeight(lastExpandedAndroidKeyboardHeight);
   }

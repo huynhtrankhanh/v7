@@ -64,6 +64,7 @@ async function main() {
       window.__ploverRequests = [];
       window.__ploverContext = "";
       window.__delayReset = 0;
+      window.__keyboardHeights = [];
       window.AndroidIme = {
         getClipboardSlots: () => request("GET"),
         setClipboardSlot: (slot, text) => {
@@ -79,7 +80,7 @@ async function main() {
         isRawOutlineMode: () => false,
         isPlainTextMode: () => false,
         getInputGeneration: () => 0,
-        setKeyboardHeight() {},
+        setKeyboardHeight: (height) => window.__keyboardHeights.push(height),
         setPreeditText: (text) => window.__preedits.push(text),
         requestPlover(body, requestId) {
           const rpc = JSON.parse(body);
@@ -202,6 +203,40 @@ async function main() {
     await ime.waitForFunction(
       () => document.getElementById("plover-status")?.textContent === "Enabled",
     );
+    const compactHeight = await ime.evaluate(() => {
+      const row = document.getElementById("clipboard-slots");
+      return {
+        rowHeight: row.offsetHeight,
+        requested: window.__keyboardHeights.at(-1),
+      };
+    });
+    assert.equal(compactHeight.requested, 48 + compactHeight.rowHeight);
+    await ime.setViewport({ width: 360, height: compactHeight.requested });
+    const compactLayout = await ime.evaluate(() => {
+      const toolbar = document
+        .querySelector(".ime-toolbar")
+        .getBoundingClientRect();
+      const banner = document
+        .querySelector(".ime-plover-banner")
+        .getBoundingClientRect();
+      const row = document
+        .getElementById("clipboard-slots")
+        .getBoundingClientRect();
+      return {
+        toolbarTop: toolbar.top,
+        toolbarBottom: toolbar.bottom,
+        toolbarHeight: toolbar.height,
+        bannerTop: banner.top,
+        bannerBottom: banner.bottom,
+        rowBottom: row.bottom,
+        viewportHeight: innerHeight,
+      };
+    });
+    assert.ok(compactLayout.toolbarHeight >= 48);
+    assert.ok(compactLayout.bannerTop >= compactLayout.toolbarTop);
+    assert.ok(compactLayout.bannerBottom <= compactLayout.toolbarBottom);
+    assert.ok(compactLayout.rowBottom <= compactLayout.viewportHeight);
+    await ime.setViewport({ width: 360, height: 260 });
     await key("a");
     await waitText("xin");
     await ime.evaluate(() => {
@@ -230,6 +265,19 @@ async function main() {
     await slot(1, false, null, 99); // stale native callbacks cannot paste
     assert.equal(await ime.evaluate(() => window.__preedits.at(-1)), " saved ");
 
+    // Showing the first slot through a copy must resize an already compact IME.
+    nativeSlots.fill(null);
+    await ime.evaluate(() => window.refreshClipboardSlotsFromAndroid());
+    assert.equal(await ime.evaluate(() => window.__keyboardHeights.at(-1)), 48);
+    await slot(2, true, "fresh");
+    await ime.waitForFunction(() =>
+      window.__messages.at(-1)?.includes("Copied to slot 2"),
+    );
+    assert.equal(
+      await ime.evaluate(() => window.__keyboardHeights.at(-1)),
+      48 + (await height()),
+    );
+
     for (const mode of [
       [false, false],
       [false, true],
@@ -254,6 +302,11 @@ async function main() {
       window.__messages.at(-1)?.includes("empty"),
     );
     assert.equal(await height(), 0);
+    await key("q"); // Return to the full V7 display after compact mode.
+    await ime.waitForFunction(
+      () => !document.body.classList.contains("stripped-plover-active"),
+    );
+    assert.ok(await ime.evaluate(() => window.__keyboardHeights.at(-1) > 48));
     assert.equal(
       await ime.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
