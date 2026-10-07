@@ -317,7 +317,12 @@ explicit space/newline islands always suppress extra spacing. Vietnamese, V7,
 and Plover islands share the normal syllable spacing and piecemeal rules.
 Clipboard islands default to `{ before: false, after: false }` and remain
 literal, including their whitespace. Undo retains the complete island variant
-and its metadata. The Android inference wire format remains version 2 with
+and its metadata. Candidate selection replaces each V7 island with its chosen
+Vietnamese text and retains that island's spacing overrides. Other islands keep
+their types, values, and metadata. Both replacement-only and alternating
+fixed/V7 candidate responses follow this rule; fixed response chunks already
+contain rendered boundary spaces and must not be inserted again. The Android
+inference wire format remains version 2 with
 `kind: "fixed"` and `kind: "v7"`; frontend variants are converted at that boundary.
 
 ## Stenographic Layout
@@ -679,7 +684,30 @@ When candidates are displayed, select one to fix that interpretation, or keep co
 - `-D`: Candidate 4
 - `-Z`: Candidate 5
 
-Selecting a candidate collapses the ambiguity and merges the choice into the fixed text context.
+Selecting a candidate fixes each ambiguous V7 island as Vietnamese text while
+preserving the surrounding islands and spacing directives. This also applies
+to automatic selection before punctuation or Enter and combined selection and
+syllable strokes.
+
+Flattening the whole buffer used to preserve its immediate text but could change
+spacing on the next stroke or destroy boundaries needed by later edits:
+
+| Buffer ending at selection | Subsequent input | Required behavior |
+| --- | --- | --- |
+| Emily symbol with `after: false`, such as attached `(` | Vietnamese syllable | Keep it attached: `chào(xin` |
+| Emily symbol with `after: true`, such as spaced `+` | Punctuation | Keep the requested space: `chào + !` |
+| Vietnamese, V7, or Plover text with a spacing override (including Emily retroactive commands) | Text or punctuation without its own override | Honor the retained `after` directive |
+| Literal clipboard text | Text | Preserve literal whitespace and its boundary policy |
+| Explicit space or newline, or an empty non-V7 island | Vietnamese syllable | Suppress extra automatic spacing |
+| Capital letter | Another capital letter | Continue the run: `chào AB` |
+
+Interior boundary spaces were already present in the flattened text, so their
+loss often became visible only after further input. Keeping the islands also
+preserves those boundaries for piecemeal replacement and retroactive spacing;
+undo restores the original unresolved islands. As usual, a new island's explicit
+`before` directive takes precedence over the preceding island's `after`, and
+explicit space/newline islands suppress extra automatic spacing.
+
 The candidate list mirrors the buffer boxes instead of repeating the entire sentence. Each row shows `current` when it matches the top preview, or shows only the section values that would change: red for the left section, black for the right section. Short section summaries are laid out compactly so more candidates fit on screen.
 Candidate selection keys can also be combined with **single-syllable** strokes in the same chord: the candidate is selected first, then the syllable is appended, and this combined action is treated as a single undo step.
 When no candidates are active, a valid single-syllable stroke plus the first-candidate suffix `-T` falls back to the syllable alone. For example, `KAOT` outputs the syllable from `KAO` instead of being ignored.

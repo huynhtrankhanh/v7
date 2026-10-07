@@ -782,6 +782,36 @@ async function main() {
       `Candidates did not wrap whole items before splitting an oversized item: ${JSON.stringify(packedCandidates)}`,
     );
 
+    // Selection must retain the Emily attachment at the end of the buffer,
+    // including when selection and the next syllable share one chord.
+    for (const combined of [false, true]) {
+      await page.evaluate(() => {
+        window.clearPreeditFromAndroid();
+        window.__androidInferenceResponse = { candidates: [["chào"]] };
+      });
+      await androidChord(page, ["c", " ", "m"]);
+      await androidChord(page, ["d", "r", "u", "i", "o"]); // WH-FPL: attached (
+      if (combined) {
+        await androidChord(page, ["s", "c", "p"]); // KAT: select + ca
+      } else {
+        await androidChord(page, ["p"]); // -T: select
+        await androidChord(page, ["s", "c"]); // KA: ca
+      }
+      const attached = await page.evaluate(() => ({
+        preedit: window.__androidPreedits.at(-1).text,
+        display: (() => {
+          const clone = document.querySelector("#text-display").cloneNode(true);
+          clone
+            .querySelectorAll(".piecemeal-number")
+            .forEach((node) => node.remove());
+          return clone.textContent;
+        })(),
+      }));
+      assert(
+        attached.preedit === "chào(ca" && attached.display === "chào(ca",
+        `Candidate selection lost Emily attachment (combined=${combined}): ${JSON.stringify(attached)}`,
+      );
+    }
     await page.evaluate(() => {
       window.__androidInferenceResponse = null;
       window.clearPreeditFromAndroid();

@@ -397,9 +397,27 @@ export function selectCandidateIslands(
   index: number,
   islands?: Island[],
 ): Island[] | null {
-  const chosenText = getSelectedCandidateText(candidates, index, islands);
-  if (chosenText === null) return null;
-  return [createIsland("vietnamese", chosenText)];
+  const selected = candidates[index];
+  if (!selected) return null;
+  if (!islands) return [createIsland("vietnamese", selected.join(""))];
+
+  const fullShape = usesFullAlternatingCandidateShape(islands, selected);
+  let v7Index = 0;
+  // Fix only the ambiguous islands. Flattening the rendered buffer bakes in
+  // existing spaces but loses attachment directives and the trailing island's
+  // spacing behavior when another stroke is appended (or a boundary edited).
+  return islands.map((island) => {
+    if (island.type !== "v7") return island;
+    const partIndex = fullShape ? 2 * v7Index++ + 1 : v7Index++;
+    return createIsland(
+      "vietnamese",
+      applyIslandCapitalization(
+        island,
+        selected[partIndex] ?? `[${island.value}]`,
+      ),
+      island.spacing ? { spacing: island.spacing } : {},
+    );
+  });
 }
 
 export function getPiecemealEntryIndex(stroke: string): number | null {

@@ -16,7 +16,12 @@ import {
   selectCandidateIslands,
   stripVisibleTextSegments,
 } from "../src/editorCore";
-import { convertIslandsForInference, createIsland } from "../src/textBuffer";
+import {
+  convertIslandsForInference,
+  createIsland,
+  Island,
+  TextBuffer,
+} from "../src/textBuffer";
 
 describe("stripped display segments", () => {
   test("starts at the leftmost retained syllable and abbreviates long separators", () => {
@@ -244,7 +249,8 @@ describe("editorCore candidate selection", () => {
       "Trời mà không",
     );
     expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
-      createIsland("vietnamese", "Trời mà không"),
+      createIsland("vietnamese", "Trời mà"),
+      createIsland("vietnamese", "không"),
     ]);
   });
 
@@ -269,7 +275,8 @@ describe("editorCore candidate selection", () => {
       "TRỜI MÀ KHÔNG",
     );
     expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
-      createIsland("vietnamese", "TRỜI MÀ KHÔNG"),
+      createIsland("vietnamese", "TRỜI MÀ"),
+      createIsland("vietnamese", "KHÔNG"),
     ]);
   });
 
@@ -282,7 +289,8 @@ describe("editorCore candidate selection", () => {
 
     expect(renderVisibleText(islands, candidates)).toBe("fixed words TRỜI MÀ");
     expect(selectCandidateIslands(candidates, 0, islands)).toEqual([
-      createIsland("vietnamese", "fixed words TRỜI MÀ"),
+      islands[0],
+      createIsland("vietnamese", "TRỜI MÀ"),
     ]);
   });
 
@@ -309,9 +317,206 @@ describe("editorCore candidate selection", () => {
       "trời mà không",
     );
     expect(selectCandidateIslands([["trời mà", "không"]], 0, islands)).toEqual([
-      createIsland("vietnamese", "trời mà không"),
+      createIsland("vietnamese", "trời mà"),
+      createIsland("vietnamese", "không"),
     ]);
   });
+
+  describe.each(["replacements", "alternating"] as const)(
+    "%s preserve spacing after selection",
+    (shape) => {
+      const tails: {
+        label: string;
+        island: Island;
+        next: Island;
+        text: string;
+      }[] = [
+        {
+          label: "attached Emily symbol",
+          island: createIsland("emily", "(", {
+            spacing: { before: false, after: false },
+          }),
+          next: createIsland("vietnamese", "xin"),
+          text: "chào(xin",
+        },
+        {
+          label: "spaced Emily symbol before punctuation",
+          island: createIsland("emily", "+", {
+            spacing: { before: true, after: true },
+          }),
+          next: createIsland("punctuation", "!"),
+          text: "chào + !",
+        },
+        {
+          label: "empty Emily spacing command",
+          island: createIsland("emily", "", {
+            spacing: { before: true, after: true },
+          }),
+          next: createIsland("vietnamese", "xin"),
+          text: "chào xin",
+        },
+        {
+          label: "literal clipboard boundary",
+          island: createIsland("fixed", "literal "),
+          next: createIsland("vietnamese", "xin"),
+          text: "chàoliteral xin",
+        },
+        {
+          label: "explicit space",
+          island: createIsland("spacing", " "),
+          next: createIsland("vietnamese", "xin"),
+          text: "chào xin",
+        },
+        {
+          label: "explicit newline",
+          island: createIsland("spacing", "\n"),
+          next: createIsland("vietnamese", "xin"),
+          text: "chào\nxin",
+        },
+        {
+          label: "capital run",
+          island: createIsland("capital", "A"),
+          next: createIsland("capital", "B"),
+          text: "chào AB",
+        },
+        {
+          label: "Plover attachment",
+          island: createIsland("plover", "suffix", {
+            spacing: { before: false, after: false },
+          }),
+          next: createIsland("capital", "A"),
+          text: "chàosuffixA",
+        },
+        {
+          label: "retroactive spacing directive",
+          island: createIsland("vietnamese", "xin", {
+            spacing: { before: false, after: false },
+          }),
+          next: createIsland("vietnamese", "bạn"),
+          text: "chàoxinbạn",
+        },
+        {
+          label: "new before directive overrides attachment",
+          island: createIsland("emily", "(", {
+            spacing: { before: false, after: false },
+          }),
+          next: createIsland("vietnamese", "xin", {
+            spacing: { before: true, after: false },
+          }),
+          text: "chào( xin",
+        },
+        {
+          label: "explicit whitespace suppresses a before directive",
+          island: createIsland("spacing", "\n"),
+          next: createIsland("vietnamese", "xin", {
+            spacing: { before: true, after: true },
+          }),
+          text: "chào\nxin",
+        },
+      ];
+
+      test.each(tails)("$label", ({ island, next, text }) => {
+        const islands = [createIsland("v7", "cha0"), island];
+        const fixed = convertIslandsForInference(islands);
+        const candidate =
+          shape === "replacements"
+            ? ["chào"]
+            : [
+                fixed[0].kind === "fixed" ? fixed[0].text : "",
+                "chào",
+                fixed[2].kind === "fixed" ? fixed[2].text : "",
+              ];
+        const selected = selectCandidateIslands([candidate], 0, islands)!;
+        expect(renderVisibleText(selected, [])).toBe(
+          renderVisibleText(islands, [candidate]),
+        );
+        expect(renderVisibleText([...selected, next], [])).toBe(text);
+        expect(
+          renderVisibleTextSegments([...selected, next], [])
+            .map((segment) => segment.text)
+            .join(""),
+        ).toBe(text);
+      });
+
+      test("keeps V7 overrides and fixed island boundaries through edits and undo", () => {
+        const literal = createIsland("fixed", "[literal]");
+        const islands = [
+          createIsland("v7", "cha0", {
+            spacing: { before: false, after: true },
+          }),
+          literal,
+          createIsland("v7", "xi0", {
+            spacing: { before: false, after: false },
+          }),
+        ];
+        const candidate =
+          shape === "replacements"
+            ? ["chào", "xin"]
+            : ["", "chào", "[literal]", "xin", ""];
+        const buffer = new TextBuffer(islands);
+        buffer.save();
+        buffer.setIslands(selectCandidateIslands([candidate], 0, islands)!);
+        expect(renderVisibleText(buffer.getIslands(), [])).toBe(
+          "chào[literal]xin",
+        );
+        buffer.appendIsland(createIsland("vietnamese", "bạn"));
+        expect(renderVisibleText(buffer.getIslands(), [])).toBe(
+          "chào[literal]xinbạn",
+        );
+        expect(convertIslandsForInference(buffer.getIslands())).toEqual([
+          { kind: "fixed", text: "chào[literal]xinbạn" },
+        ]);
+        const target = findPiecemealSyllableTargets(buffer.getIslands()).find(
+          (entry) => entry.text === "xin",
+        )!;
+        const edited = replacePiecemealSyllable(
+          buffer.getIslands(),
+          target,
+          "tôi",
+        );
+        expect(renderVisibleText(edited, [])).toBe("chào[literal]tôibạn");
+        expect(edited[1]).toBe(literal);
+        buffer.undo();
+        expect(buffer.getIslands()).toEqual(islands);
+      });
+
+      test("retains a selected alternative's casing and trailing V7 spacing", () => {
+        const islands = [
+          createIsland("v7", "cha0", {
+            mode: "dictionary",
+            capitalization: "upper",
+            spacing: { before: true, after: true },
+          }),
+        ];
+        const candidates =
+          shape === "replacements"
+            ? [["chào"], ["cháo"]]
+            : [
+                ["", "chào", ""],
+                ["", "cháo", ""],
+              ];
+        const selected = selectCandidateIslands(candidates, 1, islands)!;
+        expect(
+          renderVisibleText(
+            [...selected, createIsland("punctuation", "!")],
+            [],
+          ),
+        ).toBe("CHÁO !");
+        expect(
+          renderVisibleText(
+            [
+              ...selected,
+              createIsland("vietnamese", "xin", {
+                spacing: { before: false, after: false },
+              }),
+            ],
+            [],
+          ),
+        ).toBe("CHÁOxin");
+        expect(selectCandidateIslands(candidates, 99, islands)).toBeNull();
+      });
+    },
+  );
 });
 
 describe("editorCore candidate diff sections", () => {
