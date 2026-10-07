@@ -12,6 +12,7 @@
     "test:practice-zoom": "npm run build && node scripts/practice-zoom-e2e.js",
     "test:clipboard-slots": "npm run build && node scripts/clipboard-slots-e2e.js",
     "test:android-ime": "npm run build && node scripts/android-ime-e2e.js",
+    "docs:screenshots": "npm run build && V7_README_SCREENSHOT_DIR=ime-android/docs node scripts/android-ime-e2e.js",
     "test:inference-api": "node scripts/inference-api-e2e.js",
     "test:dictionary-layout": "npm run build && node scripts/dictionary-layout-e2e.js",
     "test:android-stripped-plover": "npm run build && node scripts/android-stripped-plover-e2e.js && V7_TEST_NON_ISOLATED_WEBVIEW=1 node scripts/android-stripped-plover-e2e.js",

@@ -200,15 +200,17 @@ The IME is a compact companion for an external steno keyboard. It keeps the
 reduced composing buffer and fitted alternatives visible without drawing an
 on-screen key layout. Its height follows the content: the empty and short-text
 states stay compact, while longer text and alternatives receive more room.
+Occupied clipboard slots appear as paste buttons below the toolbar. The empty
+composing buffer shows “Ready when you are” even when saved slots are available.
 
-<img src="ime-android/docs/ime-empty.png" width="412" alt="Compact empty V7 IME inviting the user to begin a hardware chord">
+<img src="ime-android/docs/ime-empty.png" width="412" alt="V7 IME showing Ready when you are, saved clipboard buttons, and the keyboard switch button">
 
 Each alternative uses only the width its summary needs. Alternatives pack
 beside one another and wrap onto another row only when the remaining width is
 insufficient. Android expands the IME to fit those rows; the candidate area
 becomes vertically scrollable only after the safe screen-height cap is reached.
 
-<img src="ime-android/docs/ime-candidates.png" width="412" alt="V7 IME showing the reduced composing buffer and three candidate alternatives">
+<img src="ime-android/docs/ime-candidates.png" width="412" alt="V7 IME showing trời mà with numbered syllables, three candidate alternatives, and saved clipboard buttons">
 
 Piecemeal mode keeps natural spaces between editable syllables. Its highlight
 does not shift the surrounding text, including when the active target is in the
@@ -217,9 +219,15 @@ middle of the phrase:
 <img src="ime-android/docs/ime-piecemeal-edit.png" width="412" alt="V7 IME showing naturally spaced numbered syllables with a middle syllable active for piecemeal editing">
 
 While Stripped Plover is active, the composition interface collapses to a
-48 dp status bar:
+48 dp status bar with the keyboard switch button. Occupied clipboard slots
+remain accessible in an additional row below it:
 
-<img src="ime-android/docs/ime-plover.png" width="412" alt="Thin V7 IME status bar showing that Stripped Plover is active">
+<img src="ime-android/docs/ime-plover.png" width="412" alt="Stripped Plover status bar with the keyboard switch button and a saved clipboard row">
+
+Regenerate these screenshots with `npm run docs:screenshots`. This builds the
+current WebUI, runs the Android bridge checks, and captures the four states in
+Chromium at 412 CSS pixels wide using deterministic inference and clipboard
+fixtures.
 
 ## Build the Android IME
 

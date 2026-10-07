@@ -100,6 +100,74 @@ async function applyRequestedImeHeight(page) {
   return page.evaluate(() => window.__androidHeight);
 }
 
+async function captureReadmeScreenshots(page, url) {
+  const directory = process.env.V7_README_SCREENSHOT_DIR;
+  if (!directory) return;
+  fs.mkdirSync(directory, { recursive: true });
+  await page.setViewport({ width: 412, height: 160, deviceScaleFactor: 2 });
+  await page.goto(`${url}/ime.html`, { waitUntil: "networkidle0" });
+  await page.waitForFunction(
+    () => document.querySelector("#plover-status").textContent === "Available",
+  );
+  await page.evaluate(() => {
+    window.__androidModelState = "ready";
+    window.handleAndroidInferenceState("ready");
+    window.__androidClipboardSlots[0] = "xin chào";
+    window.__androidClipboardSlots[1] = "Cảm ơn bạn!";
+    window.refreshClipboardSlotsFromAndroid();
+  });
+  // Keep the real cursor visible consistently across captures.
+  await page.addStyleTag({
+    content: "#cursor { animation: none; opacity: 1; }",
+  });
+  const capture = async (name) => {
+    await applyRequestedImeHeight(page);
+    await page.screenshot({ path: path.join(directory, `${name}.png`) });
+  };
+  await page.waitForFunction(
+    () => document.querySelector("#text-display").textContent === "👋",
+  );
+  await capture("ime-empty");
+
+  await page.evaluate(() => {
+    window.__androidInferenceResponse = {
+      candidates: [["trời mà"], ["trời mắm"], ["trời mắng"], ["trời mắn"]],
+    };
+  });
+  await androidChord(page, ["c", " ", "m"]);
+  await page.waitForFunction(
+    () => document.querySelectorAll("#candidate-area .candidate").length === 3,
+  );
+  await capture("ime-candidates");
+
+  await page.evaluate(() => window.clearPreeditFromAndroid());
+  for (const keys of [
+    ["w", "c"],
+    ["e", "r", "c", "o"],
+    ["s", "c"],
+    ["r", "f", "c", "l"],
+    ["e", "d", "c"],
+    ["w", "e", "r", "v", "o"],
+  ]) {
+    await androidChord(page, keys);
+  }
+  await androidChord(page, ["w", "s"]); // TK selects the middle syllable.
+  await page.waitForFunction(
+    () => document.querySelectorAll(".piecemeal-syllable.active").length === 1,
+  );
+  await capture("ime-piecemeal-edit");
+
+  await androidChord(page, ["q"]);
+  await page.waitForFunction(
+    () =>
+      document.body.classList.contains("stripped-plover-active") &&
+      window.__androidHeight ===
+        48 + document.querySelector("#clipboard-slots").offsetHeight,
+  );
+  await capture("ime-plover");
+  console.log(`README screenshots saved to ${directory}`);
+}
+
 async function main() {
   const { server, requests, url } = await startStaticServer();
   const browser = await puppeteer.launch({
@@ -118,6 +186,7 @@ async function main() {
       window.__androidSyncInferenceCalls = 0;
       window.__androidPloverBodies = [];
       window.__androidPloverPaused = false;
+      window.__androidClipboardSlots = Array(10).fill(null);
       window.__androidDictionaries = [
         {
           identifier: "main.json",
@@ -133,6 +202,13 @@ async function main() {
       window.__androidTelexMode = false;
       window.__androidInputGeneration = 0;
       window.AndroidIme = {
+        getClipboardSlots() {
+          return JSON.stringify(window.__androidClipboardSlots);
+        },
+        setClipboardSlot(slot, text) {
+          window.__androidClipboardSlots[slot] = text;
+          return true;
+        },
         getInferenceModelError() {
           return "";
         },
@@ -1283,6 +1359,7 @@ async function main() {
       ),
     );
     console.log("Android IME WebUI bridge interactions passed");
+    await captureReadmeScreenshots(page, url);
   } finally {
     await browser.close();
     server.close();
