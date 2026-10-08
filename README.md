@@ -16,7 +16,7 @@ V7 is a Vietnamese input method for Android, designed for an external QWERTY or 
 | Path | Purpose |
 | --- | --- |
 | `ime-android/` | Android IME, native bridges, settings, JNI, and bundled Plover integration. |
-| `src/ime.ts` | Android composition and settings WebView controller; requires `AndroidIme` or `AndroidDictionary`. |
+| `src/ime.ts`, `src/imeEngine.ts` | Composition display/settings controller and DOM-free input engine. |
 | `src/editorCore.ts`, `src/textBuffer.ts`, `src/undoManager.ts` | Editor rendering, island buffer, and undo logic. |
 | `static/ime.html`, `static/ime.css`, `static/dictionary.html`, `static/plover-dictionary.css` | APK-only composition and settings UI assets. |
 | `static/script.js` | Generated IME bundle; built by Vite and excluded from Git. |
@@ -45,17 +45,29 @@ imports.
 ## Architecture
 
 - Android uses the dedicated `static/ime.html` and `static/ime.css` interface,
-  with inference and input behavior compiled into `static/script.js`. These
+  with display/settings behavior compiled into `static/script.js` and input
+  behavior bundled into `ime-sandbox.js`. These
   assets exist solely for Android IME and its settings dictionary manager.
 - `V7ImeService` hosts that UI in a `WebView`. The WebUI detects
-  `window.AndroidIme`, enables stripped display mode, and mirrors its current
-  rendered text into Android composing text.
-- V7/Plover hardware events are forwarded to the WebUI as browser
-  `KeyboardEvent`s. Telex hardware input is handled natively; only its pure
-  linguistic conversion runs synchronously in a DOM-free AndroidX
-  `JavaScriptSandbox`. The IME does not render an on-screen key layout.
-- Telex and dictionary importing share the application's single sandbox using
-  separate isolates. Telex loads and warms its tone oracle in the background;
+  `window.AndroidIme`, enables stripped display mode, and renders snapshots of
+  native-owned composition state.
+- V7/Plover hardware events go directly to a DOM-free AndroidX
+  `JavaScriptSandbox` isolate. Chord capture, V7 decoding, inference results,
+  candidates, undo, raw outlines, and clipboard composition live there.
+  Native V7 key handlers wait for sandbox execution and local inference, then
+  apply composing text directly before returning. The display WebView receives
+  snapshots and does not acknowledge hardware events or write V7 composing text.
+  Events received during sandbox startup are queued with their editor generation.
+- Stripped Plover translation still uses its separate asynchronous engine
+  runtime. Its continuations and later strokes are serialized inside the input
+  isolate, preserving stroke order and captured Caps Lock state while replies
+  are pending. Native code yields to Android's main loop for that runtime.
+- Telex hardware input is handled natively; its pure linguistic conversion
+  runs synchronously in a separate sandbox isolate. The IME does not render an
+  on-screen key layout.
+- V7 input, Telex, and dictionary importing share the application's single
+  sandbox using separate isolates. Telex loads and warms its tone oracle in the
+  background;
   its banner explicitly reports Latin fallback until conversion is ready.
 - Inference requests go through JNI to the bundled `inference-rs` and KenLM
   code. No inference request leaves the device.

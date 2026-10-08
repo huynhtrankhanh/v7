@@ -27,7 +27,8 @@ The interactive/runtime surfaces and background importer have disjoint jobs:
 
 | Surface | Owner | Native surface |
 | --- | --- | --- |
-| IME interface | `V7ImeService` | composing text, inference, height, key mode, and Stripped Plover RPC client |
+| IME input | `V7ImeService` plus `ImeJavaScriptSandbox` | synchronous V7 composition, inference, key mode, and ordered Stripped Plover continuations |
+| IME interface | display WebView | composition snapshots, candidate/clipboard commands, and height |
 | Dictionary manager | `DictionaryManagementActivity` | Stripped Plover RPC client plus Android document import/export |
 | Import worker | `DictionaryImportWorker` | durable foreground work plus an AndroidX `JavaScriptSandbox` isolate and native SQLite transaction |
 | Stripped Plover engine | process-wide `BundledStrippedPloverRuntime` | runtime completion callbacks and native SQLite only |

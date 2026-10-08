@@ -1,11 +1,10 @@
 import {
-  type Island,
-  TextBuffer,
-  convertIslandsForInference,
-  createIsland,
-  ensureString,
-} from "./textBuffer";
-import { createUndoManager } from "./undoManager";
+  createImeEngine,
+  type ImeInputContext,
+  type ImeSnapshot,
+  type ImeKey,
+} from "./imeEngine";
+import { type Island } from "./textBuffer";
 import {
   clipboardShortcut,
   createSlottedClipboard,
@@ -13,37 +12,17 @@ import {
   SLOT_STORAGE_KEY,
 } from "./slottedClipboard";
 import {
-  getCandidateSelectionMatch,
-  getFirstCandidateAppendStroke,
-  isLoneCandidateSelectionStroke,
-} from "./candidateSelection";
-import { decodeV7PermittedSyllableStroke } from "./vietnameseSyllables";
-import {
   buildCandidateDiffPlan,
   type CandidateDiffPlan,
   type VisibleTextSegment,
-  KeyboardStrokeTracker,
-  findPiecemealSyllableTargets,
-  getNextPiecemealCursorIndex,
-  getPiecemealEntryIndex,
   groupVisibleTextSegmentsByCandidateSection,
   mapKeyUnique,
   renderVisibleText,
   renderVisibleTextSegments,
-  replacePiecemealSyllable,
-  selectCandidateIslands,
   stripVisibleTextSegments,
 } from "./editorCore";
-import { handleEmilySymbol } from "./emilySymbols";
 import { mountPloverDictionaryUi } from "./ploverDictionaryUi";
 import { ploverProtocolErrorMessage } from "./ploverProtocol";
-import {
-  decodeCanonicalTwoSyllableStroke,
-  decodeDictionaryModeStroke,
-} from "./twoSyllableV7";
-
-// Maps for V7 Decoding
-type RetroSpaceAction = "insert" | "delete";
 
 interface PloverDictionary {
   name?: string;
@@ -87,55 +66,8 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-const PUNCTUATION_MAP: Record<string, string> = {
-  "TP-PL": ".",
-  "KW-BG": ",",
-  "KW-PL": "?",
-  "TP-BG": "!",
-};
-
-function applyRetroactiveSpace(
-  action: RetroSpaceAction | null,
-  repeat: number,
-): boolean {
-  if (!action) return false;
-  let changed = false;
-  for (let i = 0; i < repeat; i++) {
-    const islandCount = buffer.getIslandCount();
-    if (islandCount === 0) break;
-    const lastIndex = islandCount - 1;
-    const last = buffer.getIslandAt(lastIndex);
-    if (!last) break;
-    if (last.type === "spacing" && last.value === " ") {
-      if (action === "delete") {
-        if (buffer.removeIslandAt(lastIndex)) {
-          changed = true;
-          continue;
-        }
-        break;
-      }
-      break;
-    }
-    if (lastIndex === 0) break;
-    if (
-      buffer.replaceIslandAt(lastIndex, {
-        ...last,
-        spacing: {
-          before: action === "insert",
-          after: last.spacing?.after ?? false,
-        },
-      })
-    ) {
-      changed = true;
-    }
-    break;
-  }
-  return changed;
-}
-
 // --- App State ---
 
-const buffer = new TextBuffer();
 const clipboardSlots = createSlottedClipboard({
   load: () => {
     const bridge = window.AndroidIme;
@@ -147,49 +79,16 @@ const clipboardSlots = createSlottedClipboard({
     window.AndroidIme?.setClipboardSlot?.(slot, text) ?? false,
   clear: () => false, // Management and clearing belong to native Settings.
 });
-const clipboardPasteIslands = new WeakMap<Island, string>();
-let clipboardPasteCounter = 0;
-let compositionOperations = Promise.resolve();
-function enqueueCompositionOperation(
-  operation: () => void | Promise<void>,
-): void {
-  const epoch = androidInputEpoch;
-  const capsLock = keyboardCapsLockActive;
-  compositionOperations = compositionOperations
-    .then(async () => {
-      if (epoch !== androidInputEpoch) return;
-      keyboardCapsLockActive = capsLock;
-      await operation();
-    })
-    .catch((error) => {
-      console.error("Composition operation failed", error);
-      clipboardMessage(errorMessage(error, "Operation failed."));
-    });
-}
 let clipboardUi: ReturnType<typeof mountClipboardSlots> | null = null;
-interface AppState {
-  islands: Island[];
-  pendingCapitalization: boolean;
-  candidates: string[][];
-}
-
-const state: AppState = {
-  get islands() {
-    return buffer.getIslands();
-  },
-  set islands(next) {
-    buffer.setIslands(next);
-  },
-  get pendingCapitalization() {
-    return buffer.pendingCapitalization;
-  },
-  set pendingCapitalization(next) {
-    buffer.pendingCapitalization = next;
-  },
+const state: { islands: Island[]; candidates: string[][] } = {
+  islands: [{ type: "vietnamese", value: "" }],
   candidates: [],
 };
 let inferenceErrorMessage = "";
 interface AndroidImeBridge {
+  isSandboxInputEnabled?(): boolean;
+  getInputSnapshot?(): string;
+  submitInputCommand?(command: string): void;
   getClipboardSlots?(): string;
   setClipboardSlot?(slot: number, text: string | null): boolean;
   migrateClipboardSlots?(json: string): boolean;
@@ -204,10 +103,10 @@ interface AndroidImeBridge {
   isTelexModeEnabled?(): boolean;
   isTelexReady?(): boolean;
   changeInputMethod(): void;
-  requestInferenceSync(body: string, requestId: number): string;
+  requestInferenceSync?(body: string, requestId: number): string;
   requestPlover(body: string, requestId: number): void;
   getInputGeneration?(): number;
-  setPreeditText(
+  setPreeditText?(
     text: string,
     grammarSectionsJson: string,
     epoch: number,
@@ -258,7 +157,6 @@ if (androidIme) {
   inferenceErrorMessage = androidIme.getInferenceModelError();
 }
 let androidInferenceRequestId = 1;
-let inferenceRunGeneration = 0;
 let lastRequestedAndroidKeyboardHeight = 0;
 let lastExpandedAndroidKeyboardHeight = 160;
 let wasCompactAndroidKeyboardHeight = false;
@@ -274,19 +172,14 @@ const androidPloverPending = new Map<
 >();
 
 let piecemealCursorIndex: number | null = null;
-let inferenceAbortController: AbortController | null = null;
 const strippedPlover: {
   available: boolean;
   enabled: boolean;
   solo: boolean;
-  preeditIndex: number | null;
-  requestId: number;
 } = {
   available: false,
   enabled: false,
   solo: false,
-  preeditIndex: null,
-  requestId: 0,
 };
 let ploverDictionaries: PloverDictionary[] = [];
 const dictionaryInputIds = new Set([
@@ -299,8 +192,6 @@ const dictionaryInputIds = new Set([
   "plover-lookup-stroke",
   "plover-lookup-translation",
 ]);
-// Feature detection is performed once to keep behavior consistent for the module's lifetime.
-const hasAbortController = typeof AbortController !== "undefined";
 let ploverDictionarySignature = "";
 let ploverEntrySearchPage = 1;
 let ploverEntrySearchHasMore = false;
@@ -325,28 +216,6 @@ function isDictionaryTextInputFocused(
   return false;
 }
 
-const undoManager = createUndoManager(
-  buffer,
-  (fields) => {
-    state.candidates = [];
-    piecemealCursorIndex = fields.piecemealCursorIndex ?? null;
-    syncPloverPreeditIndex();
-    updateDisplay();
-    runInference();
-  },
-  {
-    getPiecemealCursorIndex: () => piecemealCursorIndex,
-  },
-);
-
-function saveState(group?: string): void {
-  undoManager.save(group);
-}
-
-function restoreState(group?: string): void {
-  undoManager.undo(group);
-}
-
 function isClipboardMode(): boolean {
   return (
     !isDictionaryManagementPage &&
@@ -367,58 +236,6 @@ function clipboardMessage(message: string): void {
         ? ""
         : " Saving failed; this change is kept only for this session."),
   );
-}
-
-function copyClipboardSlot(slot: number, hostSelection?: string | null): void {
-  if (!isClipboardMode()) return;
-  const selection = window.getSelection();
-  const display = document.getElementById("text-display");
-  const selected =
-    selection &&
-    display?.contains(selection.anchorNode) &&
-    display.contains(selection.focusNode)
-      ? selection.toString()
-      : "";
-  const text =
-    hostSelection ||
-    selected ||
-    renderVisibleText(state.islands, state.candidates);
-  if (!text) {
-    clipboardMessage(`Nothing to copy; slot ${slot} unchanged.`);
-    return;
-  }
-  clipboardSlots.set(slot, text);
-  clipboardMessage(`Copied to slot ${slot} (${text.length} characters).`);
-}
-
-async function pasteClipboardSlot(slot: number): Promise<void> {
-  if (!isClipboardMode()) return;
-  const text = clipboardSlots.get(slot);
-  if (text === null) {
-    clipboardMessage(`Slot ${slot} is empty.`);
-    return;
-  }
-  resetHardwareKeyboardState();
-  if (strippedPlover.enabled) {
-    const epoch = androidInputEpoch;
-    await requestAndroidPlover("reset_state", {});
-    if (epoch !== androidInputEpoch) return;
-    finalizePloverPreedit();
-  }
-  const undoGroup = `clipboard:${++clipboardPasteCounter}`;
-  saveState(undoGroup);
-  piecemealCursorIndex = null;
-  // Preserve literal whitespace at both boundaries and keep it out of V7 decoding.
-  const pasted = createIsland("fixed", text);
-  clipboardPasteIslands.set(pasted, undoGroup);
-  buffer.appendIsland(pasted);
-  state.candidates = [];
-  runInference();
-  updateDisplay();
-  clipboardMessage(`Pasted slot ${slot}. Undo with *.`);
-  if (clipboardUi?.contains(document.activeElement)) {
-    (document.activeElement as HTMLElement).blur();
-  }
 }
 
 function setPloverMessage(message: string): void {
@@ -551,19 +368,18 @@ async function fetchPloverStatus(): Promise<void> {
     if (androidPloverBridge!.hasPloverConfiguration()) {
       await requestAndroidPlover("get_starting_stroke_state", {});
       strippedPlover.available = true;
+      inputEngine.configure(inputContext());
     } else {
       strippedPlover.available = false;
     }
     if (!strippedPlover.available) {
       strippedPlover.enabled = false;
       strippedPlover.solo = false;
-      strippedPlover.preeditIndex = null;
     }
   } catch (e) {
     strippedPlover.available = false;
     strippedPlover.enabled = false;
     strippedPlover.solo = false;
-    strippedPlover.preeditIndex = null;
   }
   updatePloverStatusUI();
 }
@@ -611,153 +427,6 @@ async function ensurePloverAvailability(): Promise<void> {
   } finally {
     ploverStatusCheckInFlight = false;
   }
-}
-
-function clearPloverPreedit(): void {
-  if (strippedPlover.preeditIndex !== null) {
-    const index = strippedPlover.preeditIndex;
-    if (index >= 0 && index < buffer.getIslandCount()) {
-      buffer.removeIslandAt(index);
-    }
-    strippedPlover.preeditIndex = null;
-  }
-}
-
-function syncPloverPreeditIndex(): void {
-  const islands = buffer.getIslands();
-  strippedPlover.preeditIndex = null;
-  for (let i = islands.length - 1; i >= 0; i--) {
-    const island = islands[i];
-    if (island.type === "plover" && island.phase === "preedit") {
-      strippedPlover.preeditIndex = i;
-      break;
-    }
-  }
-}
-
-function finalizePloverPreedit(): void {
-  if (strippedPlover.preeditIndex !== null) {
-    const index = strippedPlover.preeditIndex;
-    if (index >= 0 && index < buffer.getIslandCount()) {
-      const island = buffer.getIslandAt(index);
-      if (island?.type === "plover") {
-        buffer.replaceIslandAt(index, { ...island, phase: "committed" });
-      }
-    }
-    strippedPlover.preeditIndex = null;
-  }
-}
-
-function applyPloverOutput(
-  output: PloverOutputItem[],
-  {
-    recordHistory,
-    allowInference,
-    finalizePreedit,
-    uppercase,
-  }: {
-    recordHistory: boolean;
-    allowInference: boolean;
-    finalizePreedit: boolean;
-    uppercase: boolean;
-  },
-): void {
-  if (!Array.isArray(output)) return;
-  const committedParts: string[] = [];
-  let preeditText = "";
-  const hadPreedit = strippedPlover.preeditIndex !== null;
-  for (const item of output) {
-    if (item.type === "committed") {
-      committedParts.push(item.text || "");
-    } else if (item.type === "preedit") {
-      preeditText = item.text || "";
-    }
-  }
-
-  const committedJoined = committedParts.join("");
-  const combinedCommitted = finalizePreedit
-    ? `${committedJoined}${preeditText}`
-    : committedJoined;
-  const committedText = applyCapsLockToText(
-    ensureString(combinedCommitted),
-    uppercase,
-  );
-  const normalizedPreedit = finalizePreedit
-    ? ""
-    : applyCapsLockToText(ensureString(preeditText), uppercase);
-  const shouldSave =
-    hadPreedit || committedText !== "" || normalizedPreedit !== "";
-  if (shouldSave) {
-    piecemealCursorIndex = null;
-    undoManager.savePlover({ recordHistory: !!recordHistory, hadPreedit });
-  }
-
-  clearPloverPreedit();
-
-  if (committedText) {
-    buffer.appendIsland(createIsland("plover", committedText));
-  }
-
-  if (!finalizePreedit) {
-    if (normalizedPreedit) {
-      buffer.appendIsland(
-        createIsland("plover", normalizedPreedit, { phase: "preedit" }),
-      );
-      strippedPlover.preeditIndex = buffer.getIslandCount() - 1;
-    }
-  }
-
-  state.candidates = [];
-  updateDisplay();
-  if (allowInference) {
-    runInference();
-  }
-}
-
-async function handlePloverStroke(
-  stroke: string,
-  { oneShot }: { oneShot: boolean },
-): Promise<void> {
-  if (!strippedPlover.available || androidPloverPaused) return;
-  const currentRequest = ++strippedPlover.requestId;
-  const uppercase = keyboardCapsLockActive;
-  try {
-    const result = await requestAndroidPlover("translate", { stroke });
-    if (currentRequest !== strippedPlover.requestId) return;
-    applyPloverOutput(result.output ?? [], {
-      recordHistory: oneShot,
-      allowInference: true,
-      finalizePreedit: oneShot,
-      uppercase,
-    });
-    if (oneShot) {
-      await requestAndroidPlover("reset_state", {});
-    }
-  } catch (e) {
-    if (currentRequest !== strippedPlover.requestId) return;
-    console.log(e);
-    setPloverMessage(errorMessage(e, "Stripped Plover request failed."));
-  }
-}
-
-async function togglePloverMode(): Promise<void> {
-  if (!strippedPlover.available || androidPloverPaused) return;
-  strippedPlover.enabled = !strippedPlover.enabled;
-  setPloverMessage("");
-  if (!strippedPlover.enabled) {
-    finalizePloverPreedit();
-    try {
-      await requestAndroidPlover("reset_state", {});
-    } catch (e) {
-      console.log(e);
-      setPloverMessage(errorMessage(e, "Failed to reset Stripped Plover."));
-    }
-    runInference();
-  } else {
-    runInference();
-  }
-  updatePloverStatusUI();
-  updateDisplay();
 }
 
 async function refreshPloverDictionaries({
@@ -1655,525 +1324,8 @@ async function runReverseLookup(button: LoadingControl): Promise<void> {
   }
 }
 
-// --- Logic ---
-
-function appendText(text: string): void {
-  if (keyboardCapsLockActive && text.length > 0) {
-    text = applyCapsLockToText(text, true);
-    state.pendingCapitalization = false;
-  } else if (state.pendingCapitalization && text.length > 0) {
-    text = text.charAt(0).toUpperCase() + text.slice(1);
-    state.pendingCapitalization = false;
-  }
-  // Append a new Vietnamese (generic text) island
-  buffer.appendIsland(createIsland("vietnamese", text));
-}
-
-function applyCapsLockToText(
-  text: string,
-  active = keyboardCapsLockActive,
-): string {
-  return active ? text.toLocaleUpperCase("vi") : text;
-}
-
-function abortInferenceRequest(clearController: boolean): void {
-  if (inferenceAbortController) {
-    inferenceAbortController.abort();
-    if (clearController) {
-      inferenceAbortController = null;
-    }
-  }
-}
-
-function isStaleInference(controller: AbortController | null): boolean {
-  return controller !== null && controller !== inferenceAbortController;
-}
-
-async function handleChord(stroke: string): Promise<void> {
-  window.dispatchEvent(
-    new CustomEvent("v7-editor-stroke", {
-      detail: { stroke },
-    }),
-  );
-  if (androidRawOutlineMode) {
-    abortInferenceRequest(true);
-    const currentOutline = renderVisibleText(state.islands, []);
-    if (stroke === "*") {
-      const strokes = currentOutline ? currentOutline.split("/") : [];
-      strokes.pop();
-      const previousOutline = strokes.join("/");
-      buffer.setIslands(
-        previousOutline ? [createIsland("vietnamese", previousOutline)] : [],
-      );
-      if (!currentOutline) {
-        androidIme?.undoRawOutlineStroke?.();
-      }
-      state.candidates = [];
-      piecemealCursorIndex = null;
-      updateDisplay();
-      return;
-    }
-    buffer.setIslands([
-      createIsland(
-        "vietnamese",
-        currentOutline ? `${currentOutline}/${stroke}` : stroke,
-      ),
-    ]);
-    state.candidates = [];
-    piecemealCursorIndex = null;
-    updateDisplay();
-    return;
-  }
-
-  // On Android, Q+A on the physical QWERTY keyboard serializes to #S.
-  // It is reserved for choosing another IME and is not a V7/Plover stroke.
-  if (androidIme && (stroke === "#S-" || stroke === "#S")) {
-    androidIme.changeInputMethod();
-    return;
-  }
-
-  if (stroke === "#") {
-    await togglePloverMode();
-    return;
-  }
-
-  if (strippedPlover.enabled && !androidPlainTextMode) {
-    const last = state.islands[state.islands.length - 1];
-    if (stroke === "*" && last && clipboardPasteIslands.has(last)) {
-      restoreState(clipboardPasteIslands.get(last));
-      return;
-    }
-    await handlePloverStroke(stroke, { oneShot: false });
-    return;
-  }
-
-  if (stroke === "*") {
-    piecemealCursorIndex = null;
-    restoreState();
-    return;
-  }
-
-  let suppressPiecemealEntry = false;
-  if (piecemealCursorIndex !== null) {
-    const entryIndex = getPiecemealEntryIndex(stroke);
-    if (entryIndex !== null) {
-      const targets = findPiecemealSyllableTargets(state.islands);
-      if (targets[entryIndex]) {
-        piecemealCursorIndex = entryIndex;
-        updateDisplay();
-        return;
-      }
-    }
-
-    if (
-      state.candidates.length === 0 &&
-      isLoneCandidateSelectionStroke(stroke)
-    ) {
-      piecemealCursorIndex = null;
-      updateDisplay();
-      return;
-    }
-
-    // Syllable+T exits piecemeal. With candidates it selects candidate 1 first;
-    // without candidates it still appends the syllable normally.
-    const firstCandidateAppendStroke = getFirstCandidateAppendStroke(stroke);
-    if (firstCandidateAppendStroke && state.candidates.length === 0) {
-      const appendedSyllable = decodeV7PermittedSyllableStroke(
-        firstCandidateAppendStroke,
-      );
-      if (appendedSyllable !== null) {
-        saveState();
-        piecemealCursorIndex = null;
-        appendText(appendedSyllable);
-        runInference();
-        return;
-      }
-    }
-
-    // Other active candidate-selection chords keep their normal meaning inside piecemeal mode.
-    const piecemealSelection =
-      state.candidates.length > 0
-        ? getCandidateSelectionMatch(stroke, state.candidates.length)
-        : null;
-    if (piecemealSelection) {
-      suppressPiecemealEntry = true;
-    } else {
-      const decodedReplacement = decodeV7PermittedSyllableStroke(stroke);
-      const replacement =
-        decodedReplacement === null
-          ? null
-          : applyCapsLockToText(decodedReplacement);
-      if (replacement !== null) {
-        const targets = findPiecemealSyllableTargets(state.islands);
-        const target = targets[piecemealCursorIndex];
-        if (target) {
-          saveState();
-          buffer.setIslands(
-            replacePiecemealSyllable(state.islands, target, replacement),
-          );
-          state.candidates = [];
-          const nextTargets = findPiecemealSyllableTargets(state.islands);
-          piecemealCursorIndex = getNextPiecemealCursorIndex(
-            piecemealCursorIndex,
-            nextTargets.length,
-          );
-          runInference();
-          return;
-        }
-      }
-      piecemealCursorIndex = null;
-      suppressPiecemealEntry = true;
-      updateDisplay();
-    }
-  }
-
-  if (!suppressPiecemealEntry) {
-    const entryIndex = getPiecemealEntryIndex(stroke);
-    if (entryIndex !== null) {
-      const targets = findPiecemealSyllableTargets(state.islands);
-      if (targets[entryIndex]) {
-        piecemealCursorIndex = entryIndex;
-        updateDisplay();
-        return;
-      }
-    }
-  }
-
-  // Dictionary classification owns both starred aliases and the starless corner.
-  const dictionaryDecode = decodeDictionaryModeStroke(stroke);
-  const ordinaryDecode = dictionaryDecode
-    ? null
-    : decodeCanonicalTwoSyllableStroke(stroke);
-  const twoSyllableDecode = dictionaryDecode ?? ordinaryDecode;
-  if (twoSyllableDecode) {
-    window.dispatchEvent(
-      new CustomEvent("v7-editor-interpretation", {
-        detail: {
-          stroke,
-          interpretation: dictionaryDecode
-            ? "dictionary-v7"
-            : "compositional-v7",
-          sourceV7Stroke: twoSyllableDecode.canonicalStroke,
-          sourceV7Code: twoSyllableDecode.v7Code,
-        },
-      }),
-    );
-    piecemealCursorIndex = null;
-    saveState();
-    const uppercase = keyboardCapsLockActive;
-    const capitalize = !uppercase && state.pendingCapitalization;
-    state.pendingCapitalization = false;
-    buffer.appendIsland(
-      createIsland("v7", twoSyllableDecode.v7Code, {
-        capitalization: uppercase ? "upper" : capitalize ? "initial" : "none",
-        mode: dictionaryDecode ? "dictionary" : "compositional",
-      }),
-    );
-    runInference();
-    return;
-  }
-
-  // Emily symbols take precedence over single-syllable/ordinary Vietnamese interpretation.
-  const emilyResult = handleEmilySymbol(stroke);
-  if (emilyResult) {
-    const repeatCount = emilyResult.repeat || 1;
-    if (emilyResult.retroSpace) {
-      if (buffer.getIslandCount() > 0 || emilyResult.capNext) {
-        saveState();
-        const changed = applyRetroactiveSpace(
-          emilyResult.retroSpace,
-          repeatCount,
-        );
-        state.pendingCapitalization = emilyResult.capNext || false;
-        if (changed || emilyResult.capNext) {
-          runInference();
-          updateDisplay();
-        }
-      }
-      return;
-    }
-    saveState();
-    // spacing rules handled by shouldAddSpace; emilyResult.value already includes symbol
-    buffer.appendIsland(
-      createIsland(emilyResult.type, applyCapsLockToText(emilyResult.value), {
-        spacing: {
-          before: !!emilyResult.leftSpace,
-          after: !!emilyResult.rightSpace,
-        },
-      }),
-    );
-    state.pendingCapitalization = emilyResult.capNext || false;
-    piecemealCursorIndex = null;
-    runInference();
-    updateDisplay();
-    return;
-  }
-
-  // Check single-stroke selection+syllable first; otherwise let normal handlers run.
-  const selection =
-    state.candidates.length > 0
-      ? getCandidateSelectionMatch(stroke, state.candidates.length)
-      : null;
-  if (selection && selection.syllableStroke !== null) {
-    const combinedPunctuation = PUNCTUATION_MAP[selection.syllableStroke];
-    if (combinedPunctuation) {
-      saveState();
-      if (
-        selectCandidate(selection.candidateIndex, {
-          saveHistory: false,
-          refreshDisplay: false,
-        })
-      ) {
-        piecemealCursorIndex = null;
-        buffer.appendIsland(createIsland("punctuation", combinedPunctuation));
-        updateDisplay();
-        return;
-      }
-    }
-    const syllableText = decodeV7PermittedSyllableStroke(
-      selection.syllableStroke,
-    );
-    if (syllableText !== null) {
-      saveState();
-      if (
-        selectCandidate(selection.candidateIndex, {
-          saveHistory: false,
-          refreshDisplay: false,
-        })
-      ) {
-        piecemealCursorIndex = null;
-        appendText(syllableText);
-        runInference();
-        return;
-      }
-    }
-  }
-
-  // 2. Space Stroke: S-P
-  if (stroke === "S-P") {
-    saveState();
-    piecemealCursorIndex = null;
-    buffer.appendIsland(createIsland("spacing", " "));
-    runInference();
-    updateDisplay();
-    return;
-  }
-
-  // 3. Punctuation
-  if (PUNCTUATION_MAP[stroke]) {
-    // Auto-select candidate if present
-    if (state.candidates.length > 0) {
-      selectCandidate(0);
-    }
-
-    saveState();
-    piecemealCursorIndex = null;
-    const punct = PUNCTUATION_MAP[stroke];
-    buffer.appendIsland(createIsland("punctuation", punct));
-    updateDisplay();
-    return;
-  }
-
-  const text = decodeV7PermittedSyllableStroke(stroke);
-  if (text !== null) {
-    saveState();
-    piecemealCursorIndex = null;
-    appendText(text);
-    runInference();
-    return;
-  }
-
-  const firstCandidateAppendStroke =
-    state.candidates.length === 0
-      ? getFirstCandidateAppendStroke(stroke)
-      : null;
-  if (firstCandidateAppendStroke) {
-    const appendedSyllable = decodeV7PermittedSyllableStroke(
-      firstCandidateAppendStroke,
-    );
-    if (appendedSyllable !== null) {
-      saveState();
-      piecemealCursorIndex = null;
-      appendText(appendedSyllable);
-      runInference();
-      return;
-    }
-  }
-
-  if (selection && selection.syllableStroke === null) {
-    selectCandidate(selection.candidateIndex);
-    return;
-  }
-
-  if (strippedPlover.available && !androidPlainTextMode) {
-    await handlePloverStroke(stroke, { oneShot: true });
-    return;
-  }
-
-  console.log("Ignored stroke:", stroke);
-}
-
-async function runInference() {
-  // Optimization: If no V7 islands, skip inference
-  const hasV7 = state.islands.some((i) => i.type === "v7");
-  if (!hasV7) {
-    inferenceRunGeneration += 1;
-    abortInferenceRequest(true);
-    state.candidates = [];
-    inferenceErrorMessage =
-      androidIme && inferenceModelState === "error"
-        ? androidIme.getInferenceModelError()
-        : "";
-    updateDisplay();
-    return;
-  }
-
-  abortInferenceRequest(false);
-  const runGeneration = ++inferenceRunGeneration;
-  const controller = hasAbortController ? new AbortController() : null;
-  inferenceAbortController = controller;
-  // Candidates from the previous buffer are no longer valid. Avoid flashing
-  // raw V7 while the synchronous Android bridge produces their replacements.
-  state.candidates = [];
-  buffer.setIslands(
-    state.islands.map((island) => {
-      if (island.type !== "v7") return island;
-      return createIsland("v7", island.value, {
-        mode: island.mode,
-        capitalization: island.capitalization,
-        spacing: island.spacing,
-      });
-    }),
-  );
-  if (!shouldDeferAndroidInferenceRender()) {
-    updateDisplay();
-  }
-
-  try {
-    // Send the versioned protocol; mode is semantic data, not part of V7 code.
-    const serverIslands = convertIslandsForInference(state.islands);
-
-    const requestBody = JSON.stringify({ version: 2, islands: serverIslands });
-    const data = await requestAndroidInference(requestBody, controller?.signal);
-    if (isStaleInference(controller)) {
-      // A newer inference request has started; discard this response.
-      return;
-    }
-    state.candidates = getInferenceCandidates(data);
-    const bucketSizes = getDictionaryBucketSizes(data);
-    const invalidV7Codes = getInvalidV7Codes(data);
-    let dictionaryIndex = 0;
-    let v7Index = 0;
-    buffer.setIslands(
-      state.islands.map((island) => {
-        if (island.type !== "v7") return island;
-        const invalidV7Code = invalidV7Codes[v7Index++];
-        return island.mode === "dictionary"
-          ? {
-              ...island,
-              validation: invalidV7Code ? "invalid" : "valid",
-              dictionaryBucketSize: bucketSizes[dictionaryIndex++],
-            }
-          : { ...island, validation: invalidV7Code ? "invalid" : "valid" };
-      }),
-    );
-    inferenceErrorMessage = "";
-    updateDisplay();
-  } catch (e) {
-    if (e instanceof DOMException && e.name === "AbortError") {
-      return;
-    }
-    console.error("Inference failed", e);
-    inferenceErrorMessage =
-      e instanceof Error ? e.message : `Unknown inference error: ${String(e)}`;
-    state.candidates = [];
-    updateDisplay();
-  } finally {
-    if (controller && controller === inferenceAbortController) {
-      // Only clear if this is still the latest inference request.
-      inferenceAbortController = null;
-    }
-  }
-}
-
-function shouldDeferAndroidInferenceRender(): boolean {
-  return !!androidIme && inferenceModelState === "ready";
-}
-
 function hasOsPassthroughModifier(event: KeyboardEvent): boolean {
   return event.ctrlKey || event.altKey || event.metaKey;
-}
-
-function getInferenceCandidates(data: unknown): string[][] {
-  if (!data || typeof data !== "object") {
-    throw new Error("Inference server returned an invalid response");
-  }
-  const candidates = (data as { candidates?: unknown }).candidates;
-  if (
-    !Array.isArray(candidates) ||
-    !candidates.every(
-      (candidate) =>
-        Array.isArray(candidate) &&
-        candidate.every((part) => typeof part === "string"),
-    )
-  ) {
-    throw new Error("Inference response is missing valid candidates");
-  }
-  return candidates;
-}
-
-function getDictionaryBucketSizes(data: unknown): number[] {
-  if (!data || typeof data !== "object") return [];
-  const sizes = (data as { dictionaryBucketSizes?: unknown })
-    .dictionaryBucketSizes;
-  if (sizes === undefined) return [];
-  if (
-    !Array.isArray(sizes) ||
-    !sizes.every((size) => Number.isSafeInteger(size) && size >= 0)
-  ) {
-    throw new Error("Inference response has invalid dictionary bucket sizes");
-  }
-  return sizes as number[];
-}
-
-function getInvalidV7Codes(data: unknown): boolean[] {
-  if (!data || typeof data !== "object") return [];
-  const invalid = (data as { invalidV7Codes?: unknown }).invalidV7Codes;
-  if (invalid === undefined) return [];
-  if (
-    !Array.isArray(invalid) ||
-    !invalid.every((value) => typeof value === "boolean")
-  ) {
-    throw new Error("Inference response has invalid V7-code statuses");
-  }
-  return invalid as boolean[];
-}
-
-type SelectCandidateOptions = {
-  saveHistory: boolean;
-  refreshDisplay: boolean;
-};
-
-function selectCandidate(
-  index: number,
-  options: SelectCandidateOptions = { saveHistory: true, refreshDisplay: true },
-): boolean {
-  const nextIslands = selectCandidateIslands(
-    state.candidates,
-    index,
-    state.islands,
-  );
-  if (!nextIslands) return false;
-  if (options.saveHistory) {
-    saveState();
-  }
-  buffer.setIslands(nextIslands);
-  state.candidates = [];
-  piecemealCursorIndex = null;
-  if (options.refreshDisplay) {
-    updateDisplay();
-  }
-  return true;
 }
 
 function scrollToBottom(element: HTMLElement): void {
@@ -2250,10 +1402,6 @@ function updateInferenceStatusUI(): void {
     labels[inferenceModelState] ?? `Model ${inferenceModelState}`;
   status.className = `ime-mode-detail ${inferenceModelState}`;
   status.title = "";
-}
-
-function resetHardwareKeyboardState(): void {
-  keyboardStrokeTracker.reset();
 }
 
 function updateDisplay(): void {
@@ -2439,7 +1587,9 @@ function updateDisplay(): void {
       }
 
       div.appendChild(span);
-      div.onclick = () => selectCandidate(i);
+      div.onclick = () => {
+        void inputEngine.select(i);
+      };
       candArea.appendChild(div);
     }
   } else {
@@ -2460,7 +1610,7 @@ function updateDisplay(): void {
   }
   scrollToBottom(display);
   syncAndroidKeyboardHeight(candArea);
-  syncAndroidPreedit(candidateDiffPlan);
+  if (!sandboxInputEnabled) syncAndroidPreedit(candidateDiffPlan);
   window.dispatchEvent(
     new CustomEvent("v7-editor-state", {
       detail: {
@@ -2469,7 +1619,7 @@ function updateDisplay(): void {
           .slice(0, 5)
           .map((candidate) => candidate.join("")),
         piecemealCursorIndex,
-        inferencePending: inferenceAbortController !== null,
+        inferencePending: false,
         inferenceError: inferenceErrorMessage,
         v7Modes: state.islands
           .filter((island) => island.type === "v7")
@@ -2481,125 +1631,147 @@ function updateDisplay(): void {
 
 // --- Input Handling ---
 
-const keyboardStrokeTracker = new KeyboardStrokeTracker();
-document.addEventListener("keydown", (e) => {
-  if (!androidIme) {
-    keyboardCapsLockActive = e.getModifierState("CapsLock");
-  }
-  const slotShortcut = clipboardShortcut(e);
-  const target = e.target instanceof Element ? e.target : null;
-  const editable = target?.closest(
-    "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
-  );
+const sandboxInputEnabled = androidIme?.isSandboxInputEnabled?.() ?? false;
+function inputContext(): ImeInputContext {
+  return {
+    epoch: androidInputEpoch,
+    steno: androidStenoModeEnabled,
+    telex: androidTelexModeEnabled,
+    telexReady: androidTelexReady,
+    rawOutline: androidRawOutlineMode,
+    ploverPaused: androidPloverPaused,
+    ploverAvailable: strippedPlover.available,
+    modelState: inferenceModelState,
+    modelError: inferenceErrorMessage,
+    slots: clipboardSlots.snapshot(),
+  };
+}
+function renderInputSnapshot(snapshot: ImeSnapshot) {
   if (
-    slotShortcut &&
+    snapshot.epoch !== (androidIme?.getInputGeneration?.() ?? androidInputEpoch)
+  )
+    return;
+  androidInputEpoch = snapshot.epoch;
+  androidStenoModeEnabled = snapshot.steno;
+  androidTelexModeEnabled = snapshot.telex;
+  androidTelexReady = snapshot.telexReady;
+  androidRawOutlineMode = snapshot.rawOutline;
+  androidPloverPaused = snapshot.ploverPaused;
+  inferenceModelState = snapshot.modelState;
+  inferenceErrorMessage = snapshot.inferenceError;
+  state.islands = snapshot.islands;
+  state.candidates = snapshot.candidates;
+  piecemealCursorIndex = snapshot.piecemealCursorIndex;
+  strippedPlover.enabled = snapshot.ploverEnabled;
+  strippedPlover.available = snapshot.ploverAvailable;
+  updatePloverStatusUI();
+  updateDisplay();
+}
+function submitInputCommand(command: Record<string, unknown>) {
+  androidIme?.submitInputCommand?.(
+    JSON.stringify({ ...command, epoch: androidInputEpoch }),
+  );
+  return Promise.resolve();
+}
+// Android owns input in the sandbox. Browser bridge tests and older hosts
+// use the same DOM-free engine directly through their supplied bridge ports.
+const inputEngine = sandboxInputEnabled
+  ? {
+      key: (event: ImeKey) => submitInputCommand({ type: "key", event }),
+      clipboard: (slot: number, copy: boolean, selected?: string | null) =>
+        submitInputCommand({ type: "clipboard", slot, copy, selected }),
+      select: (index: number) => submitInputCommand({ type: "select", index }),
+      reset: () => {},
+      clear: (_epoch?: number) => {},
+      configure: (_context: ImeInputContext) => {},
+      refresh: () => {},
+      infer: () => Promise.resolve(),
+    }
+  : createImeEngine(
+      {
+        infer: requestAndroidInference,
+        plover: requestAndroidPlover,
+        snapshot: renderInputSnapshot,
+        setClipboardSlot: (slot, text) => {
+          clipboardSlots.set(slot, text);
+        },
+        message: clipboardMessage,
+        changeInputMethod: () => androidIme?.changeInputMethod(),
+        undoRawOutlineStroke: () => androidIme?.undoRawOutlineStroke?.(),
+        event: (name, detail) =>
+          window.dispatchEvent(new CustomEvent(name, { detail })),
+      },
+      inputContext(),
+    );
+function resetHardwareKeyboardState() {
+  inputEngine.reset();
+}
+function copyClipboardSlot(slot: number, selected?: string | null) {
+  if (!sandboxInputEnabled) inputEngine.configure(inputContext());
+  const selection = window.getSelection();
+  const display = document.getElementById("text-display");
+  const text =
+    selected ||
+    (selection &&
+    display?.contains(selection.anchorNode) &&
+    display.contains(selection.focusNode)
+      ? selection.toString()
+      : null);
+  return inputEngine.clipboard(slot, true, text);
+}
+function pasteClipboardSlot(slot: number) {
+  if (!sandboxInputEnabled) inputEngine.configure(inputContext());
+  return inputEngine.clipboard(slot, false);
+}
+function enqueueCompositionOperation(operation: () => void | Promise<void>) {
+  void operation();
+}
+function forwardKeyboardEvent(e: KeyboardEvent, action: "keydown" | "keyup") {
+  const target = e.target instanceof Element ? e.target : null;
+  if (clipboardUi?.contains(target) || isDictionaryTextInputFocused(target))
+    return;
+  const shortcut = clipboardShortcut(e);
+  if (
+    shortcut &&
     isClipboardMode() &&
-    !editable &&
-    !isDictionaryTextInputFocused(target)
+    !target?.closest(
+      "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+    )
   ) {
     e.preventDefault();
-    resetHardwareKeyboardState();
-    if (!e.repeat) {
-      if (slotShortcut.copy)
-        enqueueCompositionOperation(() => copyClipboardSlot(slotShortcut.slot));
-      else
-        enqueueCompositionOperation(() =>
-          pasteClipboardSlot(slotShortcut.slot),
-        );
+    if (action === "keydown" && !e.repeat) {
+      if (shortcut.copy) void copyClipboardSlot(shortcut.slot);
+      else void pasteClipboardSlot(shortcut.slot);
     }
-    return;
-  }
-  if (clipboardUi?.contains(target)) return;
-  if (hasOsPassthroughModifier(e)) {
-    resetHardwareKeyboardState();
-    return;
-  }
-
-  if (isDictionaryTextInputFocused(e.target as Element | null)) {
-    return; // Allow normal typing in dictionary text boxes
-  }
-
-  if (e.repeat) return;
-
-  const ploverActive = strippedPlover.enabled && !androidPlainTextMode;
-
-  // Handle Literal Uppercase (Shift + Letter) and literal numbers as capitals (only when Plover is disabled)
-  if (!ploverActive && e.key.length === 1) {
-    const isLetter = e.key.match(/[a-z]/i);
-    const isNumber = e.key.match(/[0-9]/);
-    if ((e.shiftKey && isLetter) || isNumber) {
-      saveState();
-      piecemealCursorIndex = null;
-      const value = isNumber ? e.key : e.key.toUpperCase();
-      buffer.appendIsland(createIsland("capital", value));
-      runInference();
-      e.preventDefault();
-      return;
-    }
-  }
-
-  // Handle Enter for Newline (only when Plover is disabled)
-  if (!ploverActive && e.key === "Enter") {
-    if (state.candidates.length > 0) {
-      selectCandidate(0);
-    }
-    piecemealCursorIndex = null;
-    buffer.trimTrailingSpaceFromLastVietnameseIsland();
-    saveState();
-    buffer.appendIsland(createIsland("spacing", "\n"));
-    runInference();
-    updateDisplay();
-    e.preventDefault();
-    return;
-  }
-
-  const mapped = mapKeyUnique(e.key);
-  if (!mapped) return;
-  const immediateDigit = !ploverActive && mapped.match(/^[0-9]$/);
-  keyboardStrokeTracker.keyDown(e.key, { includeInStroke: !immediateDigit });
-
-  // Numbers should generate immediate capital island, not be part of steno chord
-  if (immediateDigit) {
-    // Emit as capital/number island immediately
-    saveState();
-    piecemealCursorIndex = null;
-    buffer.appendIsland(createIsland("capital", mapped));
-    runInference();
-    e.preventDefault();
-    return;
-  }
-  e.preventDefault();
-});
-
-document.addEventListener("keyup", (e) => {
-  if (!androidIme) {
-    keyboardCapsLockActive = e.getModifierState("CapsLock");
-  }
-  if (clipboardUi?.contains(e.target as Element | null)) return;
-  if (isAndroidEffectiveTelexMode()) {
-    e.preventDefault();
     return;
   }
   if (hasOsPassthroughModifier(e)) {
     resetHardwareKeyboardState();
     return;
   }
-
-  if (isDictionaryTextInputFocused(e.target as Element | null)) {
-    return;
-  }
-
-  const strokeStr = keyboardStrokeTracker.keyUp(e.key);
-  if (strokeStr) {
-    enqueueCompositionOperation(() => handleChord(strokeStr));
-  }
-});
-
+  if (isDictionaryManagementPage || sandboxInputEnabled) return;
+  inputEngine.configure(inputContext());
+  void inputEngine.key({
+    action,
+    key: e.key,
+    code: e.code,
+    repeat: e.repeat,
+    shiftKey: e.shiftKey,
+    ctrlKey: e.ctrlKey,
+    altKey: e.altKey,
+    metaKey: e.metaKey,
+    capsLock: androidIme
+      ? keyboardCapsLockActive
+      : e.getModifierState("CapsLock"),
+    epoch: androidInputEpoch,
+  });
+  if (mapKeyUnique(e.key) || e.key === "Enter") e.preventDefault();
+}
+document.addEventListener("keydown", (e) => forwardKeyboardEvent(e, "keydown"));
+document.addEventListener("keyup", (e) => forwardKeyboardEvent(e, "keyup"));
 window.addEventListener("blur", resetHardwareKeyboardState);
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) {
-    resetHardwareKeyboardState();
-  }
+  if (document.hidden) resetHardwareKeyboardState();
 });
 
 function setupPloverControls(): void {
@@ -2952,6 +2124,7 @@ if (isDictionaryManagementPage) {
 
 declare global {
   interface Window {
+    handleAndroidInputSnapshot?: (snapshot: ImeSnapshot) => void;
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
     clearPreeditFromAndroid?: (epoch?: number) => void;
@@ -3000,7 +2173,7 @@ function requestAndroidInference(
   body: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  if (!androidIme) {
+  if (!androidIme?.requestInferenceSync) {
     return Promise.reject(new Error("Android IME bridge is unavailable"));
   }
   if (signal?.aborted) {
@@ -3065,6 +2238,7 @@ function requestAndroidPlover(
 
 window.handleAndroidInferenceState = (modelState) => {
   inferenceModelState = modelState;
+  inputEngine.configure(inputContext());
   if (modelState !== "error") {
     inferenceErrorMessage = "";
   }
@@ -3104,6 +2278,7 @@ window.handleAndroidPloverResponse = (
 
 window.handleAndroidPloverPaused = (paused) => {
   androidPloverPaused = paused;
+  inputEngine.configure(inputContext());
   updatePloverStatusUI();
   updateDisplay();
 };
@@ -3112,24 +2287,27 @@ window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   androidStenoModeEnabled = enabled;
   androidTelexModeEnabled = telex;
   androidInputEpoch = epoch;
+  inputEngine.configure(inputContext());
   resetHardwareKeyboardState();
   updateDisplay();
 };
 
 window.handleAndroidTelexAvailability = (ready) => {
   androidTelexReady = ready;
+  inputEngine.configure(inputContext());
   updateDisplay();
 };
 
 window.handleAndroidEditorModeChanged = (rawOutline, plainText) => {
   androidRawOutlineMode = rawOutline;
   androidPlainTextMode = plainText;
+  inputEngine.configure(inputContext());
   resetHardwareKeyboardState();
   updateDisplay();
 };
 
 function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
-  if (!androidIme) return;
+  if (!androidIme?.setPreeditText) return;
   const grammarSections = (candidateDiffPlan?.sections ?? [])
     .slice(0, 2)
     .filter((section) => section.end > section.start)
@@ -3256,24 +2434,13 @@ window.addEventListener("resize", () => {
 
 window.clearPreeditFromAndroid = (epoch) => {
   if (epoch !== undefined) androidInputEpoch = epoch;
-  resetHardwareKeyboardState();
-  abortInferenceRequest(true);
-  strippedPlover.requestId += 1;
-  strippedPlover.preeditIndex = null;
-  if (strippedPlover.available) {
-    void requestAndroidPlover("reset_state", {}).catch((error) => {
-      console.error("Failed to reset Stripped Plover preedit state:", error);
-    });
+  if (!sandboxInputEnabled) {
+    inputEngine.clear(androidInputEpoch);
+    if (strippedPlover.available)
+      void requestAndroidPlover("reset_state", {}).catch(console.error);
   }
-  buffer.reset();
-  state.candidates = [];
-  inferenceErrorMessage =
-    androidIme && inferenceModelState === "error"
-      ? androidIme.getInferenceModelError()
-      : "";
-  piecemealCursorIndex = null;
-  updateDisplay();
 };
+window.handleAndroidInputSnapshot = renderInputSnapshot;
 
 window.resetHardwareKeyboardStateFromAndroid = resetHardwareKeyboardState;
 
@@ -3341,4 +2508,9 @@ if (!isDictionaryManagementPage) {
     updateInferenceStatusUI();
   }
   updateDisplay();
+}
+
+if (sandboxInputEnabled) {
+  const snapshot = androidIme?.getInputSnapshot?.();
+  if (snapshot) renderInputSnapshot(JSON.parse(snapshot));
 }

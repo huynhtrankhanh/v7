@@ -59,8 +59,7 @@ public class V7ImeService extends InputMethodService {
             new HardwareKeyPressOwnership();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences clipboardPreferences;
-    private final Runnable refreshClipboardSlots = () -> evaluateJavascript(
-            "window.refreshClipboardSlotsFromAndroid && window.refreshClipboardSlotsFromAndroid()");
+    private final Runnable refreshClipboardSlots = () -> dispatchInputCommand("refresh");
     private final SharedPreferences.OnSharedPreferenceChangeListener clipboardListener =
             (preferences, key) -> {
                 mainHandler.removeCallbacks(refreshClipboardSlots);
@@ -92,6 +91,11 @@ public class V7ImeService extends InputMethodService {
     private volatile boolean telexHasPreedit = false;
     private volatile boolean rawOutlineMode = false;
     private TelexJavaScriptSandbox telexSandbox;
+    private ImeJavaScriptSandbox inputSandbox;
+    private final ExecutorService inputSandboxExecutor = Executors.newSingleThreadExecutor();
+    private final Deque<JSONObject> pendingInputCommands = new ArrayDeque<>();
+    private volatile String inputSnapshot = "";
+    private final Runnable refreshInputState = () -> dispatchInputCommand("refresh");
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
     private String nativeTelexRendered = "";
     private int pendingTelexDeadAccent;
@@ -99,6 +103,7 @@ public class V7ImeService extends InputMethodService {
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
+                    scheduleInputStateRefresh();
                     evaluateJavascript(
                             "window.handleAndroidPloverPaused"
                                     + " && window.handleAndroidPloverPaused("
@@ -121,6 +126,8 @@ public class V7ImeService extends InputMethodService {
         clipboardPreferences.registerOnSharedPreferenceChangeListener(clipboardListener);
         telexSandbox = new TelexJavaScriptSandbox(this);
         warmTelexSandbox();
+        inputSandbox = new ImeJavaScriptSandbox(this);
+        warmInputSandbox();
         serviceGeneration = SERVICE_OWNERSHIP.claim(this);
         rememberKeyboardConfiguration(getResources().getConfiguration());
         BundledStrippedPloverRuntime runtime =
@@ -292,6 +299,9 @@ public class V7ImeService extends InputMethodService {
         mainHandler.removeCallbacksAndMessages(null);
         inferenceExecutor.shutdownNow();
         telexExecutor.shutdownNow();
+        inputSandboxExecutor.shutdownNow();
+        pendingInputCommands.clear();
+        if (inputSandbox != null) inputSandbox.close();
         if (telexSandbox != null) telexSandbox.close();
         BundledStrippedPloverRuntime runtime =
                 BundledStrippedPloverRuntime.get(this);
@@ -387,7 +397,7 @@ public class V7ImeService extends InputMethodService {
             if (keyClaim.owner == HardwareKeyPressOwnership.Owner.NATIVE) {
                 return dispatchNativeTelexKey(event);
             }
-            return dispatchPhysicalKeyToWeb("keyup", event);
+            return dispatchPhysicalKeyToSandbox("keyup", event);
         }
         if (event.getAction() == KeyEvent.ACTION_DOWN
                 && event.getRepeatCount() > 0 && keyClaim != null) {
@@ -414,7 +424,7 @@ public class V7ImeService extends InputMethodService {
                 }
                 return handled;
             }
-            return dispatchPhysicalKeyToWeb("keydown", event);
+            return dispatchPhysicalKeyToSandbox("keydown", event);
         }
         if (HardwareEditorKeyPolicy.isModifier(event.getKeyCode())
                 || HardwareEditorKeyPolicy.isSelectionNavigation(event)) {
@@ -447,7 +457,7 @@ public class V7ImeService extends InputMethodService {
                         event.isMetaPressed());
         boolean captureClipboardSlot = hardwareKeyCapturePolicy.capturesClipboardSlot(
                 event, isV7PloverMode() && !rawOutlineMode);
-        if (captureClipboardSlot && webView != null) {
+        if (captureClipboardSlot) {
             if (event.getAction() == KeyEvent.ACTION_DOWN) {
                 hardwareKeyPressOwnership.claim(event.getKeyCode(),
                         HardwareKeyPressOwnership.Owner.CLIPBOARD, inputGeneration.get());
@@ -460,11 +470,15 @@ public class V7ImeService extends InputMethodService {
                     InputConnection connection = getCurrentInputConnection();
                     CharSequence selected = event.isAltPressed() && connection != null
                             ? connection.getSelectedText(0) : null;
-                    String selectedJson = selected == null ? "null" : JSONObject.quote(selected.toString());
-                    webView.evaluateJavascript("window.handleAndroidClipboardSlot && "
-                            + "window.handleAndroidClipboardSlot("
-                            + (event.getKeyCode() - base) + "," + event.isAltPressed()
-                            + "," + inputGeneration.get() + "," + selectedJson + ")", null);
+                    try {
+                        dispatchInputCommand(new JSONObject().put("type", "clipboard")
+                                .put("slot", event.getKeyCode() - base)
+                                .put("copy", event.isAltPressed())
+                                .put("selected", selected == null ? JSONObject.NULL : selected.toString())
+                                .put("epoch", inputGeneration.get()));
+                    } catch (JSONException error) {
+                        Log.e(LOG_TAG, "Unable to encode clipboard input", error);
+                    }
                 }
             }
             return true;
@@ -516,11 +530,11 @@ public class V7ImeService extends InputMethodService {
         String action = event.getAction() == KeyEvent.ACTION_UP
                 ? "keyup"
                 : "keydown";
-        boolean captured = dispatchPhysicalKeyToWeb(action, event);
+        boolean captured = dispatchPhysicalKeyToSandbox(action, event);
         if (captured && event.getAction() == KeyEvent.ACTION_DOWN) {
             hardwareKeyPressOwnership.claim(
                     event.getKeyCode(),
-                    HardwareKeyPressOwnership.Owner.WEB,
+                    HardwareKeyPressOwnership.Owner.SANDBOX,
                     inputGeneration.get());
         }
         return captured;
@@ -643,6 +657,9 @@ public class V7ImeService extends InputMethodService {
         pendingPreeditLengths.clear();
         takePendingTelexText(inputGeneration.get());
         int nextGeneration = inputGeneration.incrementAndGet();
+        dispatchInputCommand("clear");
+        BundledStrippedPloverRuntime.get(this).request(
+                "{\"id\":0,\"method\":\"reset_state\",\"params\":{}}", (body, error) -> {});
         evaluateJavascript(
                 "window.clearPreeditFromAndroid"
                         + " && window.clearPreeditFromAndroid("
@@ -797,8 +814,8 @@ public class V7ImeService extends InputMethodService {
                 || keyCode == KeyEvent.KEYCODE_META_RIGHT;
     }
 
-    private boolean dispatchPhysicalKeyToWeb(String action, KeyEvent event) {
-        if (webView == null || !hardwareKeyCapturePolicy.isCaptured(
+    private boolean dispatchPhysicalKeyToSandbox(String action, KeyEvent event) {
+        if (!hardwareKeyCapturePolicy.isCaptured(
                 event.getKeyCode(),
                 event.getUnicodeChar(),
                 isEffectiveTelexMode())) {
@@ -811,24 +828,19 @@ public class V7ImeService extends InputMethodService {
         }
         lastKeyEventSignature = signature;
 
-        String key = getJavascriptKey(event);
-        String code = getJavascriptCode(event.getKeyCode());
-        int generation = inputGeneration.get();
-        String script = "window.handleAndroidKeyEvent && window.handleAndroidKeyEvent("
-                + JSONObject.quote(action) + ","
-                + JSONObject.quote(key) + ","
-                + JSONObject.quote(code) + ","
-                + (event.getRepeatCount() > 0) + ","
-                + event.isShiftPressed() + ","
-                + event.isCtrlPressed() + ","
-                + event.isAltPressed() + ","
-                + event.isMetaPressed()
-                + ","
-                + event.isCapsLockOn()
-                + ","
-                + generation
-                + ")";
-        webView.evaluateJavascript(script, null);
+        try {
+            JSONObject key = new JSONObject().put("action", action)
+                    .put("key", getJavascriptKey(event))
+                    .put("code", getJavascriptCode(event.getKeyCode()))
+                    .put("repeat", event.getRepeatCount() > 0)
+                    .put("shiftKey", event.isShiftPressed()).put("ctrlKey", event.isCtrlPressed())
+                    .put("altKey", event.isAltPressed()).put("metaKey", event.isMetaPressed())
+                    .put("capsLock", event.isCapsLockOn()).put("epoch", inputGeneration.get());
+            dispatchInputCommand(new JSONObject().put("type", "key").put("event", key)
+                    .put("epoch", inputGeneration.get()));
+        } catch (JSONException error) {
+            Log.e(LOG_TAG, "Unable to encode hardware input", error);
+        }
         return true;
     }
 
@@ -1081,6 +1093,9 @@ public class V7ImeService extends InputMethodService {
                 connection.finishComposingText();
             }
         }
+        dispatchInputCommand("clear");
+        BundledStrippedPloverRuntime.get(this).request(
+                "{\"id\":0,\"method\":\"reset_state\",\"params\":{}}", (body, error) -> {});
         evaluateJavascript(
                 "window.clearPreeditFromAndroid && window.clearPreeditFromAndroid("
                         + inputGeneration.get()
@@ -1090,6 +1105,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void publishTelexAvailability() {
+        scheduleInputStateRefresh();
         evaluateJavascript(
                 "window.handleAndroidTelexAvailability"
                         + " && window.handleAndroidTelexAvailability("
@@ -1105,6 +1121,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void publishStenoModeState() {
+        scheduleInputStateRefresh();
         HardwareInputMode mode = hardwareInputMode;
         evaluateJavascript(
                 "window.handleAndroidStenoModeChanged"
@@ -1120,6 +1137,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void publishEditorModeState() {
+        scheduleInputStateRefresh();
         evaluateJavascript(
                 "window.handleAndroidEditorModeChanged"
                         + " && window.handleAndroidEditorModeChanged("
@@ -1196,6 +1214,136 @@ public class V7ImeService extends InputMethodService {
         }
     }
 
+    private void warmInputSandbox() {
+        inputSandbox.warmAsync(inputSandboxExecutor, () -> mainHandler.post(() -> {
+            if (!SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) return;
+            if (!inputSandbox.isReady()) {
+                android.widget.Toast.makeText(this, "V7 input sandbox unavailable", android.widget.Toast.LENGTH_LONG).show();
+                return;
+            }
+            while (inputSandbox.isReady() && !pendingInputCommands.isEmpty()) dispatchInputCommand(pendingInputCommands.removeFirst());
+            dispatchInputCommand("refresh");
+        }));
+    }
+
+    private void scheduleInputStateRefresh() {
+        mainHandler.removeCallbacks(refreshInputState);
+        mainHandler.post(refreshInputState);
+    }
+
+    private JSONObject inputContext() throws JSONException {
+        return new JSONObject().put("epoch", inputGeneration.get())
+                .put("steno", isV7PloverMode()).put("telex", isTelexMode())
+                .put("telexReady", telexSandbox.isReady()).put("rawOutline", rawOutlineMode)
+                .put("ploverPaused", BundledStrippedPloverRuntime.get(this).isPaused())
+                .put("ploverAvailable", true).put("modelState", getInferenceModelState())
+                .put("modelError", getInferenceModelError())
+                .put("slots", new JSONArray(new ClipboardSlotStore(this).toJson()));
+    }
+
+    private void dispatchInputCommand(String type) {
+        try {
+            dispatchInputCommand(new JSONObject().put("type", type).put("epoch", inputGeneration.get()));
+        } catch (JSONException error) {
+            Log.e(LOG_TAG, "Unable to encode input command", error);
+        }
+    }
+
+    private void dispatchInputCommand(JSONObject command) {
+        if (inputSandbox == null || !SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) return;
+        if (command.optInt("epoch", -1) != inputGeneration.get()) return;
+        if (!inputSandbox.isReady()) {
+            pendingInputCommands.addLast(command);
+            warmInputSandbox();
+            return;
+        }
+        try {
+            command.put("context", inputContext());
+            applyInputPacket(inputSandbox.dispatch(command));
+        } catch (Exception error) {
+            handleInputSandboxFailure(error);
+        }
+    }
+
+    private void handleInputSandboxFailure(Exception error) {
+        Log.e(LOG_TAG, "V7 sandbox input failed", error);
+        android.widget.Toast.makeText(this, "V7 input failed: " + error.getClass().getSimpleName(),
+                android.widget.Toast.LENGTH_LONG).show();
+        // Preserve the last completed composition before a replacement isolate
+        // starts with an empty buffer. Never let recovery erase host text.
+        inputSandbox.close();
+        inputSandbox = new ImeJavaScriptSandbox(this);
+        pendingInputCommands.clear();
+        finishCurrentPreedit();
+        warmInputSandbox();
+    }
+
+    private void applyInputPacket(JSONObject packet) throws Exception {
+        JSONArray effects = packet.optJSONArray("effects");
+        JSONObject next = packet.optJSONObject("snapshot");
+        if (next != null && next.optInt("epoch", -1) == inputGeneration.get()
+                && !next.toString().equals(inputSnapshot)) {
+            inputSnapshot = next.toString();
+            if (!isEffectiveTelexMode()) {
+                applyPreeditText(next.optString("text", ""), next.optJSONArray("grammarSections").toString());
+            }
+            evaluateJavascript("window.handleAndroidInputSnapshot && window.handleAndroidInputSnapshot(" + next + ")");
+        }
+        if (effects == null) return;
+        for (int index = 0; index < effects.length(); index++) {
+            JSONObject effect = effects.getJSONObject(index);
+            int id = effect.getInt("id");
+            switch (effect.getString("type")) {
+                case "infer": {
+                    InferenceResult result = runNativeInference(effect.getString("body"), latestInferenceRequestId.incrementAndGet());
+                    String value = result.errorMessage.isEmpty() ? result.responseBody : "null";
+                    applyInputPacket(inputSandbox.reply(id, value, result.errorMessage));
+                    break;
+                }
+                case "plover": {
+                    JSONObject request = new JSONObject().put("id", id).put("method", effect.getString("method"))
+                            .put("params", effect.opt("params"));
+                    ImeJavaScriptSandbox owner = inputSandbox;
+                    long isolateGeneration = owner.generation();
+                    BundledStrippedPloverRuntime.get(this).request(request.toString(), (body, error) -> {
+                        if (!SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration) || inputSandbox != owner
+                                || !owner.isReady() || owner.generation() != isolateGeneration) return;
+                        String value = "null";
+                        String failure = error;
+                        try {
+                            if (failure.isEmpty()) {
+                                JSONObject response = new JSONObject(body);
+                                if (response.has("error")) failure = response.get("error").toString();
+                                else value = response.getJSONObject("result").toString();
+                            }
+                        } catch (JSONException invalidResponse) {
+                            failure = "Stripped Plover returned invalid JSON";
+                        }
+                        try {
+                            applyInputPacket(owner.reply(id, value, failure));
+                        } catch (Exception exception) {
+                            handleInputSandboxFailure(exception);
+                        }
+                    });
+                    break;
+                }
+                case "clipboard":
+                    new ClipboardSlotStore(this).set(effect.getInt("slot"), effect.getString("text"));
+                    break;
+                case "message":
+                    android.widget.Toast.makeText(this, effect.getString("text"), android.widget.Toast.LENGTH_SHORT).show();
+                    break;
+                case "undoOutline": undoCommittedRawOutlineStroke(); break;
+                case "switch": {
+                    InputMethodManager manager = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                    if (manager != null) manager.showInputMethodPicker();
+                    break;
+                }
+                default: throw new IllegalStateException("Unknown sandbox input effect");
+            }
+        }
+    }
+
     private void evaluateJavascript(String script) {
         WebView target = webView;
         int targetGeneration = inputViewGeneration;
@@ -1214,32 +1362,14 @@ public class V7ImeService extends InputMethodService {
         }
     }
 
-    private void resetHardwareKeyboardStateInWebView() {
-        WebView target = webView;
-        int targetGeneration = inputViewGeneration;
-        if (target == null) {
-            return;
-        }
-        Runnable reset = () -> {
-            if (inputViewOwnership.isCurrent(target, targetGeneration)) {
-                target.evaluateJavascript(
-                        "window.resetHardwareKeyboardStateFromAndroid"
-                                + " && window.resetHardwareKeyboardStateFromAndroid()",
-                        null
-                );
-            }
-        };
-        if (Looper.myLooper() == Looper.getMainLooper()) {
-            reset.run();
-        } else {
-            target.post(reset);
-        }
+    private void resetHardwareKeyboardStateInSandbox() {
+        dispatchInputCommand("reset");
     }
 
     private void resetHardwareInputState() {
         hardwareKeyActionResolver.reset();
         hardwareKeyPressOwnership.invalidate();
-        resetHardwareKeyboardStateInWebView();
+        resetHardwareKeyboardStateInSandbox();
     }
 
     private InferenceResult runNativeInference(String requestBody, int requestId) {
@@ -1276,19 +1406,6 @@ public class V7ImeService extends InputMethodService {
                 responseBody,
                 errorMessage
         );
-    }
-
-    private String requestInferenceSync(String requestBody, int requestId) {
-        InferenceResult result = runNativeInference(requestBody, requestId);
-        JSONObject response = new JSONObject();
-        try {
-            response.put("statusCode", result.statusCode);
-            response.put("responseBody", result.responseBody);
-            response.put("errorMessage", result.errorMessage);
-        } catch (JSONException error) {
-            Log.e(LOG_TAG, "Unable to encode local inference response", error);
-        }
-        return response.toString();
     }
 
     private void warmInferenceModel() {
@@ -1357,6 +1474,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void publishInferenceModelState(String state, String modelId) {
+        scheduleInputStateRefresh();
         inferenceModelId = modelId;
         inferenceModelState = state;
         if (!"error".equals(state)) {
@@ -1455,6 +1573,28 @@ public class V7ImeService extends InputMethodService {
         private boolean isCurrentInputView() {
             return owner == webView
                     && inputViewOwnership.isCurrent(owner, ownerGeneration);
+        }
+
+        @JavascriptInterface
+        public boolean isSandboxInputEnabled() { return true; }
+
+        @JavascriptInterface
+        public String getInputSnapshot() { return inputSnapshot; }
+
+        @JavascriptInterface
+        public void submitInputCommand(String json) {
+            if (!isCurrentInputView()) return;
+            try {
+                JSONObject command = new JSONObject(json);
+                String type = command.optString("type");
+                if (!("select".equals(type) || "clipboard".equals(type))) return;
+                int epoch = command.optInt("epoch", -1);
+                mainHandler.post(() -> {
+                    if (isCurrentInputView() && epoch == inputGeneration.get()) dispatchInputCommand(command);
+                });
+            } catch (JSONException error) {
+                Log.e(LOG_TAG, "Invalid display input command", error);
+            }
         }
 
         @JavascriptInterface
@@ -1577,58 +1717,6 @@ public class V7ImeService extends InputMethodService {
                     getWindow().getWindow().getDecorView().requestLayout();
                 }
             });
-        }
-
-        @JavascriptInterface
-        public void setPreeditText(
-                String text,
-                String grammarSectionsJson,
-                int eventGeneration) {
-            if (!isCurrentInputView()
-                    || eventGeneration != inputGeneration.get()) {
-                return;
-            }
-            String normalized = text == null ? "" : text;
-            int generation = eventGeneration;
-            if (isEffectiveTelexMode()) {
-                telexHasPreedit = !normalized.isEmpty();
-                rememberPendingTelexText(normalized, generation);
-            }
-            String normalizedGrammarSections = grammarSectionsJson == null
-                    ? "[]"
-                    : grammarSectionsJson;
-            owner.post(() -> {
-                if (isCurrentInputView()
-                        && generation == inputGeneration.get()) {
-                    applyPreeditText(
-                            normalized,
-                            normalizedGrammarSections
-                    );
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public void undoRawOutlineStroke() {
-            if (!isCurrentInputView()) {
-                return;
-            }
-            int generation = inputGeneration.get();
-            owner.post(() -> {
-                if (isCurrentInputView()
-                        && generation == inputGeneration.get()) {
-                    undoCommittedRawOutlineStroke();
-                }
-            });
-        }
-
-        @JavascriptInterface
-        public String requestInferenceSync(String body, int requestId) {
-            if (!isCurrentInputView()) {
-                return "{\"statusCode\":409,\"responseBody\":\"\","
-                        + "\"errorMessage\":\"Stale input view\"}";
-            }
-            return V7ImeService.this.requestInferenceSync(body, requestId);
         }
 
         @JavascriptInterface

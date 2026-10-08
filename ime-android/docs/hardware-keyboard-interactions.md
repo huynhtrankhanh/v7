@@ -52,7 +52,7 @@ to open the same picker, including in the collapsed **Normal typing** and
 1. call Android `InputConnection.finishComposingText()`;
 2. preserve the text already shown in the editor as committed text;
 3. invalidate pending V7 inference/preedit updates;
-4. reset V7's in-memory and WebUI composing session.
+4. reset V7's sandbox composition state and publish an empty display snapshot.
 
 It does **not** send Backspace/Delete or replace the composing range with an
 empty string. Consequently, pressing `[` after composing a phrase leaves that
@@ -80,9 +80,9 @@ Android native key handling runs before WebView dispatch:
 4. forward modifier down/up pairs to the host editor; finish PREEDIT before
    forwarding Shift+Arrow or Ctrl+Shift+Arrow selection navigation;
 5. while in V7 or Plover composition, capture exact Ctrl+digit/Alt+digit slot
-   shortcuts (including the numeric keypad) and dispatch directly through
-   `handleAndroidClipboardSlot`; other Ctrl/Alt/Meta shortcuts keep editor routing;
-6. while in STENO, forward captured steno keys to the WebUI;
+   shortcuts (including the numeric keypad) and dispatch directly to the
+   input sandbox; other Ctrl/Alt/Meta shortcuts keep editor routing;
+6. while in STENO, process captured steno keys synchronously in the input sandbox;
 7. carry the current native Caps Lock state with every event and uppercase
    every cased character emitted anywhere in the steno pipeline while it is
    active, including V7, Emily, Stripped Plover, rendered candidates,
@@ -112,7 +112,7 @@ Once held Backspace empties the native raw buffer, the next repeat explicitly
 transfers that press to ordinary editor routing and continues deleting committed
 text; merely reaching an empty buffer does not leak the preceding key-up.
 
-Telex and background dictionary import share one application-wide AndroidX
+V7 input, Telex, and background dictionary import share one application-wide AndroidX
 `JavaScriptSandbox` and use distinct isolates. Sandbox creation, bundle loading,
 and V7 tone-oracle warm-up happen off the IME thread. The Telex banner visibly
 reports Latin fallback until the isolate is ready; warmed key conversion is
@@ -127,7 +127,7 @@ point instead of splitting the dead key between the editor and PREEDIT.
 
 Raw-outline editor fields take precedence over the saved V7/Telex/Normal mode.
 Even when Telex is the stored mode, their keys use the existing raw-outline
-WebUI chord path; leaving the field restores Telex without changing the saved
+sandbox chord path; leaving the field restores Telex without changing the saved
 mode.
 
 ## Raw outline fields
@@ -189,3 +189,27 @@ dialog-navigation keys back to the activity instead of retaining the previous
 outline editor's steno-routing contract. Ctrl and Shift remain with the IME so
 the ordinary Ctrl+Shift mode toggle works; returning to an editor restores that
 editor's Raw-outline or standard-V7 routing without changing the saved mode.
+
+## Synchronous V7 input
+
+`ImeJavaScriptSandbox` owns a DOM-free bundle of `imeEngine.ts`. Physical
+key events call this isolate directly; they are not sent to the display
+WebView. The isolate returns JSON effects and composition snapshots. Native
+code services inference effects synchronously and resumes the isolate until
+V7 composition completes, applying PREEDIT directly on the IME thread. Display
+updates can lag without delaying or discarding input. Startup events are queued
+and stale editor generations are discarded before execution.
+
+Plover RPC effects retain the engine's existing asynchronous runtime. The
+input isolate serializes composition operations across those replies, including
+clipboard paste and the Caps Lock state captured for each stroke. It yields
+while waiting for Plover so the engine WebView can receive its main-thread
+callbacks. Reset invalidates pending output before a new editor can receive it.
+Candidate and clipboard taps submit commands tagged with the editor generation;
+the display only renders snapshots and measures its height.
+
+Sandbox startup has a three-second deadline and each evaluation has a
+four-second deadline. An evaluation failure closes the isolate and reports a
+native input error instead of accepting a late result. This path still needs
+on-device verification under CPU contention; synchronous waiting can delay the
+IME thread when the sandbox or local inference is slow.

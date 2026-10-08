@@ -168,6 +168,187 @@ async function captureReadmeScreenshots(page, url) {
   console.log(`README screenshots saved to ${directory}`);
 }
 
+async function verifySandboxDisplay(browser, url) {
+  const { buildSync } = require("esbuild");
+  const { runInNewContext } = require("node:vm");
+  const bundle = buildSync({
+    entryPoints: [path.join(ROOT, "src/ime-sandbox.ts")],
+    bundle: true,
+    write: false,
+    platform: "neutral",
+    format: "iife",
+  }).outputFiles[0].text;
+  const isolate = {};
+  runInNewContext(bundle, isolate);
+  const context = {
+    epoch: 1,
+    steno: true,
+    telex: false,
+    telexReady: true,
+    rawOutline: false,
+    ploverPaused: false,
+    ploverAvailable: true,
+    modelState: "ready",
+    modelError: "",
+    slots: [" saved ", ...Array(9).fill(null)],
+  };
+  const dispatch = async (type, data = {}) =>
+    JSON.parse(await isolate.v7Input.dispatch({ type, context, ...data }));
+  let snapshot = (await dispatch("refresh")).snapshot;
+  const page = await browser.newPage();
+  await page.evaluateOnNewDocument((initial) => {
+    window.__snapshot = initial;
+    window.__commands = [];
+    window.__displayPreedits = [];
+    window.__inputEpoch = initial.epoch;
+    window.addEventListener("v7-editor-state", (event) => {
+      window.__renderedText = event.detail.text;
+    });
+    window.AndroidIme = {
+      isSandboxInputEnabled: () => true,
+      getInputSnapshot: () => JSON.stringify(window.__snapshot),
+      submitInputCommand: (json) => window.__commands.push(JSON.parse(json)),
+      getInputGeneration: () => window.__inputEpoch,
+      getClipboardSlots: () => JSON.stringify(initial.slots),
+      getInferenceModelError: () => "",
+      getInferenceModelState: () => "ready",
+      isStenoModeEnabled: () => true,
+      isTelexModeEnabled: () => false,
+      isTelexReady: () => true,
+      isRawOutlineMode: () => false,
+      hasPloverConfiguration: () => true,
+      setKeyboardHeight: () => {},
+      setPreeditText: (text) => window.__displayPreedits.push(text),
+      changeInputMethod: () => {},
+      requestPlover: (body, id) =>
+        setTimeout(
+          () =>
+            window.handleAndroidPloverResponse(
+              id,
+              JSON.stringify({ result: { dictionaries: [] } }),
+              "",
+            ),
+          0,
+        ),
+    };
+  }, snapshot);
+  await page.goto(`${url}/ime.html`);
+  // Exercise the production snapshot-only path with a slow renderer. No
+  // browser callback runs between these native input operations.
+  const cdp = await page.createCDPSession();
+  await cdp.send("Emulation.setCPUThrottlingRate", { rate: 6 });
+  for (let count = 0; count < 80; count++) {
+    for (const action of ["keydown", "keyup"]) {
+      snapshot = (
+        await dispatch("key", {
+          event: {
+            action,
+            key: "7",
+            epoch: 1,
+            capsLock: false,
+            repeat: false,
+            shiftKey: false,
+            ctrlKey: false,
+            altKey: false,
+            metaKey: false,
+          },
+        })
+      ).snapshot;
+    }
+  }
+  assert(
+    snapshot.text === "7".repeat(80),
+    "Sandbox dropped strokes without display callbacks",
+  );
+  await page.evaluate((next) => {
+    window.__snapshot = next;
+    window.handleAndroidInputSnapshot(next);
+  }, snapshot);
+  assert(
+    await page.evaluate(() => window.__renderedText === "7".repeat(80)),
+    "Display didn't render the authoritative snapshot",
+  );
+  await page.click("#clipboard-slots button");
+  const command = await page.evaluate(() => window.__commands.at(-1));
+  assert(
+    command.type === "clipboard" && command.slot === 0 && command.epoch === 1,
+    "Clipboard tap didn't submit a session-scoped native command",
+  );
+  snapshot = (await dispatch(command.type, command)).snapshot;
+  await page.evaluate(
+    (next) => window.handleAndroidInputSnapshot(next),
+    snapshot,
+  );
+  assert(
+    snapshot.text.endsWith(" saved "),
+    "Native clipboard command didn't compose fixed text",
+  );
+  await page.evaluate((next) => {
+    window.__inputEpoch = 2;
+    window.handleAndroidInputSnapshot({
+      ...next,
+      text: "stale",
+      islands: [{ type: "fixed", value: "stale" }],
+    });
+  }, snapshot);
+  assert(
+    await page.evaluate(() => window.__renderedText !== "stale"),
+    "Old editor snapshot was accepted",
+  );
+  assert(
+    await page.evaluate(() => window.__displayPreedits.length === 0),
+    "Display wrote composing text in sandbox mode",
+  );
+  context.epoch = 2;
+  snapshot = (await dispatch("clear")).snapshot;
+  await page.evaluate(
+    (next) => window.handleAndroidInputSnapshot(next),
+    snapshot,
+  );
+  for (const action of ["keydown", "keyup"]) {
+    for (const key of ["c", " ", "m"]) {
+      const packet = await dispatch("key", {
+        event: {
+          action,
+          key,
+          epoch: 2,
+          capsLock: false,
+          repeat: false,
+          shiftKey: false,
+          ctrlKey: false,
+          altKey: false,
+          metaKey: false,
+        },
+      });
+      const effect = packet.effects.find((item) => item.type === "infer");
+      if (effect)
+        snapshot = JSON.parse(
+          await isolate.v7Input.reply(effect.id, {
+            candidates: [["first"], ["second"]],
+          }),
+        ).snapshot;
+    }
+  }
+  await page.evaluate(
+    (next) => window.handleAndroidInputSnapshot(next),
+    snapshot,
+  );
+  await page.click("#candidate-area .candidate");
+  const selection = await page.evaluate(() => window.__commands.at(-1));
+  assert(
+    selection.type === "select" &&
+      selection.index === 1 &&
+      selection.epoch === 2,
+    "Candidate tap didn't submit a native selection command",
+  );
+  snapshot = (await dispatch(selection.type, selection)).snapshot;
+  assert(
+    snapshot.text === "second",
+    "Native candidate selection didn't update preedit",
+  );
+  await page.close();
+}
+
 async function main() {
   const { server, requests, url } = await startStaticServer();
   const browser = await puppeteer.launch({
@@ -1358,7 +1539,10 @@ async function main() {
           request.params.translation === "test",
       ),
     );
-    console.log("Android IME WebUI bridge interactions passed");
+    await verifySandboxDisplay(browser, url);
+    console.log(
+      "Android IME bridge and synchronous sandbox display interactions passed",
+    );
     await captureReadmeScreenshots(page, url);
   } finally {
     await browser.close();

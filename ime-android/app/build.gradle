@@ -32,6 +32,7 @@ android {
         main {
             assets.srcDir layout.buildDirectory.dir("generated/v7WebUi")
             assets.srcDir layout.buildDirectory.dir("generated/telexSandbox")
+            assets.srcDir layout.buildDirectory.dir("generated/imeSandbox")
             assets.srcDir layout.buildDirectory.dir(
                     "generated/strippedPloverWeb"
             )
@@ -119,6 +120,18 @@ tasks.register("buildTelexSandbox", Exec) {
             new File(webRoot, "package-lock.json")
     )
     outputs.file generatedTelexSandbox.map { it.file("telex-sandbox.js") }
+}
+
+tasks.register("buildImeSandbox", Exec) {
+    workingDir webRoot
+    def output = layout.buildDirectory.file("generated/imeSandbox/ime-sandbox.js")
+    commandLine "node", new File(webRoot, "scripts/build-ime-sandbox.mjs"), output.get().asFile
+    inputs.files(
+            fileTree(new File(webRoot, "src")) { include "**/*.ts" },
+            new File(webRoot, "scripts/build-ime-sandbox.mjs"),
+            new File(webRoot, "package.json"), new File(webRoot, "package-lock.json")
+    )
+    outputs.file output
 }
 
 tasks.register("prepareKenlm", Exec) {
@@ -244,6 +257,7 @@ tasks.register("buildSourceArchive", Exec) {
 tasks.named("preBuild").configure {
     dependsOn "syncWebUi"
     dependsOn "buildTelexSandbox"
+    dependsOn "buildImeSandbox"
     dependsOn "buildStrippedPloverWeb"
     dependsOn "buildNativeInference"
     dependsOn "buildSourceArchive"
