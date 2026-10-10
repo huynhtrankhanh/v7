@@ -193,35 +193,51 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
 }
 
 export class KeyboardStrokeTracker {
-  private heldKeys = new Set<string>();
+  private heldPhysicalKeys = new Set<string>();
+  private heldLogicalKeyCounts = new Map<string, number>();
   private strokeKeys = new Set<string>();
 
   reset(): void {
-    this.heldKeys.clear();
+    this.heldPhysicalKeys.clear();
+    this.heldLogicalKeyCounts.clear();
     this.strokeKeys.clear();
   }
 
   keyDown(
     key: string,
-    options: { includeInStroke?: boolean } = {},
+    options: { includeInStroke?: boolean; physicalKey?: string } = {},
   ): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    this.heldKeys.add(mapped);
+    const physicalKey = options.physicalKey ?? key;
+    if (this.heldPhysicalKeys.has(physicalKey)) return mapped;
+    this.heldPhysicalKeys.add(physicalKey);
+    this.heldLogicalKeyCounts.set(
+      mapped,
+      (this.heldLogicalKeyCounts.get(mapped) ?? 0) + 1,
+    );
     if (options.includeInStroke ?? true) {
       this.strokeKeys.add(mapped);
     }
     return mapped;
   }
 
-  keyUp(key: string): string | null {
+  keyUp(key: string, physicalKey = key): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    this.heldKeys.delete(mapped);
-    if (this.heldKeys.size !== 0 || this.strokeKeys.size === 0) {
+    if (!this.heldPhysicalKeys.has(physicalKey)) return null;
+    this.heldPhysicalKeys.delete(physicalKey);
+    const remainingLogicalHolds = this.heldLogicalKeyCounts.get(mapped) ?? 0;
+    if (remainingLogicalHolds <= 1) {
+      this.heldLogicalKeyCounts.delete(mapped);
+    } else {
+      this.heldLogicalKeyCounts.set(mapped, remainingLogicalHolds - 1);
+    }
+    if (this.heldPhysicalKeys.size !== 0 || this.strokeKeys.size === 0) {
       return null;
     }
     const stroke = serializeStrokeKeys(this.strokeKeys);
+    this.heldLogicalKeyCounts.clear();
     this.strokeKeys = new Set<string>();
     return stroke;
   }

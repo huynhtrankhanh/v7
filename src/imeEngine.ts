@@ -927,7 +927,7 @@ export function createImeEngine(
       return Promise.resolve();
     }
     if (event.action === "keyup") {
-      const stroke = keyboardStrokeTracker.keyUp(event.key);
+      const stroke = keyboardStrokeTracker.keyUp(event.key, event.code);
       return stroke ? enqueue(() => handleChord(stroke)) : operations;
     }
     if (event.repeat) return operations;
@@ -955,7 +955,8 @@ export function createImeEngine(
       });
     }
     const mapped = mapKeyUnique(event.key);
-    if (mapped) keyboardStrokeTracker.keyDown(event.key);
+    if (mapped)
+      keyboardStrokeTracker.keyDown(event.key, { physicalKey: event.code });
     return operations;
   }
   function configure(next: ImeInputContext) {
