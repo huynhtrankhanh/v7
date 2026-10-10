@@ -205,12 +205,13 @@ export class KeyboardStrokeTracker {
 
   keyDown(
     key: string,
-    options: { includeInStroke?: boolean } = {},
+    options: { includeInStroke?: boolean; physicalKey?: string } = {},
   ): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    if (this.heldPhysicalKeys.has(key)) return mapped;
-    this.heldPhysicalKeys.add(key);
+    const physicalKey = options.physicalKey ?? key;
+    if (this.heldPhysicalKeys.has(physicalKey)) return mapped;
+    this.heldPhysicalKeys.add(physicalKey);
     this.heldLogicalKeyCounts.set(
       mapped,
       (this.heldLogicalKeyCounts.get(mapped) ?? 0) + 1,
@@ -221,11 +222,11 @@ export class KeyboardStrokeTracker {
     return mapped;
   }
 
-  keyUp(key: string): string | null {
+  keyUp(key: string, physicalKey = key): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    if (!this.heldPhysicalKeys.has(key)) return null;
-    this.heldPhysicalKeys.delete(key);
+    if (!this.heldPhysicalKeys.has(physicalKey)) return null;
+    this.heldPhysicalKeys.delete(physicalKey);
     const remainingLogicalHolds = this.heldLogicalKeyCounts.get(mapped) ?? 0;
     if (remainingLogicalHolds <= 1) {
       this.heldLogicalKeyCounts.delete(mapped);

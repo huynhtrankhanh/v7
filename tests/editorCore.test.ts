@@ -202,6 +202,12 @@ describe("editorCore keyboard input", () => {
     expect(tracker.keyUp("t")).toBeNull();
     expect(tracker.keyUp("g")).toBe("-D");
   });
+
+  test("matches keyup by physical key identity even when key case changes", () => {
+    const tracker = new KeyboardStrokeTracker();
+    tracker.keyDown("T", { physicalKey: "KeyT" });
+    expect(tracker.keyUp("t", "KeyT")).toBe("-D");
+  });
 });
 
 describe("editorCore candidate selection", () => {
