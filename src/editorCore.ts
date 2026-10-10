@@ -193,11 +193,13 @@ export function serializeStrokeKeys(strokeKeys: Set<string>): string {
 }
 
 export class KeyboardStrokeTracker {
-  private heldKeys = new Set<string>();
+  private heldPhysicalKeys = new Set<string>();
+  private heldLogicalKeyCounts = new Map<string, number>();
   private strokeKeys = new Set<string>();
 
   reset(): void {
-    this.heldKeys.clear();
+    this.heldPhysicalKeys.clear();
+    this.heldLogicalKeyCounts.clear();
     this.strokeKeys.clear();
   }
 
@@ -207,7 +209,12 @@ export class KeyboardStrokeTracker {
   ): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    this.heldKeys.add(mapped);
+    if (this.heldPhysicalKeys.has(key)) return mapped;
+    this.heldPhysicalKeys.add(key);
+    this.heldLogicalKeyCounts.set(
+      mapped,
+      (this.heldLogicalKeyCounts.get(mapped) ?? 0) + 1,
+    );
     if (options.includeInStroke ?? true) {
       this.strokeKeys.add(mapped);
     }
@@ -217,11 +224,19 @@ export class KeyboardStrokeTracker {
   keyUp(key: string): string | null {
     const mapped = mapKeyUnique(key);
     if (!mapped) return null;
-    this.heldKeys.delete(mapped);
-    if (this.heldKeys.size !== 0 || this.strokeKeys.size === 0) {
+    if (!this.heldPhysicalKeys.has(key)) return null;
+    this.heldPhysicalKeys.delete(key);
+    const remainingLogicalHolds = this.heldLogicalKeyCounts.get(mapped) ?? 0;
+    if (remainingLogicalHolds <= 1) {
+      this.heldLogicalKeyCounts.delete(mapped);
+    } else {
+      this.heldLogicalKeyCounts.set(mapped, remainingLogicalHolds - 1);
+    }
+    if (this.heldPhysicalKeys.size !== 0 || this.strokeKeys.size === 0) {
       return null;
     }
     const stroke = serializeStrokeKeys(this.strokeKeys);
+    this.heldLogicalKeyCounts.clear();
     this.strokeKeys = new Set<string>();
     return stroke;
   }

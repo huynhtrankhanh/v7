@@ -34,6 +34,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -264,6 +265,9 @@ public class V7ImeService extends InputMethodService {
                 newSelEnd,
                 candidatesStart,
                 candidatesEnd)) {
+            return;
+        }
+        if (newSelStart == newSelEnd && !pendingPreeditLengths.isEmpty()) {
             return;
         }
         pendingPreeditLengths.clear();
@@ -960,9 +964,11 @@ public class V7ImeService extends InputMethodService {
                 return false;
             }
             int composingLength = candidatesEnd - candidatesStart;
-            while (!pendingPreeditLengths.isEmpty()) {
-                int expectedLength = pendingPreeditLengths.removeFirst();
+            Iterator<Integer> iterator = pendingPreeditLengths.iterator();
+            while (iterator.hasNext()) {
+                int expectedLength = iterator.next();
                 if (expectedLength == composingLength) {
+                    iterator.remove();
                     return true;
                 }
             }
@@ -983,26 +989,49 @@ public class V7ImeService extends InputMethodService {
         String normalizedGrammarSections = nextGrammarSectionsJson == null
                 ? "[]"
                 : nextGrammarSectionsJson;
-        if (normalized.equals(preeditText)
-                && normalizedGrammarSections.equals(preeditGrammarSectionsJson)) {
+        String previousPreeditText = preeditText;
+        String previousGrammarSections = preeditGrammarSectionsJson;
+        if (normalized.equals(previousPreeditText)
+                && normalizedGrammarSections.equals(previousGrammarSections)) {
             return;
         }
-
-        preeditText = normalized;
-        preeditGrammarSectionsJson = normalizedGrammarSections;
         InputConnection connection = getCurrentInputConnection();
         if (connection == null) {
             pendingPreeditLengths.clear();
+            preeditText = normalized;
+            preeditGrammarSectionsJson = normalizedGrammarSections;
             return;
         }
 
-        if (preeditText.isEmpty()) {
-            connection.setComposingText("", 1);
-            connection.finishComposingText();
+        if (normalized.isEmpty()) {
+            boolean setApplied = connection.setComposingText("", 1);
+            boolean finishApplied = connection.finishComposingText();
+            if (!setApplied || !finishApplied) {
+                Log.w(
+                        LOG_TAG,
+                        "Failed to clear composing text setApplied="
+                                + setApplied
+                                + " finishApplied="
+                                + finishApplied
+                );
+                return;
+            }
+            preeditText = "";
+            preeditGrammarSectionsJson = "[]";
             pendingPreeditLengths.clear();
+            return;
         } else {
+            preeditText = normalized;
+            preeditGrammarSectionsJson = normalizedGrammarSections;
             pendingPreeditLengths.addLast(preeditText.length());
-            connection.setComposingText(buildStyledPreedit(), 1);
+            boolean applied = connection.setComposingText(buildStyledPreedit(), 1);
+            if (applied) {
+                return;
+            }
+            pendingPreeditLengths.removeLast();
+            preeditText = previousPreeditText;
+            preeditGrammarSectionsJson = previousGrammarSections;
+            Log.w(LOG_TAG, "Failed to set composing text");
         }
     }
 
