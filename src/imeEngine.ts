@@ -127,6 +127,21 @@ export function createImeEngine(
   const requestPlover = ports.plover;
   const errorMessage = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback;
+  // A reset must precede the next Plover translation, but it must not block
+  // normal V7 strokes. Plover's WebView RPC can take seconds or time out.
+  let pendingPloverReset: Promise<void> = Promise.resolve();
+  function queuePloverReset(): void {
+    const reset = pendingPloverReset
+      .catch(() => undefined)
+      .then(async () => {
+        await requestPlover("reset_state", {});
+      });
+    pendingPloverReset = reset;
+    void reset.catch((error) => {
+      console.log(error);
+      setPloverMessage(errorMessage(error, "Failed to reset Stripped Plover."));
+    });
+  }
   function isEffectiveTelexMode() {
     return context.telex && !context.rawOutline;
   }
@@ -386,6 +401,10 @@ export function createImeEngine(
     const currentRequest = ++strippedPlover.requestId;
     const uppercase = keyboardCapsLockActive;
     try {
+      // Serialize Plover operations across a previous reset. This wait applies
+      // only to Plover strokes; it does not gate the V7 composition queue.
+      await pendingPloverReset;
+      if (currentRequest !== strippedPlover.requestId) return;
       const result = await requestPlover("translate", { stroke });
       if (currentRequest !== strippedPlover.requestId) return;
       applyPloverOutput(result.output ?? [], {
@@ -394,9 +413,7 @@ export function createImeEngine(
         finalizePreedit: oneShot,
         uppercase,
       });
-      if (oneShot) {
-        await requestPlover("reset_state", {});
-      }
+      if (oneShot) queuePloverReset();
     } catch (e) {
       if (currentRequest !== strippedPlover.requestId) return;
       console.log(e);
@@ -409,12 +426,7 @@ export function createImeEngine(
     setPloverMessage("");
     if (!strippedPlover.enabled) {
       finalizePloverPreedit();
-      try {
-        await requestPlover("reset_state", {});
-      } catch (e) {
-        console.log(e);
-        setPloverMessage(errorMessage(e, "Failed to reset Stripped Plover."));
-      }
+      queuePloverReset();
       runInference();
     } else {
       runInference();

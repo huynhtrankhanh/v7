@@ -63,7 +63,7 @@ function isolate() {
       event: {
         action,
         key,
-        code: "",
+        code: key === " " ? "Space" : `Key${key.toUpperCase()}`,
         capsLock,
         repeat: false,
         shiftKey: false,
@@ -185,4 +185,78 @@ test("raw outline capture and undo run without the display WebView", async () =>
   expect((await runtime.chord([" "])).snapshot.text).toBe("S");
   expect((await runtime.chord([" "])).snapshot.text).toBe("");
   expect((await runtime.chord([" "])).effects[0].type).toBe("undoOutline");
+});
+
+test("a pending Plover mode-exit reset does not strand subsequent V7 inference", async () => {
+  const runtime = isolate();
+  expect((await runtime.chord(["q"])).snapshot.ploverEnabled).toBe(true);
+  const exited = await runtime.chord(["q"]);
+  expect(exited.snapshot.ploverEnabled).toBe(false);
+  const reset = exited.effects.find(
+    (effect) => effect.type === "plover" && effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined();
+
+  // Do not reply to reset: simulate a Plover WebView that is still busy.
+  const stroke = await runtime.chord(["c", " ", "m"]);
+  const inference = stroke.effects.find((effect) => effect.type === "infer")!;
+  expect(inference).toBeDefined();
+  expect(stroke.snapshot.text).toContain("["); // Raw V7 telemetry is retained.
+  const inferred = await runtime.reply(inference.id, {
+    candidates: [["xin chào"]],
+  });
+  expect(inferred.snapshot.text).toBe("xin chào");
+  expect(inferred.snapshot.ploverEnabled).toBe(false);
+
+  await runtime.reply(reset.id, { output: [] });
+});
+
+test("Plover translations wait for the reset from the preceding mode exit", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const exited = await runtime.chord(["q"]);
+  const reset = exited.effects.find(
+    (effect) => effect.type === "plover" && effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined();
+
+  await runtime.chord(["q"]); // Re-enter Plover before the reset callback.
+  const blocked = await runtime.chord(["a"]);
+  expect(blocked.effects.some((effect) => effect.method === "translate")).toBe(false);
+
+  const ready = await runtime.reply(reset.id, { output: [] });
+  const translate = ready.effects.find(
+    (effect) => effect.type === "plover" && effect.method === "translate",
+  )!;
+  expect(translate).toBeDefined();
+  const result = await runtime.reply(translate.id, {
+    output: [{ type: "preedit", text: "plover" }],
+  });
+  expect(result.snapshot.text).toBe("plover");
+});
+
+test("a one-shot Plover fallback cannot hold a later V7 stroke on reset", async () => {
+  const runtime = isolate();
+  const fallback = await runtime.chord(["q", "w"]); // #T-: unmatched V7
+  const translate = fallback.effects.find(
+    (effect) => effect.type === "plover" && effect.method === "translate",
+  )!;
+  expect(translate).toBeDefined();
+
+  const output = await runtime.reply(translate.id, {
+    output: [{ type: "committed", text: "english" }],
+  });
+  const reset = output.effects.find(
+    (effect) => effect.type === "plover" && effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined();
+
+  const stroke = await runtime.chord(["c", " ", "m"]);
+  const inference = stroke.effects.find((effect) => effect.type === "infer")!;
+  expect(inference).toBeDefined();
+  const result = await runtime.reply(inference.id, {
+    candidates: [["xin chào"]],
+  });
+  expect(result.snapshot.text).toContain("xin chào");
+  await runtime.reply(reset.id, { output: [] });
 });
