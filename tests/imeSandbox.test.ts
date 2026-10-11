@@ -222,7 +222,9 @@ test("Plover translations wait for the reset from the preceding mode exit", asyn
 
   await runtime.chord(["q"]); // Re-enter Plover before the reset callback.
   const blocked = await runtime.chord(["a"]);
-  expect(blocked.effects.some((effect) => effect.method === "translate")).toBe(false);
+  expect(blocked.effects.some((effect) => effect.method === "translate")).toBe(
+    false,
+  );
 
   const ready = await runtime.reply(reset.id, { output: [] });
   const translate = ready.effects.find(

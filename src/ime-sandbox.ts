@@ -60,10 +60,7 @@ export function createSandboxProtocol() {
     // Promise microtasks are bounded here: an operation actually waiting for
     // Plover must still yield to Android rather than deadlock its callback.
     let ploverYieldTurns = 0;
-    while (
-      active &&
-      !effects.length
-    ) {
+    while (active && !effects.length) {
       if ([...pending.values()].some((p) => p.type === "plover")) {
         if (++ploverYieldTurns > 32) break;
         await Promise.resolve();
