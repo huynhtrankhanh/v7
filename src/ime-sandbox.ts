@@ -55,11 +55,20 @@ export function createSandboxProtocol() {
   async function packet(): Promise<string> {
     // Let completed inference and queued composition jobs settle. If the only
     // outstanding work is Plover, yield to Android's main loop for its callback.
+    // An unrelated pending Plover reset must not make us return before an
+    // enqueued V7 stroke has had a chance to emit its native inference effect.
+    // Promise microtasks are bounded here: an operation actually waiting for
+    // Plover must still yield to Android rather than deadlock its callback.
+    let ploverYieldTurns = 0;
     while (
       active &&
-      !effects.length &&
-      ![...pending.values()].some((p) => p.type === "plover")
+      !effects.length
     ) {
+      if ([...pending.values()].some((p) => p.type === "plover")) {
+        if (++ploverYieldTurns > 32) break;
+        await Promise.resolve();
+        continue;
+      }
       await new Promise<void>((resolve) => {
         wake = resolve;
       });
