@@ -129,18 +129,32 @@ export function createImeEngine(
     error instanceof Error ? error.message : fallback;
   // A reset must precede the next Plover translation, but it must not block
   // normal V7 strokes. Plover's WebView RPC can take seconds or time out.
-  let pendingPloverReset: Promise<void> = Promise.resolve();
+  let pendingPloverReset: Promise<void> | null = null;
   function queuePloverReset(): void {
-    const reset = pendingPloverReset
-      .catch(() => undefined)
-      .then(async () => {
-        await requestPlover("reset_state", {});
-      });
+    // Translations wait for this reset, so another reset requested before it
+    // finishes has no intervening Plover state to clear.
+    if (pendingPloverReset) return;
+    const performReset = async () => {
+      await requestPlover("reset_state", {});
+    };
+    // Publish the first reset in the packet for the mode exit itself. Deferring
+    // it behind an already-resolved promise can emit the effect after that
+    // packet has returned, leaving Android unaware of the request until a
+    // subsequent key event happens to collect it.
+    const reset = performReset();
     pendingPloverReset = reset;
-    void reset.catch((error) => {
-      console.log(error);
-      setPloverMessage(errorMessage(error, "Failed to reset Stripped Plover."));
-    });
+    void reset.then(
+      () => {
+        if (pendingPloverReset === reset) pendingPloverReset = null;
+      },
+      (error) => {
+        if (pendingPloverReset === reset) pendingPloverReset = null;
+        console.log(error);
+        setPloverMessage(
+          errorMessage(error, "Failed to reset Stripped Plover."),
+        );
+      },
+    );
   }
   function isEffectiveTelexMode() {
     return context.telex && !context.rawOutline;
@@ -785,8 +799,8 @@ export function createImeEngine(
     invalidateInference();
     const runGeneration = ++inferenceRunGeneration;
     const epoch = inputEpoch;
-    // Candidates from the previous buffer are no longer valid. Avoid flashing
-    // raw V7 while the synchronous Android bridge produces their replacements.
+    // Candidates from the previous buffer are no longer valid. Publish the
+    // pending raw V7 state before requesting its replacements.
     state.candidates = [];
     buffer.setIslands(
       state.islands.map((island) => {
@@ -807,6 +821,7 @@ export function createImeEngine(
         version: 2,
         islands: serverIslands,
       });
+      updateDisplay();
       const data = await ports.infer(requestBody);
       if (epoch !== inputEpoch || runGeneration !== inferenceRunGeneration) {
         // A newer inference request has started; discard this response.

@@ -237,6 +237,42 @@ test("Plover translations wait for the reset from the preceding mode exit", asyn
   expect(result.snapshot.text).toBe("plover");
 });
 
+test("repeated Plover exits share an outstanding reset without leaving an undispatched reset behind", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const exited = await runtime.chord(["q"]);
+  const reset = exited.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined();
+
+  await runtime.chord(["q"]);
+  const exitedAgain = await runtime.chord(["q"]);
+  expect(exitedAgain.snapshot.ploverEnabled).toBe(false);
+  expect(
+    exitedAgain.effects.some((effect) => effect.method === "reset_state"),
+  ).toBe(false);
+  await runtime.reply(reset.id, { output: [] });
+
+  const entered = await runtime.chord(["q"]);
+  expect(entered.snapshot.ploverEnabled).toBe(true);
+  expect(
+    entered.effects.some((effect) => effect.method === "reset_state"),
+  ).toBe(false);
+  const translated = await runtime.chord(["a"]);
+  const request = translated.effects.find(
+    (effect) => effect.method === "translate",
+  )!;
+  expect(request).toBeDefined();
+  expect(
+    (
+      await runtime.reply(request.id, {
+        output: [{ type: "preedit", text: "ready" }],
+      })
+    ).snapshot.text,
+  ).toBe("ready");
+});
+
 test("a one-shot Plover fallback cannot hold a later V7 stroke on reset", async () => {
   const runtime = isolate();
   const fallback = await runtime.chord(["q", "w"]); // #T-: unmatched V7
@@ -261,4 +297,120 @@ test("a one-shot Plover fallback cannot hold a later V7 stroke on reset", async 
   });
   expect(result.snapshot.text).toContain("xin chào");
   await runtime.reply(reset.id, { output: [] });
+});
+
+test("the recorded dictionary phrase survives Plover video and Q returns to V7 with reset delivered", async () => {
+  const runtime = isolate();
+  const targets: Record<string, string> = {
+    chi1thu6: "chính thức",
+    su3du5: "sử dụng",
+    ti1na0: "tính năng",
+    cho0phe6: "cho phép",
+  };
+  const outlineKeys = (outline: string) => {
+    const [left, right] = outline.split("*");
+    const keys: Record<string, string> = {
+      "#": "q",
+      S: "a",
+      T: "w",
+      K: "s",
+      P: "e",
+      W: "d",
+      H: "r",
+      R: "f",
+      A: "c",
+      O: "v",
+      E: "n",
+      U: "m",
+    };
+    const rightKeys: Record<string, string> = {
+      E: "n",
+      U: "m",
+      F: "u",
+      R: "j",
+      P: "i",
+      B: "k",
+      L: "o",
+      G: "l",
+      T: "p",
+      S: ";",
+      D: "g",
+      Z: "h",
+    };
+    return [
+      ...[...left].map((key) => keys[key]),
+      " ",
+      ...[...right].map((key) => rightKeys[key]),
+    ];
+  };
+  async function infer(packet: Packet) {
+    const request = packet.effects.find((effect) => effect.type === "infer")!;
+    expect(request).toBeDefined();
+    const islands = JSON.parse(request.body).islands as (
+      { kind: "fixed"; text: string } | { kind: "v7"; code: string }
+    )[];
+    return runtime.reply(request.id, {
+      candidates: [
+        islands.map((island) =>
+          island.kind === "fixed" ? island.text : targets[island.code],
+        ),
+      ],
+    });
+  }
+  await infer(await runtime.chord(outlineKeys("STKHAO*FRLGD")));
+  runtime.configure({ slots: [" đưa vào ", ...Array(9).fill(null)] });
+  await infer(await runtime.dispatch("clipboard", { slot: 0, copy: false }));
+  // The starless dictionary corner has O in the left bank and E in the middle.
+  await infer(
+    await runtime.chord([
+      "a",
+      "w",
+      "e",
+      "f",
+      "v",
+      "n",
+      "u",
+      "j",
+      "i",
+      "k",
+      "o",
+      "p",
+      "g",
+      "h",
+    ]),
+  ); // su3du5
+  await infer(await runtime.chord(outlineKeys("TKAO*UFPLDZ")));
+  await infer(await runtime.chord(outlineKeys("STHO*RPLGDZ")));
+  const phrase = "chính thức đưa vào sử dụng tính năng cho phép";
+  expect((await runtime.dispatch("refresh")).snapshot.text).toBe(phrase);
+
+  await infer(await runtime.chord(["q"])); // Enter Plover.
+  for (const text of ["phát vid", "phát video"]) {
+    const translated = await runtime.chord(["a"]);
+    const request = translated.effects.find(
+      (effect) => effect.method === "translate",
+    )!;
+    const raw = await runtime.reply(request.id, {
+      output: [{ type: "preedit", text }],
+    });
+    expect(raw.snapshot.text).toContain("[D: chi1thu6]");
+    expect((await infer(raw)).snapshot.text).toBe(phrase + " " + text);
+  }
+
+  const exited = await runtime.chord(["q"]);
+  expect(exited.snapshot.ploverEnabled).toBe(false);
+  expect(exited.snapshot.text).toContain("[D: chi1thu6]");
+  const reset = exited.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined(); // No further key must be needed to publish reset.
+  expect((await infer(exited)).snapshot.text).toBe(phrase + " phát video");
+
+  // A delayed reset must not consume or hold the next V7 syllable.
+  const continued = await infer(await runtime.chord(["w", "c"]));
+  expect(continued.snapshot.text).toBe(phrase + " phát video ta");
+  expect(continued.snapshot.ploverEnabled).toBe(false);
+  const settled = await runtime.reply(reset.id, { output: [] });
+  expect(settled.snapshot.text).toBe(continued.snapshot.text);
+  expect(settled.snapshot.ploverEnabled).toBe(false);
 });

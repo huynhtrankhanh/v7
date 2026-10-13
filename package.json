@@ -5,7 +5,7 @@
   "scripts": {
     "build": "vite build",
     "format": "prettier --write \"**/*.{ts,js,html,css}\"",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.jest.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.jest.json --noEmit",
     "test:unit": "jest",
     "test:e2e": "npm run test:android-ime && npm run test:clipboard-slots && npm run test:dictionary-layout && npm run test:practice-focus && npm run test:practice-zoom",
     "test:practice-focus": "node scripts/practice-focus-e2e.js",

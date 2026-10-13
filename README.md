@@ -1118,8 +1118,7 @@ Install JavaScript dependencies with `npm ci`. `npm run build` compiles `src/ime
 
 ```bash
 npm run build
-npx tsc --noEmit
-npm run test:unit -- --runInBand tests/editorCore.test.ts tests/undoManager.test.ts tests/slottedClipboard.test.ts tests/imeInitialization.test.ts tests/practiceGame.test.ts
+npm test
 npm run test:android-ime
 npm run test:clipboard-slots
 npm run test:dictionary-layout
@@ -1134,8 +1133,6 @@ run `npm run test:inference-api` with a local `lm.binary` to verify inference,
 practice routes, and the absence of editor/proxy routes. `V7_INFERENCE_BINARY`
 and `V7_TEST_MODEL_PATH` select another binary or model. Rust unit tests run with
 `cargo test --manifest-path inference-rs/Cargo.toml --locked`.
-
-The repository also retains historical evaluator unit tests whose implementation directories are absent in this checkout; `npm test` and the aggregate test typecheck may fail on those missing imports. The explicit current-client suites above do not depend on those unshipped subsystems.
 
 KenLM's host build needs Boost program-options, system, thread, and unit-test development packages, plus zlib, bzip2, and lzma. Docker installs these. Set `KENLM_ROOT` when KenLM is outside `./kenlm`; its host build must contain `build/lib/libkenlm.a` and `build/lib/libkenlm_util.a`. Native and Docker inference tests need a trained model; Android additionally needs the selected document grant.
 
