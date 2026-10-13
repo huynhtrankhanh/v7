@@ -34,6 +34,7 @@ export function createSandboxProtocol() {
     number,
     { resolve(value: unknown): void; reject(error: Error): void; type: string }
   >();
+  const requestIds = new WeakMap<Promise<unknown>, number>();
   let active = 0;
   let wake: (() => void) | undefined;
   function signal() {
@@ -42,30 +43,31 @@ export function createSandboxProtocol() {
   }
   function request(type: string, data: Partial<Effect>): Promise<unknown> {
     const id = ++sequence;
-    return new Promise((resolve, reject) => {
+    const promise = new Promise((resolve, reject) => {
       pending.set(id, { resolve, reject, type });
       effects.push({ id, type, ...data });
       signal();
     });
+    requestIds.set(promise, id);
+    return promise;
   }
   function effect(type: string, data: Partial<Effect> = {}) {
     effects.push({ id: ++sequence, type, ...data });
     signal();
   }
   async function packet(): Promise<string> {
-    // Let completed inference and queued composition jobs settle. If the only
-    // outstanding work is Plover, yield to Android's main loop for its callback.
-    // An unrelated pending Plover reset must not make us return before an
-    // enqueued V7 stroke has had a chance to emit its native inference effect.
-    // Promise microtasks are bounded here: an operation actually waiting for
-    // Plover must still yield to Android rather than deadlock its callback.
-    let ploverYieldTurns = 0;
-    while (active && !effects.length) {
-      if ([...pending.values()].some((p) => p.type === "plover")) {
-        if (++ploverYieldTurns > 32) break;
-        await Promise.resolve();
-        continue;
-      }
+    // Run queued input until it finishes or actually needs a native reply.
+    // Messages and clipboard writes don't block input, and an unrelated reset
+    // must not strand a runnable continuation outside the returned packet.
+    while (
+      active &&
+      !effects.some(
+        (effect) => effect.type === "infer" || effect.type === "plover",
+      )
+    ) {
+      const blocked = engine?.getBlockedPloverRequest();
+      const id = blocked ? requestIds.get(blocked) : undefined;
+      if (id !== undefined && pending.has(id)) break;
       await new Promise<void>((resolve) => {
         wake = resolve;
       });
@@ -97,6 +99,7 @@ export function createSandboxProtocol() {
           message: (text) => effect("message", { text }),
           changeInputMethod: () => effect("switch"),
           undoRawOutlineStroke: () => effect("undoOutline"),
+          activity: signal,
         },
         command.context,
       );
@@ -142,6 +145,9 @@ export function createSandboxProtocol() {
       if (error) request.reject(new Error(error));
       else request.resolve(value);
     }
+    // Let direct reset completion/error handlers publish their nonblocking
+    // effects as part of this reply as well.
+    await Promise.resolve();
     return packet();
   }
   return { dispatch, reply };

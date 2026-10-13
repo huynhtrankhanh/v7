@@ -74,6 +74,7 @@ export interface ImeEnginePorts {
   changeInputMethod(): void;
   undoRawOutlineStroke(): void;
   event?(name: string, detail: unknown): void;
+  activity?(): void;
 }
 export function createImeEngine(
   ports: ImeEnginePorts,
@@ -113,6 +114,7 @@ export function createImeEngine(
     requestId: 0,
   };
   const keyboardStrokeTracker = new KeyboardStrokeTracker();
+  let hardwareKeyGeneration = 0;
   const clipboardPasteIslands = new WeakMap<Island, string>();
   let clipboardPasteCounter = 0;
   const clipboardSlots = {
@@ -129,19 +131,27 @@ export function createImeEngine(
     error instanceof Error ? error.message : fallback;
   // A reset must precede the next Plover translation, but it must not block
   // normal V7 strokes. Plover's WebView RPC can take seconds or time out.
-  let pendingPloverReset: Promise<void> | null = null;
+  let pendingPloverReset: ReturnType<ImeEnginePorts["plover"]> | null = null;
+  let blockedPloverRequest: Promise<unknown> | null = null;
+  async function awaitPlover<T>(request: Promise<T>): Promise<T> {
+    blockedPloverRequest = request;
+    ports.activity?.();
+    try {
+      return await request;
+    } finally {
+      if (blockedPloverRequest === request) blockedPloverRequest = null;
+      ports.activity?.();
+    }
+  }
   function queuePloverReset(): void {
     // Translations wait for this reset, so another reset requested before it
     // finishes has no intervening Plover state to clear.
     if (pendingPloverReset) return;
-    const performReset = async () => {
-      await requestPlover("reset_state", {});
-    };
     // Publish the first reset in the packet for the mode exit itself. Deferring
     // it behind an already-resolved promise can emit the effect after that
     // packet has returned, leaving Android unaware of the request until a
     // subsequent key event happens to collect it.
-    const reset = performReset();
+    const reset = requestPlover("reset_state", {});
     pendingPloverReset = reset;
     void reset.then(
       () => {
@@ -294,7 +304,7 @@ export function createImeEngine(
     resetHardwareKeyboardState();
     if (strippedPlover.enabled) {
       const epoch = inputEpoch;
-      await requestPlover("reset_state", {});
+      await awaitPlover(requestPlover("reset_state", {}));
       if (epoch !== inputEpoch) return;
       finalizePloverPreedit();
     }
@@ -417,9 +427,9 @@ export function createImeEngine(
     try {
       // Serialize Plover operations across a previous reset. This wait applies
       // only to Plover strokes; it does not gate the V7 composition queue.
-      await pendingPloverReset;
+      if (pendingPloverReset) await awaitPlover(pendingPloverReset);
       if (currentRequest !== strippedPlover.requestId) return;
-      const result = await requestPlover("translate", { stroke });
+      const result = await awaitPlover(requestPlover("translate", { stroke }));
       if (currentRequest !== strippedPlover.requestId) return;
       applyPloverOutput(result.output ?? [], {
         recordHistory: oneShot,
@@ -928,6 +938,10 @@ export function createImeEngine(
   function resetHardwareKeyboardState(): void {
     keyboardStrokeTracker.reset();
   }
+  function invalidateHardwareKeyOwnership(): void {
+    hardwareKeyGeneration++;
+    resetHardwareKeyboardState();
+  }
 
   let operations = Promise.resolve();
   function enqueue(operation: () => void | Promise<void>) {
@@ -947,44 +961,50 @@ export function createImeEngine(
   }
   function key(event: ImeKey) {
     if (event.epoch !== inputEpoch) return Promise.resolve();
+    const generation = hardwareKeyGeneration;
     keyboardCapsLockActive = event.capsLock;
-    if (isEffectiveTelexMode()) return Promise.resolve();
-    if (event.ctrlKey || event.altKey || event.metaKey) {
-      resetHardwareKeyboardState();
-      return Promise.resolve();
-    }
-    if (event.action === "keyup") {
-      const stroke = keyboardStrokeTracker.keyUp(event.key, event.code);
-      return stroke ? enqueue(() => handleChord(stroke)) : operations;
-    }
-    if (event.repeat) return operations;
-    const ploverActive = strippedPlover.enabled;
-    if (
-      !ploverActive &&
-      event.key.length === 1 &&
-      ((event.shiftKey && /[a-z]/i.test(event.key)) || /[0-9]/.test(event.key))
-    ) {
-      return enqueue(async () => {
+    // Interpret keys in the same order as mode changes. A Plover reply can be
+    // pending when Q and the next V7 key arrive; inspecting the mode here would
+    // classify that next key using the mode before the queued Q.
+    return enqueue(async () => {
+      if (generation !== hardwareKeyGeneration) return;
+      if (isEffectiveTelexMode()) return;
+      if (event.ctrlKey || event.altKey || event.metaKey) {
+        resetHardwareKeyboardState();
+        return;
+      }
+      if (event.action === "keyup") {
+        const stroke = keyboardStrokeTracker.keyUp(event.key, event.code);
+        if (stroke) await handleChord(stroke);
+        return;
+      }
+      if (event.repeat) return;
+      const ploverActive = strippedPlover.enabled;
+      if (
+        !ploverActive &&
+        event.key.length === 1 &&
+        ((event.shiftKey && /[a-z]/i.test(event.key)) ||
+          /[0-9]/.test(event.key))
+      ) {
         saveState();
         piecemealCursorIndex = null;
         buffer.appendIsland(createIsland("capital", event.key.toUpperCase()));
         await runInference();
-      });
-    }
-    if (!ploverActive && event.key === "Enter") {
-      return enqueue(async () => {
+        return;
+      }
+      if (!ploverActive && event.key === "Enter") {
         if (state.candidates.length) selectCandidate(0);
         piecemealCursorIndex = null;
         buffer.trimTrailingSpaceFromLastVietnameseIsland();
         saveState();
         buffer.appendIsland(createIsland("spacing", "\n"));
         await runInference();
-      });
-    }
-    const mapped = mapKeyUnique(event.key);
-    if (mapped)
-      keyboardStrokeTracker.keyDown(event.key, { physicalKey: event.code });
-    return operations;
+        return;
+      }
+      const mapped = mapKeyUnique(event.key);
+      if (mapped)
+        keyboardStrokeTracker.keyDown(event.key, { physicalKey: event.code });
+    });
   }
   function configure(next: ImeInputContext) {
     if (next.epoch !== inputEpoch) clear(next.epoch);
@@ -993,7 +1013,7 @@ export function createImeEngine(
       next.telex !== context.telex ||
       next.rawOutline !== context.rawOutline
     )
-      resetHardwareKeyboardState();
+      invalidateHardwareKeyOwnership();
     context = next;
     inputEpoch = next.epoch;
     rawOutlineMode = next.rawOutline;
@@ -1005,7 +1025,7 @@ export function createImeEngine(
   function clear(epoch = inputEpoch) {
     context = { ...context, epoch };
     inputEpoch = epoch;
-    resetHardwareKeyboardState();
+    invalidateHardwareKeyOwnership();
     invalidateInference();
     strippedPlover.requestId++;
     strippedPlover.preeditIndex = null;
@@ -1020,7 +1040,8 @@ export function createImeEngine(
     configure,
     clear,
     refresh: updateDisplay,
-    reset: resetHardwareKeyboardState,
+    getBlockedPloverRequest: () => blockedPloverRequest,
+    reset: invalidateHardwareKeyOwnership,
     chord: (stroke: string, capsLock = false) => {
       keyboardCapsLockActive = capsLock;
       return enqueue(() => handleChord(stroke));

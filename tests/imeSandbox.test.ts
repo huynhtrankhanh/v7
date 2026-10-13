@@ -187,6 +187,30 @@ test("raw outline capture and undo run without the display WebView", async () =>
   expect((await runtime.chord([" "])).effects[0].type).toBe("undoOutline");
 });
 
+test("an ownership reset discards a queued keydown before the next chord", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const pending = await runtime.chord(["a"]);
+  await runtime.key("keydown", "q");
+  // Native focus changed before Q's matching keyup. This pending keydown
+  // must not become part of the next chord after the translation completes.
+  await runtime.dispatch("reset");
+  await runtime.chord(["w", "c"]);
+  const next = await runtime.reply(pending.effects[0].id, {
+    output: [{ type: "preedit", text: "first" }],
+  });
+  expect(next.snapshot.ploverEnabled).toBe(true);
+  const translate = next.effects.find(
+    (effect) => effect.method === "translate",
+  )!;
+  expect(translate).toBeDefined();
+  const final = await runtime.reply(translate.id, {
+    output: [{ type: "preedit", text: "second" }],
+  });
+  expect(final.snapshot.text).toBe("second");
+  expect(final.snapshot.ploverEnabled).toBe(true);
+});
+
 test("a pending Plover mode-exit reset does not strand subsequent V7 inference", async () => {
   const runtime = isolate();
   expect((await runtime.chord(["q"])).snapshot.ploverEnabled).toBe(true);
@@ -413,4 +437,33 @@ test("the recorded dictionary phrase survives Plover video and Q returns to V7 w
   const settled = await runtime.reply(reset.id, { output: [] });
   expect(settled.snapshot.text).toBe(continued.snapshot.text);
   expect(settled.snapshot.ploverEnabled).toBe(false);
+});
+
+test("queued mode transitions publish the next Plover request without another hardware event", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const first = await runtime.chord(["a"]);
+  const translating = first.effects.find(
+    (effect) => effect.method === "translate",
+  )!;
+  await runtime.chord(["q"]); // Exit while translating.
+  await runtime.chord(["q"]); // Re-enter, still queued.
+  await runtime.chord(["a"]); // Another queued Plover translation.
+  const output = await runtime.reply(translating.id, {
+    output: [{ type: "preedit", text: "first" }],
+  });
+  const reset = output.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  expect(reset).toBeDefined();
+  const next = await runtime.reply(reset.id, { output: [] });
+  const request = next.effects.find((effect) => effect.method === "translate")!;
+  expect(request).toBeDefined();
+  expect(
+    (
+      await runtime.reply(request.id, {
+        output: [{ type: "preedit", text: "second" }],
+      })
+    ).snapshot.text,
+  ).toBe("first second");
 });

@@ -19,6 +19,8 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.ExtractedText;
+import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
@@ -35,6 +37,8 @@ import org.json.JSONObject;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -73,6 +77,10 @@ public class V7ImeService extends InputMethodService {
     private String preeditGrammarSectionsJson = "[]";
     private final TelexPreeditState telexPreeditState = new TelexPreeditState();
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
+    // Keep distinct owned positions for this editor. A delayed notification
+    // must remain recognizable even after many later composing updates.
+    private final Set<Integer> preeditCaretHistory = new HashSet<>();
+    private int preeditStart = -1;
     private final AtomicInteger inputGeneration = new AtomicInteger();
     private final GenerationOwnership<WebView> inputViewOwnership =
             new GenerationOwnership<>();
@@ -205,6 +213,9 @@ public class V7ImeService extends InputMethodService {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
         }
         clearPreeditSession();
+        preeditCaretHistory.clear();
+        preeditStart = attribute == null ? -1
+                : Math.min(attribute.initialSelStart, attribute.initialSelEnd);
         resetHardwareInputState();
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
@@ -662,6 +673,7 @@ public class V7ImeService extends InputMethodService {
         pendingTelexDeadAccent = 0;
         telexHasPreedit = false;
         preeditText = "";
+        preeditStart = -1;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
         takePendingTelexText(inputGeneration.get());
@@ -961,8 +973,30 @@ public class V7ImeService extends InputMethodService {
             int newSelEnd,
             int candidatesStart,
             int candidatesEnd) {
-        if (pendingPreeditLengths.isEmpty()
-                || newSelStart != newSelEnd) {
+        if (preeditStart >= 0) {
+            ExtractedText live = readEditorSelection();
+            if (live != null && live.startOffset >= 0 && live.selectionStart >= 0 && live.selectionEnd >= 0) {
+                int start = live.startOffset + live.selectionStart;
+                int end = live.startOffset + live.selectionEnd;
+                int expected = preeditStart + preeditText.length();
+                // Selection notifications can be delayed, duplicated, or omit
+                // composing bounds. The editor's current selection distinguishes
+                // those acknowledgements from an actual user selection move.
+                if ((start == expected && end == expected)
+                        || start != newSelStart || end != newSelEnd) {
+                    pendingPreeditLengths.removeFirstOccurrence(newSelStart - preeditStart);
+                    return true;
+                }
+                return false;
+            }
+            if (newSelStart == newSelEnd && preeditCaretHistory.contains(newSelStart)
+                    && (candidatesStart < 0 || (candidatesStart == preeditStart
+                            && candidatesEnd == newSelEnd))) {
+                pendingPreeditLengths.removeFirstOccurrence(newSelStart - preeditStart);
+                return true;
+            }
+        }
+        if (pendingPreeditLengths.isEmpty() || newSelStart != newSelEnd) {
             return false;
         }
 
@@ -976,6 +1010,8 @@ public class V7ImeService extends InputMethodService {
                 int expectedLength = iterator.next();
                 if (expectedLength == composingLength) {
                     iterator.remove();
+                    preeditStart = candidatesStart;
+                    preeditCaretHistory.add(newSelStart);
                     return true;
                 }
             }
@@ -991,6 +1027,19 @@ public class V7ImeService extends InputMethodService {
         }
         pendingPreeditLengths.removeFirst();
         return true;
+    }
+
+    private ExtractedText readEditorSelection() {
+        InputConnection connection = getCurrentInputConnection();
+        if (connection == null) return null;
+        ExtractedTextRequest request = new ExtractedTextRequest();
+        request.hintMaxChars = 1;
+        request.hintMaxLines = 1;
+        try {
+            return connection.getExtractedText(request, 0);
+        } catch (RuntimeException unavailable) {
+            return null;
+        }
     }
 
     private boolean applyPreeditText(
@@ -1009,6 +1058,7 @@ public class V7ImeService extends InputMethodService {
         InputConnection connection = getCurrentInputConnection();
         if (connection == null) {
             pendingPreeditLengths.clear();
+            preeditStart = -1;
             preeditText = normalized;
             preeditGrammarSectionsJson = normalizedGrammarSections;
             return true;
@@ -1030,16 +1080,31 @@ public class V7ImeService extends InputMethodService {
             preeditText = "";
             preeditGrammarSectionsJson = "[]";
             pendingPreeditLengths.clear();
+            preeditStart = -1;
             return true;
         } else {
+            int previousPreeditStart = preeditStart;
+            if (preeditStart < 0) {
+                ExtractedText current = readEditorSelection();
+                if (current != null && current.startOffset >= 0 && current.selectionStart >= 0 && current.selectionEnd >= 0) {
+                    preeditStart = current.startOffset
+                            + Math.min(current.selectionStart, current.selectionEnd)
+                            - previousPreeditText.length();
+                }
+            }
             preeditText = normalized;
             preeditGrammarSectionsJson = normalizedGrammarSections;
             pendingPreeditLengths.addLast(preeditText.length());
+            while (pendingPreeditLengths.size() > 256) pendingPreeditLengths.removeFirst();
+            int caret = preeditStart < 0 ? -1 : preeditStart + preeditText.length();
+            boolean newCaret = caret >= 0 && preeditCaretHistory.add(caret);
             boolean applied = connection.setComposingText(buildStyledPreedit(), 1);
             if (applied) {
                 return true;
             }
-            pendingPreeditLengths.removeLast();
+            pendingPreeditLengths.removeLastOccurrence(normalized.length());
+            if (newCaret) preeditCaretHistory.remove(caret);
+            preeditStart = previousPreeditStart;
             preeditText = previousPreeditText;
             preeditGrammarSectionsJson = previousGrammarSections;
             Log.w(LOG_TAG, "Failed to set composing text");
@@ -1120,6 +1185,7 @@ public class V7ImeService extends InputMethodService {
         String latestTelexText = takePendingTelexText(generation);
         boolean hadPreedit = !preeditText.isEmpty();
         preeditText = "";
+        preeditStart = -1;
         telexHasPreedit = false;
         nativeTelexRaw.clear();
         nativeTelexRendered = "";

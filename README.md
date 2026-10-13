@@ -1128,6 +1128,25 @@ npm run test:practice-zoom
 
 `npm run test:e2e` runs the Android bridge, clipboard, dictionary layout, practice focus, and practice zoom checks together. `npm run test:android-stripped-plover` additionally exercises the generated bundled runtime in isolated and non-isolated WebView configurations; build its generated Android assets first. Native Android unit tests run through `gradle -p ime-android testDebugUnitTest` after installing the Android build dependencies.
 
+`V7PloverNativeFuzzTest` exercises the real IME service, hardware routing,
+`InputConnection`, and bundled JavaScript input protocol under Robolectric.
+It shadows JNI inference and Plover RPC with deterministic responses and varies
+mode switches, queued strokes, Caps Lock, shifted letters, digits, duplicate
+hardware events, and delayed, reordered, duplicated, or reentrant selection
+callbacks. It checks text against an independent reference, verifies mode and
+editor generation, and rejects printable keys forwarded to the host. Raw V7
+updates remain part of the published composition.
+
+Run it with `gradle -p ime-android testDebugUnitTest --tests '*V7PloverNativeFuzzTest'`.
+With Robolectric 4.16.1 and AndroidX dependencies already in the Gradle cache,
+`npm run test:native-ime-fuzz` runs the same tests without building an APK or
+requiring the Android SDK. The standalone runner uses compile-only resource IDs;
+these tests do not inflate APK layouts. For a larger reproducible campaign, run
+`npm run test:native-ime-fuzz -- --seeds 500 --steps 200`; use `--first-seed N`
+and `--seeds 1` to replay a failing seed. Fuzz assertions print the seed and
+action history, and minimized regressions cover the recorded dictionary segment,
+selection callbacks during raw publication, and rapid Plover exits.
+
 After building the host engine with `cargo build --manifest-path inference-rs/Cargo.toml`,
 run `npm run test:inference-api` with a local `lm.binary` to verify inference,
 practice routes, and the absence of editor/proxy routes. `V7_INFERENCE_BINARY`
