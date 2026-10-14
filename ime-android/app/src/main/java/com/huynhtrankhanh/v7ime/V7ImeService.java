@@ -22,6 +22,7 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.SurroundingText;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -36,7 +37,6 @@ import org.json.JSONObject;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Iterator;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -74,9 +74,18 @@ public class V7ImeService extends InputMethodService {
     private volatile WebView webView;
     private boolean inferenceWarmupScheduled = false;
     private String preeditText = "";
+    private InputConnection preeditConnection;
+    private int preeditRetryCount;
+    private boolean pendingComposingFinish;
+    private InputConnection pendingCommitConnection;
+    private boolean pendingCommitNeedsFinish;
+    private String pendingCommitPreedit;
+    private final Deque<String> pendingCommitSuffixes = new ArrayDeque<>();
+    private final Runnable retryPreedit = this::retryPendingPreedit;
     private String preeditGrammarSectionsJson = "[]";
     private final TelexPreeditState telexPreeditState = new TelexPreeditState();
     private final Deque<Integer> pendingPreeditLengths = new ArrayDeque<>();
+    private int pendingPreeditBaseLength;
     // Keep distinct owned positions for this editor. A delayed notification
     // must remain recognizable even after many later composing updates.
     private final Set<Integer> preeditCaretHistory = new HashSet<>();
@@ -94,6 +103,7 @@ public class V7ImeService extends InputMethodService {
     private static volatile String inferenceModelState = "not_loaded";
     private static volatile String inferenceModelError = "";
     private String lastKeyEventSignature = "";
+    private String lastNativeTelexEventSignature = "";
     private boolean enterActionDispatched = false;
     private volatile HardwareInputMode hardwareInputMode =
             HardwareInputMode.V7_PLOVER;
@@ -187,7 +197,13 @@ public class V7ImeService extends InputMethodService {
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
         }
-        super.onFinishInputView(finishingInput);
+        // The framework's default false case calls finishComposingText. A
+        // temporary view hide/rebuild must keep the editor region and our
+        // buffer together; otherwise the next preedit appends a second copy.
+        // Editor completion is handled by onFinishInput/finishCurrentPreedit.
+        if (finishingInput || preeditText.isEmpty()) {
+            super.onFinishInputView(finishingInput);
+        }
     }
 
     @Override
@@ -269,6 +285,10 @@ public class V7ImeService extends InputMethodService {
         );
         if (preeditText.isEmpty()) {
             pendingPreeditLengths.clear();
+            ExtractedText live = readEditorSelection();
+            preeditStart = live != null ? live.startOffset
+                    + Math.min(live.selectionStart, live.selectionEnd)
+                    : Math.min(newSelStart, newSelEnd);
             return;
         }
 
@@ -290,6 +310,7 @@ public class V7ImeService extends InputMethodService {
 
         if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) {
             clearPreeditSession();
+            preeditStart = Math.min(newSelStart, newSelEnd);
         }
     }
 
@@ -570,6 +591,10 @@ public class V7ImeService extends InputMethodService {
     }
 
     private boolean dispatchNativeTelexKey(KeyEvent event) {
+        String signature = "telex-key:" + event.getAction() + ":"
+                + event.getKeyCode() + ":" + event.getEventTime();
+        if (signature.equals(lastNativeTelexEventSignature)) return true;
+        lastNativeTelexEventSignature = signature;
         if (event.getAction() == KeyEvent.ACTION_UP) {
             return telexHardwareKeyPolicy.dispatchKeyUpToEditor(
                     event.getKeyCode())
@@ -649,7 +674,8 @@ public class V7ImeService extends InputMethodService {
         }
         telexHasPreedit = !nativeTelexRendered.isEmpty();
         rememberPendingTelexText(nativeTelexRendered, inputGeneration.get());
-        applyPreeditText(nativeTelexRendered, "[]");
+        preeditRetryCount = 0;
+        if (!applyPreeditText(nativeTelexRendered, "[]")) schedulePreeditRetry();
     }
 
     private void warmTelexSandbox() {
@@ -663,19 +689,24 @@ public class V7ImeService extends InputMethodService {
 
     private void commitNativeTelexSeparator(String separator) {
         InputConnection connection = getCurrentInputConnection();
+        // Separator commits can synchronously notify a changed caret. Publish
+        // the ended composition before finishing/inserting, so that callback
+        // cannot recursively finish the same session a second time.
+        preeditText = "";
+        preeditStart = -1;
+        preeditGrammarSectionsJson = "[]";
+        pendingPreeditLengths.clear();
+        pendingComposingFinish = false;
         if (connection != null) {
-            connection.setComposingText(nativeTelexRendered, 1);
-            connection.finishComposingText();
-            connection.commitText(separator, 1);
+            pendingCommitConnection = connection;
+            pendingCommitPreedit = nativeTelexRendered;
+            pendingCommitNeedsFinish = true;
+            appendNativeCommitSuffix(separator);
         }
         nativeTelexRaw.clear();
         nativeTelexRendered = "";
         pendingTelexDeadAccent = 0;
         telexHasPreedit = false;
-        preeditText = "";
-        preeditStart = -1;
-        preeditGrammarSectionsJson = "[]";
-        pendingPreeditLengths.clear();
         takePendingTelexText(inputGeneration.get());
         int nextGeneration = inputGeneration.incrementAndGet();
         dispatchInputCommand("clear");
@@ -725,10 +756,7 @@ public class V7ImeService extends InputMethodService {
         } else if (action
                 == HardwareKeyActionResolver.Action.FINISH_PREEDIT_AND_INSERT_SPACE) {
             finishCurrentPreedit();
-            InputConnection connection = getCurrentInputConnection();
-            if (connection != null) {
-                connection.commitText(" ", 1);
-            }
+            appendNativeCommitSuffix(" ");
         }
         return true;
     }
@@ -973,6 +1001,18 @@ public class V7ImeService extends InputMethodService {
             int newSelEnd,
             int candidatesStart,
             int candidatesEnd) {
+        // A composing extent that acknowledges one of our outstanding writes
+        // is stronger evidence than an editor query that may still be cached
+        // at the raw publication while inference has already resolved it.
+        if (newSelStart == newSelEnd && newSelStart == candidatesEnd
+                && candidatesStart >= 0 && candidatesEnd >= candidatesStart
+                && (preeditStart < 0 || candidatesStart == preeditStart)
+                && (pendingPreeditLengths.removeFirstOccurrence(candidatesEnd - candidatesStart)
+                        || (candidatesStart == preeditStart && preeditCaretHistory.contains(newSelStart)))) {
+            preeditStart = candidatesStart;
+            preeditCaretHistory.add(newSelStart);
+            return true;
+        }
         if (preeditStart >= 0) {
             ExtractedText live = readEditorSelection();
             if (live != null && live.startOffset >= 0 && live.selectionStart >= 0 && live.selectionEnd >= 0) {
@@ -995,26 +1035,33 @@ public class V7ImeService extends InputMethodService {
                 pendingPreeditLengths.removeFirstOccurrence(newSelStart - preeditStart);
                 return true;
             }
+            if (candidatesStart >= 0 && candidatesStart != preeditStart) {
+                // With no current selection query, a different composing
+                // origin cannot acknowledge this editor's pending lengths.
+                return true;
+            }
         }
         if (pendingPreeditLengths.isEmpty() || newSelStart != newSelEnd) {
             return false;
         }
 
-        if (candidatesStart >= 0 && candidatesEnd >= candidatesStart) {
-            if (newSelStart != candidatesEnd) {
-                return false;
-            }
-            int composingLength = candidatesEnd - candidatesStart;
-            Iterator<Integer> iterator = pendingPreeditLengths.iterator();
-            while (iterator.hasNext()) {
-                int expectedLength = iterator.next();
-                if (expectedLength == composingLength) {
-                    iterator.remove();
-                    preeditStart = candidatesStart;
-                    preeditCaretHistory.add(newSelStart);
+        if (candidatesStart < 0 && oldSelStart == oldSelEnd && oldSelStart >= 0) {
+            // An editor may supply neither query API nor an initial selection.
+            // Match the delta of our unacknowledged writes, including a raw
+            // update followed by inference coalesced into one notification.
+            for (int length : pendingPreeditLengths) {
+                if (newSelStart - oldSelStart == length - pendingPreeditBaseLength) {
+                    preeditStart = oldSelStart - pendingPreeditBaseLength;
+                    for (int ownedLength : pendingPreeditLengths)
+                        preeditCaretHistory.add(preeditStart + ownedLength);
+                    preeditCaretHistory.add(preeditStart + preeditText.length());
+                    pendingPreeditLengths.removeFirstOccurrence(length);
                     return true;
                 }
             }
+        }
+
+        if (candidatesStart >= 0 && candidatesEnd >= candidatesStart) {
             return false;
         }
 
@@ -1032,14 +1079,30 @@ public class V7ImeService extends InputMethodService {
     private ExtractedText readEditorSelection() {
         InputConnection connection = getCurrentInputConnection();
         if (connection == null) return null;
+        // Zero context obtains the caret without asking the editor to extract
+        // its document. The older extraction API can return a cached snapshot.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                SurroundingText surrounding = connection.getSurroundingText(0, 0, 0);
+                if (surrounding != null && surrounding.getOffset() >= 0
+                        && surrounding.getSelectionStart() >= 0 && surrounding.getSelectionEnd() >= 0) {
+                    ExtractedText result = new ExtractedText();
+                    result.startOffset = surrounding.getOffset();
+                    result.selectionStart = surrounding.getSelectionStart();
+                    result.selectionEnd = surrounding.getSelectionEnd();
+                    return result;
+                }
+            } catch (RuntimeException unavailable) { }
+        }
         ExtractedTextRequest request = new ExtractedTextRequest();
         request.hintMaxChars = 1;
         request.hintMaxLines = 1;
         try {
-            return connection.getExtractedText(request, 0);
-        } catch (RuntimeException unavailable) {
-            return null;
-        }
+            ExtractedText extracted = connection.getExtractedText(request, 0);
+            if (extracted != null && extracted.startOffset >= 0
+                    && extracted.selectionStart >= 0 && extracted.selectionEnd >= 0) return extracted;
+        } catch (RuntimeException unavailable) { }
+        return null;
     }
 
     private boolean applyPreeditText(
@@ -1051,23 +1114,42 @@ public class V7ImeService extends InputMethodService {
                 : nextGrammarSectionsJson;
         String previousPreeditText = preeditText;
         String previousGrammarSections = preeditGrammarSectionsJson;
+        if (!completePendingEditorCommit(getCurrentInputConnection())) return false;
         if (normalized.equals(previousPreeditText)
-                && normalizedGrammarSections.equals(previousGrammarSections)) {
+                && normalizedGrammarSections.equals(previousGrammarSections)
+                && !pendingComposingFinish) {
             return true;
         }
         InputConnection connection = getCurrentInputConnection();
         if (connection == null) {
             pendingPreeditLengths.clear();
-            preeditStart = -1;
-            preeditText = normalized;
-            preeditGrammarSectionsJson = normalizedGrammarSections;
-            return true;
+            return false;
         }
+        preeditConnection = connection;
 
         if (normalized.isEmpty()) {
-            boolean setApplied = connection.setComposingText("", 1);
-            boolean finishApplied = connection.finishComposingText();
+            // setComposingText can synchronously report the new selection.
+            // Publish the empty state before that call, just as for nonempty
+            // updates, so our deletion cannot be mistaken for a cursor move.
+            preeditText = "";
+            preeditGrammarSectionsJson = normalizedGrammarSections;
+            // Deletion moves our caret back to the composing origin. Its
+            // acknowledgement can arrive after a new Plover preedit regrows,
+            // including when neither selection query API is available.
+            int deletionCaret = preeditStart;
+            boolean newDeletionCaret = deletionCaret >= 0 && preeditCaretHistory.add(deletionCaret);
+            boolean setApplied = pendingComposingFinish || connection.setComposingText("", 1);
+            // Never commit the previous text when its requested deletion was
+            // rejected. A successful deletion is retained even if finishing
+            // the empty composing region needs a retry.
+            boolean finishApplied = setApplied && connection.finishComposingText();
+            pendingComposingFinish = setApplied && !finishApplied;
             if (!setApplied || !finishApplied) {
+                if (!setApplied) {
+                    if (newDeletionCaret) preeditCaretHistory.remove(deletionCaret);
+                    preeditText = previousPreeditText;
+                    preeditGrammarSectionsJson = previousGrammarSections;
+                }
                 Log.w(
                         LOG_TAG,
                         "Failed to clear composing text setApplied="
@@ -1081,10 +1163,11 @@ public class V7ImeService extends InputMethodService {
             preeditGrammarSectionsJson = "[]";
             pendingPreeditLengths.clear();
             preeditStart = -1;
+            preeditConnection = null;
             return true;
         } else {
             int previousPreeditStart = preeditStart;
-            if (preeditStart < 0) {
+            if (preeditStart < 0 || previousPreeditText.isEmpty()) {
                 ExtractedText current = readEditorSelection();
                 if (current != null && current.startOffset >= 0 && current.selectionStart >= 0 && current.selectionEnd >= 0) {
                     preeditStart = current.startOffset
@@ -1094,6 +1177,8 @@ public class V7ImeService extends InputMethodService {
             }
             preeditText = normalized;
             preeditGrammarSectionsJson = normalizedGrammarSections;
+            pendingComposingFinish = false;
+            if (pendingPreeditLengths.isEmpty()) pendingPreeditBaseLength = previousPreeditText.length();
             pendingPreeditLengths.addLast(preeditText.length());
             while (pendingPreeditLengths.size() > 256) pendingPreeditLengths.removeFirst();
             int caret = preeditStart < 0 ? -1 : preeditStart + preeditText.length();
@@ -1171,6 +1256,60 @@ public class V7ImeService extends InputMethodService {
         finishCurrentPreedit();
     }
 
+    private boolean completePendingEditorCommit(InputConnection connection) {
+        if (pendingCommitConnection == null) return true;
+        if (connection == null) return false;
+        if (pendingCommitConnection != connection) {
+            // An old editor's unfinished transaction must never touch a new one.
+            pendingCommitConnection = null;
+            pendingCommitSuffixes.clear();
+            pendingCommitNeedsFinish = false;
+            pendingCommitPreedit = null;
+            return true;
+        }
+        if (pendingCommitPreedit != null) {
+            if (!connection.setComposingText(pendingCommitPreedit, 1)) return false;
+            pendingCommitPreedit = null;
+        }
+        if (pendingCommitNeedsFinish && !connection.finishComposingText()) return false;
+        pendingCommitNeedsFinish = false;
+        while (!pendingCommitSuffixes.isEmpty()) {
+            if (!connection.commitText(pendingCommitSuffixes.peekFirst(), 1)) return false;
+            pendingCommitSuffixes.removeFirst();
+        }
+        pendingCommitConnection = null;
+        return true;
+    }
+
+    private void retryPendingPreedit() {
+        if (!SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) return;
+        if (isEffectiveTelexMode() && telexHasPreedit) {
+            if (!applyPreeditText(nativeTelexRendered, "[]")) {
+                schedulePreeditRetry();
+                return;
+            }
+            preeditRetryCount = 0;
+        }
+        dispatchInputCommand("refresh");
+    }
+
+    private void schedulePreeditRetry() {
+        if (preeditRetryCount++ < 3) {
+            mainHandler.removeCallbacks(retryPreedit);
+            mainHandler.post(retryPreedit);
+        }
+    }
+
+    private void appendNativeCommitSuffix(String text) {
+        InputConnection connection = getCurrentInputConnection();
+        if (connection == null) return;
+        if (pendingCommitConnection != null && pendingCommitConnection != connection)
+            completePendingEditorCommit(connection);
+        pendingCommitConnection = connection;
+        pendingCommitSuffixes.addLast(text);
+        if (!completePendingEditorCommit(connection)) schedulePreeditRetry();
+    }
+
     /**
      * Commits the editor's current composing text, then clears only V7's
      * in-memory/WebUI session. Calling finishComposingText (instead of
@@ -1178,6 +1317,8 @@ public class V7ImeService extends InputMethodService {
      * that the user already sees in the editor.
      */
     private void finishCurrentPreedit() {
+        mainHandler.removeCallbacks(retryPreedit);
+        preeditRetryCount = 0;
         flushPendingTelexDeadAccent();
         int generation = inputGeneration.getAndIncrement();
         appliedPreeditSnapshot = "";
@@ -1192,15 +1333,20 @@ public class V7ImeService extends InputMethodService {
         pendingTelexDeadAccent = 0;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
-        if (hadPreedit || latestTelexText != null) {
-            InputConnection connection = getCurrentInputConnection();
+        if (hadPreedit || latestTelexText != null || pendingComposingFinish) {
+            // onStartInput can already expose a replacement connection. Pending
+            // Telex text and composing spans belong to the editor we wrote to.
+            InputConnection connection = preeditConnection != null
+                    ? preeditConnection : getCurrentInputConnection();
             if (connection != null) {
-                if (latestTelexText != null) {
-                    connection.setComposingText(latestTelexText, 1);
-                }
-                connection.finishComposingText();
+                pendingCommitConnection = connection;
+                if (latestTelexText != null) pendingCommitPreedit = latestTelexText;
+                pendingCommitNeedsFinish = true;
+                if (!completePendingEditorCommit(connection)) schedulePreeditRetry();
             }
         }
+        pendingComposingFinish = false;
+        preeditConnection = null;
         dispatchInputCommand("clear");
         BundledStrippedPloverRuntime.get(this).request(
                 "{\"id\":0,\"method\":\"reset_state\",\"params\":{}}", (body, error) -> {});
@@ -1394,13 +1540,18 @@ public class V7ImeService extends InputMethodService {
             boolean snapshotChanged = !nextSnapshot.equals(inputSnapshot);
             boolean needsPreeditRetry = !isEffectiveTelexMode()
                     && !nextSnapshot.equals(appliedPreeditSnapshot);
+            needsPreeditRetry |= pendingCommitConnection != null;
+            needsPreeditRetry |= isEffectiveTelexMode() && telexHasPreedit
+                    && !nativeTelexRendered.equals(preeditText);
             if (snapshotChanged || needsPreeditRetry) {
-                boolean preeditApplied = true;
-                if (!isEffectiveTelexMode()) {
+                boolean preeditApplied = completePendingEditorCommit(getCurrentInputConnection());
+                if (preeditApplied && !isEffectiveTelexMode()) {
                     preeditApplied = applyPreeditText(
                             next.optString("text", ""),
                             next.optJSONArray("grammarSections").toString()
                     );
+                } else if (preeditApplied && telexHasPreedit) {
+                    preeditApplied = applyPreeditText(nativeTelexRendered, "[]");
                 }
                 if (snapshotChanged) {
                     inputSnapshot = nextSnapshot;
@@ -1408,6 +1559,15 @@ public class V7ImeService extends InputMethodService {
                 }
                 if (preeditApplied) {
                     appliedPreeditSnapshot = nextSnapshot;
+                    preeditRetryCount = 0;
+                    mainHandler.removeCallbacks(retryPreedit);
+                } else {
+                    // A transient InputConnection rejection must recover even
+                    // when no new key or duplicate Plover callback arrives.
+                    // Bound retries so an editor that rejects all writes cannot
+                    // monopolize the main looper.
+                    if (snapshotChanged) preeditRetryCount = 0;
+                    schedulePreeditRetry();
                 }
             }
         }
@@ -1489,6 +1649,7 @@ public class V7ImeService extends InputMethodService {
     }
 
     private void resetHardwareInputState() {
+        lastNativeTelexEventSignature = "";
         hardwareKeyActionResolver.reset();
         hardwareKeyPressOwnership.invalidate();
         resetHardwareKeyboardStateInSandbox();

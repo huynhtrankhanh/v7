@@ -11,11 +11,29 @@ const bundle = buildSync({
   target: "es2020",
 }).outputFiles[0].text;
 const sessions = new Map();
+const telex = {};
+runInNewContext(
+  buildSync({
+    entryPoints: [path.resolve(__dirname, "../src/telex-sandbox.ts")],
+    bundle: true,
+    write: false,
+    platform: "neutral",
+    format: "iife",
+    target: "es2020",
+  }).outputFiles[0].text,
+  telex,
+);
 let tail = Promise.resolve();
 readline.createInterface({ input: process.stdin }).on("line", (line) => {
   tail = tail.then(async () => {
     try {
       const call = JSON.parse(line);
+      if (Object.hasOwn(call, "telex")) {
+        process.stdout.write(
+          JSON.stringify({ text: telex.convertV7TelexRaw(call.telex) }) + "\n",
+        );
+        return;
+      }
       if (call.close) {
         sessions.delete(call.session);
         process.stdout.write("{}\n");

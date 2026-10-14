@@ -59,15 +59,17 @@ export function createSandboxProtocol() {
     // Run queued input until it finishes or actually needs a native reply.
     // Messages and clipboard writes don't block input, and an unrelated reset
     // must not strand a runnable continuation outside the returned packet.
-    while (
-      active &&
-      !effects.some(
-        (effect) => effect.type === "infer" || effect.type === "plover",
+    while (active && !effects.some((effect) => effect.type === "infer")) {
+      // A reentrant reply can arrive while the native caller still owns an
+      // earlier packet's inference effect. Yield for every awaited RPC, even
+      // when its effect has already been handed to that caller.
+      if (
+        engine?.getBlockedNativeRequests().some((blocked) => {
+          const id = requestIds.get(blocked);
+          return id !== undefined && pending.has(id);
+        })
       )
-    ) {
-      const blocked = engine?.getBlockedPloverRequest();
-      const id = blocked ? requestIds.get(blocked) : undefined;
-      if (id !== undefined && pending.has(id)) break;
+        break;
       await new Promise<void>((resolve) => {
         wake = resolve;
       });

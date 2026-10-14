@@ -165,16 +165,17 @@ test("late Plover output cannot restore a cleared editor, and new strokes still 
   const first = await runtime.chord(["a"]);
   runtime.configure({ epoch: 2 });
   expect((await runtime.dispatch("clear")).snapshot.text).toBe("");
-  await runtime.chord(["w"]);
-  const second = await runtime.reply(first.effects[0].id, {
-    output: [{ type: "preedit", text: "stale" }],
-  });
-  expect(second.snapshot.text).toBe("");
+  const second = await runtime.chord(["w"]);
   expect(second.effects[0].method).toBe("translate");
   const result = await runtime.reply(second.effects[0].id, {
     output: [{ type: "preedit", text: "current" }],
   });
   expect(result.snapshot.text).toBe("current");
+  const late = await runtime.reply(first.effects[0].id, {
+    output: [{ type: "preedit", text: "stale" }],
+  });
+  expect(late.snapshot.text).toBe("current");
+  expect(late.effects).toEqual([]);
 });
 
 test("raw outline capture and undo run without the display WebView", async () => {
@@ -209,6 +210,108 @@ test("an ownership reset discards a queued keydown before the next chord", async
   });
   expect(final.snapshot.text).toBe("second");
   expect(final.snapshot.ploverEnabled).toBe(true);
+});
+
+test("a view reset keeps fully released chords queued behind a Plover reply", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const pending = await runtime.chord(["a"]);
+  await runtime.chord(["q"]);
+  await runtime.chord(["7"]);
+  await runtime.dispatch("reset");
+  const settled = await runtime.reply(pending.effects[0].id, {
+    output: [{ type: "preedit", text: "video" }],
+  });
+  expect(settled.snapshot.text).toBe("video 7");
+  expect(settled.snapshot.ploverEnabled).toBe(false);
+});
+
+test("a new editor can translate without waiting for the old editor's Plover reply", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const old = await runtime.chord(["a"]);
+  runtime.configure({ epoch: 2 });
+  await runtime.dispatch("clear");
+  const current = await runtime.chord(["w"]);
+  const translate = current.effects.find(
+    (effect) => effect.method === "translate",
+  )!;
+  expect(translate).toBeDefined();
+  const late = await runtime.reply(old.effects[0].id, {
+    output: [{ type: "preedit", text: "old editor" }],
+  });
+  expect(late.snapshot.text).toBe("");
+  const settled = await runtime.reply(translate.id, {
+    output: [{ type: "preedit", text: "current editor" }],
+  });
+  expect(settled.snapshot.text).toBe("current editor");
+});
+
+test("a view reset cannot revoke literal input already received on keydown", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const pending = await runtime.chord(["a"]);
+  await runtime.chord(["q"]);
+  await runtime.dispatch("key", {
+    event: {
+      action: "keydown",
+      key: "A",
+      code: "KeyA",
+      shiftKey: true,
+      ctrlKey: false,
+      altKey: false,
+      metaKey: false,
+      repeat: false,
+      capsLock: false,
+      epoch: 1,
+    },
+  });
+  await runtime.dispatch("reset");
+  const settled = await runtime.reply(pending.effects[0].id, {
+    output: [{ type: "preedit", text: "video" }],
+  });
+  expect(settled.snapshot.text).toBe("video A");
+  expect(settled.snapshot.ploverEnabled).toBe(false);
+});
+
+test("a reset reply cannot deadlock inference still owned by the native effect loop", async () => {
+  const runtime = isolate();
+  let packet = await runtime.chord(["c", " ", "m"]);
+  await runtime.reply(
+    packet.effects.find((effect) => effect.type === "infer")!.id,
+    { candidates: [["xin chào"]] },
+  );
+  packet = await runtime.chord(["q"]);
+  await runtime.reply(
+    packet.effects.find((effect) => effect.type === "infer")!.id,
+    { candidates: [["xin chào"]] },
+  );
+  packet = await runtime.chord(["q"]);
+  const reset = packet.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  const inference = packet.effects.find((effect) => effect.type === "infer")!;
+  let timeout: ReturnType<typeof setTimeout>;
+  try {
+    await Promise.race([
+      runtime.reply(reset.id, { output: [] }),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () =>
+            reject(
+              new Error("Reset reply blocked the remaining inference effect"),
+            ),
+          250,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout!);
+  }
+  const settled = await runtime.reply(inference.id, {
+    candidates: [["xin chào"]],
+  });
+  expect(settled.snapshot.text).toBe("xin chào");
 });
 
 test("a pending Plover mode-exit reset does not strand subsequent V7 inference", async () => {
@@ -259,6 +362,72 @@ test("Plover translations wait for the reset from the preceding mode exit", asyn
     output: [{ type: "preedit", text: "plover" }],
   });
   expect(result.snapshot.text).toBe("plover");
+});
+
+test.each([false, true])(
+  "a failed reset retries without losing the next Plover stroke (failed before stroke: %s)",
+  async (failedBeforeStroke) => {
+    const runtime = isolate();
+    await runtime.chord(["q"]);
+    const exited = await runtime.chord(["q"]);
+    const reset = exited.effects.find(
+      (effect) => effect.method === "reset_state",
+    )!;
+    if (failedBeforeStroke)
+      await runtime.reply(reset.id, null, "Transient reset failure");
+    await runtime.chord(["q"]);
+    let packet = await runtime.chord(["a"]);
+    if (!failedBeforeStroke)
+      packet = await runtime.reply(reset.id, null, "Transient reset failure");
+    expect(packet.effects.some((effect) => effect.method === "translate")).toBe(
+      false,
+    );
+    const retry = packet.effects.find(
+      (effect) => effect.method === "reset_state",
+    )!;
+    expect(retry).toBeDefined();
+    packet = await runtime.reply(retry.id, { output: [] });
+    const translate = packet.effects.find(
+      (effect) => effect.method === "translate",
+    )!;
+    expect(translate).toBeDefined();
+    packet = await runtime.reply(translate.id, {
+      output: [{ type: "preedit", text: "retained stroke" }],
+    });
+    expect(packet.snapshot.text).toBe("retained stroke");
+  },
+);
+
+test("persistent reset failure has bounded retries and leaves V7 inference runnable", async () => {
+  const runtime = isolate();
+  await runtime.chord(["q"]);
+  const exited = await runtime.chord(["q"]);
+  const reset = exited.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  await runtime.chord(["q"]);
+  await runtime.chord(["a"]);
+  let packet = await runtime.reply(reset.id, null, "Reset unavailable");
+  const retry = packet.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  expect(retry).toBeDefined();
+  packet = await runtime.reply(retry.id, null, "Reset unavailable");
+  expect(packet.effects.some((effect) => effect.type === "plover")).toBe(false);
+  expect(packet.snapshot.text).toBe("");
+  packet = await runtime.chord(["q"]);
+  const backgroundReset = packet.effects.find(
+    (effect) => effect.method === "reset_state",
+  )!;
+  expect(backgroundReset).toBeDefined();
+  packet = await runtime.chord(["c", " ", "m"]);
+  const inference = packet.effects.find((effect) => effect.type === "infer")!;
+  expect(inference).toBeDefined();
+  packet = await runtime.reply(inference.id, {
+    candidates: [["still running"]],
+  });
+  expect(packet.snapshot.text).toBe("still running");
+  await runtime.reply(backgroundReset.id, { output: [] });
 });
 
 test("repeated Plover exits share an outstanding reset without leaving an undispatched reset behind", async () => {

@@ -1130,11 +1130,21 @@ npm run test:practice-zoom
 
 `V7PloverNativeFuzzTest` exercises the real IME service, hardware routing,
 `InputConnection`, and bundled JavaScript input protocol under Robolectric.
-It shadows JNI inference and Plover RPC with deterministic responses and varies
-mode switches, queued strokes, Caps Lock, shifted letters, digits, duplicate
-hardware events, and delayed, reordered, duplicated, or reentrant selection
-callbacks. It checks text against an independent reference, verifies mode and
-editor generation, and rejects printable keys forwarded to the host. Raw V7
+It shadows JNI inference and Plover RPC with deterministic responses. Campaigns
+cover mode switches, editing, Telex conversion, candidate selection, clipboard,
+cursor moves, editor replacement, view restarts, queued and duplicate hardware
+events, and cold runtime startup. A separate campaign enters Plover once and
+keeps typing without another mode switch or view restart. Plover responses grow,
+shrink, disappear, and regrow, with unrelated replacements, commits, Unicode,
+combining characters, and multiline text. RPC callbacks can be delayed,
+reordered, duplicated, synchronous, or unsuccessful; editor callbacks can be
+reentrant, omit composing bounds, or expose absent or cached selection queries.
+Transient editor write/finish failures must recover without another key.
+
+The tests compare immediate and hostile schedules at fixed checkpoints, check
+pure Plover and basic mode transitions against independent text models, and
+verify that owned callbacks never end the composition. They also reject
+printable keys forwarded to the host and detect stalled protocol calls. Raw V7
 updates remain part of the published composition.
 
 Run it with `gradle -p ime-android testDebugUnitTest --tests '*V7PloverNativeFuzzTest'`.
@@ -1143,9 +1153,13 @@ With Robolectric 4.16.1 and AndroidX dependencies already in the Gradle cache,
 requiring the Android SDK. The standalone runner uses compile-only resource IDs;
 these tests do not inflate APK layouts. For a larger reproducible campaign, run
 `npm run test:native-ime-fuzz -- --seeds 500 --steps 200`; use `--first-seed N`
-and `--seeds 1` to replay a failing seed. Fuzz assertions print the seed and
-action history, and minimized regressions cover the recorded dictionary segment,
-selection callbacks during raw publication, and rapid Plover exits.
+and `--seeds 1` to replay a failing seed. `--scenario basic`, `lifecycle`, or
+`plover` selects one campaign; the default `all` runs all three, plus the
+minimized regressions. With all campaigns, each seed executes five runs of
+`--steps` actions (basic once, lifecycle and sustained Plover twice). Assertions
+print the seed and action history. Minimized regressions preserve failures from
+the recording and fuzz campaigns, including queued mode exits, unexpected
+composition ends, rejected writes, and synchronous reset/inference deadlocks.
 
 After building the host engine with `cargo build --manifest-path inference-rs/Cargo.toml`,
 run `npm run test:inference-api` with a local `lm.binary` to verify inference,

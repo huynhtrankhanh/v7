@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--seeds", type=int, default=100)
 parser.add_argument("--steps", type=int, default=100)
 parser.add_argument("--first-seed", type=int, default=0)
+parser.add_argument("--scenario", choices=["all", "basic", "lifecycle", "plover"], default="all")
 args = parser.parse_args()
 if args.seeds < 1 or args.steps < 1:
     parser.error("seeds and steps must be positive")
@@ -69,6 +70,7 @@ with tempfile.TemporaryDirectory(prefix="v7-native-fuzz-") as temporary:
         "java", "-Xmx1g", "--enable-native-access=ALL-UNNAMED",
         f"-Dv7.test.root={ROOT}", f"-Dv7.fuzz.seeds={args.seeds}",
         f"-Dv7.fuzz.steps={args.steps}", f"-Dv7.fuzz.firstSeed={args.first_seed}",
+        f"-Dv7.fuzz.scenario={args.scenario}",
         "-Drobolectric.dependency.repo.url=https://repo.maven.apache.org/maven2",
         "-cp", os.pathsep.join([str(classes), classpath]), "org.junit.runner.JUnitCore",
         *["com.huynhtrankhanh.v7ime." + name for name in selected],
