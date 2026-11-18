@@ -3,8 +3,10 @@ package com.huynhtrankhanh.v7ime;
 import android.content.Context;
 import android.text.Editable;
 import android.text.Selection;
+import android.text.InputType;
 import android.view.KeyEvent;
 import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
@@ -27,6 +29,7 @@ import java.io.*;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 import static org.junit.Assert.*;
 
 /** Real service, InputConnection and JS protocol; only external runtimes are shadowed. */
@@ -55,6 +58,8 @@ public class V7PloverNativeFuzzTest {
     private static boolean delayedWarmup;
     private static final List<Runnable> sandboxWarmups = new ArrayList<>();
     private static final List<JSONArray> ploverOutputs = new ArrayList<>();
+    private static final List<Runnable> suggestionReplies = new ArrayList<>();
+    private static final List<String> suggestionQueries = new ArrayList<>();
     @Before public void resetExternalResponses() {
         ploverReplies.clear(); duplicateHardware = false; variedPlover = false;
         translations = 0; inferenceCalls = 0; rejectPlover = false;
@@ -63,6 +68,8 @@ public class V7PloverNativeFuzzTest {
         inlinePloverReset = false;
         inlinePloverTranslate = false; rejectPloverReset = false; resets = 0;
         delayedWarmup = false; sandboxWarmups.clear(); traceRun = "";
+        suggestionReplies.clear();
+        suggestionQueries.clear();
     }
     public static class Ime extends V7ImeService {
         InputConnection connection;
@@ -168,6 +175,22 @@ public class V7PloverNativeFuzzTest {
         @Implementation protected void request(String body, BundledStrippedPloverRuntime.Callback callback) {
             try {
                 JSONObject request = new JSONObject(body);
+                if ("reverse_lookup".equals(request.getString("method"))) {
+                    String translation = request.getJSONObject("params").getString("translation");
+                    suggestionQueries.add(translation);
+                    List<String> strokes = switch (translation) {
+                        case "xin chào" -> List.of("SIN/KAU", "SWAU", "SKWAU", "A", "SW", "SWAU");
+                        case "chào" -> List.of("KAU");
+                        case "video" -> List.of("V-D");
+                        case "don't" -> List.of("TKOPBT");
+                        case "test-case" -> List.of("TEFT/KAES");
+                        default -> List.of();
+                    };
+                    String response = new JSONObject().put("result",
+                            new JSONObject().put("strokes", new JSONArray(strokes))).toString();
+                    suggestionReplies.add(() -> callback.onResult(response, ""));
+                    return;
+                }
                 JSONArray text = new JSONArray();
                 boolean translate = "translate".equals(request.getString("method"));
                 if (translate) {
@@ -215,6 +238,7 @@ public class V7PloverNativeFuzzTest {
         boolean extractionUnavailable;
         boolean surroundingUnavailable;
         boolean staleExtraction;
+        boolean cursorTextUnavailable;
         String cachedText;
         int cachedCaret;
         int rejectedWrites;
@@ -239,6 +263,9 @@ public class V7PloverNativeFuzzTest {
             editor.setText(prefix); Selection.setSelection(editor.getText(), editor.length());
         }
         @Override public Editable getEditable() { return editor.getText(); }
+        @Override public CharSequence getTextBeforeCursor(int length, int flags) {
+            return cursorTextUnavailable ? null : super.getTextBeforeCursor(length, flags);
+        }
         @Override public ExtractedText getExtractedText(ExtractedTextRequest request, int flags) {
             if (extractionUnavailable) return null;
             ExtractedText text = new ExtractedText();
@@ -613,6 +640,156 @@ public class V7PloverNativeFuzzTest {
             compareScenarios(seed, steps, true);
             if ((seed-first+1)%25 == 0) System.out.println("Sustained Plover fuzz: "+(seed-first+1)+" seeds x "+steps+" steps passed twice");
         }
+    }
+
+    @Test public void ploverSuggestionsReadNormalTypingAndPloverPreedit() throws Exception {
+        requireScenario("suggestions");
+        var service = Robolectric.buildService(Ime.class).create();
+        Ime ime = service.get();
+        Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+        chord(ime, KeyEvent.KEYCODE_Q);
+        modifiers(ime, false);
+        replaceEditorText(host, "🙂 Earlier. Xin   cha\u0300o! ", -1);
+        settleSuggestions();
+        assertTrue(suggestionQueries.isEmpty());
+
+        modifiers(ime, false);
+        settleSuggestions();
+        assertEquals(List.of("Xin chào", "xin chào"), suggestionQueries);
+        JSONObject suggestion = new JSONObject((String) field(ime, "ploverSuggestion"));
+        assertEquals("xin chào", suggestion.getString("translation"));
+        assertEquals("[\"A\",\"SW\",\"SWAU\",\"SKWAU\"]", suggestion.getJSONArray("strokes").toString());
+
+        input(ime, false, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_C);
+        assertFalse(ploverReplies.isEmpty());
+        for (Runnable reply : new ArrayList<>(ploverReplies)) reply.run();
+        ploverReplies.clear();
+        settleSuggestions();
+        assertTrue(host.getEditable().toString().endsWith("video"));
+        assertSuggestion(ime, "video", "after translating a stroke");
+
+        startSuggestionEditor(ime, "secret video", InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        int queriesBeforePassword = suggestionQueries.size();
+        settleSuggestions();
+        assertSuggestion(ime, null, "password editor");
+        assertEquals(queriesBeforePassword, suggestionQueries.size());
+        service.destroy();
+    }
+
+    @Test public void fuzzPloverSuggestionsAcrossEditorEditsAndDelayedReplies() throws Exception {
+        requireScenario("suggestions");
+        String[] contexts = {
+                "noise video. ", "noise Xin\tcha\u0300o!", "video\n", "don't", "x".repeat(129),
+                "x".repeat(129) + " chào?", "unmatched", "video, test-case", "", "chào"
+        };
+        String[] expected = {"video", "xin chào", null, "don't", null, "chào", null, "test-case", null, "chào"};
+        int seeds = Integer.getInteger("v7.fuzz.seeds", 100);
+        int steps = Integer.getInteger("v7.fuzz.steps", 100);
+        int first = Integer.getInteger("v7.fuzz.firstSeed", 0);
+        for (int seed = first; seed < first + seeds; seed++) {
+            Random random = new Random(seed);
+            var service = Robolectric.buildService(Ime.class).create();
+            Ime ime = service.get();
+            Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+            chord(ime, KeyEvent.KEYCODE_Q);
+            boolean plover = true, steno = true, visible = true;
+            int context = 8;
+            for (int step = 0; step < steps; step++) {
+                switch (random.nextInt(8)) {
+                    case 0 -> {
+                        if (steno) {
+                            chord(ime, KeyEvent.KEYCODE_Q);
+                            plover = !plover;
+                        }
+                    }
+                    case 1 -> {
+                        modifiers(ime, false);
+                        steno = !steno;
+                    }
+                    case 2 -> {
+                        if (visible) ime.onFinishInputView(false);
+                        else ime.onStartInputView(editorInfo(host), false);
+                        visible = !visible;
+                    }
+                    case 3 -> {
+                        host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+                        context = 8;
+                        visible = true;
+                    }
+                    default -> {
+                        context = random.nextInt(contexts.length);
+                        String before = contexts[context];
+                        String tail = random.nextBoolean() ? " after" : "";
+                        host.cursorTextUnavailable = random.nextInt(6) == 0;
+                        replaceEditorText(host, before + tail, before.length());
+                    }
+                }
+                String textBeforeLookup = host.getEditable().toString();
+                int caretBeforeLookup = Selection.getSelectionStart(host.getEditable());
+                String expectedTranslation = plover && steno && visible && !host.cursorTextUnavailable
+                        ? expected[context] : null;
+                String description = "seed=" + seed + " step=" + step + " context=" + context;
+                advanceSuggestionClock();
+                assertTrue("Only one lookup may be pending", suggestionReplies.size() <= 1);
+                if (random.nextBoolean()) {
+                    settleSuggestions();
+                    assertSuggestion(ime, expectedTranslation, description);
+                } else if (!"null".equals(field(ime, "ploverSuggestion"))) {
+                    assertSuggestion(ime, expectedTranslation, description);
+                }
+                assertEquals(description, textBeforeLookup, host.getEditable().toString());
+                assertEquals(description, caretBeforeLookup, Selection.getSelectionStart(host.getEditable()));
+                assertEquals(description, caretBeforeLookup,
+                        Selection.getSelectionEnd(host.getEditable()));
+            }
+            settleSuggestions();
+            service.destroy();
+            ploverReplies.clear();
+            suggestionQueries.clear();
+            if ((seed - first + 1) % 25 == 0)
+                System.out.println("Plover suggestion fuzz: " + (seed - first + 1) + " seeds x " + steps + " steps passed");
+        }
+    }
+
+    private static Host startSuggestionEditor(Ime ime, String text, int inputType) {
+        Host host = new Host(ime, text);
+        ime.connection = host;
+        EditorInfo info = editorInfo(host);
+        info.inputType = inputType;
+        ime.onStartInput(info, false);
+        ime.onStartInputView(info, false);
+        ShadowLooper.idleMainLooper();
+        return host;
+    }
+
+    private static void replaceEditorText(Host host, String text, int caret) {
+        int old = Selection.getSelectionStart(host.getEditable());
+        host.editor.setText(text);
+        int next = caret < 0 ? text.length() : caret;
+        Selection.setSelection(host.getEditable(), next);
+        host.ime.onUpdateSelection(old, old, next, next, -1, -1);
+        assertEquals(text, host.getEditable().toString());
+    }
+
+    private static void advanceSuggestionClock() {
+        ShadowLooper.idleMainLooper();
+        ShadowLooper.idleMainLooper(150, TimeUnit.MILLISECONDS);
+    }
+
+    private static void settleSuggestions() {
+        for (int i = 0; i < 10; i++) {
+            advanceSuggestionClock();
+            if (suggestionReplies.isEmpty()) return;
+            suggestionReplies.remove(0).run();
+        }
+        fail("Plover suggestion requests did not settle");
+    }
+
+    private static void assertSuggestion(Ime ime, String translation, String description) throws Exception {
+        String result = (String) field(ime, "ploverSuggestion");
+        assertEquals(description, translation, "null".equals(result) ? null
+                : new JSONObject(result).getString("translation"));
     }
     private static void compareScenarios(int seed, int steps, boolean sustained) throws Exception {
         List<String> immediate = runScenario(seed, steps, false, sustained);

@@ -85,9 +85,15 @@ const state: { islands: Island[]; candidates: string[][] } = {
   candidates: [],
 };
 let inferenceErrorMessage = "";
+interface PloverSuggestion {
+  translation: string;
+  strokes: string[];
+}
+
 interface AndroidImeBridge {
   isSandboxInputEnabled?(): boolean;
   getInputSnapshot?(): string;
+  getPloverSuggestion?(): string;
   submitInputCommand?(command: string): void;
   getClipboardSlots?(): string;
   setClipboardSlot?(slot: number, text: string | null): boolean;
@@ -2125,6 +2131,9 @@ if (isDictionaryManagementPage) {
 declare global {
   interface Window {
     handleAndroidInputSnapshot?: (snapshot: ImeSnapshot) => void;
+    handleAndroidPloverSuggestion?: (
+      suggestion: PloverSuggestion | null,
+    ) => void;
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
     clearPreeditFromAndroid?: (epoch?: number) => void;
@@ -2347,7 +2356,9 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
     document.body.classList.contains("android-raw-outline");
   if (compact) {
     const compactHeight =
-      48 + (document.getElementById("clipboard-slots")?.offsetHeight ?? 0);
+      48 +
+      (document.getElementById("clipboard-slots")?.offsetHeight ?? 0) +
+      (document.getElementById("plover-suggestion")?.offsetHeight ?? 0);
     wasCompactAndroidKeyboardHeight = true;
     if (lastRequestedAndroidKeyboardHeight !== compactHeight) {
       lastRequestedAndroidKeyboardHeight = compactHeight;
@@ -2442,6 +2453,27 @@ window.clearPreeditFromAndroid = (epoch) => {
 };
 window.handleAndroidInputSnapshot = renderInputSnapshot;
 
+window.handleAndroidPloverSuggestion = (suggestion) => {
+  const row = document.getElementById("plover-suggestion");
+  const candidateArea = document.getElementById("candidate-area");
+  if (!row || !candidateArea) return;
+  row.replaceChildren();
+  row.hidden = !suggestion;
+  if (suggestion) {
+    const translation = document.createElement("span");
+    translation.className = "plover-suggestion-text";
+    translation.textContent = suggestion.translation;
+    row.append(translation);
+    for (const stroke of suggestion.strokes) {
+      const outline = document.createElement("code");
+      outline.textContent = stroke;
+      row.append(outline);
+    }
+    row.scrollLeft = 0;
+  }
+  syncAndroidKeyboardHeight(candidateArea);
+};
+
 window.resetHardwareKeyboardStateFromAndroid = resetHardwareKeyboardState;
 
 window.refreshClipboardSlotsFromAndroid = updateDisplay;
@@ -2513,4 +2545,6 @@ if (!isDictionaryManagementPage) {
 if (sandboxInputEnabled) {
   const snapshot = androidIme?.getInputSnapshot?.();
   if (snapshot) renderInputSnapshot(JSON.parse(snapshot));
+  const suggestion = androidIme?.getPloverSuggestion?.();
+  if (suggestion) window.handleAndroidPloverSuggestion(JSON.parse(suggestion));
 }

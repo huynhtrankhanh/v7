@@ -209,6 +209,7 @@ async function verifySandboxDisplay(browser, url) {
       getInputSnapshot: () => JSON.stringify(window.__snapshot),
       submitInputCommand: (json) => window.__commands.push(JSON.parse(json)),
       getInputGeneration: () => window.__inputEpoch,
+      getPloverSuggestion: () => "null",
       getClipboardSlots: () => JSON.stringify(initial.slots),
       getInferenceModelError: () => "",
       getInferenceModelState: () => "ready",
@@ -217,7 +218,7 @@ async function verifySandboxDisplay(browser, url) {
       isTelexReady: () => true,
       isRawOutlineMode: () => false,
       hasPloverConfiguration: () => true,
-      setKeyboardHeight: () => {},
+      setKeyboardHeight: (height) => (window.__androidHeight = height),
       setPreeditText: (text) => window.__displayPreedits.push(text),
       changeInputMethod: () => {},
       requestPlover: (body, id) =>
@@ -345,6 +346,40 @@ async function verifySandboxDisplay(browser, url) {
   assert(
     snapshot.text === "second",
     "Native candidate selection didn't update preedit",
+  );
+  await page.evaluate((next) => {
+    window.handleAndroidInputSnapshot({ ...next, ploverEnabled: true });
+    window.handleAndroidPloverSuggestion({
+      translation: "xin chào",
+      strokes: ["SKWAU", "SIN/KAU"],
+    });
+  }, snapshot);
+  assert(
+    await page.evaluate(() => {
+      const row = document.getElementById("plover-suggestion");
+      return (
+        row.querySelector("span").textContent === "xin chào" &&
+        [...row.querySelectorAll("code")]
+          .map((code) => code.textContent)
+          .join(" ") === "SKWAU SIN/KAU" &&
+        row.offsetHeight === 40 &&
+        window.__androidHeight ===
+          48 +
+            row.offsetHeight +
+            document.getElementById("clipboard-slots").offsetHeight
+      );
+    }),
+    "Plover suggestion text, outlines, or compact height was incorrect",
+  );
+  await page.evaluate(() => window.handleAndroidPloverSuggestion(null));
+  assert(
+    await page.evaluate(
+      () =>
+        document.getElementById("plover-suggestion").offsetHeight === 0 &&
+        window.__androidHeight ===
+          48 + document.getElementById("clipboard-slots").offsetHeight,
+    ),
+    "Clearing Plover suggestions didn't collapse the row",
   );
   await page.close();
 }

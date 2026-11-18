@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
 import android.text.style.SuggestionSpan;
@@ -63,6 +64,19 @@ public class V7ImeService extends InputMethodService {
     private final HardwareKeyPressOwnership hardwareKeyPressOwnership =
             new HardwareKeyPressOwnership();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile String ploverSuggestion = "null";
+    private final PloverStrokeSuggestions ploverStrokeSuggestions = new PloverStrokeSuggestions(
+            mainHandler, this::getCurrentInputConnection,
+            (body, reply) -> BundledStrippedPloverRuntime.get(this).request(body, reply),
+            suggestion -> {
+                ploverSuggestion = suggestion;
+                evaluateJavascript("window.handleAndroidPloverSuggestion"
+                        + " && window.handleAndroidPloverSuggestion(" + suggestion + ")");
+            });
+    private boolean ploverEnabled;
+    private boolean ploverPaused;
+    private boolean suggestionEditor;
+    private boolean suggestionViewStarted;
     private SharedPreferences clipboardPreferences;
     private final Runnable refreshClipboardSlots = () -> dispatchInputCommand("refresh");
     private final SharedPreferences.OnSharedPreferenceChangeListener clipboardListener =
@@ -123,6 +137,8 @@ public class V7ImeService extends InputMethodService {
     private final BundledStrippedPloverRuntime.StateListener ploverStateListener =
             paused -> {
                 if (SERVICE_OWNERSHIP.isCurrent(this, serviceGeneration)) {
+                    ploverPaused = paused;
+                    updatePloverSuggestions();
                     scheduleInputStateRefresh();
                     evaluateJavascript(
                             "window.handleAndroidPloverPaused"
@@ -185,6 +201,8 @@ public class V7ImeService extends InputMethodService {
     @Override
     public void onStartInputView(EditorInfo info, boolean restarting) {
         super.onStartInputView(info, restarting);
+        suggestionViewStarted = true;
+        updatePloverSuggestions();
         resetHardwareInputState();
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).attachTo(inputContainer);
@@ -193,6 +211,8 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onFinishInputView(boolean finishingInput) {
+        suggestionViewStarted = false;
+        updatePloverSuggestions();
         resetHardwareInputState();
         if (inputContainer != null) {
             BundledStrippedPloverRuntime.get(this).detachFrom(inputContainer);
@@ -220,6 +240,8 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onStartInput(EditorInfo attribute, boolean restarting) {
+        ploverStrokeSuggestions.update(false);
+        suggestionEditor = allowsPloverSuggestions(attribute);
         PloverCommandEditorMode.Mode editorMode =
                 PloverCommandEditorMode.fromPrivateImeOptions(
                         attribute == null ? null : attribute.privateImeOptions
@@ -236,10 +258,13 @@ public class V7ImeService extends InputMethodService {
         keyboardVisibilityController.startInput();
         super.onStartInput(attribute, restarting);
         publishEditorModeState();
+        updatePloverSuggestions();
     }
 
     @Override
     public void onFinishInput() {
+        suggestionEditor = false;
+        updatePloverSuggestions();
         clearPreeditSession();
         rawOutlineMode = false;
         publishEditorModeState();
@@ -283,6 +308,7 @@ public class V7ImeService extends InputMethodService {
                 candidatesStart,
                 candidatesEnd
         );
+        updatePloverSuggestions();
         if (preeditText.isEmpty()) {
             pendingPreeditLengths.clear();
             ExtractedText live = readEditorSelection();
@@ -332,6 +358,8 @@ public class V7ImeService extends InputMethodService {
 
     @Override
     public void onDestroy() {
+        suggestionEditor = false;
+        updatePloverSuggestions();
         if (clipboardPreferences != null) {
             clipboardPreferences.unregisterOnSharedPreferenceChangeListener(clipboardListener);
         }
@@ -767,6 +795,7 @@ public class V7ImeService extends InputMethodService {
 
     private void applyHardwareInputMode(HardwareInputMode mode) {
         hardwareInputMode = mode;
+        updatePloverSuggestions();
     }
 
     private boolean isV7PloverMode() {
@@ -1308,6 +1337,7 @@ public class V7ImeService extends InputMethodService {
         pendingCommitConnection = connection;
         pendingCommitSuffixes.addLast(text);
         if (!completePendingEditorCommit(connection)) schedulePreeditRetry();
+        updatePloverSuggestions();
     }
 
     /**
@@ -1485,6 +1515,21 @@ public class V7ImeService extends InputMethodService {
         mainHandler.post(refreshInputState);
     }
 
+    private static boolean allowsPloverSuggestions(EditorInfo info) {
+        if (info == null || (info.inputType & InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) {
+            return false;
+        }
+        int variation = info.inputType & InputType.TYPE_MASK_VARIATION;
+        return variation != InputType.TYPE_TEXT_VARIATION_PASSWORD
+                && variation != InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+                && variation != InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD;
+    }
+
+    private void updatePloverSuggestions() {
+        ploverStrokeSuggestions.update(suggestionEditor && suggestionViewStarted
+                && ploverEnabled && !ploverPaused && isV7PloverMode() && !rawOutlineMode);
+    }
+
     private JSONObject inputContext() throws JSONException {
         return new JSONObject().put("epoch", inputGeneration.get())
                 .put("steno", isV7PloverMode()).put("telex", isTelexMode())
@@ -1544,6 +1589,7 @@ public class V7ImeService extends InputMethodService {
             needsPreeditRetry |= isEffectiveTelexMode() && telexHasPreedit
                     && !nativeTelexRendered.equals(preeditText);
             if (snapshotChanged || needsPreeditRetry) {
+                ploverEnabled = next.optBoolean("ploverEnabled");
                 boolean preeditApplied = completePendingEditorCommit(getCurrentInputConnection());
                 if (preeditApplied && !isEffectiveTelexMode()) {
                     preeditApplied = applyPreeditText(
@@ -1569,6 +1615,7 @@ public class V7ImeService extends InputMethodService {
                     if (snapshotChanged) preeditRetryCount = 0;
                     schedulePreeditRetry();
                 }
+                updatePloverSuggestions();
             }
         }
         if (effects == null) return;
@@ -1863,6 +1910,9 @@ public class V7ImeService extends InputMethodService {
 
         @JavascriptInterface
         public String getInputSnapshot() { return inputSnapshot; }
+
+        @JavascriptInterface
+        public String getPloverSuggestion() { return ploverSuggestion; }
 
         @JavascriptInterface
         public void submitInputCommand(String json) {

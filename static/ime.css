@@ -548,6 +548,36 @@ body.stripped-plover-active .ime-plover-banner {
   display: flex;
 }
 
+#plover-suggestion {
+  align-items: center;
+  border-top: 1px solid var(--ime-line);
+  display: flex;
+  flex: 0 0 40px;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 12px;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+
+#plover-suggestion[hidden],
+body:not(.stripped-plover-active) #plover-suggestion {
+  display: none;
+}
+
+.plover-suggestion-text {
+  color: var(--ime-text);
+  font-size: 14px;
+}
+
+#plover-suggestion code {
+  background: var(--ime-panel-raised);
+  border: 1px solid var(--ime-line);
+  border-radius: 6px;
+  color: var(--ime-plover);
+  padding: 4px 6px;
+}
+
 body.android-normal-typing .ime-normal-banner {
   display: flex;
 }

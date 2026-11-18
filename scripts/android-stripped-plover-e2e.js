@@ -275,6 +275,21 @@ async function main() {
               entry ? [{ translation: entry.translation }] : [],
             );
           }
+          if (
+            /SELECT stroke FROM entries WHERE translation = \? AND dictionary = \?/i.test(
+              sql,
+            )
+          ) {
+            return JSON.stringify(
+              window.__sqliteEntries
+                .filter(
+                  (entry) =>
+                    entry.translation === parameters[0] &&
+                    entry.dictionary === parameters[1],
+                )
+                .map(({ stroke }) => ({ stroke })),
+            );
+          }
           if (/COUNT\(\*\)/i.test(sql)) {
             return JSON.stringify([{ count: window.__sqliteEntries.length }]);
           }
@@ -448,6 +463,14 @@ async function main() {
       const runtimeEvents = await page.evaluate(() => window.__runtimeEvents);
       throw new Error(
         `Bundled runtime did not forward the upstream Plover command event: ${JSON.stringify({ eventImport, eventTranslation, runtimeEvents })}`,
+      );
+    }
+    const reverseLookup = await requestRuntime(page, 18, "reverse_lookup", {
+      translation: "case-insensitive-exact-match",
+    });
+    if (JSON.stringify(reverseLookup.strokes) !== '["ST"]') {
+      throw new Error(
+        `Bundled runtime did not reverse lookup the active dictionary: ${JSON.stringify(reverseLookup)}`,
       );
     }
     await requestRuntime(page, 10, "remove_dictionary", {
