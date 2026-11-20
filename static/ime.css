@@ -626,13 +626,17 @@ body.android-raw-outline .ime-plover-state {
 }
 
 @media (max-height: 110px) {
-  .ime-composition-label {
+  body:not(.measuring-expanded) .ime-composition-label {
     display: none;
   }
 
-  #workbench {
+  body:not(.measuring-expanded) #workbench {
     padding-block: 6px;
   }
+}
+
+body.measuring-expanded #candidate-area {
+  max-height: none;
 }
 
 @media (prefers-reduced-motion: no-preference) {

@@ -14,7 +14,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.TreeSet;
-import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,14 +37,19 @@ final class PloverStrokeSuggestions {
         void request(String body, BundledStrippedPloverRuntime.Callback callback);
     }
 
+    interface Publisher {
+        void publish(String suggestion, boolean pending);
+    }
+
     private final Handler handler;
     private final Supplier<InputConnection> connection;
     private final Lookup lookup;
-    private final Consumer<String> publish;
+    private final Publisher publisher;
     private boolean active;
     private boolean inFlight;
     private Query query;
     private String published = "null";
+    private boolean publishedPending;
 
     private final Runnable scan = this::scanEditor;
     private final Runnable lookupDue = () -> {
@@ -58,11 +62,11 @@ final class PloverStrokeSuggestions {
     };
 
     PloverStrokeSuggestions(Handler handler, Supplier<InputConnection> connection,
-            Lookup lookup, Consumer<String> publish) {
+            Lookup lookup, Publisher publisher) {
         this.handler = handler;
         this.connection = connection;
         this.lookup = lookup;
-        this.publish = publish;
+        this.publisher = publisher;
     }
 
     void update(boolean enabled) {
@@ -73,7 +77,7 @@ final class PloverStrokeSuggestions {
         } else {
             handler.removeCallbacks(lookupDue);
             query = null;
-            publish("null");
+            publish("null", false);
         }
     }
 
@@ -85,7 +89,9 @@ final class PloverStrokeSuggestions {
 
         handler.removeCallbacks(lookupDue);
         query = candidates.isEmpty() ? null : new Query(editor, candidates);
-        publish("null");
+        // Clear stale suggestion text immediately, while telling the display
+        // to hold an already-open strip's height until the pending lookup settles.
+        publish("null", query != null);
         if (query != null) handler.postDelayed(lookupDue, LOOKUP_DELAY_MS);
     }
 
@@ -131,14 +137,18 @@ final class PloverStrokeSuggestions {
 
     private void requestNext() {
         Query current = query;
-        if (inFlight || current == null || !current.ready
-                || current.nextIndex == current.candidates.size()) return;
+        if (inFlight || current == null || !current.ready) return;
+        if (current.nextIndex == current.candidates.size()) {
+            publish("null", false);
+            return;
+        }
         String translation = current.candidates.get(current.nextIndex++);
         JSONObject request;
         try {
             request = new JSONObject().put("id", 0).put("method", "reverse_lookup")
                     .put("params", new JSONObject().put("translation", translation));
         } catch (JSONException invalidRequest) {
+            publish("null", false);
             return;
         }
         inFlight = true;
@@ -149,13 +159,17 @@ final class PloverStrokeSuggestions {
                 requestNext();
                 return;
             }
-            if (!error.isEmpty()) return;
+            if (!error.isEmpty()) {
+                publish("null", false);
+                return;
+            }
             try {
                 String suggestion = parseSuggestion(body, translation);
                 if (suggestion == null) requestNext();
-                else publish(suggestion);
+                else publish(suggestion, false);
             } catch (JSONException invalidResponse) {
-                // A failed lookup leaves the row empty for this context.
+                // A failed lookup settles the row as empty for this context.
+                publish("null", false);
             }
         });
     }
@@ -172,10 +186,11 @@ final class PloverStrokeSuggestions {
                 .put("strokes", new JSONArray(ranked)).toString();
     }
 
-    private void publish(String suggestion) {
-        if (suggestion.equals(published)) return;
+    private void publish(String suggestion, boolean pending) {
+        if (suggestion.equals(published) && pending == publishedPending) return;
         published = suggestion;
-        publish.accept(suggestion);
+        publishedPending = pending;
+        publisher.publish(suggestion, pending);
     }
 
     private static final class Query {

@@ -94,6 +94,8 @@ interface AndroidImeBridge {
   isSandboxInputEnabled?(): boolean;
   getInputSnapshot?(): string;
   getPloverSuggestion?(): string;
+  isPloverEnabled?(): boolean;
+  getDisplayRevision?(): number;
   submitInputCommand?(command: string): void;
   getClipboardSlots?(): string;
   setClipboardSlot?(slot: number, text: string | null): boolean;
@@ -164,8 +166,9 @@ if (androidIme) {
 }
 let androidInferenceRequestId = 1;
 let lastRequestedAndroidKeyboardHeight = 0;
-let lastExpandedAndroidKeyboardHeight = 160;
-let wasCompactAndroidKeyboardHeight = false;
+let pendingHeightSyncFrame: number | null = null;
+let lastAppliedDisplayRevision = -1;
+let sandboxClipboardSlots: (string | null)[] | null = null;
 let androidPloverRequestId = 1;
 const ANDROID_PLOVER_REQUEST_TIMEOUT_MS = 180_000;
 const androidPloverPending = new Map<
@@ -1411,7 +1414,11 @@ function updateInferenceStatusUI(): void {
 }
 
 function updateDisplay(): void {
-  clipboardUi?.update(isClipboardMode(), clipboardSlots.snapshot());
+  const currentSlots =
+    sandboxInputEnabled && sandboxClipboardSlots !== null
+      ? sandboxClipboardSlots
+      : clipboardSlots.snapshot();
+  clipboardUi?.update(isClipboardMode(), currentSlots);
   if (androidIme) {
     updateInferenceStatusUI();
   }
@@ -1440,7 +1447,7 @@ function updateDisplay(): void {
   );
   document.body.classList.toggle(
     "android-telex-degraded",
-    androidTelexModeEnabled && !androidTelexReady,
+    androidTelexModeEnabled && !androidRawOutlineMode && !androidTelexReady,
   );
   const telexBannerLabel = document.querySelector<HTMLElement>(
     ".ime-telex-banner strong",
@@ -1461,13 +1468,20 @@ function updateDisplay(): void {
           ? "Compose"
           : "Normal typing";
   }
-  document.body.classList.toggle(
-    "stripped-plover-active",
+  const ploverSurfaceActive =
     androidStenoModeEnabled &&
-      !androidRawOutlineMode &&
-      !androidPlainTextMode &&
-      strippedPlover.enabled,
-  );
+    !androidTelexModeEnabled &&
+    !androidRawOutlineMode &&
+    !androidPlainTextMode &&
+    strippedPlover.enabled;
+  document.body.classList.toggle("stripped-plover-active", ploverSurfaceActive);
+  if (!ploverSurfaceActive) {
+    const suggestionRow = document.getElementById("plover-suggestion");
+    if (suggestionRow?.classList.contains("loading")) {
+      suggestionRow.hidden = true;
+      suggestionRow.classList.remove("loading");
+    }
+  }
   updateInferenceErrorUI();
   if (candidateDiffPlan?.sections.length) {
     console.info(
@@ -1652,11 +1666,14 @@ function inputContext(): ImeInputContext {
     slots: clipboardSlots.snapshot(),
   };
 }
-function renderInputSnapshot(snapshot: ImeSnapshot) {
-  if (
-    snapshot.epoch !== (androidIme?.getInputGeneration?.() ?? androidInputEpoch)
-  )
-    return;
+function acceptDisplayRevision(revision?: number): boolean {
+  if (revision === undefined) return true;
+  if (revision < lastAppliedDisplayRevision) return false;
+  lastAppliedDisplayRevision = revision;
+  return true;
+}
+
+function applyInputSnapshotFields(snapshot: ImeSnapshot): void {
   androidInputEpoch = snapshot.epoch;
   androidStenoModeEnabled = snapshot.steno;
   androidTelexModeEnabled = snapshot.telex;
@@ -1670,6 +1687,18 @@ function renderInputSnapshot(snapshot: ImeSnapshot) {
   piecemealCursorIndex = snapshot.piecemealCursorIndex;
   strippedPlover.enabled = snapshot.ploverEnabled;
   strippedPlover.available = snapshot.ploverAvailable;
+  if (Array.isArray(snapshot.slots)) {
+    sandboxClipboardSlots = snapshot.slots.slice();
+  }
+}
+
+function renderInputSnapshot(snapshot: ImeSnapshot, revision?: number) {
+  if (!acceptDisplayRevision(revision)) return;
+  if (
+    snapshot.epoch !== (androidIme?.getInputGeneration?.() ?? androidInputEpoch)
+  )
+    return;
+  applyInputSnapshotFields(snapshot);
   updatePloverStatusUI();
   updateDisplay();
 }
@@ -2125,37 +2154,53 @@ if (isDictionaryManagementPage) {
   setupPloverControls();
 } else {
   setupImeControls();
-  setupPloverControls();
+  if (!sandboxInputEnabled) {
+    setupPloverControls();
+  }
 }
 
 declare global {
   interface Window {
-    handleAndroidInputSnapshot?: (snapshot: ImeSnapshot) => void;
+    handleAndroidInputSnapshot?: (
+      snapshot: ImeSnapshot,
+      revision?: number,
+    ) => void;
     handleAndroidPloverSuggestion?: (
       suggestion: PloverSuggestion | null,
+      pending?: boolean,
+      revision?: number,
     ) => void;
+    syncAndroidDisplayState?: () => void;
     AndroidIme?: AndroidImeBridge;
     AndroidDictionary?: AndroidDictionaryBridge;
-    clearPreeditFromAndroid?: (epoch?: number) => void;
+    clearPreeditFromAndroid?: (epoch?: number, revision?: number) => void;
     resetHardwareKeyboardStateFromAndroid?: () => void;
-    handleAndroidInferenceState?: (state: string) => void;
-    handleAndroidInferenceWarmupError?: (errorMessage: string) => void;
+    handleAndroidInferenceState?: (state: string, revision?: number) => void;
+    handleAndroidInferenceWarmupError?: (
+      errorMessage: string,
+      revision?: number,
+    ) => void;
     handleAndroidPloverResponse?: (
       requestId: number,
       responseBody: string,
       errorMessage: string,
     ) => void;
-    handleAndroidPloverPaused?: (paused: boolean) => void;
+    handleAndroidPloverPaused?: (paused: boolean, revision?: number) => void;
     handleAndroidEditorModeChanged?: (
       rawOutline: boolean,
       plainText: boolean,
+      revision?: number,
     ) => void;
     handleAndroidStenoModeChanged?: (
       enabled: boolean,
       telex: boolean,
       epoch: number,
+      revision?: number,
     ) => void;
-    handleAndroidTelexAvailability?: (ready: boolean) => void;
+    handleAndroidTelexAvailability?: (
+      ready: boolean,
+      revision?: number,
+    ) => void;
     refreshClipboardSlotsFromAndroid?: () => void;
     handleAndroidClipboardSlot?: (
       slot: number,
@@ -2245,7 +2290,8 @@ function requestAndroidPlover(
   });
 }
 
-window.handleAndroidInferenceState = (modelState) => {
+window.handleAndroidInferenceState = (modelState, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
   inferenceModelState = modelState;
   inputEngine.configure(inputContext());
   if (modelState !== "error") {
@@ -2255,7 +2301,8 @@ window.handleAndroidInferenceState = (modelState) => {
   updateDisplay();
 };
 
-window.handleAndroidInferenceWarmupError = (errorMessage) => {
+window.handleAndroidInferenceWarmupError = (errorMessage, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
   inferenceErrorMessage = errorMessage;
   updateDisplay();
 };
@@ -2285,14 +2332,22 @@ window.handleAndroidPloverResponse = (
   }
 };
 
-window.handleAndroidPloverPaused = (paused) => {
+window.handleAndroidPloverPaused = (paused, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
   androidPloverPaused = paused;
   inputEngine.configure(inputContext());
   updatePloverStatusUI();
   updateDisplay();
 };
 
-window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
+window.handleAndroidStenoModeChanged = (enabled, telex, epoch, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
+  if (
+    sandboxInputEnabled &&
+    androidIme?.getInputGeneration &&
+    epoch !== androidIme.getInputGeneration()
+  )
+    return;
   androidStenoModeEnabled = enabled;
   androidTelexModeEnabled = telex;
   androidInputEpoch = epoch;
@@ -2301,13 +2356,15 @@ window.handleAndroidStenoModeChanged = (enabled, telex, epoch) => {
   updateDisplay();
 };
 
-window.handleAndroidTelexAvailability = (ready) => {
+window.handleAndroidTelexAvailability = (ready, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
   androidTelexReady = ready;
   inputEngine.configure(inputContext());
   updateDisplay();
 };
 
-window.handleAndroidEditorModeChanged = (rawOutline, plainText) => {
+window.handleAndroidEditorModeChanged = (rawOutline, plainText, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
   androidRawOutlineMode = rawOutline;
   androidPlainTextMode = plainText;
   inputEngine.configure(inputContext());
@@ -2347,56 +2404,33 @@ function syncAndroidPreedit(candidateDiffPlan: CandidateDiffPlan | null) {
   );
 }
 
-function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
-  if (!androidIme) return;
-  const compact =
+function isCompactAndroidSurface(): boolean {
+  return (
     document.body.classList.contains("stripped-plover-active") ||
     document.body.classList.contains("android-normal-typing") ||
     document.body.classList.contains("android-telex") ||
-    document.body.classList.contains("android-raw-outline");
-  if (compact) {
-    const compactHeight =
-      48 +
-      (document.getElementById("clipboard-slots")?.offsetHeight ?? 0) +
-      (document.getElementById("plover-suggestion")?.offsetHeight ?? 0);
-    wasCompactAndroidKeyboardHeight = true;
-    if (lastRequestedAndroidKeyboardHeight !== compactHeight) {
-      lastRequestedAndroidKeyboardHeight = compactHeight;
-      androidIme.setKeyboardHeight(compactHeight);
-    }
-    return;
-  }
+    document.body.classList.contains("android-raw-outline")
+  );
+}
 
-  // Restore the last measured full surface before the browser paints the mode
-  // transition. Measuring from the compact viewport first makes the full
-  // workbench flash through a squeezed intermediate layout.
-  if (wasCompactAndroidKeyboardHeight) {
-    wasCompactAndroidKeyboardHeight = false;
-    lastRequestedAndroidKeyboardHeight = lastExpandedAndroidKeyboardHeight;
-    androidIme.setKeyboardHeight(lastExpandedAndroidKeyboardHeight);
-  }
+function measureExpandedAndroidKeyboardHeight(
+  candidateArea: HTMLElement,
+): number | null {
+  const toolbar = document.querySelector<HTMLElement>(".ime-toolbar");
+  const workbench = document.getElementById("workbench");
+  const label = document.querySelector<HTMLElement>(".ime-composition-label");
+  const display = document.getElementById("text-display");
+  const flow = display?.querySelector<HTMLElement>(".text-display-flow");
+  const inferenceError = document.getElementById(
+    "inference-error",
+  ) as HTMLElement | null;
+  if (!toolbar || !workbench || !display || !flow) return null;
 
-  window.requestAnimationFrame(() => {
-    if (
-      document.body.classList.contains("stripped-plover-active") ||
-      document.body.classList.contains("android-normal-typing") ||
-      document.body.classList.contains("android-raw-outline")
-    ) {
-      return;
-    }
-
+  const temporarilyExpand = window.innerHeight <= 110;
+  if (temporarilyExpand) document.body.classList.add("measuring-expanded");
+  try {
     const candidatesVisible =
       getComputedStyle(candidateArea).display !== "none";
-    const toolbar = document.querySelector<HTMLElement>(".ime-toolbar");
-    const workbench = document.getElementById("workbench");
-    const label = document.querySelector<HTMLElement>(".ime-composition-label");
-    const display = document.getElementById("text-display");
-    const flow = display?.querySelector<HTMLElement>(".text-display-flow");
-    const inferenceError = document.getElementById(
-      "inference-error",
-    ) as HTMLElement | null;
-    if (!toolbar || !workbench || !display || !flow) return;
-
     const workbenchStyle = getComputedStyle(workbench);
     const displayStyle = getComputedStyle(display);
     const verticalPadding =
@@ -2415,7 +2449,7 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
         ? inferenceError.offsetHeight + 6
         : 0;
     const candidateHeight = candidatesVisible ? candidateArea.scrollHeight : 0;
-    const desiredHeight = Math.max(
+    return Math.max(
       112,
       Math.ceil(
         toolbar.offsetHeight +
@@ -2428,10 +2462,43 @@ function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
           candidateHeight,
       ),
     );
-    lastExpandedAndroidKeyboardHeight = desiredHeight;
-    if (desiredHeight !== lastRequestedAndroidKeyboardHeight) {
-      lastRequestedAndroidKeyboardHeight = desiredHeight;
-      androidIme.setKeyboardHeight(desiredHeight);
+  } finally {
+    if (temporarilyExpand) document.body.classList.remove("measuring-expanded");
+  }
+}
+
+function requestAndroidKeyboardHeight(height: number): void {
+  if (!androidIme || height === lastRequestedAndroidKeyboardHeight) return;
+  lastRequestedAndroidKeyboardHeight = height;
+  androidIme.setKeyboardHeight(height);
+}
+
+function syncAndroidKeyboardHeight(candidateArea: HTMLElement) {
+  if (!androidIme) return;
+  if (pendingHeightSyncFrame !== null) {
+    window.cancelAnimationFrame(pendingHeightSyncFrame);
+    pendingHeightSyncFrame = null;
+  }
+  if (isCompactAndroidSurface()) {
+    const compactHeight =
+      48 +
+      (document.getElementById("clipboard-slots")?.offsetHeight ?? 0) +
+      (document.getElementById("plover-suggestion")?.offsetHeight ?? 0);
+    requestAndroidKeyboardHeight(compactHeight);
+    return;
+  }
+
+  const immediateHeight = measureExpandedAndroidKeyboardHeight(candidateArea);
+  if (immediateHeight !== null) {
+    requestAndroidKeyboardHeight(immediateHeight);
+  }
+
+  pendingHeightSyncFrame = window.requestAnimationFrame(() => {
+    pendingHeightSyncFrame = null;
+    if (isCompactAndroidSurface()) return;
+    const desiredHeight = measureExpandedAndroidKeyboardHeight(candidateArea);
+    if (desiredHeight !== null) {
+      requestAndroidKeyboardHeight(desiredHeight);
     }
   });
 }
@@ -2443,22 +2510,41 @@ window.addEventListener("resize", () => {
   }
 });
 
-window.clearPreeditFromAndroid = (epoch) => {
+window.clearPreeditFromAndroid = (epoch, revision) => {
+  if (!acceptDisplayRevision(revision)) return;
+  if (
+    sandboxInputEnabled &&
+    epoch !== undefined &&
+    androidIme?.getInputGeneration &&
+    epoch !== androidIme.getInputGeneration()
+  )
+    return;
   if (epoch !== undefined) androidInputEpoch = epoch;
   if (!sandboxInputEnabled) {
     inputEngine.clear(androidInputEpoch);
     if (strippedPlover.available)
       void requestAndroidPlover("reset_state", {}).catch(console.error);
+  } else {
+    syncAndroidDisplayState();
   }
 };
 window.handleAndroidInputSnapshot = renderInputSnapshot;
 
-window.handleAndroidPloverSuggestion = (suggestion) => {
+function renderPloverSuggestionRow(
+  suggestion: PloverSuggestion | null,
+  pending = false,
+): boolean {
   const row = document.getElementById("plover-suggestion");
-  const candidateArea = document.getElementById("candidate-area");
-  if (!row || !candidateArea) return;
+  if (!row) return false;
+  const wasVisible = !row.hidden;
   row.replaceChildren();
-  row.hidden = !suggestion;
+  const keepHeightWhileLoading =
+    !suggestion &&
+    pending &&
+    wasVisible &&
+    document.body.classList.contains("stripped-plover-active");
+  row.hidden = !suggestion && !keepHeightWhileLoading;
+  row.classList.toggle("loading", keepHeightWhileLoading);
   if (suggestion) {
     const translation = document.createElement("span");
     translation.className = "plover-suggestion-text";
@@ -2471,12 +2557,90 @@ window.handleAndroidPloverSuggestion = (suggestion) => {
     }
     row.scrollLeft = 0;
   }
+  return true;
+}
+
+window.handleAndroidPloverSuggestion = (
+  suggestion,
+  pending = false,
+  revision,
+) => {
+  if (!acceptDisplayRevision(revision)) return;
+  const candidateArea = document.getElementById("candidate-area");
+  if (!candidateArea || !renderPloverSuggestionRow(suggestion, pending)) return;
   syncAndroidKeyboardHeight(candidateArea);
 };
 
+function syncAndroidDisplayState(): void {
+  if (!androidIme || !sandboxInputEnabled) return;
+  const liveRevision = androidIme.getDisplayRevision?.();
+  if (liveRevision !== undefined && liveRevision > lastAppliedDisplayRevision) {
+    lastAppliedDisplayRevision = liveRevision;
+  }
+  const liveEpoch = androidIme.getInputGeneration?.() ?? androidInputEpoch;
+  const rawSnapshot = androidIme.getInputSnapshot?.();
+  let parsedSnapshot: ImeSnapshot | null = null;
+  if (rawSnapshot) {
+    try {
+      const candidate = JSON.parse(rawSnapshot) as ImeSnapshot;
+      if (candidate.epoch === liveEpoch) {
+        parsedSnapshot = candidate;
+      }
+    } catch {
+      parsedSnapshot = null;
+    }
+  }
+  if (parsedSnapshot) {
+    applyInputSnapshotFields(parsedSnapshot);
+  } else {
+    state.islands = [{ type: "vietnamese", value: "" }];
+    state.candidates = [];
+    piecemealCursorIndex = null;
+    sandboxClipboardSlots = null;
+  }
+  // Always overlay live native flags so a cold or not-yet-refreshed snapshot
+  // can never revert mode, pause, or readiness state.
+  androidInputEpoch = liveEpoch;
+  androidStenoModeEnabled =
+    androidIme.isStenoModeEnabled?.() ?? androidStenoModeEnabled;
+  androidTelexModeEnabled =
+    androidIme.isTelexModeEnabled?.() ?? androidTelexModeEnabled;
+  androidTelexReady = androidIme.isTelexReady?.() ?? androidTelexReady;
+  androidRawOutlineMode =
+    androidIme.isRawOutlineMode?.() ?? androidRawOutlineMode;
+  androidPlainTextMode = androidIme.isPlainTextMode?.() ?? androidPlainTextMode;
+  androidPloverPaused = androidIme.isPloverPaused?.() ?? androidPloverPaused;
+  inferenceModelState = androidIme.getInferenceModelState();
+  if (!parsedSnapshot) {
+    inferenceErrorMessage = androidIme.getInferenceModelError();
+  }
+  if (typeof androidIme.isPloverEnabled === "function") {
+    strippedPlover.enabled = androidIme.isPloverEnabled();
+  }
+  strippedPlover.available = androidIme.hasPloverConfiguration();
+
+  const rawSuggestion = androidIme.getPloverSuggestion?.();
+  let parsedSuggestion: PloverSuggestion | null = null;
+  if (rawSuggestion) {
+    try {
+      parsedSuggestion = JSON.parse(rawSuggestion) as PloverSuggestion | null;
+    } catch {
+      parsedSuggestion = null;
+    }
+  }
+  renderPloverSuggestionRow(parsedSuggestion, false);
+  updatePloverStatusUI();
+  updateDisplay();
+}
+
+window.syncAndroidDisplayState = syncAndroidDisplayState;
+
 window.resetHardwareKeyboardStateFromAndroid = resetHardwareKeyboardState;
 
-window.refreshClipboardSlotsFromAndroid = updateDisplay;
+window.refreshClipboardSlotsFromAndroid = () => {
+  sandboxClipboardSlots = null;
+  updateDisplay();
+};
 
 window.handleAndroidClipboardSlot = (slot, copy, epoch, selectedText) => {
   if (
@@ -2536,15 +2700,12 @@ if (!isDictionaryManagementPage) {
       enqueueCompositionOperation(() => pasteClipboardSlot(slot)),
     message: (text) => androidIme?.showClipboardMessage?.(text),
   });
-  if (androidIme) {
-    updateInferenceStatusUI();
+  if (sandboxInputEnabled) {
+    syncAndroidDisplayState();
+  } else {
+    if (androidIme) {
+      updateInferenceStatusUI();
+    }
+    updateDisplay();
   }
-  updateDisplay();
-}
-
-if (sandboxInputEnabled) {
-  const snapshot = androidIme?.getInputSnapshot?.();
-  if (snapshot) renderInputSnapshot(JSON.parse(snapshot));
-  const suggestion = androidIme?.getPloverSuggestion?.();
-  if (suggestion) window.handleAndroidPloverSuggestion(JSON.parse(suggestion));
 }

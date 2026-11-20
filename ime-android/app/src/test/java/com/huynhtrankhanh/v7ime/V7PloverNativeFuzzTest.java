@@ -11,7 +11,11 @@ import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
 import android.view.inputmethod.SurroundingText;
+import android.webkit.ValueCallback;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -24,9 +28,12 @@ import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.annotation.LooperMode;
+import org.robolectric.annotation.RealObject;
 import org.robolectric.shadows.ShadowLooper;
+import org.robolectric.shadows.ShadowWebView;
 import java.io.*;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -38,7 +45,8 @@ import static org.junit.Assert.*;
     V7PloverNativeFuzzTest.Sandbox.class,
     V7PloverNativeFuzzTest.Telex.class,
     V7PloverNativeFuzzTest.Inference.class,
-    V7PloverNativeFuzzTest.Plover.class
+    V7PloverNativeFuzzTest.Plover.class,
+    V7PloverNativeFuzzTest.TrackedWebView.class
 })
 @LooperMode(LooperMode.Mode.PAUSED)
 public class V7PloverNativeFuzzTest {
@@ -56,10 +64,18 @@ public class V7PloverNativeFuzzTest {
     private static int resets;
     private static String traceRun = "";
     private static boolean delayedWarmup;
+    private static boolean delayedTelexWarmup;
+    private static boolean rejectSuggestionLookup;
+    private static boolean failInference;
+    private static boolean ploverPausedState;
+    private static String forcedPloverPreedit;
     private static final List<Runnable> sandboxWarmups = new ArrayList<>();
+    private static final List<Runnable> telexWarmups = new ArrayList<>();
+    private static final List<BundledStrippedPloverRuntime.StateListener> ploverStateListeners = new ArrayList<>();
     private static final List<JSONArray> ploverOutputs = new ArrayList<>();
     private static final List<Runnable> suggestionReplies = new ArrayList<>();
     private static final List<String> suggestionQueries = new ArrayList<>();
+    private static WebViewHarness activeWebViewHarness;
     @Before public void resetExternalResponses() {
         ploverReplies.clear(); duplicateHardware = false; variedPlover = false;
         translations = 0; inferenceCalls = 0; rejectPlover = false;
@@ -67,9 +83,14 @@ public class V7PloverNativeFuzzTest {
         responseSeed = 0; ploverOutputs.clear();
         inlinePloverReset = false;
         inlinePloverTranslate = false; rejectPloverReset = false; resets = 0;
-        delayedWarmup = false; sandboxWarmups.clear(); traceRun = "";
+        delayedWarmup = false; delayedTelexWarmup = false;
+        rejectSuggestionLookup = false; failInference = false;
+        ploverPausedState = false; forcedPloverPreedit = null;
+        sandboxWarmups.clear(); telexWarmups.clear(); ploverStateListeners.clear();
+        traceRun = "";
         suggestionReplies.clear();
         suggestionQueries.clear();
+        activeWebViewHarness = null;
     }
     public static class Ime extends V7ImeService {
         InputConnection connection;
@@ -135,19 +156,26 @@ public class V7PloverNativeFuzzTest {
     @Implements(value = TelexJavaScriptSandbox.class, isInAndroidSdk = false)
     public static class Telex {
         private boolean ready;
-        @Implementation protected void warmAsync(Executor executor, Runnable changed) { ready = true; changed.run(); }
+        private boolean warming;
+        @Implementation protected void warmAsync(Executor executor, Runnable changed) {
+            if (ready || warming) return;
+            warming = true;
+            Runnable complete = () -> { warming = false; ready = true; changed.run(); };
+            if (delayedTelexWarmup) telexWarmups.add(complete); else complete.run();
+        }
         @Implementation protected boolean isReady() { return ready; }
         @Implementation protected String convertIfReady(String raw) {
             if (!ready) return null;
             try { return rpc(new JSONObject().put("telex", raw)).getString("text"); }
             catch (Exception e) { throw new AssertionError(e); }
         }
-        @Implementation protected void close() { ready = false; }
+        @Implementation protected void close() { ready = false; warming = false; }
     }
     @Implements(value = NativeInference.class, isInAndroidSdk = false)
     public static class Inference {
         @Implementation protected static String infer(Context context, String body) throws Exception {
             inferenceCalls++;
+            if (failInference) throw new IOException("Injected model failure");
             JSONArray islands = new JSONObject(body).getJSONArray("islands");
             JSONArray parts = new JSONArray();
             JSONArray alternate = new JSONArray();
@@ -172,6 +200,18 @@ public class V7PloverNativeFuzzTest {
     private static final List<Runnable> ploverReplies = new ArrayList<>();
     @Implements(value = BundledStrippedPloverRuntime.class, isInAndroidSdk = false)
     public static class Plover {
+        @Implementation protected boolean isPaused() { return ploverPausedState; }
+        @Implementation protected void attachTo(FrameLayout host) {}
+        @Implementation protected void detachFrom(FrameLayout host) {}
+        @Implementation protected void addStateListener(BundledStrippedPloverRuntime.StateListener listener) {
+            if (!ploverStateListeners.contains(listener)) ploverStateListeners.add(listener);
+            listener.onPausedChanged(ploverPausedState);
+        }
+        @Implementation protected void removeStateListener(BundledStrippedPloverRuntime.StateListener listener) {
+            ploverStateListeners.remove(listener);
+        }
+        @Implementation protected void addEventListener(BundledStrippedPloverRuntime.EventListener listener) {}
+        @Implementation protected void removeEventListener(BundledStrippedPloverRuntime.EventListener listener) {}
         @Implementation protected void request(String body, BundledStrippedPloverRuntime.Callback callback) {
             try {
                 JSONObject request = new JSONObject(body);
@@ -188,14 +228,18 @@ public class V7PloverNativeFuzzTest {
                     };
                     String response = new JSONObject().put("result",
                             new JSONObject().put("strokes", new JSONArray(strokes))).toString();
-                    suggestionReplies.add(() -> callback.onResult(response, ""));
+                    boolean fail = rejectSuggestionLookup;
+                    suggestionReplies.add(() -> callback.onResult(fail ? "" : response, fail ? "Lookup failed" : ""));
                     return;
                 }
                 JSONArray text = new JSONArray();
                 boolean translate = "translate".equals(request.getString("method"));
                 if (translate) {
                     int sequence = translations++;
-                    if (!variedPlover) text.put(new JSONObject().put("type", "preedit").put("text", "video"));
+                    if (forcedPloverPreedit != null) {
+                        if (!forcedPloverPreedit.isEmpty())
+                            text.put(new JSONObject().put("type", "preedit").put("text", forcedPloverPreedit));
+                    } else if (!variedPlover) text.put(new JSONObject().put("type", "preedit").put("text", "video"));
                     else switch (sequence % 9) {
                         case 0: text.put(new JSONObject().put("type", "preedit").put("text", sequence < 9 ? "v" : variedPreedit(sequence))); break;
                         case 1: text.put(new JSONObject().put("type", "preedit").put("text", "video playback grows much longer".repeat(sequence < 9 ? 1 : 1+Math.floorMod(responseSeed+sequence*13, 7)))); break;
@@ -218,6 +262,32 @@ public class V7PloverNativeFuzzTest {
                 Runnable reply = () -> callback.onResult(fail ? "" : response, fail ? "Injected Plover failure" : "");
                 if (translate ? inlinePloverTranslate : inlinePloverReset) reply.run(); else ploverReplies.add(reply);
             } catch (Exception e) { throw new AssertionError(e); }
+        }
+    }
+    @Implements(WebView.class)
+    public static class TrackedWebView extends ShadowWebView {
+        @RealObject private WebView realWebView;
+        @Override @Implementation protected void addJavascriptInterface(Object obj, String interfaceName) {
+            super.addJavascriptInterface(obj, interfaceName);
+            if (activeWebViewHarness != null && "AndroidIme".equals(interfaceName)) {
+                activeWebViewHarness.onInterfaceAdded(realWebView, obj);
+            }
+        }
+        @Override @Implementation protected void setWebViewClient(WebViewClient client) {
+            super.setWebViewClient(client);
+            if (activeWebViewHarness != null) activeWebViewHarness.onClientSet(realWebView, client);
+        }
+        @Override @Implementation protected void loadUrl(String url) {
+            super.loadUrl(url);
+            if (activeWebViewHarness != null) activeWebViewHarness.onLoadUrl(realWebView, url);
+        }
+        @Override @Implementation protected void evaluateJavascript(String script, ValueCallback<String> callback) {
+            super.evaluateJavascript(script, callback);
+            if (activeWebViewHarness != null) activeWebViewHarness.onEvaluateJavascript(realWebView, script);
+        }
+        @Override @Implementation protected void destroy() {
+            if (activeWebViewHarness != null) activeWebViewHarness.onDestroy(realWebView);
+            super.destroy();
         }
     }
     private static String variedPreedit(int sequence) {
@@ -1305,5 +1375,749 @@ public class V7PloverNativeFuzzTest {
         assertEquals("prefix chính thức", host.editor.getText().toString());
         assertTrue("Raw V7 publication must remain enabled", host.published.contains("[0a00a0]"));
         ime.onDestroy();
+    }
+
+    private static final class WebViewHarness {
+        private static int nextWebViewId = 1;
+        private final Ime ime;
+        private final Map<WebView, Object> bridges = new IdentityHashMap<>();
+        private final Map<WebView, WebViewClient> clients = new IdentityHashMap<>();
+        private final Map<WebView, Integer> hostIds = new IdentityHashMap<>();
+        private final Map<WebView, Boolean> loaded = new IdentityHashMap<>();
+        private final Map<WebView, String> urls = new IdentityHashMap<>();
+        private final Map<WebView, Deque<String>> pendingScripts = new IdentityHashMap<>();
+        private final Map<WebView, Boolean> destroyed = new IdentityHashMap<>();
+        private WebView currentView;
+        final List<Integer> recordedHeights = new ArrayList<>();
+        final List<JSONObject> pendingPloverBridgeRequests = new ArrayList<>();
+        int lastHeight = -1;
+        boolean failWebViewStatusCheck;
+
+        WebViewHarness(Ime ime) {
+            this.ime = ime;
+        }
+
+        void onInterfaceAdded(WebView view, Object bridge) {
+            bridges.put(view, bridge);
+            currentView = view;
+        }
+
+        void onClientSet(WebView view, WebViewClient client) {
+            clients.put(view, client);
+        }
+
+        void onLoadUrl(WebView view, String url) {
+            currentView = view;
+            urls.put(view, url);
+            loaded.put(view, false);
+            pendingScripts.put(view, new ArrayDeque<>());
+            destroyed.put(view, false);
+        }
+
+        void onEvaluateJavascript(WebView view, String script) {
+            if (Boolean.TRUE.equals(destroyed.get(view))) return;
+            // Real Android WebView drops evaluateJavascript sent before page JS initializes.
+            if (!Boolean.TRUE.equals(loaded.get(view))) return;
+            pendingScripts.computeIfAbsent(view, ignored -> new ArrayDeque<>()).addLast(script);
+        }
+
+        void onDestroy(WebView view) {
+            destroyed.put(view, true);
+            pendingScripts.remove(view);
+            Integer id = hostIds.remove(view);
+            if (id != null) {
+                try { rpc(new JSONObject().put("webview", "close").put("id", id)); }
+                catch (Exception e) { throw new AssertionError(e); }
+            }
+            if (currentView == view) currentView = null;
+        }
+
+        boolean isLoaded() {
+            return currentView != null && Boolean.TRUE.equals(loaded.get(currentView));
+        }
+
+        JSONObject readBridge(WebView view) throws Exception {
+            Object bridge = bridges.get(view);
+            JSONObject obj = new JSONObject();
+            obj.put("sandboxInputEnabled", invokeBool(bridge, "isSandboxInputEnabled"));
+            obj.put("inputSnapshot", invokeString(bridge, "getInputSnapshot"));
+            obj.put("ploverSuggestion", invokeString(bridge, "getPloverSuggestion"));
+            obj.put("clipboardSlots", invokeString(bridge, "getClipboardSlots"));
+            obj.put("ploverPaused", invokeBool(bridge, "isPloverPaused"));
+            obj.put("inferenceModelState", invokeString(bridge, "getInferenceModelState"));
+            obj.put("inferenceModelError", invokeString(bridge, "getInferenceModelError"));
+            obj.put("stenoModeEnabled", invokeBool(bridge, "isStenoModeEnabled"));
+            obj.put("telexModeEnabled", invokeBool(bridge, "isTelexModeEnabled"));
+            obj.put("telexReady", invokeBool(bridge, "isTelexReady"));
+            obj.put("inputGeneration", invokeInt(bridge, "getInputGeneration"));
+            obj.put("rawOutlineMode", invokeBool(bridge, "isRawOutlineMode"));
+            obj.put("plainTextMode", invokeBool(bridge, "isPlainTextMode"));
+            obj.put("ploverEnabled", hasMethod(bridge, "isPloverEnabled")
+                    ? invokeBool(bridge, "isPloverEnabled") : false);
+            obj.put("displayRevision", hasMethod(bridge, "getDisplayRevision")
+                    ? invokeInt(bridge, "getDisplayRevision") : 0);
+            return obj;
+        }
+
+        private static boolean hasMethod(Object target, String name) {
+            try { target.getClass().getMethod(name); return true; }
+            catch (NoSuchMethodException e) { return false; }
+        }
+        private static boolean invokeBool(Object target, String name) throws Exception {
+            Method m = target.getClass().getMethod(name); m.setAccessible(true); return (Boolean) m.invoke(target);
+        }
+        private static int invokeInt(Object target, String name) throws Exception {
+            Method m = target.getClass().getMethod(name); m.setAccessible(true); return (Integer) m.invoke(target);
+        }
+        private static String invokeString(Object target, String name) throws Exception {
+            Method m = target.getClass().getMethod(name); m.setAccessible(true); return (String) m.invoke(target);
+        }
+
+        private void consumeResult(JSONObject result) throws Exception {
+            JSONArray hs = result.optJSONArray("heights");
+            if (hs != null) {
+                for (int i = 0; i < hs.length(); i++) {
+                    int h = hs.getInt(i);
+                    lastHeight = h;
+                    if (recordedHeights.isEmpty() || recordedHeights.get(recordedHeights.size() - 1) != h) {
+                        recordedHeights.add(h);
+                    }
+                }
+            }
+            JSONArray prs = result.optJSONArray("ploverRequests");
+            if (prs != null) {
+                for (int i = 0; i < prs.length(); i++) {
+                    pendingPloverBridgeRequests.add(prs.getJSONObject(i));
+                }
+            }
+        }
+
+        JSONObject finishLoad() throws Exception {
+            if (currentView == null || Boolean.TRUE.equals(loaded.get(currentView))) return inspect();
+            int id = nextWebViewId++;
+            hostIds.put(currentView, id);
+            JSONObject result = rpc(new JSONObject().put("webview", "create").put("id", id)
+                    .put("bridge", readBridge(currentView)));
+            loaded.put(currentView, true);
+            consumeResult(result);
+            WebViewClient client = clients.get(currentView);
+            if (client != null) {
+                client.onPageFinished(currentView, urls.get(currentView));
+            }
+            return result;
+        }
+
+        boolean hasPendingScripts() {
+            if (currentView == null || !isLoaded()) return false;
+            Deque<String> q = pendingScripts.get(currentView);
+            return q != null && !q.isEmpty();
+        }
+
+        JSONObject deliverOneScript() throws Exception {
+            if (!hasPendingScripts()) return inspect();
+            String script = pendingScripts.get(currentView).removeFirst();
+            int id = hostIds.get(currentView);
+            JSONObject result = rpc(new JSONObject().put("webview", "eval").put("id", id)
+                    .put("script", script).put("bridge", readBridge(currentView)));
+            consumeResult(result);
+            return result;
+        }
+
+        JSONObject flushRaf() throws Exception {
+            if (currentView == null || !isLoaded()) return null;
+            int id = hostIds.get(currentView);
+            JSONObject result = rpc(new JSONObject().put("webview", "raf").put("id", id)
+                    .put("bridge", readBridge(currentView)));
+            consumeResult(result);
+            return result;
+        }
+
+        void deliverOneBridgePloverReply() throws Exception {
+            if (pendingPloverBridgeRequests.isEmpty() || currentView == null || !isLoaded()) return;
+            JSONObject req = pendingPloverBridgeRequests.remove(0);
+            int reqId = req.getInt("requestId");
+            String body = failWebViewStatusCheck ? "" : "{\"result\":{}}";
+            String err = failWebViewStatusCheck ? "Runtime restarted" : "";
+            String script = "window.handleAndroidPloverResponse && window.handleAndroidPloverResponse("
+                    + reqId + "," + JSONObject.quote(body) + "," + JSONObject.quote(err) + ")";
+            pendingScripts.computeIfAbsent(currentView, ignored -> new ArrayDeque<>()).addLast(script);
+        }
+
+        JSONObject inspect() throws Exception {
+            if (currentView == null || !isLoaded()) return null;
+            int id = hostIds.get(currentView);
+            JSONObject result = rpc(new JSONObject().put("webview", "state").put("id", id)
+                    .put("bridge", readBridge(currentView)));
+            consumeResult(result);
+            return result;
+        }
+
+        void resetHeightTrace() {
+            recordedHeights.clear();
+            if (lastHeight >= 0) recordedHeights.add(lastHeight);
+        }
+
+        void closeAll() {
+            for (Integer id : new ArrayList<>(hostIds.values())) {
+                try { rpc(new JSONObject().put("webview", "close").put("id", id)); }
+                catch (Exception e) { throw new AssertionError(e); }
+            }
+            hostIds.clear();
+        }
+    }
+
+    private static void setPloverPaused(boolean paused) {
+        ploverPausedState = paused;
+        for (BundledStrippedPloverRuntime.StateListener listener : new ArrayList<>(ploverStateListeners)) {
+            listener.onPausedChanged(paused);
+        }
+    }
+
+    private static JSONObject settleEverything(Ime ime, Host host, WebViewHarness webView, Random timing, boolean hostile)
+            throws Exception {
+        for (int turn = 0; turn < 500; turn++) {
+            boolean didWork = false;
+            if (!sandboxWarmups.isEmpty()) { sandboxWarmups.remove(0).run(); didWork = true; }
+            if (!telexWarmups.isEmpty()) { telexWarmups.remove(0).run(); didWork = true; }
+            if (!ploverReplies.isEmpty()) {
+                int idx = hostile ? timing.nextInt(ploverReplies.size()) : 0;
+                ploverReplies.remove(idx).run();
+                didWork = true;
+            }
+            if (!host.selections.isEmpty()) {
+                int idx = hostile ? timing.nextInt(host.selections.size()) : 0;
+                host.selections.remove(idx).run();
+                didWork = true;
+            }
+            ShadowLooper.idleMainLooper();
+            ShadowLooper.idleMainLooper(150, TimeUnit.MILLISECONDS);
+            if (!suggestionReplies.isEmpty()) {
+                suggestionReplies.remove(0).run();
+                didWork = true;
+            }
+            if (webView.currentView != null && !webView.isLoaded()) {
+                webView.finishLoad();
+                didWork = true;
+            }
+            if (!webView.pendingPloverBridgeRequests.isEmpty()) {
+                webView.deliverOneBridgePloverReply();
+                didWork = true;
+            }
+            if (webView.hasPendingScripts()) {
+                webView.deliverOneScript();
+                didWork = true;
+            }
+            JSONObject state = webView.inspect();
+            if (state != null && state.optInt("pendingRafs", 0) > 0) {
+                webView.flushRaf();
+                didWork = true;
+            }
+            if (!didWork) {
+                ShadowLooper.idleMainLooper();
+                ShadowLooper.idleMainLooper(150, TimeUnit.MILLISECONDS);
+                if (sandboxWarmups.isEmpty() && telexWarmups.isEmpty() && ploverReplies.isEmpty()
+                        && host.selections.isEmpty() && suggestionReplies.isEmpty()
+                        && !webView.hasPendingScripts() && webView.pendingPloverBridgeRequests.isEmpty()
+                        && (state == null || state.optInt("pendingRafs", 0) == 0)) {
+                    return webView.inspect();
+                }
+            }
+        }
+        fail("WebView + native state did not settle");
+        return null;
+    }
+
+    private static void assertWebViewMatchesNative(Ime ime, JSONObject dom, int lastHeight, String context) throws Exception {
+        assertNotNull("WebView state missing: " + context, dom);
+        HardwareInputMode mode = (HardwareInputMode) field(ime, "hardwareInputMode");
+        boolean rawOutline = (Boolean) field(ime, "rawOutlineMode");
+        boolean ploverEnabled = (Boolean) field(ime, "ploverEnabled");
+        boolean ploverPaused = ploverPausedState;
+        TelexJavaScriptSandbox telexSandbox = (TelexJavaScriptSandbox) field(ime, "telexSandbox");
+        boolean telexReady = telexSandbox.isReady();
+        String snapshotStr = (String) field(ime, "inputSnapshot");
+        JSONObject snapshot = snapshotStr.isEmpty() ? null : new JSONObject(snapshotStr);
+        String suggestionStr = (String) field(ime, "ploverSuggestion");
+        JSONObject suggestion = "null".equals(suggestionStr) ? null : new JSONObject(suggestionStr);
+
+        String expectedMode;
+        if (rawOutline) expectedMode = "raw-outline";
+        else if (mode == HardwareInputMode.TELEX) expectedMode = "telex";
+        else if (mode == HardwareInputMode.NORMAL) expectedMode = "normal";
+        else if (ploverEnabled) expectedMode = "plover";
+        else expectedMode = "v7";
+
+        JSONArray modes = dom.getJSONArray("modes");
+        assertTrue("Multiple simultaneous compact mode classes (" + modes + ") " + context, modes.length() <= 1);
+        String actualMode = modes.length() == 0 ? "v7" : modes.getString(0);
+        assertEquals("Stale WebView mode " + context + " dom=" + dom, expectedMode, actualMode);
+
+        if ("telex".equals(expectedMode)) {
+            assertEquals("Stale Telex degraded state " + context, !telexReady, dom.getBoolean("telexDegraded"));
+        }
+        assertEquals("Stale Plover paused class " + context, ploverPaused, dom.getBoolean("ploverPausedClass"));
+        if ("plover".equals(expectedMode)) {
+            String expectedBanner = ploverPaused ? "Stripped Plover (PAUSED)" : "Stripped Plover";
+            assertEquals("Stale Plover banner " + context, expectedBanner, dom.getString("ploverBanner"));
+        }
+
+        // Check clipboard slot count
+        JSONArray storedSlots = new JSONArray(new ClipboardSlotStore(ime).toJson());
+        int occupiedSlots = 0;
+        for (int i = 0; i < storedSlots.length(); i++) {
+            if (!storedSlots.isNull(i)) occupiedSlots++;
+        }
+        boolean expectedClipboardMode = !rawOutline && mode == HardwareInputMode.V7_PLOVER;
+        boolean expectedClipboardVisible = expectedClipboardMode && occupiedSlots > 0;
+        assertEquals("Stale clipboard visibility " + context, !expectedClipboardVisible, dom.getBoolean("clipboardHidden"));
+        if (expectedClipboardVisible) {
+            assertEquals("Stale clipboard slot count " + context, occupiedSlots, dom.getInt("clipboardVisibleCount"));
+        }
+
+        // Check suggestion row
+        boolean expectSuggestionVisible = "plover".equals(expectedMode) && suggestion != null
+                && !suggestion.optBoolean("pending", false);
+        assertEquals("Stale suggestion visibility " + context + " suggestion=" + suggestionStr,
+                expectSuggestionVisible, dom.getBoolean("suggestionVisible"));
+        if (expectSuggestionVisible) {
+            assertEquals("Stale suggestion translation " + context,
+                    suggestion.getString("translation"), dom.optString("suggestionTranslation"));
+        }
+
+        // Check V7 text & candidates
+        if ("v7".equals(expectedMode) && snapshot != null) {
+            String expectedText = snapshot.getString("text");
+            String renderedText = dom.getString("textDisplay");
+            if (expectedText.isEmpty()) {
+                assertEquals("Stale empty V7 display " + context, "👋", renderedText);
+            } else if (!expectedText.startsWith("[")) {
+                assertEquals("Stale V7 text display " + context, expectedText, renderedText);
+            } else {
+                assertTrue("Stale raw V7 text display " + context + " expected=" + expectedText + " actual=" + renderedText,
+                        expectedText.endsWith(renderedText) && !renderedText.isEmpty());
+            }
+            JSONArray cands = snapshot.getJSONArray("candidates");
+            assertEquals("Stale candidates visibility " + context, cands.length() > 1, dom.getBoolean("candidatesVisible"));
+        }
+
+        // Check keyboard height matches mode!
+        int clipboardHeight = expectedClipboardVisible ? 53 : 0;
+        int suggestionHeight = expectSuggestionVisible ? 40 : 0;
+        if (!"v7".equals(expectedMode)) {
+            int expectedHeight = 48 + clipboardHeight + suggestionHeight;
+            assertEquals("Stale/wrong compact keyboard height " + context + " dom=" + dom,
+                    expectedHeight, lastHeight);
+        } else {
+            assertTrue("Stale/wrong expanded V7 keyboard height=" + lastHeight + " " + context,
+                    lastHeight >= 112);
+        }
+    }
+
+    @Test public void fuzzWebViewSyncAndLayoutJumps() throws Exception {
+        requireScenario("webview");
+        int seeds = Integer.getInteger("v7.fuzz.seeds", 40);
+        int steps = Integer.getInteger("v7.fuzz.steps", 40);
+        int first = Integer.getInteger("v7.fuzz.firstSeed", 0);
+        boolean summarize = Boolean.getBoolean("v7.fuzz.summary");
+        Map<String, String> foundBugs = new LinkedHashMap<>();
+        String[] ploverWords = {"video", "chào", "xin chào", "don't", "unmatched", "test-case", ""};
+        for (int seed = first; seed < first + seeds; seed++) {
+            Random random = new Random(seed);
+            alternateCandidates = true;
+            delayedWarmup = seed % 5 == 4;
+            delayedTelexWarmup = seed % 4 == 3;
+            failInference = false;
+            ploverPausedState = false;
+            forcedPloverPreedit = null;
+            rejectSuggestionLookup = false;
+            var service = Robolectric.buildService(Ime.class).create();
+            Ime ime = service.get();
+            if (seed % 2 == 0) {
+                ImePreferences.setModelUri(ime, android.net.Uri.parse("content://test/lm.binary"));
+            }
+            WebViewHarness webView = new WebViewHarness(ime);
+            activeWebViewHarness = webView;
+            try {
+                ime.onCreateInputView();
+                Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+                settleEverything(ime, host, webView, random, false);
+                List<String> history = new ArrayList<>();
+                for (int step = 0; step < steps; step++) {
+                    boolean checkSingleActionJump = random.nextInt(3) != 0;
+                    if (checkSingleActionJump) {
+                        settleEverything(ime, host, webView, random, false);
+                        webView.resetHeightTrace();
+                    }
+                    int action = random.nextInt(18);
+                    String actionDesc = "step=" + step + " action=" + action;
+                    history.add(actionDesc);
+                    switch (action) {
+                        case 0 -> { // Toggle Stripped Plover (#)
+                            if (field(ime, "hardwareInputMode") == HardwareInputMode.V7_PLOVER
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                chord(ime, KeyEvent.KEYCODE_Q);
+                            }
+                        }
+                        case 1 -> { // Ctrl+Shift (Steno <-> Normal)
+                            modifiers(ime, false);
+                        }
+                        case 2 -> { // Ctrl+Tab (Steno/Normal <-> Telex)
+                            modifiers(ime, true);
+                        }
+                        case 3 -> { // Input a chord (Plover stroke or V7 two-syllable chord)
+                            forcedPloverPreedit = ploverWords[random.nextInt(ploverWords.length)];
+                            rejectSuggestionLookup = random.nextInt(6) == 0;
+                            if ((Boolean) field(ime, "ploverEnabled")
+                                    && field(ime, "hardwareInputMode") == HardwareInputMode.V7_PLOVER
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                chord(ime, KeyEvent.KEYCODE_A);
+                            } else if (field(ime, "hardwareInputMode") == HardwareInputMode.V7_PLOVER
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                failInference = random.nextInt(8) == 0;
+                                chord(ime, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_M);
+                            } else if (field(ime, "hardwareInputMode") == HardwareInputMode.TELEX
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                input(ime, false, KeyEvent.KEYCODE_A);
+                            }
+                        }
+                        case 4 -> { // Switch to Raw Outline editor
+                            host = new Host(ime, "");
+                            ime.connection = host;
+                            EditorInfo info = editorInfo(host);
+                            info.inputType = InputType.TYPE_CLASS_TEXT;
+                            info.privateImeOptions = PloverCommandEditorMode.RAW_OUTLINE_IME_OPTION;
+                            ime.onStartInput(info, false);
+                            ime.onStartInputView(info, false);
+                        }
+                        case 5 -> { // Switch to regular text editor (possibly with existing text)
+                            String initText = random.nextBoolean() ? "video " : "";
+                            host = startSuggestionEditor(ime, initText, InputType.TYPE_CLASS_TEXT);
+                        }
+                        case 6 -> { // Switch to password editor
+                            host = startSuggestionEditor(ime, "video", InputType.TYPE_CLASS_TEXT
+                                    | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                        }
+                        case 7 -> { // Recreate WebView (onCreateInputView)
+                            ime.onCreateInputView();
+                        }
+                        case 8 -> { // Toggle Plover paused state
+                            setPloverPaused(!ploverPausedState);
+                        }
+                        case 9 -> { // Toggle clipboard slot occupied/empty
+                            ClipboardSlotStore store = new ClipboardSlotStore(ime);
+                            store.set(0, random.nextBoolean() ? "saved item" : null);
+                        }
+                        case 10 -> { // Finish preedit (`[` or `'`)
+                            if (field(ime, "hardwareInputMode") == HardwareInputMode.V7_PLOVER
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                chord(ime, KeyEvent.KEYCODE_LEFT_BRACKET);
+                            }
+                        }
+                        case 11 -> { // Editor text replaced directly (e.g. external edit / paste in host app)
+                            String nextText = ploverWords[random.nextInt(ploverWords.length)];
+                            int oldCaret = Selection.getSelectionStart(host.getEditable());
+                            host.editor.setText(nextText);
+                            Selection.setSelection(host.getEditable(), nextText.length());
+                            host.ime.onUpdateSelection(oldCaret, oldCaret, nextText.length(), nextText.length(), -1, -1);
+                        }
+                        case 12 -> { // Rapid double mode switch with partial WebView delivery
+                            modifiers(ime, false);
+                            if (random.nextBoolean() && webView.hasPendingScripts()) {
+                                webView.deliverOneScript();
+                            }
+                            modifiers(ime, true);
+                        }
+                        case 13 -> { // View hide & show (onFinishInputView / onStartInputView)
+                            ime.onFinishInputView(false);
+                            ime.onStartInputView(editorInfo(host), false);
+                        }
+                        case 14 -> { // WebView status check failure (e.g. runtime restart)
+                            webView.failWebViewStatusCheck = random.nextBoolean();
+                            ime.onCreateInputView();
+                        }
+                        case 15 -> { // Mode change right BEFORE WebView recreates (before refreshInputState runs!)
+                            modifiers(ime, random.nextBoolean());
+                            ime.onCreateInputView();
+                        }
+                        case 16 -> { // Mode change WHILE WebView is still loading (evaluateJavascript dropped!)
+                            ime.onCreateInputView();
+                            modifiers(ime, random.nextBoolean());
+                            if (random.nextBoolean()) {
+                                setPloverPaused(!ploverPausedState);
+                            }
+                        }
+                        case 17 -> { // Delayed rAF from V7 fires right after switching to Telex/Normal/Plover!
+                            if (field(ime, "hardwareInputMode") == HardwareInputMode.V7_PLOVER
+                                    && !(Boolean) field(ime, "rawOutlineMode")) {
+                                chord(ime, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_C);
+                                while (webView.hasPendingScripts()) webView.deliverOneScript();
+                                // Do NOT flush rAF yet; switch mode now so stale rAF fires in compact mode!
+                                modifiers(ime, random.nextBoolean());
+                            }
+                        }
+                    }
+                    if (!checkSingleActionJump) {
+                        if (random.nextBoolean() && webView.hasPendingScripts()) webView.deliverOneScript();
+                        if (random.nextBoolean()) webView.flushRaf();
+                    }
+                    if (checkSingleActionJump) {
+                        int phase0Count = 0;
+                        boolean suggestionBeforeAsync = false;
+                        for (int phase = 0; phase < 3; phase++) {
+                            if (phase == 0) {
+                                ShadowLooper.idleMainLooper();
+                                if (!ploverReplies.isEmpty()) ploverReplies.remove(0).run();
+                                ShadowLooper.idleMainLooper();
+                                if (webView.currentView != null && !webView.isLoaded()) webView.finishLoad();
+                                while (webView.hasPendingScripts()) webView.deliverOneScript();
+                                webView.flushRaf();
+                                phase0Count = webView.recordedHeights.size();
+                                JSONObject afterPhase0 = webView.inspect();
+                                suggestionBeforeAsync = afterPhase0 != null && afterPhase0.optBoolean("suggestionVisible", false);
+                            } else if (phase == 1) {
+                                ShadowLooper.idleMainLooper(150, TimeUnit.MILLISECONDS);
+                                while (!suggestionReplies.isEmpty()) suggestionReplies.remove(0).run();
+                                ShadowLooper.idleMainLooper();
+                                while (webView.hasPendingScripts()) webView.deliverOneScript();
+                                webView.flushRaf();
+                            } else {
+                                settleEverything(ime, host, webView, random, false);
+                            }
+                        }
+                        if (action != 12 && action != 15 && action != 16 && action != 17) {
+                            JSONObject afterAsync = webView.inspect();
+                            boolean suggestionNewlyAppeared = !suggestionBeforeAsync
+                                    && afterAsync != null && afterAsync.optBoolean("suggestionVisible", false);
+                            boolean monotonic = true;
+                            List<Integer> hs = webView.recordedHeights;
+                            for (int i = 2; i < hs.size(); i++) {
+                                int d1 = hs.get(i - 1) - hs.get(i - 2);
+                                int d2 = hs.get(i) - hs.get(i - 1);
+                                if ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) monotonic = false;
+                            }
+                            boolean ok = phase0Count <= 2 && monotonic
+                                    && (hs.size() <= 2 || (suggestionNewlyAppeared && hs.size() <= 3));
+                            try {
+                                assertTrue("Rapid layout jump in response to one action! seed=" + seed
+                                        + " " + actionDesc + " heights=" + hs
+                                        + " phase0Count=" + phase0Count
+                                        + " suggestionNewlyAppeared=" + suggestionNewlyAppeared
+                                        + " history=" + history,
+                                        ok);
+                            } catch (AssertionError e) {
+                                if (!summarize) throw e;
+                                String key = "JUMP:action=" + action + ":" + hs;
+                                foundBugs.putIfAbsent(key, e.getMessage());
+                            }
+                        }
+                    }
+                    if (checkSingleActionJump || step % 4 == 3 || step == steps - 1) {
+                        JSONObject dom = settleEverything(ime, host, webView, random, !checkSingleActionJump);
+                        try {
+                            assertWebViewMatchesNative(ime, dom, webView.lastHeight,
+                                    "seed=" + seed + " " + actionDesc + " history=" + history);
+                        } catch (AssertionError e) {
+                            if (!summarize) throw e;
+                            String msg = e.getMessage();
+                            String key = "STALE:" + (msg == null ? "null" : msg.split(" seed=")[0]);
+                            foundBugs.putIfAbsent(key, msg);
+                        }
+                    }
+                }
+            } finally {
+                webView.closeAll();
+                activeWebViewHarness = null;
+                service.destroy();
+            }
+            if ((seed - first + 1) % 10 == 0)
+                System.out.println("WebView sync & layout fuzz: " + (seed - first + 1) + " seeds x " + steps + " steps passed");
+        }
+        if (summarize && !foundBugs.isEmpty()) {
+            System.out.println("=== FUZZ SUMMARY (" + foundBugs.size() + " distinct failure classes) ===");
+            for (Map.Entry<String, String> entry : foundBugs.entrySet()) {
+                System.out.println("[" + entry.getKey() + "] -> " + entry.getValue());
+            }
+            fail("Found " + foundBugs.size() + " distinct failure classes");
+        }
+    }
+
+    @Test public void strippedPloverStrokeSuggestionDoesNotBounceLayoutHeight() throws Exception {
+        requireScenario("webview");
+        var service = Robolectric.buildService(Ime.class).create();
+        Ime ime = service.get();
+        WebViewHarness webView = new WebViewHarness(ime);
+        activeWebViewHarness = webView;
+        try {
+            ime.onCreateInputView();
+            Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+            settleEverything(ime, host, webView, new Random(1), false);
+
+            // Enter Stripped Plover and settle on first word with suggestion ("video").
+            chord(ime, KeyEvent.KEYCODE_Q);
+            forcedPloverPreedit = "video";
+            chord(ime, KeyEvent.KEYCODE_A);
+            JSONObject settled1 = settleEverything(ime, host, webView, new Random(2), false);
+            assertEquals("video", settled1.optString("suggestionTranslation"));
+            assertEquals(88, webView.lastHeight);
+
+            // Input another stroke with a different suggestion ("chào"):
+            // must clear stale text while holding height at 88 without bouncing 88 -> 48 -> 88!
+            webView.resetHeightTrace();
+            forcedPloverPreedit = "chào";
+            chord(ime, KeyEvent.KEYCODE_A);
+            ShadowLooper.idleMainLooper();
+            while (!ploverReplies.isEmpty()) ploverReplies.remove(0).run();
+            ShadowLooper.idleMainLooper();
+            while (webView.hasPendingScripts()) webView.deliverOneScript();
+            webView.flushRaf();
+            JSONObject loadingState = webView.inspect();
+            assertTrue("Stale suggestion text must be cleared while loading", loadingState.isNull("suggestionTranslation"));
+            assertEquals("Height must stay at 88 while replacement lookup is pending", List.of(88), webView.recordedHeights);
+
+            // Advance 120ms and deliver lookup reply: still 88!
+            JSONObject settled2 = settleEverything(ime, host, webView, new Random(3), false);
+            assertEquals("chào", settled2.optString("suggestionTranslation"));
+            assertEquals("No layout jump across Plover stroke suggestion load", List.of(88), webView.recordedHeights);
+
+            // Input an unmatched word: holds 88 while checking, then collapses 88 -> 48 ONCE.
+            webView.resetHeightTrace();
+            forcedPloverPreedit = "unmatched";
+            chord(ime, KeyEvent.KEYCODE_A);
+            JSONObject settled3 = settleEverything(ime, host, webView, new Random(4), false);
+            assertFalse(settled3.getBoolean("suggestionVisible"));
+            assertEquals("Unmatched word should collapse monotonically 88 -> 48", List.of(88, 48), webView.recordedHeights);
+
+            // Lookup failure also settles cleanly (never leaves empty loading strip open).
+            forcedPloverPreedit = "video";
+            chord(ime, KeyEvent.KEYCODE_A);
+            settleEverything(ime, host, webView, new Random(5), false);
+            assertEquals(88, webView.lastHeight);
+            webView.resetHeightTrace();
+            rejectSuggestionLookup = true;
+            forcedPloverPreedit = "chào";
+            chord(ime, KeyEvent.KEYCODE_A);
+            JSONObject settled4 = settleEverything(ime, host, webView, new Random(6), false);
+            assertFalse("Failed lookup must collapse loading strip", settled4.getBoolean("suggestionVisible"));
+            assertEquals(List.of(88, 48), webView.recordedHeights);
+        } finally {
+            webView.closeAll();
+            activeWebViewHarness = null;
+            service.destroy();
+        }
+    }
+
+    @Test public void telexModeSwitchStaysCompactAndNeverExpandsFromStaleRaf() throws Exception {
+        requireScenario("webview");
+        var service = Robolectric.buildService(Ime.class).create();
+        Ime ime = service.get();
+        WebViewHarness webView = new WebViewHarness(ime);
+        activeWebViewHarness = webView;
+        try {
+            ime.onCreateInputView();
+            Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+            settleEverything(ime, host, webView, new Random(1), false);
+            int expandedHeight = webView.lastHeight;
+            assertTrue(expandedHeight >= 112);
+
+            // Trigger V7 update leaving a rAF pending, then switch to Telex (Ctrl+Tab).
+            webView.resetHeightTrace();
+            chord(ime, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_C);
+            while (webView.hasPendingScripts()) webView.deliverOneScript();
+            modifiers(ime, true);
+            JSONObject dom = settleEverything(ime, host, webView, new Random(2), false);
+            assertWebViewMatchesNative(ime, dom, webView.lastHeight, "telex after V7");
+            assertEquals(48, webView.lastHeight);
+            assertEquals(List.of(expandedHeight, 48), webView.recordedHeights);
+
+            // Switch back from Telex to V7: must go directly 48 -> expandedHeight without 160 jump!
+            webView.resetHeightTrace();
+            modifiers(ime, true);
+            dom = settleEverything(ime, host, webView, new Random(3), false);
+            assertWebViewMatchesNative(ime, dom, webView.lastHeight, "V7 after telex");
+            assertEquals(List.of(48, expandedHeight), webView.recordedHeights);
+        } finally {
+            webView.closeAll();
+            activeWebViewHarness = null;
+            service.destroy();
+        }
+    }
+
+    @Test public void modeChangeDuringColdSandboxAndWebViewLoadNeverLeavesWebViewStale() throws Exception {
+        requireScenario("webview");
+        delayedWarmup = true;
+        var service = Robolectric.buildService(Ime.class).create();
+        Ime ime = service.get();
+        WebViewHarness webView = new WebViewHarness(ime);
+        activeWebViewHarness = webView;
+        try {
+            ime.onCreateInputView();
+            Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+            // Switch to Normal and then Telex WHILE WebView is still loading AND sandbox is cold!
+            modifiers(ime, false);
+            modifiers(ime, true);
+            webView.finishLoad();
+            ShadowLooper.idleMainLooper();
+            while (webView.hasPendingScripts()) webView.deliverOneScript();
+            webView.flushRaf();
+            // Even BEFORE sandbox warmup finishes, WebView must already reflect Telex mode!
+            assertWebViewMatchesNative(ime, webView.inspect(), webView.lastHeight, "cold sandbox telex");
+
+            // Switch back to V7 while sandbox is STILL cold: no jump, stays synchronized!
+            webView.resetHeightTrace();
+            modifiers(ime, true);
+            ShadowLooper.idleMainLooper();
+            while (webView.hasPendingScripts()) webView.deliverOneScript();
+            webView.flushRaf();
+            assertWebViewMatchesNative(ime, webView.inspect(), webView.lastHeight, "cold sandbox v7");
+            assertTrue("Cold sandbox mode switch jumped: " + webView.recordedHeights,
+                    webView.recordedHeights.size() <= 2);
+
+            // Now complete sandbox warmup and verify everything stays in sync.
+            JSONObject settled = settleEverything(ime, host, webView, new Random(7), false);
+            assertWebViewMatchesNative(ime, settled, webView.lastHeight, "post-warmup");
+        } finally {
+            webView.closeAll();
+            activeWebViewHarness = null;
+            service.destroy();
+        }
+    }
+
+    @Test public void v7SynchronousInferenceDoesNotFlickerOrCollapseCandidatesInWebView() throws Exception {
+        requireScenario("webview");
+        alternateCandidates = true;
+        var service = Robolectric.buildService(Ime.class).create();
+        Ime ime = service.get();
+        WebViewHarness webView = new WebViewHarness(ime);
+        activeWebViewHarness = webView;
+        try {
+            ime.onCreateInputView();
+            Host host = startSuggestionEditor(ime, "", InputType.TYPE_CLASS_TEXT);
+            settleEverything(ime, host, webView, new Random(1), false);
+
+            chord(ime, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_M);
+            JSONObject afterFirst = settleEverything(ime, host, webView, new Random(2), false);
+            assertTrue(afterFirst.getBoolean("candidatesVisible"));
+            int heightWithCandidates = webView.lastHeight;
+
+            // Second V7 chord: InputConnection gets raw V7, but WebView must NOT flicker
+            // through an intermediate candidates-hidden height!
+            webView.resetHeightTrace();
+            chord(ime, KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_M);
+            while (webView.hasPendingScripts()) {
+                JSONObject mid = webView.deliverOneScript();
+                assertTrue("WebView collapsed candidates mid-inference", mid.getBoolean("candidatesVisible"));
+                assertFalse("WebView flashed raw V7 mid-inference", mid.getString("textDisplay").contains("0a00a0"));
+                webView.flushRaf();
+            }
+            JSONObject afterSecond = settleEverything(ime, host, webView, new Random(3), false);
+            assertWebViewMatchesNative(ime, afterSecond, webView.lastHeight, "after second V7 chord");
+            assertTrue("Height bounced during V7 inference: " + webView.recordedHeights,
+                    webView.recordedHeights.size() <= 2);
+            assertTrue(webView.lastHeight >= heightWithCandidates);
+        } finally {
+            webView.closeAll();
+            activeWebViewHarness = null;
+            service.destroy();
+        }
     }
 }

@@ -371,6 +371,21 @@ async function verifySandboxDisplay(browser, url) {
     }),
     "Plover suggestion text, outlines, or compact height was incorrect",
   );
+  await page.evaluate(() => window.handleAndroidPloverSuggestion(null, true));
+  assert(
+    await page.evaluate(() => {
+      const row = document.getElementById("plover-suggestion");
+      return (
+        row.textContent === "" &&
+        row.offsetHeight === 40 &&
+        window.__androidHeight ===
+          48 +
+            row.offsetHeight +
+            document.getElementById("clipboard-slots").offsetHeight
+      );
+    }),
+    "Pending Plover suggestion lookup collapsed the row or kept stale text",
+  );
   await page.evaluate(() => window.handleAndroidPloverSuggestion(null));
   assert(
     await page.evaluate(

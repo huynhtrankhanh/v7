@@ -27,6 +27,12 @@
         const telex =
           typeof bridge.isTelexModeEnabled === "function" &&
           bridge.isTelexModeEnabled();
+        const plover =
+          typeof bridge.isPloverEnabled === "function" &&
+          bridge.isPloverEnabled();
+        const ploverPaused =
+          typeof bridge.isPloverPaused === "function" &&
+          bridge.isPloverPaused();
         document.body.classList.add("stripped-display");
         document.body.classList.toggle("android-raw-outline", rawOutline);
         document.body.classList.toggle(
@@ -34,6 +40,11 @@
           !rawOutline && !telex && (!steno || plainText),
         );
         document.body.classList.toggle("android-telex", !rawOutline && telex);
+        document.body.classList.toggle(
+          "stripped-plover-active",
+          steno && !rawOutline && !plainText && !telex && plover,
+        );
+        document.body.classList.toggle("stripped-plover-paused", ploverPaused);
       })();
     </script>
     <main id="inference-shell">

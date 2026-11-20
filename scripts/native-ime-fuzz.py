@@ -22,7 +22,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--seeds", type=int, default=100)
 parser.add_argument("--steps", type=int, default=100)
 parser.add_argument("--first-seed", type=int, default=0)
-parser.add_argument("--scenario", choices=["all", "basic", "lifecycle", "plover", "suggestions"], default="all")
+parser.add_argument("--scenario", choices=["all", "basic", "lifecycle", "plover", "suggestions", "webview"], default="all")
 args = parser.parse_args()
 if args.seeds < 1 or args.steps < 1:
     parser.error("seeds and steps must be positive")
