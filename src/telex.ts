@@ -20,10 +20,7 @@ export type TelexMode = "standard" | "simple";
 export type TelexTone = "acute" | "grave" | "hook" | "tilde" | "dot";
 
 export type TonePlacementSource =
-  | "v7-broad-exact"
-  | "v7-broad-signature"
-  | "mechanical"
-  | "none";
+  "v7-broad-exact" | "v7-broad-signature" | "mechanical" | "none";
 
 export type TonePlacement = {
   /** Unicode-code-point index in the supplied NFC string. */
@@ -174,7 +171,15 @@ const ALL_CODAS: ReadonlySet<string> = new Set([
   "t",
 ]);
 const NO_CH_NH: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "p", "t"]);
-const NO_NG: ReadonlySet<string> = new Set(["c", "ch", "m", "n", "nh", "p", "t"]);
+const NO_NG: ReadonlySet<string> = new Set([
+  "c",
+  "ch",
+  "m",
+  "n",
+  "nh",
+  "p",
+  "t",
+]);
 const CODAS_OH: ReadonlySet<string> = new Set(["m", "n", "p", "t"]);
 const CODAS_UW: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "t"]);
 const CODAS_Y: ReadonlySet<string> = new Set(["t"]);
@@ -260,16 +265,61 @@ const VOWEL_SEQS: Readonly<Record<string, VowelSeqSpec>> = {
   yêu: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
 
   // Intermediate/incomplete 3-vowel sequences
-  ieu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  uay: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  uoi: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  uou: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  ieu: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  uay: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  uoi: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  uou: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
   uye: { complete: false, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_UYE },
-  yeu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  uơi: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  uơu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
-  ưoi: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
-  ưou: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  yeu: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  uơi: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  uơu: {
+    complete: false,
+    openToneIdx: 1,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  ưoi: {
+    complete: false,
+    openToneIdx: 0,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
+  ưou: {
+    complete: false,
+    openToneIdx: 0,
+    closedToneIdx: null,
+    codas: NO_CODAS,
+  },
 };
 
 const SHAPED_CHAR: Readonly<Record<string, string>> = {
@@ -565,10 +615,8 @@ function parseSlice(entries: WordEntry[], start: number): ParsedSyllable {
 
   if (!codaValid) return invalid;
 
-  const relToneIdx =
-    c2.length === 0 ? vSpec.openToneIdx : vSpec.closedToneIdx;
-  const toneCarrierIndex =
-    relToneIdx !== null ? vStart + relToneIdx : null;
+  const relToneIdx = c2.length === 0 ? vSpec.openToneIdx : vSpec.closedToneIdx;
+  const toneCarrierIndex = relToneIdx !== null ? vStart + relToneIdx : null;
 
   // Check active tone against stop codas.
   let activeTone: TelexTone | null = null;
@@ -605,7 +653,10 @@ function parseWord(entries: WordEntry[]): ParsedSyllable {
   return parseSlice(entries, 0);
 }
 
-function getActiveTone(entries: WordEntry[], start: number): {
+function getActiveTone(
+  entries: WordEntry[],
+  start: number,
+): {
   tone: TelexTone | null;
   index: number;
 } {
@@ -778,7 +829,9 @@ function handleBracketKey(
   if (entries.length > 0) {
     const last = entries[entries.length - 1];
     const sameVowel =
-      last.base === spec.base && last.shape === "horn" && last.upper === spec.upper;
+      last.base === spec.base &&
+      last.shape === "horn" &&
+      last.upper === spec.upper;
     if (sameVowel && (last.fromKey === ch || last.fromKey === "w")) {
       // Undo the vowel back to literal bracket and immediately commit word + bracket!
       entries.pop();
@@ -847,11 +900,7 @@ function handleToneKey(
       appendLiteral(state, ch);
       return;
     }
-    if (
-      STOP_CODAS.has(parsed.c2) &&
-      tone !== "acute" &&
-      tone !== "dot"
-    ) {
+    if (STOP_CODAS.has(parsed.c2) && tone !== "acute" && tone !== "dot") {
       appendLiteral(state, ch);
       return;
     }
@@ -960,7 +1009,10 @@ function handleDoubleVowelKey(
   const entries = state.entries;
   const parsed = parseWord(entries);
 
-  if (options.spellCheck && (!parsed.canTransform || parsed.vStr.length === 0)) {
+  if (
+    options.spellCheck &&
+    (!parsed.canTransform || parsed.vStr.length === 0)
+  ) {
     appendLiteral(state, ch);
     return;
   }
@@ -999,7 +1051,10 @@ function handleDoubleVowelKey(
     }
 
     const nextParsed = parseSlice(testEntries, parsed.c1Start);
-    if (!options.spellCheck || (nextParsed.canTransform && nextParsed.vStr.length > 0)) {
+    if (
+      !options.spellCheck ||
+      (nextParsed.canTransform && nextParsed.vStr.length > 0)
+    ) {
       entries[i].shape = "circumflex";
       if (
         key === "o" &&
@@ -1029,7 +1084,10 @@ function handleWKey(
   // 1. Standalone `w` -> `ư` / `Ư` when there are no vowels yet and mode === "standard".
   if (options.mode === "standard") {
     const parsed0 = parseSlice(entries, 0);
-    if (entries.length === 0 || (parsed0.canTransform && parsed0.vStr.length === 0)) {
+    if (
+      entries.length === 0 ||
+      (parsed0.canTransform && parsed0.vStr.length === 0)
+    ) {
       const candidate: WordEntry = {
         base: "u",
         upper: isUpper,
@@ -1069,7 +1127,10 @@ function handleWKey(
   }
 
   const parsed = parseWord(entries);
-  if (options.spellCheck && (!parsed.canTransform || parsed.vStr.length === 0)) {
+  if (
+    options.spellCheck &&
+    (!parsed.canTransform || parsed.vStr.length === 0)
+  ) {
     appendLiteral(state, ch);
     return;
   }
@@ -1124,9 +1185,11 @@ function handleWKey(
     }
 
     // `uo` or `uô` -> `thuơ` (only for open `th` + `uo`/`uô`) or `ươ`
-    if (left.shape === "plain" && (right.shape === "plain" || right.shape === "circumflex")) {
-      const isOpenThuo =
-        parsed.c1 === "th" && !hasCoda && vEnd - vStart === 2;
+    if (
+      left.shape === "plain" &&
+      (right.shape === "plain" || right.shape === "circumflex")
+    ) {
+      const isOpenThuo = parsed.c1 === "th" && !hasCoda && vEnd - vStart === 2;
       const testEntries = cloneEntries(entries);
       if (isOpenThuo) {
         testEntries[i + 1].shape = "horn";
@@ -1153,7 +1216,11 @@ function handleWKey(
   for (let i = vEnd - 2; i >= vStart; i--) {
     const left = entries[i];
     const right = entries[i + 1];
-    if (left.base === "u" && (right.base === "a" || right.base === "u") && right.shape === "plain") {
+    if (
+      left.base === "u" &&
+      (right.base === "a" || right.base === "u") &&
+      right.shape === "plain"
+    ) {
       if (left.shape === "horn") {
         // Undo `ưa`/`ưu` -> `ua`/`uu` + `w`
         left.shape = "plain";
@@ -1212,7 +1279,11 @@ function stepWordKey(
   }
 
   // 2. Non-alphanumeric terminators (Space, Tab, Enter, punctuation).
-  if (!isAsciiLetter(ch) && !isAsciiDigit(ch) && !DECOMPOSE_VI_LETTER[stripToneFromChar(ch).toLocaleLowerCase("vi")]) {
+  if (
+    !isAsciiLetter(ch) &&
+    !isAsciiDigit(ch) &&
+    !DECOMPOSE_VI_LETTER[stripToneFromChar(ch).toLocaleLowerCase("vi")]
+  ) {
     const allowAutoRestore = !NO_RESTORE_TERMINATORS.has(ch);
     const committedWord = finalizeWord(state, options, allowAutoRestore);
     state.entries = [];
@@ -1374,7 +1445,9 @@ export class TelexComposer {
   stepKey(key: string): TelexStepResult {
     const chars = Array.from(key.normalize("NFC"));
     if (chars.length !== 1) {
-      throw new TypeError("TelexComposer.stepKey() expects exactly one character");
+      throw new TypeError(
+        "TelexComposer.stepKey() expects exactly one character",
+      );
     }
     const ch = chars[0];
     this.rawBuffer += ch;
