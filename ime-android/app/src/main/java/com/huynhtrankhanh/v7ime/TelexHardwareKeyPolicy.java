@@ -20,7 +20,10 @@ final class TelexHardwareKeyPolicy {
                 && !hasPendingDeadAccent) {
             return Route.EDITOR;
         }
-        if (keyCode == KeyEvent.KEYCODE_ESCAPE) return Route.EDITOR;
+        if (keyCode == KeyEvent.KEYCODE_ESCAPE
+                || HardwareEditorKeyPolicy.isNavigationOrForwardDelete(keyCode)) {
+            return Route.EDITOR;
+        }
         return Route.WEB_PREEDIT;
     }
 

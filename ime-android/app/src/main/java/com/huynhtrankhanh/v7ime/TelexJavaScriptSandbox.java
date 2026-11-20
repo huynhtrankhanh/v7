@@ -10,14 +10,45 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executor;
+import java.util.concurrent.TimeUnit;
 
 /** Synchronous, DOM-free Telex conversion owned and invoked by native IME code. */
 final class TelexJavaScriptSandbox implements AutoCloseable {
     private static final String ASSET = "telex-sandbox.js";
     private static final long STARTUP_TIMEOUT_SECONDS = 3;
     private static final long WARM_CONVERSION_TIMEOUT_MILLIS = 100;
+
+    static final class StepResult {
+        final String committedWord;
+        final String committedSuffix;
+        final String preedit;
+        final boolean terminated;
+        final boolean handled;
+
+        StepResult(
+                String committedWord,
+                String committedSuffix,
+                String preedit,
+                boolean terminated,
+                boolean handled) {
+            this.committedWord = committedWord;
+            this.committedSuffix = committedSuffix;
+            this.preedit = preedit;
+            this.terminated = terminated;
+            this.handled = handled;
+        }
+
+        static StepResult parse(String json) throws Exception {
+            JSONObject obj = new JSONObject(json);
+            return new StepResult(
+                    obj.optString("committedWord", ""),
+                    obj.optString("committedSuffix", ""),
+                    obj.optString("preedit", ""),
+                    obj.optBoolean("terminated", false),
+                    obj.optBoolean("handled", true));
+        }
+    }
 
     private final Context context;
     private JavaScriptSandbox sandbox;
@@ -54,13 +85,47 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
     }
 
     String convertIfReady(String raw) {
+        return evalIfReady("convertV7TelexRaw(" + JSONObject.quote(raw) + ")");
+    }
+
+    StepResult stepKeyIfReady(String key) {
+        String raw = evalIfReady("stepV7TelexKey(" + JSONObject.quote(key) + ")");
+        return parseStep(raw);
+    }
+
+    StepResult stepBackspaceIfReady() {
+        String raw = evalIfReady("stepV7TelexBackspace()");
+        return parseStep(raw);
+    }
+
+    StepResult replayActionsIfReady(String actionsJson) {
+        String raw = evalIfReady("replayV7TelexActions(" + JSONObject.quote(actionsJson) + ")");
+        return parseStep(raw);
+    }
+
+    void resetIfReady() {
+        evalIfReady("resetV7TelexSession()");
+    }
+
+    private StepResult parseStep(String raw) {
+        if (raw == null) return null;
+        try {
+            return StepResult.parse(raw);
+        } catch (Exception error) {
+            synchronized (this) {
+                closeIsolate();
+            }
+            return null;
+        }
+    }
+
+    private String evalIfReady(String script) {
         if (!ready) return null;
         synchronized (this) {
             if (!ready || isolate == null) return null;
             try {
-                return isolate.evaluateJavaScriptAsync(
-                        "convertV7TelexRaw(" + JSONObject.quote(raw) + ")"
-                ).get(WARM_CONVERSION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                return isolate.evaluateJavaScriptAsync(script)
+                        .get(WARM_CONVERSION_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
             } catch (Exception error) {
                 if (ApplicationJavaScriptSandbox.isSandboxDead(error)) {
                     ApplicationJavaScriptSandbox.invalidate(sandbox);
@@ -83,8 +148,6 @@ final class TelexJavaScriptSandbox implements AutoCloseable {
             candidate = shared.createIsolate();
             candidate.evaluateJavaScriptAsync(readAsset())
                     .get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            // Force construction of the generated V7 tone oracle before the
-            // first physical tone key reaches the IME main thread.
             String warm = candidate.evaluateJavaScriptAsync(
                     "convertV7TelexRaw('tieengs')"
             ).get(STARTUP_TIMEOUT_SECONDS, TimeUnit.SECONDS);

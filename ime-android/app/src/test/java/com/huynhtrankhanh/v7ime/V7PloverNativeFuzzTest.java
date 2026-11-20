@@ -169,6 +169,32 @@ public class V7PloverNativeFuzzTest {
             try { return rpc(new JSONObject().put("telex", raw)).getString("text"); }
             catch (Exception e) { throw new AssertionError(e); }
         }
+        @Implementation protected TelexJavaScriptSandbox.StepResult stepKeyIfReady(String key) {
+            if (!ready) return null;
+            try {
+                return TelexJavaScriptSandbox.StepResult.parse(
+                        rpc(new JSONObject().put("telexStepKey", key)).getString("result"));
+            } catch (Exception e) { throw new AssertionError(e); }
+        }
+        @Implementation protected TelexJavaScriptSandbox.StepResult stepBackspaceIfReady() {
+            if (!ready) return null;
+            try {
+                return TelexJavaScriptSandbox.StepResult.parse(
+                        rpc(new JSONObject().put("telexStepBackspace", true)).getString("result"));
+            } catch (Exception e) { throw new AssertionError(e); }
+        }
+        @Implementation protected TelexJavaScriptSandbox.StepResult replayActionsIfReady(String actionsJson) {
+            if (!ready) return null;
+            try {
+                return TelexJavaScriptSandbox.StepResult.parse(
+                        rpc(new JSONObject().put("telexReplay", actionsJson)).getString("result"));
+            } catch (Exception e) { throw new AssertionError(e); }
+        }
+        @Implementation protected void resetIfReady() {
+            if (!ready) return;
+            try { rpc(new JSONObject().put("telexReset", true)); }
+            catch (Exception e) { throw new AssertionError(e); }
+        }
         @Implementation protected void close() { ready = false; warming = false; }
     }
     @Implements(value = NativeInference.class, isInAndroidSdk = false)
@@ -1085,6 +1111,228 @@ public class V7PloverNativeFuzzTest {
         input(ime, false, KeyEvent.KEYCODE_SPACE);
         assertEquals(generation + 1, epoch(ime));
         assertEquals("prefix tiếng ", host.editor.getText().toString());
+        ime.onDestroy();
+    }
+    @Test public void telexBackspaceDeletesVisibleCharRelocatesToneAndHandsOffWhenEmpty() throws Exception {
+        Ime ime = Robolectric.buildService(Ime.class).create().get();
+        Host host = new Host(ime); ime.connection = host;
+        ShadowLooper.idleMainLooper(); host.reentrant = true;
+        modifiers(ime, true);
+        for (int key : new int[]{KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_S}) input(ime, false, key);
+        assertEquals("prefix tiếng", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_DEL);
+        assertEquals("prefix tiến", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_G);
+        input(ime, false, KeyEvent.KEYCODE_SPACE);
+        assertEquals("prefix tiếng ", host.editor.getText().toString());
+
+        // Tone shifts back from `hoàng` -> `hoàn` -> `hòa` -> `hò` -> `h` -> empty
+        for (int key : new int[]{KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_A,
+                KeyEvent.KEYCODE_F, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G}) input(ime, false, key);
+        assertEquals("prefix tiếng hoàng", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_DEL);
+        assertEquals("prefix tiếng hoàn", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_DEL);
+        assertEquals("prefix tiếng hòa", host.editor.getText().toString());
+        for (int i = 0; i < 3; i++) input(ime, false, KeyEvent.KEYCODE_DEL);
+        assertEquals("prefix tiếng ", host.editor.getText().toString());
+        // Preedit is now empty, so DEL passes through to the editor.
+        assertFalse(ime.onKeyDown(KeyEvent.KEYCODE_DEL,
+                new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0)));
+        ime.onDestroy();
+    }
+    @Test public void telexSupportsUppercaseBracketsAndAutoRestoresEnglishWords() throws Exception {
+        Ime ime = Robolectric.buildService(Ime.class).create().get();
+        Host host = new Host(ime); ime.connection = host;
+        ShadowLooper.idleMainLooper(); host.reentrant = true;
+        modifiers(ime, true);
+        // `t{ ` -> `tƠ `, `t} ` -> `tƯ `, `t{{ ` -> `t{ `
+        input(ime, false, KeyEvent.KEYCODE_T);
+        hardware(ime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_LEFT_BRACKET, KeyEvent.META_SHIFT_ON);
+        hardware(ime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_LEFT_BRACKET, KeyEvent.META_SHIFT_ON);
+        input(ime, false, KeyEvent.KEYCODE_SPACE);
+        assertEquals("prefix tƠ ", host.editor.getText().toString());
+
+        // `Windows ` -> preedit `Ưindows` -> auto-restores to `Windows ` on Space
+        hardware(ime, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_W, KeyEvent.META_SHIFT_ON);
+        hardware(ime, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_W, KeyEvent.META_SHIFT_ON);
+        for (int key : new int[]{KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_D,
+                KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_S}) input(ime, false, key);
+        assertEquals("prefix tƠ Ưindows", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_SPACE);
+        assertEquals("prefix tƠ Windows ", host.editor.getText().toString());
+        ime.onDestroy();
+    }
+    @Test public void coldTelexSandboxReplaysPendingWordOnWarmup() throws Exception {
+        delayedTelexWarmup = true;
+        Ime ime = Robolectric.buildService(Ime.class).create().get();
+        Host host = new Host(ime); ime.connection = host;
+        ShadowLooper.idleMainLooper(); host.reentrant = true;
+        modifiers(ime, true);
+        for (int key : new int[]{KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_S}) input(ime, false, key);
+        assertEquals("prefix tieengs", host.editor.getText().toString());
+        while (!telexWarmups.isEmpty()) telexWarmups.remove(0).run();
+        ShadowLooper.idleMainLooper();
+        assertEquals("prefix tiếng", host.editor.getText().toString());
+        input(ime, false, KeyEvent.KEYCODE_SPACE);
+        assertEquals("prefix tiếng ", host.editor.getText().toString());
+        ime.onDestroy();
+    }
+    private static void simulateEditorShortcutOrNav(Ime ime, Host host, KeyEvent event) {
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return;
+        Editable ed = host.getEditable();
+        int oldS = Selection.getSelectionStart(ed), oldE = Selection.getSelectionEnd(ed);
+        int lo = Math.min(oldS, oldE), hi = Math.max(oldS, oldE);
+        int code = event.getKeyCode();
+        if (code == KeyEvent.KEYCODE_A && event.isCtrlPressed()) {
+            Selection.setSelection(ed, 0, ed.length());
+        } else if (code == KeyEvent.KEYCODE_DEL && event.isCtrlPressed()) {
+            if (lo != hi) {
+                ed.delete(lo, hi);
+                Selection.setSelection(ed, lo);
+            } else {
+                int cut = lo;
+                while (cut > 0 && ed.charAt(cut - 1) == ' ') cut--;
+                while (cut > 0 && ed.charAt(cut - 1) != ' ') cut--;
+                ed.delete(cut, lo);
+                Selection.setSelection(ed, cut);
+            }
+        } else if (code == KeyEvent.KEYCODE_DEL) {
+            if (lo != hi) { ed.delete(lo, hi); Selection.setSelection(ed, lo); }
+            else if (lo > 0) { ed.delete(lo - 1, lo); Selection.setSelection(ed, lo - 1); }
+        } else if (code == KeyEvent.KEYCODE_FORWARD_DEL) {
+            if (lo != hi) { ed.delete(lo, hi); Selection.setSelection(ed, lo); }
+            else if (lo < ed.length()) { ed.delete(lo, lo + 1); Selection.setSelection(ed, lo); }
+        } else if (code == KeyEvent.KEYCODE_DPAD_LEFT) {
+            int next = event.isCtrlPressed() ? 0 : Math.max(0, oldE - 1);
+            if (event.isShiftPressed()) Selection.setSelection(ed, oldS, next);
+            else Selection.setSelection(ed, lo != hi ? lo : next);
+        } else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+            int next = event.isCtrlPressed() ? ed.length() : Math.min(ed.length(), oldE + 1);
+            if (event.isShiftPressed()) Selection.setSelection(ed, oldS, next);
+            else Selection.setSelection(ed, lo != hi ? hi : next);
+        } else if (code == KeyEvent.KEYCODE_MOVE_HOME) {
+            if (event.isShiftPressed()) Selection.setSelection(ed, oldS, 0);
+            else Selection.setSelection(ed, 0);
+        } else if (code == KeyEvent.KEYCODE_MOVE_END) {
+            if (event.isShiftPressed()) Selection.setSelection(ed, oldS, ed.length());
+            else Selection.setSelection(ed, ed.length());
+        } else {
+            return;
+        }
+        int newS = Selection.getSelectionStart(ed), newE = Selection.getSelectionEnd(ed);
+        int cs = host.omitBounds ? -1 : BaseInputConnection.getComposingSpanStart(ed);
+        int ce = host.omitBounds ? -1 : BaseInputConnection.getComposingSpanEnd(ed);
+        ime.onUpdateSelection(oldS, oldE, newS, newE, cs, ce);
+    }
+    @Test public void telexCtrlAWhileComposingSelectsAllAndAllowsDeleteOrReplace() throws Exception {
+        for (boolean omitBounds : new boolean[]{false, true}) {
+            Ime ime = Robolectric.buildService(Ime.class).create().get();
+            Host host = new Host(ime); ime.connection = host;
+            ShadowLooper.idleMainLooper(); host.reentrant = true;
+            host.omitBounds = omitBounds;
+            host.extractionUnavailable = omitBounds;
+            host.surroundingUnavailable = omitBounds;
+            modifiers(ime, true);
+            for (int key : new int[]{KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                    KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_S}) input(ime, false, key);
+            assertEquals("prefix tiếng", host.editor.getText().toString());
+            // Ctrl+A (releasing Ctrl BEFORE A to test key-up ownership!)
+            KeyEvent ctrlDown = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0, KeyEvent.META_CTRL_ON);
+            ime.onKeyDown(KeyEvent.KEYCODE_CTRL_LEFT, ctrlDown);
+            KeyEvent aDown = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON);
+            assertFalse("Ctrl+A must pass to editor", ime.onKeyDown(KeyEvent.KEYCODE_A, aDown));
+            simulateEditorShortcutOrNav(ime, host, aDown);
+            KeyEvent ctrlUp = new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0, 0);
+            ime.onKeyUp(KeyEvent.KEYCODE_CTRL_LEFT, ctrlUp);
+            KeyEvent aUp = new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A, 0, 0);
+            assertFalse("A key-up after Ctrl+A must pass to editor", ime.onKeyUp(KeyEvent.KEYCODE_A, aUp));
+            assertEquals(0, Selection.getSelectionStart(host.getEditable()));
+            assertEquals("prefix tiếng".length(), Selection.getSelectionEnd(host.getEditable()));
+            assertEquals(-1, BaseInputConnection.getComposingSpanStart(host.getEditable()));
+            // Typing a new Vietnamese word replaces the entire selection cleanly even without bounds/extraction.
+            for (int key : new int[]{KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_A,
+                    KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_F}) input(ime, false, key);
+            assertEquals("chào", host.editor.getText().toString());
+            // Select all again and press Backspace to clear everything.
+            ime.onKeyDown(KeyEvent.KEYCODE_CTRL_LEFT, new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0, KeyEvent.META_CTRL_ON));
+            KeyEvent aDown2 = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON);
+            assertFalse(ime.onKeyDown(KeyEvent.KEYCODE_A, aDown2));
+            simulateEditorShortcutOrNav(ime, host, aDown2);
+            ime.onKeyUp(KeyEvent.KEYCODE_A, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_A, 0, KeyEvent.META_CTRL_ON));
+            ime.onKeyUp(KeyEvent.KEYCODE_CTRL_LEFT, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0, 0));
+            KeyEvent delDown = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0, 0);
+            assertFalse("Backspace on empty preedit with selection must pass to editor", ime.onKeyDown(KeyEvent.KEYCODE_DEL, delDown));
+            simulateEditorShortcutOrNav(ime, host, delDown);
+            ime.onKeyUp(KeyEvent.KEYCODE_DEL, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0, 0));
+            assertEquals("", host.editor.getText().toString());
+            ime.onDestroy();
+        }
+    }
+    @Test public void telexCtrlBackspaceWhileComposingDeletesWholeWordWithoutResurrection() throws Exception {
+        Ime ime = Robolectric.buildService(Ime.class).create().get();
+        Host host = new Host(ime); ime.connection = host;
+        ShadowLooper.idleMainLooper(); host.reentrant = true;
+        modifiers(ime, true);
+        for (int key : new int[]{KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_S}) input(ime, false, key);
+        assertEquals("prefix tiếng", host.editor.getText().toString());
+        ime.onKeyDown(KeyEvent.KEYCODE_CTRL_LEFT, new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_CTRL_LEFT, 0, KeyEvent.META_CTRL_ON));
+        KeyEvent ctrlBs = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL, 0, KeyEvent.META_CTRL_ON);
+        assertFalse("Ctrl+Backspace must pass to editor", ime.onKeyDown(KeyEvent.KEYCODE_DEL, ctrlBs));
+        simulateEditorShortcutOrNav(ime, host, ctrlBs);
+        // Release Ctrl before Backspace: key-up must still go to editor.
+        ime.onKeyUp(KeyEvent.KEYCODE_CTRL_LEFT, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_CTRL_LEFT, 0, 0));
+        assertFalse(ime.onKeyUp(KeyEvent.KEYCODE_DEL, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL, 0, 0)));
+        assertEquals("prefix ", host.editor.getText().toString());
+        // Next word must start fresh without merging with deleted `tiếng`.
+        for (int key : new int[]{KeyEvent.KEYCODE_V, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_J}) input(ime, false, key);
+        assertEquals("prefix việt", host.editor.getText().toString());
+        ime.onDestroy();
+    }
+    @Test public void telexArrowsHomeEndForwardDeleteAndTouchTapPreserveCaret() throws Exception {
+        Ime ime = Robolectric.buildService(Ime.class).create().get();
+        Host host = new Host(ime, ""); ime.connection = host;
+        ShadowLooper.idleMainLooper(); host.reentrant = true;
+        modifiers(ime, true);
+        for (int key : new int[]{KeyEvent.KEYCODE_T, KeyEvent.KEYCODE_I, KeyEvent.KEYCODE_E,
+                KeyEvent.KEYCODE_E, KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_G, KeyEvent.KEYCODE_S}) input(ime, false, key);
+        assertEquals("tiếng", host.editor.getText().toString());
+        // Plain Left Arrow while composing must finalize `tiếng` and move caret to index 4 (NOT snap back to 5).
+        KeyEvent leftDown = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, 0, 0);
+        assertFalse(ime.onKeyDown(KeyEvent.KEYCODE_DPAD_LEFT, leftDown));
+        simulateEditorShortcutOrNav(ime, host, leftDown);
+        assertFalse(ime.onKeyUp(KeyEvent.KEYCODE_DPAD_LEFT, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_LEFT, 0, 0)));
+        assertEquals(4, Selection.getSelectionStart(host.getEditable()));
+        assertEquals(-1, BaseInputConnection.getComposingSpanStart(host.getEditable()));
+        // Forward Delete at index 4 deletes `g` -> `tiến`.
+        KeyEvent fwdDel = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_FORWARD_DEL, 0, 0);
+        assertFalse(ime.onKeyDown(KeyEvent.KEYCODE_FORWARD_DEL, fwdDel));
+        simulateEditorShortcutOrNav(ime, host, fwdDel);
+        ime.onKeyUp(KeyEvent.KEYCODE_FORWARD_DEL, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_FORWARD_DEL, 0, 0));
+        assertEquals("tiến", host.editor.getText().toString());
+        // Home moves caret to 0 and typing inserts at start.
+        KeyEvent homeDown = new KeyEvent(0, ++time, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MOVE_HOME, 0, 0);
+        assertFalse(ime.onKeyDown(KeyEvent.KEYCODE_MOVE_HOME, homeDown));
+        simulateEditorShortcutOrNav(ime, host, homeDown);
+        ime.onKeyUp(KeyEvent.KEYCODE_MOVE_HOME, new KeyEvent(0, ++time, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MOVE_HOME, 0, 0));
+        assertEquals(0, Selection.getSelectionStart(host.getEditable()));
+        for (int key : new int[]{KeyEvent.KEYCODE_C, KeyEvent.KEYCODE_H, KeyEvent.KEYCODE_A,
+                KeyEvent.KEYCODE_O, KeyEvent.KEYCODE_F, KeyEvent.KEYCODE_SPACE}) input(ime, false, key);
+        assertEquals("chào tiến", host.editor.getText().toString());
+        // Touch/programmatic tap mid-word during active Telex composition preserves the tapped caret.
+        for (int key : new int[]{KeyEvent.KEYCODE_N, KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_M, KeyEvent.KEYCODE_W}) input(ime, false, key);
+        assertEquals("chào nămtiến", host.editor.getText().toString());
+        int beforeCaret = Selection.getSelectionStart(host.getEditable());
+        int cs = BaseInputConnection.getComposingSpanStart(host.getEditable());
+        int ce = BaseInputConnection.getComposingSpanEnd(host.getEditable());
+        Selection.setSelection(host.getEditable(), 2);
+        ime.onUpdateSelection(beforeCaret, beforeCaret, 2, 2, cs, ce);
+        assertEquals("Touch tap caret must not snap back", 2, Selection.getSelectionStart(host.getEditable()));
+        assertEquals("chào nămtiến", host.editor.getText().toString());
         ime.onDestroy();
     }
     @Test public void sustainedNonMonotonePloverWithoutQueriesMatchesAnIndependentTextModel() throws Exception {

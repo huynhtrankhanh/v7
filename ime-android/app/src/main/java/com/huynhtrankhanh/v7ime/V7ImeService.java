@@ -37,8 +37,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -138,6 +140,8 @@ public class V7ImeService extends InputMethodService {
     private String deferredWebViewSnapshot;
     private final Runnable refreshInputState = () -> dispatchInputCommand("refresh");
     private final TelexRawBuffer nativeTelexRaw = new TelexRawBuffer();
+    private final List<String> nativeTelexActions = new ArrayList<>();
+    private boolean telexSandboxSynced = true;
     private String nativeTelexRendered = "";
     private int pendingTelexDeadAccent;
 
@@ -351,6 +355,9 @@ public class V7ImeService extends InputMethodService {
         pendingPreeditLengths.clear();
 
         if (oldSelStart != newSelStart || oldSelEnd != newSelEnd) {
+            // Discard any unwritten pending Telex text so an external cursor or
+            // selection move never overwrites the editor's new selection.
+            takePendingTelexText(inputGeneration.get());
             clearPreeditSession();
             preeditStart = Math.min(newSelStart, newSelEnd);
         }
@@ -581,8 +588,22 @@ public class V7ImeService extends InputMethodService {
                         && (event.isCtrlPressed()
                                 || event.isAltPressed()
                                 || event.isMetaPressed()))) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN
-                    && isModifierKey(event.getKeyCode())) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (!isModifierKey(event.getKeyCode()) && hasActiveComposition()) {
+                    finishCurrentPreedit();
+                }
+                hardwareKeyPressOwnership.claim(
+                        event.getKeyCode(),
+                        HardwareKeyPressOwnership.Owner.EDITOR,
+                        inputGeneration.get());
+            }
+            return false;
+        }
+        if (HardwareEditorKeyPolicy.isNavigationOrForwardDelete(event.getKeyCode())) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) {
+                if (hasActiveComposition()) {
+                    finishCurrentPreedit();
+                }
                 hardwareKeyPressOwnership.claim(
                         event.getKeyCode(),
                         HardwareKeyPressOwnership.Owner.EDITOR,
@@ -667,9 +688,8 @@ public class V7ImeService extends InputMethodService {
                 pendingTelexDeadAccent = 0;
                 return true;
             }
-            if (!nativeTelexRaw.backspace()) return false;
-            updateNativeTelexPreedit();
-            return true;
+            if (!telexHasPreedit && nativeTelexRaw.isEmpty()) return false;
+            return handleNativeTelexBackspace();
         }
         int unicode = event.getUnicodeChar();
         if ((unicode & KeyCharacterMap.COMBINING_ACCENT) != 0) {
@@ -677,23 +697,119 @@ public class V7ImeService extends InputMethodService {
                     & KeyCharacterMap.COMBINING_ACCENT_MASK;
             return true;
         }
-        if (isTelexTerminator(event)) {
+        if (keyCode == KeyEvent.KEYCODE_TAB) {
+            flushPendingTelexDeadAccent();
+            commitNativeTelexResult(nativeTelexRendered, "\t");
+            return true;
+        }
+        if (keyCode == KeyEvent.KEYCODE_SPACE) {
             boolean hadDeadAccent = pendingTelexDeadAccent != 0;
             flushPendingTelexDeadAccent();
-            if (hadDeadAccent && keyCode == KeyEvent.KEYCODE_SPACE) return true;
-            commitNativeTelexSeparator(getTelexSeparator(event));
-            return true;
+            if (hadDeadAccent) return true;
+            return handleNativeTelexKey(" ");
         }
         String key = getNativeTelexKey(event, unicode);
-        if (key.codePointCount(0, key.length()) == 1
-                && (Character.isLetter(key.codePointAt(0))
-                        || "[".equals(key)
-                        || "]".equals(key))) {
-            nativeTelexRaw.append(key);
-            updateNativeTelexPreedit();
-            return true;
+        if (key.codePointCount(0, key.length()) == 1) {
+            return handleNativeTelexKey(key);
         }
         return false;
+    }
+
+    private boolean handleNativeTelexKey(String key) {
+        TelexJavaScriptSandbox.StepResult result = null;
+        if (telexSandbox != null && telexSandbox.isReady()) {
+            if (!telexSandboxSynced) {
+                List<String> replay = new ArrayList<>(nativeTelexActions);
+                replay.add(key);
+                result = telexSandbox.replayActionsIfReady(encodeTelexActions(replay));
+                if (result != null) telexSandboxSynced = true;
+            } else {
+                result = telexSandbox.stepKeyIfReady(key);
+            }
+        }
+        if (result == null) {
+            telexSandboxSynced = false;
+            publishTelexAvailability();
+            warmTelexSandbox();
+            int cp = key.codePointAt(0);
+            boolean staysInFallbackWord = Character.isLetter(cp)
+                    || Character.isDigit(cp)
+                    || "[".equals(key)
+                    || "]".equals(key)
+                    || "{".equals(key)
+                    || "}".equals(key);
+            if (!staysInFallbackWord) {
+                commitNativeTelexResult(nativeTelexRaw.text(), key);
+            } else {
+                nativeTelexRaw.append(key);
+                nativeTelexActions.add(key);
+                applyNativeTelexPreedit(nativeTelexRaw.text());
+            }
+            return true;
+        }
+        if (result.terminated) {
+            commitNativeTelexResult(result.committedWord, result.committedSuffix);
+        } else {
+            nativeTelexRaw.append(key);
+            nativeTelexActions.add(key);
+            applyNativeTelexPreedit(result.preedit);
+        }
+        return true;
+    }
+
+    private boolean handleNativeTelexBackspace() {
+        TelexJavaScriptSandbox.StepResult result = null;
+        if (telexSandbox != null && telexSandbox.isReady()) {
+            if (!telexSandboxSynced) {
+                List<String> replay = new ArrayList<>(nativeTelexActions);
+                replay.add(null);
+                result = telexSandbox.replayActionsIfReady(encodeTelexActions(replay));
+                if (result != null) telexSandboxSynced = true;
+            } else {
+                result = telexSandbox.stepBackspaceIfReady();
+            }
+        }
+        if (result == null) {
+            telexSandboxSynced = false;
+            publishTelexAvailability();
+            warmTelexSandbox();
+            if (!nativeTelexRaw.backspace()) return false;
+            nativeTelexActions.add(null);
+            applyNativeTelexPreedit(nativeTelexRaw.text());
+            if (nativeTelexRaw.isEmpty()) nativeTelexActions.clear();
+            return true;
+        }
+        if (!result.handled) {
+            nativeTelexRaw.clear();
+            nativeTelexActions.clear();
+            nativeTelexRendered = "";
+            telexHasPreedit = false;
+            return false;
+        }
+        nativeTelexRaw.backspace();
+        if (result.preedit.isEmpty()) {
+            nativeTelexRaw.clear();
+            nativeTelexActions.clear();
+        } else {
+            nativeTelexActions.add(null);
+        }
+        applyNativeTelexPreedit(result.preedit);
+        return true;
+    }
+
+    private String encodeTelexActions(List<String> actions) {
+        JSONArray array = new JSONArray();
+        for (String action : actions) {
+            try {
+                if (action == null) {
+                    array.put(new JSONObject().put("type", "backspace"));
+                } else {
+                    array.put(new JSONObject().put("type", "key").put("key", action));
+                }
+            } catch (JSONException ignored) {
+            }
+        }
+        return array.toString();
     }
 
     private String getNativeTelexKey(KeyEvent event, int unicode) {
@@ -704,7 +820,7 @@ public class V7ImeService extends InputMethodService {
                 ? 0
                 : KeyCharacterMap.getDeadChar(accent, unicode);
         if (combined != 0) return new String(Character.toChars(combined));
-        commitNativeTelexSeparator(new String(Character.toChars(accent)));
+        commitNativeTelexResult(nativeTelexRendered, new String(Character.toChars(accent)));
         return getJavascriptKey(event);
     }
 
@@ -712,35 +828,56 @@ public class V7ImeService extends InputMethodService {
         if (pendingTelexDeadAccent == 0) return;
         int accent = pendingTelexDeadAccent;
         pendingTelexDeadAccent = 0;
-        commitNativeTelexSeparator(new String(Character.toChars(accent)));
+        commitNativeTelexResult(nativeTelexRendered, new String(Character.toChars(accent)));
     }
 
-    private void updateNativeTelexPreedit() {
-        String converted = telexSandbox.convertIfReady(nativeTelexRaw.text());
-        if (converted == null) {
-            nativeTelexRendered = nativeTelexRaw.text();
-            publishTelexAvailability();
-            warmTelexSandbox();
-        } else {
-            nativeTelexRendered = converted;
-        }
+    private boolean hasActiveComposition() {
+        return !preeditText.isEmpty()
+                || telexHasPreedit
+                || pendingTelexDeadAccent != 0
+                || pendingComposingFinish;
+    }
+
+    private void applyNativeTelexPreedit(String rendered) {
+        nativeTelexRendered = rendered == null ? "" : rendered;
         telexHasPreedit = !nativeTelexRendered.isEmpty();
-        rememberPendingTelexText(nativeTelexRendered, inputGeneration.get());
         preeditRetryCount = 0;
-        if (!applyPreeditText(nativeTelexRendered, "[]")) schedulePreeditRetry();
+        if (applyPreeditText(nativeTelexRendered, "[]")) {
+            takePendingTelexText(inputGeneration.get());
+        } else {
+            rememberPendingTelexText(nativeTelexRendered, inputGeneration.get());
+            schedulePreeditRetry();
+        }
+    }
+
+    private void replayNativeTelexAfterWarmup() {
+        if (nativeTelexActions.isEmpty() || telexSandbox == null || !telexSandbox.isReady()) return;
+        TelexJavaScriptSandbox.StepResult result =
+                telexSandbox.replayActionsIfReady(encodeTelexActions(nativeTelexActions));
+        if (result == null) return;
+        telexSandboxSynced = true;
+        if (result.terminated) {
+            commitNativeTelexResult(result.committedWord, result.committedSuffix);
+        } else {
+            applyNativeTelexPreedit(result.preedit);
+        }
     }
 
     private void warmTelexSandbox() {
         telexSandbox.warmAsync(telexExecutor, () -> mainHandler.post(() -> {
             publishTelexAvailability();
             if (isEffectiveTelexMode()
-                    && !nativeTelexRaw.isEmpty()
-                    && telexSandbox.isReady()) updateNativeTelexPreedit();
+                    && !nativeTelexActions.isEmpty()
+                    && !telexSandboxSynced
+                    && telexSandbox.isReady()) replayNativeTelexAfterWarmup();
         }));
     }
 
-    private void commitNativeTelexSeparator(String separator) {
+    private void commitNativeTelexResult(String committedWord, String separator) {
         InputConnection connection = getCurrentInputConnection();
+        boolean hadPreedit = !preeditText.isEmpty() || telexHasPreedit;
+        String word = committedWord == null ? "" : committedWord;
+        String suffix = separator == null ? "" : separator;
         // Separator commits can synchronously notify a changed caret. Publish
         // the ended composition before finishing/inserting, so that callback
         // cannot recursively finish the same session a second time.
@@ -748,17 +885,28 @@ public class V7ImeService extends InputMethodService {
         preeditStart = -1;
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
+        preeditCaretHistory.clear();
         pendingComposingFinish = false;
         if (connection != null) {
             pendingCommitConnection = connection;
-            pendingCommitPreedit = nativeTelexRendered;
-            pendingCommitNeedsFinish = true;
-            appendNativeCommitSuffix(separator);
+            if (hadPreedit || !word.isEmpty()) {
+                pendingCommitPreedit = word;
+                pendingCommitNeedsFinish = true;
+            }
+            if (!suffix.isEmpty()) {
+                appendNativeCommitSuffix(suffix);
+            } else if (hadPreedit || !word.isEmpty()) {
+                if (!completePendingEditorCommit(connection)) schedulePreeditRetry();
+                updatePloverSuggestions();
+            }
         }
         nativeTelexRaw.clear();
+        nativeTelexActions.clear();
+        telexSandboxSynced = true;
         nativeTelexRendered = "";
         pendingTelexDeadAccent = 0;
         telexHasPreedit = false;
+        if (telexSandbox != null) telexSandbox.resetIfReady();
         takePendingTelexText(inputGeneration.get());
         int nextGeneration = inputGeneration.incrementAndGet();
         dispatchInputCommand("clear");
@@ -950,21 +1098,6 @@ public class V7ImeService extends InputMethodService {
         return true;
     }
 
-    private boolean isTelexTerminator(KeyEvent event) {
-        if (event.getKeyCode() == KeyEvent.KEYCODE_TAB
-                || event.getKeyCode() == KeyEvent.KEYCODE_SPACE) return true;
-        int unicode = event.getUnicodeChar();
-        if ((unicode & KeyCharacterMap.COMBINING_ACCENT) != 0) return false;
-        if (unicode == 0 || !Character.isValidCodePoint(unicode)) return false;
-        return !Character.isLetter(unicode) && unicode != '[' && unicode != ']';
-    }
-
-    private String getTelexSeparator(KeyEvent event) {
-        return event.getKeyCode() == KeyEvent.KEYCODE_TAB
-                ? "\t"
-                : getJavascriptKey(event);
-    }
-
     private String getJavascriptKey(KeyEvent event) {
         switch (event.getKeyCode()) {
             case KeyEvent.KEYCODE_SPACE:
@@ -1073,14 +1206,16 @@ public class V7ImeService extends InputMethodService {
         if (preeditStart >= 0) {
             ExtractedText live = readEditorSelection();
             if (live != null && live.startOffset >= 0 && live.selectionStart >= 0 && live.selectionEnd >= 0) {
-                int start = live.startOffset + live.selectionStart;
-                int end = live.startOffset + live.selectionEnd;
+                int start = live.startOffset + Math.min(live.selectionStart, live.selectionEnd);
+                int end = live.startOffset + Math.max(live.selectionStart, live.selectionEnd);
+                int newMin = Math.min(newSelStart, newSelEnd);
+                int newMax = Math.max(newSelStart, newSelEnd);
                 int expected = preeditStart + preeditText.length();
                 // Selection notifications can be delayed, duplicated, or omit
-                // composing bounds. The editor's current selection distinguishes
-                // those acknowledgements from an actual user selection move.
+                // composing bounds. Compare normalized [min, max] ranges because
+                // getSurroundingText() normalizes reversed (right-to-left) selections.
                 if ((start == expected && end == expected)
-                        || start != newSelStart || end != newSelEnd) {
+                        || start != newMin || end != newMax) {
                     pendingPreeditLengths.removeFirstOccurrence(newSelStart - preeditStart);
                     return true;
                 }
@@ -1102,13 +1237,16 @@ public class V7ImeService extends InputMethodService {
             return false;
         }
 
-        if (candidatesStart < 0 && oldSelStart == oldSelEnd && oldSelStart >= 0) {
+        int oldMin = Math.min(oldSelStart, oldSelEnd);
+        boolean replacingSelection = oldSelStart != oldSelEnd && pendingPreeditBaseLength == 0;
+        if (candidatesStart < 0 && oldMin >= 0 && (oldSelStart == oldSelEnd || replacingSelection)) {
             // An editor may supply neither query API nor an initial selection.
             // Match the delta of our unacknowledged writes, including a raw
-            // update followed by inference coalesced into one notification.
+            // update followed by inference coalesced into one notification, or
+            // a fresh composition replacing a non-empty host selection.
             for (int length : pendingPreeditLengths) {
-                if (newSelStart - oldSelStart == length - pendingPreeditBaseLength) {
-                    preeditStart = oldSelStart - pendingPreeditBaseLength;
+                if (newSelStart - oldMin == length - pendingPreeditBaseLength) {
+                    preeditStart = oldMin - pendingPreeditBaseLength;
                     for (int ownedLength : pendingPreeditLengths)
                         preeditCaretHistory.add(preeditStart + ownedLength);
                     preeditCaretHistory.add(preeditStart + preeditText.length());
@@ -1345,6 +1483,7 @@ public class V7ImeService extends InputMethodService {
                 schedulePreeditRetry();
                 return;
             }
+            takePendingTelexText(inputGeneration.get());
             preeditRetryCount = 0;
         }
         dispatchInputCommand("refresh");
@@ -1387,10 +1526,14 @@ public class V7ImeService extends InputMethodService {
         preeditStart = -1;
         telexHasPreedit = false;
         nativeTelexRaw.clear();
+        nativeTelexActions.clear();
+        telexSandboxSynced = true;
         nativeTelexRendered = "";
         pendingTelexDeadAccent = 0;
+        if (telexSandbox != null) telexSandbox.resetIfReady();
         preeditGrammarSectionsJson = "[]";
         pendingPreeditLengths.clear();
+        preeditCaretHistory.clear();
         if (hadPreedit || latestTelexText != null || pendingComposingFinish) {
             // onStartInput can already expose a replacement connection. Pending
             // Telex text and composing spans belong to the editor we wrote to.

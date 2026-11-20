@@ -12,7 +12,9 @@ import static org.junit.Assert.*;
 public class HardwareEditorKeyPolicyTest {
     @Test public void allSelectionDirectionsAndModifiersAreRoutedToHost() {
         for (int direction : new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN}) {
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_MOVE_END,
+                KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN}) {
             for (int modifiers : new int[]{KeyEvent.META_SHIFT_ON,
                     KeyEvent.META_SHIFT_ON | KeyEvent.META_CTRL_ON}) {
                 assertTrue(HardwareEditorKeyPolicy.isSelectionNavigation(
@@ -22,7 +24,10 @@ public class HardwareEditorKeyPolicyTest {
             }
             assertFalse(HardwareEditorKeyPolicy.isSelectionNavigation(
                     new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, direction, 0, 0)));
+            assertTrue(HardwareEditorKeyPolicy.isNavigationOrForwardDelete(direction));
         }
+        assertTrue(HardwareEditorKeyPolicy.isNavigationOrForwardDelete(KeyEvent.KEYCODE_FORWARD_DEL));
+        assertFalse(HardwareEditorKeyPolicy.isNavigationOrForwardDelete(KeyEvent.KEYCODE_DEL));
         for (int modifier : new int[]{KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT,
                 KeyEvent.KEYCODE_CTRL_LEFT, KeyEvent.KEYCODE_CTRL_RIGHT,
                 KeyEvent.KEYCODE_ALT_LEFT, KeyEvent.KEYCODE_ALT_RIGHT,

@@ -33,8 +33,16 @@ public class TelexHardwareKeyPolicyTest {
     }
 
     @Test
-    public void escapeReturnsToEditor() {
+    public void escapeAndNavigationReturnToEditor() {
         assertEquals(TelexHardwareKeyPolicy.Route.EDITOR,
                 policy.resolve(KeyEvent.KEYCODE_ESCAPE, true, false));
+        for (int key : new int[]{KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_MOVE_HOME, KeyEvent.KEYCODE_MOVE_END,
+                KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_PAGE_DOWN,
+                KeyEvent.KEYCODE_FORWARD_DEL}) {
+            assertEquals(TelexHardwareKeyPolicy.Route.EDITOR,
+                    policy.resolve(key, true, false));
+        }
     }
 }

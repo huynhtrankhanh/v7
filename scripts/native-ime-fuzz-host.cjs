@@ -301,6 +301,31 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
         );
         return;
       }
+      if (Object.hasOwn(call, "telexStepKey")) {
+        process.stdout.write(
+          JSON.stringify({ result: telex.stepV7TelexKey(call.telexStepKey) }) +
+            "\n",
+        );
+        return;
+      }
+      if (Object.hasOwn(call, "telexStepBackspace")) {
+        process.stdout.write(
+          JSON.stringify({ result: telex.stepV7TelexBackspace() }) + "\n",
+        );
+        return;
+      }
+      if (Object.hasOwn(call, "telexReset")) {
+        telex.resetV7TelexSession();
+        process.stdout.write("{}\n");
+        return;
+      }
+      if (Object.hasOwn(call, "telexReplay")) {
+        process.stdout.write(
+          JSON.stringify({ result: telex.replayV7TelexActions(call.telexReplay) }) +
+            "\n",
+        );
+        return;
+      }
       if (call.close) {
         sessions.delete(call.session);
         process.stdout.write("{}\n");

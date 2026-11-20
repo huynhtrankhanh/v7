@@ -1,4 +1,17 @@
-import { getValidVietnameseSyllables } from "./vietnameseSyllables";
+/**
+ * Clean-room UniKey-compatible Vietnamese Telex engine.
+ *
+ * Implements standard Vietnamese Telex input with classic (old-style) tone
+ * placement matching V7 and ibus-unikey defaults:
+ *   - Vowel shapes: aa -> â, aw -> ă, ee -> ê, oo -> ô, ow -> ơ, uw -> ư,
+ *     uow -> ươ (with two-stage thuo+w -> thuơ -> thươ+coda), dd -> đ
+ *   - Standard mode standalone w -> ư and [ / ] / { / } -> ơ / ư / Ơ / Ư
+ *   - Tones: s (acute), f (grave), r (hook), x (tilde), j (dot), z (tone zero)
+ *   - Free marking (delayed shapes & tones after codas)
+ *   - Vietnamese syllable spell-checking during typing
+ *   - Auto-restore of non-Vietnamese words on word-break terminators
+ *   - Visible-character backspace with tone relocation and raw-key tracking
+ */
 
 /** Classic UniKey-like Telex or the newer "Simple Telex" key set. */
 export type TelexMode = "standard" | "simple";
@@ -7,7 +20,10 @@ export type TelexMode = "standard" | "simple";
 export type TelexTone = "acute" | "grave" | "hook" | "tilde" | "dot";
 
 export type TonePlacementSource =
-  "v7-broad-exact" | "v7-broad-signature" | "mechanical" | "none";
+  | "v7-broad-exact"
+  | "v7-broad-signature"
+  | "mechanical"
+  | "none";
 
 export type TonePlacement = {
   /** Unicode-code-point index in the supplied NFC string. */
@@ -27,11 +43,58 @@ export type TelexOptions = {
    * `vietej` -> `việt`. Enabled by default to match standard Vietnamese Telex IMEs.
    */
   freeShapeMarks?: boolean;
+
+  /**
+   * Enforce Vietnamese syllable validity before applying tones/shapes.
+   * Enabled by default to match ibus-unikey.
+   */
+  spellCheck?: boolean;
+
+  /**
+   * Restore raw Latin keystrokes on word-break terminators when a word with
+   * Vietnamese marks is not a complete valid Vietnamese syllable.
+   * Enabled by default to match ibus-unikey.
+   */
+  autoRestoreNonVn?: boolean;
 };
 
 export const DEFAULT_TELEX_OPTIONS: Readonly<Required<TelexOptions>> = {
   mode: "standard",
   freeShapeMarks: true,
+  spellCheck: true,
+  autoRestoreNonVn: true,
+};
+
+export type TelexStepResult = {
+  /** Word text finalized if this key terminated the active composition (empty if none). */
+  committedWord: string;
+  /** Separator/literal suffix committed after committedWord (empty if none). */
+  committedSuffix: string;
+  /** Active composing preedit text remaining after this step. */
+  preedit: string;
+  /** True if this step terminated the active word composition. */
+  terminated: boolean;
+  /** True if the step was handled by the Telex composer (false only for backspace on empty preedit). */
+  handled: boolean;
+};
+
+type VowelShape = "plain" | "circumflex" | "breve" | "horn";
+type ShortcutKey = "w" | "[" | "]" | "{" | "}";
+
+type WordEntry = {
+  base: string;
+  upper: boolean;
+  shape: VowelShape;
+  barredD: boolean;
+  tone: TelexTone | null;
+  fromKey: ShortcutKey | null;
+};
+
+type VowelSeqSpec = {
+  complete: boolean;
+  openToneIdx: number;
+  closedToneIdx: number | null;
+  codas: ReadonlySet<string>;
 };
 
 const TONE_BY_KEY: Readonly<Record<string, TelexTone>> = {
@@ -60,24 +123,47 @@ const TONE_BY_COMBINING_MARK: Readonly<Record<string, TelexTone | undefined>> =
   };
 
 const TONE_MARK_RE = /[\u0300\u0301\u0303\u0309\u0323]/g;
-const LETTER_RE = /^\p{L}$/u;
-const VIETNAMESE_VOWEL_BASES = new Set([
-  "a",
-  "ă",
-  "â",
-  "e",
-  "ê",
-  "i",
-  "o",
-  "ô",
-  "ơ",
-  "u",
-  "ư",
-  "y",
-]);
-const SHAPED_VOWELS = new Set(["ă", "â", "ê", "ô", "ơ", "ư"]);
-const VALID_VIETNAMESE_CODAS = new Set([
+const PLAIN_VOWELS = new Set(["a", "e", "i", "o", "u", "y"]);
+
+const VALID_ONSETS = new Set([
   "",
+  "b",
+  "c",
+  "ch",
+  "d",
+  "đ",
+  "dz",
+  "g",
+  "gh",
+  "gi",
+  "h",
+  "k",
+  "kh",
+  "l",
+  "m",
+  "n",
+  "ng",
+  "ngh",
+  "nh",
+  "p",
+  "ph",
+  "q",
+  "qu",
+  "r",
+  "s",
+  "t",
+  "th",
+  "tr",
+  "v",
+  "x",
+  "z",
+]);
+
+const VALID_CODAS = new Set(["c", "ch", "m", "n", "ng", "nh", "p", "t"]);
+const STOP_CODAS = new Set(["c", "ch", "p", "t"]);
+
+const NO_CODAS: ReadonlySet<string> = new Set();
+const ALL_CODAS: ReadonlySet<string> = new Set([
   "c",
   "ch",
   "m",
@@ -87,96 +173,178 @@ const VALID_VIETNAMESE_CODAS = new Set([
   "p",
   "t",
 ]);
+const NO_CH_NH: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "p", "t"]);
+const NO_NG: ReadonlySet<string> = new Set(["c", "ch", "m", "n", "nh", "p", "t"]);
+const CODAS_OH: ReadonlySet<string> = new Set(["m", "n", "p", "t"]);
+const CODAS_UW: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "t"]);
+const CODAS_Y: ReadonlySet<string> = new Set(["t"]);
+const CODAS_QU_Y: ReadonlySet<string> = new Set(["n", "nh", "t"]);
+const CODAS_OAW: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "t"]);
+const CODAS_OE: ReadonlySet<string> = new Set(["n", "t"]);
+const CODAS_UA: ReadonlySet<string> = new Set(["n", "ng", "t"]);
+const CODAS_UE: ReadonlySet<string> = new Set(["c", "ch", "n", "nh"]);
+const CODAS_UO: ReadonlySet<string> = new Set(["c", "m", "n", "ng", "t"]);
+const CODAS_UY: ReadonlySet<string> = new Set(["c", "ch", "n", "nh", "p", "t"]);
+const CODAS_YE: ReadonlySet<string> = new Set(["m", "n", "ng", "t"]);
+const CODAS_UYE: ReadonlySet<string> = new Set(["n", "t"]);
 
-const IMMEDIATE_SHAPE: Readonly<Record<string, string>> = {
-  a: "â",
-  e: "ê",
-  o: "ô",
-  d: "đ",
+const VOWEL_SEQS: Readonly<Record<string, VowelSeqSpec>> = {
+  // Single vowels
+  a: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: ALL_CODAS },
+  ă: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_CH_NH },
+  â: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_CH_NH },
+  e: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: ALL_CODAS },
+  ê: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_NG },
+  i: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_NG },
+  o: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_CH_NH },
+  ô: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_CH_NH },
+  ơ: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: CODAS_OH },
+  u: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: NO_CH_NH },
+  ư: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: CODAS_UW },
+  y: { complete: true, openToneIdx: 0, closedToneIdx: 0, codas: CODAS_Y },
+
+  // Complete 2-vowel sequences (open-only)
+  ai: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ao: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  au: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ay: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  âu: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ây: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  eo: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  êu: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ia: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  iu: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  oi: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ôi: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ơi: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ui: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ưa: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ưi: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ưu: { complete: true, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+
+  // Complete 2-vowel sequences (open and closed)
+  iê: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: NO_CH_NH },
+  oa: { complete: true, openToneIdx: 0, closedToneIdx: 1, codas: ALL_CODAS },
+  oă: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_OAW },
+  oe: { complete: true, openToneIdx: 0, closedToneIdx: 1, codas: CODAS_OE },
+  ua: { complete: true, openToneIdx: 0, closedToneIdx: 1, codas: CODAS_UA },
+  uâ: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_UA },
+  uê: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_UE },
+  uô: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_UO },
+  uơ: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: NO_CH_NH },
+  uy: { complete: true, openToneIdx: 0, closedToneIdx: 1, codas: CODAS_UY },
+  ươ: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: NO_CH_NH },
+  yê: { complete: true, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_YE },
+
+  // Intermediate/incomplete 2-vowel sequences (accept marks while typing, auto-restore on commit)
+  eu: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ie: { complete: false, openToneIdx: 0, closedToneIdx: 1, codas: NO_CH_NH },
+  ue: { complete: false, openToneIdx: 0, closedToneIdx: 1, codas: CODAS_UE },
+  uo: { complete: false, openToneIdx: 0, closedToneIdx: 1, codas: NO_CH_NH },
+  uu: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ưo: { complete: false, openToneIdx: 0, closedToneIdx: 1, codas: NO_CH_NH },
+  ye: { complete: false, openToneIdx: 0, closedToneIdx: 1, codas: CODAS_YE },
+
+  // Complete 3-vowel sequences
+  iêu: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  oai: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  oay: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  oeo: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uây: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uôi: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  ươi: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  ươu: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uya: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uyê: { complete: true, openToneIdx: 2, closedToneIdx: 2, codas: CODAS_UYE },
+  uyu: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  yêu: { complete: true, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+
+  // Intermediate/incomplete 3-vowel sequences
+  ieu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uay: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uoi: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uou: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uye: { complete: false, openToneIdx: 1, closedToneIdx: 1, codas: CODAS_UYE },
+  yeu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uơi: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  uơu: { complete: false, openToneIdx: 1, closedToneIdx: null, codas: NO_CODAS },
+  ưoi: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
+  ưou: { complete: false, openToneIdx: 0, closedToneIdx: null, codas: NO_CODAS },
 };
 
-const REVERSE_IMMEDIATE_SHAPE: Readonly<Record<string, string>> = {
-  â: "a",
-  ê: "e",
-  ô: "o",
-  đ: "d",
+const SHAPED_CHAR: Readonly<Record<string, string>> = {
+  "a:plain": "a",
+  "a:circumflex": "â",
+  "a:breve": "ă",
+  "e:plain": "e",
+  "e:circumflex": "ê",
+  "o:plain": "o",
+  "o:circumflex": "ô",
+  "o:horn": "ơ",
+  "u:plain": "u",
+  "u:horn": "ư",
 };
 
-const W_SHAPE: Readonly<Record<string, string>> = {
-  a: "ă",
-  o: "ơ",
-  u: "ư",
-};
-
-const REVERSE_W_SHAPE: Readonly<Record<string, string>> = {
-  ă: "a",
-  ơ: "o",
-  ư: "u",
-};
-
-/** Cross-mark conversions when the user switches shape mark (e.g. â+w -> ă, ă+a -> â). */
-const W_SWITCH_SHAPE: Readonly<Record<string, string>> = {
-  â: "ă",
-  ô: "ơ",
-};
-
-const DOUBLE_SWITCH_SHAPE: Readonly<
-  Record<string, { from: string; to: string }>
+const DECOMPOSE_VI_LETTER: Readonly<
+  Record<string, { base: string; shape: VowelShape; barredD?: boolean }>
 > = {
-  a: { from: "ă", to: "â" },
-  o: { from: "ơ", to: "ô" },
+  a: { base: "a", shape: "plain" },
+  ă: { base: "a", shape: "breve" },
+  â: { base: "a", shape: "circumflex" },
+  e: { base: "e", shape: "plain" },
+  ê: { base: "e", shape: "circumflex" },
+  i: { base: "i", shape: "plain" },
+  o: { base: "o", shape: "plain" },
+  ô: { base: "o", shape: "circumflex" },
+  ơ: { base: "o", shape: "horn" },
+  u: { base: "u", shape: "plain" },
+  ư: { base: "u", shape: "horn" },
+  y: { base: "y", shape: "plain" },
+  đ: { base: "d", shape: "plain", barredD: true },
 };
 
-const STANDARD_SHORTCUT_BY_CHAR: Readonly<Record<string, string>> = {
-  "[": "ơ",
-  "]": "ư",
-  "{": "Ơ",
-  "}": "Ư",
+const SHORTCUT_SPEC: Readonly<
+  Record<ShortcutKey, { base: "o" | "u"; shape: "horn"; upper: boolean }>
+> = {
+  "[": { base: "o", shape: "horn", upper: false },
+  "{": { base: "o", shape: "horn", upper: true },
+  "]": { base: "u", shape: "horn", upper: false },
+  "}": { base: "u", shape: "horn", upper: true },
+  w: { base: "u", shape: "horn", upper: false },
 };
 
-/** Open syllables where `uo` + `w` should produce `uơ` first and upgrade to `ươ` if a valid ending follows. */
-const PENDING_UO_OPEN_BASES = new Set(["thuo", "huo", "khuo"]);
-
-type NucleusDescription = {
-  positions: number[];
-  vowels: string;
-  coda: string;
-  onsetClass: "qu" | "gi" | "other";
-  runCount: number;
-};
-
-type LearnedMap = Map<string, number | null>;
-
-type ToneOracle = {
-  exactCarrier: Map<string, number>;
-  tonelessSyllables: Set<string>;
-  signatureExact: LearnedMap;
-  signatureClosed: LearnedMap;
-  signatureGeneric: LearnedMap;
-};
-
-let toneOracle: ToneOracle | null = null;
+/** Terminators that commit the current preedit verbatim WITHOUT auto-restore (matching ibus-unikey). */
+const NO_RESTORE_TERMINATORS = new Set(["\t", "\n", "\r", "^", "`", "~"]);
 
 function optionsWithDefaults(options?: TelexOptions): Required<TelexOptions> {
   return {
     mode: options?.mode ?? DEFAULT_TELEX_OPTIONS.mode,
     freeShapeMarks:
       options?.freeShapeMarks ?? DEFAULT_TELEX_OPTIONS.freeShapeMarks,
+    spellCheck: options?.spellCheck ?? DEFAULT_TELEX_OPTIONS.spellCheck,
+    autoRestoreNonVn:
+      options?.autoRestoreNonVn ?? DEFAULT_TELEX_OPTIONS.autoRestoreNonVn,
   };
 }
 
-function lowerVi(text: string): string {
-  return text.normalize("NFC").toLocaleLowerCase("vi");
+function isAsciiLetter(ch: string): boolean {
+  if (ch.length !== 1) return false;
+  const code = ch.charCodeAt(0);
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isAsciiDigit(ch: string): boolean {
+  if (ch.length !== 1) return false;
+  const code = ch.charCodeAt(0);
+  return code >= 48 && code <= 57;
+}
+
+function isBracketShortcut(ch: string): ch is "[" | "]" | "{" | "}" {
+  return ch === "[" || ch === "]" || ch === "{" || ch === "}";
 }
 
 function isUppercaseLetter(char: string): boolean {
   return char !== char.toLocaleLowerCase("vi");
-}
-
-function withCase(source: string, replacementLowercase: string): string {
-  return isUppercaseLetter(source)
-    ? replacementLowercase.toLocaleUpperCase("vi")
-    : replacementLowercase;
 }
 
 function stripToneFromChar(char: string): string {
@@ -202,243 +370,325 @@ function applyToneToChar(char: string, tone: TelexTone): string {
   return (untone + COMBINING_MARK_BY_TONE[tone]).normalize("NFC");
 }
 
-function normalizedVowel(char: string): string | null {
-  const lower = stripToneFromChar(char).toLocaleLowerCase("vi");
-  return VIETNAMESE_VOWEL_BASES.has(lower) ? lower : null;
-}
-
-function isVowel(char: string): boolean {
-  return normalizedVowel(char) !== null;
-}
-
-function describeNucleus(text: string): NucleusDescription | null {
-  const chars = Array.from(lowerVi(stripVietnameseTone(text)));
-  if (chars.length === 0) return null;
-
-  const allVowels: number[] = [];
-  for (let i = 0; i < chars.length; i++) {
-    if (isVowel(chars[i])) allVowels.push(i);
+function entryShapedLower(entry: WordEntry): string {
+  if (entry.barredD) return "đ";
+  if (entry.shape !== "plain") {
+    return SHAPED_CHAR[`${entry.base}:${entry.shape}`] ?? entry.base;
   }
-  if (allVowels.length === 0) return null;
+  return entry.base;
+}
 
-  let onsetClass: NucleusDescription["onsetClass"] = "other";
-  const ignored = new Set<number>();
+function renderEntry(entry: WordEntry): string {
+  let ch = entryShapedLower(entry);
+  if (entry.upper) ch = ch.toLocaleUpperCase("vi");
+  if (entry.tone !== null) ch = applyToneToChar(ch, entry.tone);
+  return ch.normalize("NFC");
+}
 
+function renderEntries(entries: WordEntry[]): string {
+  let out = "";
+  for (let i = 0; i < entries.length; i++) out += renderEntry(entries[i]);
+  return out.normalize("NFC");
+}
+
+function entryFromChar(char: string): WordEntry {
+  const nfc = char.normalize("NFC");
+  const tone = toneOfChar(nfc);
+  const untoned = stripToneFromChar(nfc);
+  const upper = isUppercaseLetter(untoned);
+  const lower = untoned.toLocaleLowerCase("vi");
+  const decomposed = DECOMPOSE_VI_LETTER[lower];
+  if (decomposed) {
+    return {
+      base: decomposed.base,
+      upper,
+      shape: decomposed.shape,
+      barredD: Boolean(decomposed.barredD),
+      tone,
+      fromKey: null,
+    };
+  }
+  return {
+    base: lower,
+    upper,
+    shape: "plain",
+    barredD: false,
+    tone: null,
+    fromKey: null,
+  };
+}
+
+function isVowelEntry(entry: WordEntry): boolean {
+  return !entry.barredD && PLAIN_VOWELS.has(entry.base);
+}
+
+function isLetterEntry(entry: WordEntry): boolean {
+  return entry.barredD || isAsciiLetter(entry.base);
+}
+
+type ParsedSyllable = {
+  c1: string;
+  c1Start: number;
+  vStart: number;
+  vEnd: number; // exclusive
+  vStr: string;
+  c2Start: number;
+  c2: string;
+  vSpec: VowelSeqSpec | null;
+  canTransform: boolean;
+  isCompleteVn: boolean;
+  toneCarrierIndex: number | null;
+};
+
+function isOnsetVowelCompatible(c1: string, vStr: string): boolean {
+  if (!VALID_ONSETS.has(c1)) return false;
+  if (vStr.length === 0) return true;
+  if (c1 === "k") {
+    // In ibus-unikey, `k` only accepts e, ê, i, y (and vowel seqs starting with e/ê/i, NOT ye/yê).
+    if (vStr.startsWith("ye") || vStr.startsWith("yê")) return false;
+    const first = vStr[0];
+    return first === "e" || first === "ê" || first === "i" || first === "y";
+  }
+  if (c1 === "qu") {
+    const first = vStr[0];
+    if (first === "u" || first === "ư") return false;
+  }
+  if (c1 === "gi") {
+    const first = vStr[0];
+    if (first === "i") return false;
+  }
+  return true;
+}
+
+function parseSlice(entries: WordEntry[], start: number): ParsedSyllable {
+  const n = entries.length;
+  const invalid: ParsedSyllable = {
+    c1: "",
+    c1Start: start,
+    vStart: start,
+    vEnd: start,
+    vStr: "",
+    c2Start: start,
+    c2: "",
+    vSpec: null,
+    canTransform: false,
+    isCompleteVn: false,
+    toneCarrierIndex: null,
+  };
+
+  if (start >= n) return invalid;
+
+  // Non-letter entries (digits, symbols) break Vietnamese syllable validity.
+  for (let i = start; i < n; i++) {
+    if (!isLetterEntry(entries[i])) return invalid;
+  }
+
+  // Scan initial consonant c1 until first vowel.
+  let idx = start;
+  while (idx < n && !isVowelEntry(entries[idx])) idx++;
+
+  // Handle `qu` + vowel (or `qu` alone with no trailing vowels -> `u` is part of `qu`, not vowel!)
   if (
-    chars.length >= 3 &&
-    chars[0] === "q" &&
-    stripToneFromChar(chars[1]) === "u" &&
-    allVowels.some((position) => position > 1)
+    idx === start + 1 &&
+    entries[start].base === "q" &&
+    !entries[start].barredD &&
+    idx < n &&
+    entries[idx].base === "u" &&
+    entries[idx].shape === "plain"
   ) {
-    onsetClass = "qu";
-    ignored.add(1);
+    idx++;
   } else if (
-    chars.length >= 3 &&
-    chars[0] === "g" &&
-    stripToneFromChar(chars[1]) === "i" &&
-    allVowels.some((position) => position > 1)
+    // Handle `gi` + another vowel -> `gi` is c1!
+    idx === start + 1 &&
+    entries[start].base === "g" &&
+    !entries[start].barredD &&
+    idx + 1 < n &&
+    entries[idx].base === "i" &&
+    entries[idx].shape === "plain" &&
+    isVowelEntry(entries[idx + 1])
   ) {
-    onsetClass = "gi";
-    ignored.add(1);
+    idx++;
   }
 
-  const positions = allVowels.filter((position) => !ignored.has(position));
-  if (positions.length === 0) return null;
+  let c1 = "";
+  for (let i = start; i < idx; i++) c1 += entryShapedLower(entries[i]);
 
-  let runCount = 1;
-  for (let i = 1; i < positions.length; i++) {
-    if (positions[i] !== positions[i - 1] + 1) runCount += 1;
+  const vStart = idx;
+  while (idx < n && isVowelEntry(entries[idx])) idx++;
+  const vEnd = idx;
+
+  const c2Start = idx;
+  while (idx < n && !isVowelEntry(entries[idx])) idx++;
+  // If another vowel appears after c2 (e.g. `sẻve`, `ưater`), not a valid syllable!
+  if (idx < n) return invalid;
+
+  let vStr = "";
+  for (let i = vStart; i < vEnd; i++) vStr += entryShapedLower(entries[i]);
+
+  let c2 = "";
+  for (let i = c2Start; i < n; i++) c2 += entryShapedLower(entries[i]);
+
+  if (!VALID_ONSETS.has(c1)) return invalid;
+  if (vStr.length === 0) {
+    return {
+      c1,
+      c1Start: start,
+      vStart,
+      vEnd,
+      vStr,
+      c2Start,
+      c2,
+      vSpec: null,
+      canTransform: c2.length === 0,
+      isCompleteVn: c1 === "đ" && c2.length === 0,
+      toneCarrierIndex: null,
+    };
   }
 
-  const last = positions[positions.length - 1];
-  return {
-    positions,
-    vowels: positions.map((position) => chars[position]).join(""),
-    coda: chars.slice(last + 1).join(""),
-    onsetClass,
-    runCount,
-  };
-}
+  const vSpec = VOWEL_SEQS[vStr] ?? null;
+  if (!vSpec) return invalid;
+  if (!isOnsetVowelCompatible(c1, vStr)) return invalid;
 
-function lastNucleusRun(description: NucleusDescription): NucleusDescription {
-  if (description.runCount <= 1) return description;
-
-  let start = description.positions.length - 1;
-  while (
-    start > 0 &&
-    description.positions[start] === description.positions[start - 1] + 1
-  ) {
-    start -= 1;
+  let allowedCodas = vSpec.codas;
+  if (c1 === "qu" && vStr === "y") {
+    allowedCodas = CODAS_QU_Y;
+  } else if (c1 === "gi" && vStr === "ê") {
+    allowedCodas = ALL_CODAS;
   }
 
-  const positions = description.positions.slice(start);
-  const vowelOffset = start;
-  return {
-    positions,
-    vowels: Array.from(description.vowels).slice(vowelOffset).join(""),
-    coda: description.coda,
-    onsetClass: "other",
-    runCount: 1,
-  };
-}
-
-function signatureKeyExact(description: NucleusDescription): string {
-  return `${description.onsetClass}|${description.vowels}|${description.coda}`;
-}
-
-function signatureKeyClosed(description: NucleusDescription): string {
-  return `${description.onsetClass}|${description.vowels}|${
-    description.coda.length === 0 ? "open" : "closed"
-  }`;
-}
-
-function signatureKeyGeneric(description: NucleusDescription): string {
-  return `${description.onsetClass}|${description.vowels}`;
-}
-
-function addLearned(map: LearnedMap, key: string, value: number): void {
-  const current = map.get(key);
-  if (current === undefined) {
-    map.set(key, value);
-    return;
-  }
-  if (current !== value) map.set(key, null);
-}
-
-function toneCarrierInSurfaceWord(word: string): number | null {
-  const chars = Array.from(word.normalize("NFC"));
-  let found: number | null = null;
-  for (let i = 0; i < chars.length; i++) {
-    if (toneOfChar(chars[i]) === null) continue;
-    if (found !== null) return null;
-    found = i;
-  }
-  return found;
-}
-
-function buildToneOracle(): ToneOracle {
-  const exactCarrier = new Map<string, number>();
-  const conflictedExact = new Set<string>();
-  const tonelessSyllables = new Set<string>();
-  const signatureExact: LearnedMap = new Map();
-  const signatureClosed: LearnedMap = new Map();
-  const signatureGeneric: LearnedMap = new Map();
-
-  for (const syllable of getValidVietnameseSyllables()) {
-    const normalized = lowerVi(syllable);
-    const plain = lowerVi(stripVietnameseTone(normalized));
-    tonelessSyllables.add(plain);
-
-    const carrier = toneCarrierInSurfaceWord(normalized);
-    if (carrier === null) continue;
-
-    const existing = exactCarrier.get(plain);
-    if (existing === undefined && !conflictedExact.has(plain)) {
-      exactCarrier.set(plain, carrier);
-    } else if (existing !== carrier) {
-      exactCarrier.delete(plain);
-      conflictedExact.add(plain);
+  let codaValid = true;
+  if (c2.length > 0) {
+    if (!VALID_CODAS.has(c2) || !allowedCodas.has(c2)) {
+      codaValid = false;
     }
   }
 
-  for (const [plain, carrier] of exactCarrier) {
-    const description = describeNucleus(plain);
-    if (!description || description.runCount !== 1) continue;
-    const relativeCarrier = description.positions.indexOf(carrier);
-    if (relativeCarrier < 0) continue;
+  if (!codaValid) return invalid;
 
-    addLearned(signatureExact, signatureKeyExact(description), relativeCarrier);
-    addLearned(
-      signatureClosed,
-      signatureKeyClosed(description),
-      relativeCarrier,
-    );
-    addLearned(
-      signatureGeneric,
-      signatureKeyGeneric(description),
-      relativeCarrier,
-    );
+  const relToneIdx =
+    c2.length === 0 ? vSpec.openToneIdx : vSpec.closedToneIdx;
+  const toneCarrierIndex =
+    relToneIdx !== null ? vStart + relToneIdx : null;
+
+  // Check active tone against stop codas.
+  let activeTone: TelexTone | null = null;
+  for (let i = vStart; i < vEnd; i++) {
+    if (entries[i].tone !== null) {
+      activeTone = entries[i].tone;
+      break;
+    }
   }
+  const toneValidForCoda =
+    activeTone === null ||
+    !STOP_CODAS.has(c2) ||
+    activeTone === "acute" ||
+    activeTone === "dot";
+
+  const isCompleteVn = vSpec.complete && toneValidForCoda;
 
   return {
-    exactCarrier,
-    tonelessSyllables,
-    signatureExact,
-    signatureClosed,
-    signatureGeneric,
+    c1,
+    c1Start: start,
+    vStart,
+    vEnd,
+    vStr,
+    c2Start,
+    c2,
+    vSpec,
+    canTransform: true,
+    isCompleteVn,
+    toneCarrierIndex,
   };
 }
 
-function getToneOracle(): ToneOracle {
-  if (!toneOracle) toneOracle = buildToneOracle();
-  return toneOracle;
+function parseWord(entries: WordEntry[]): ParsedSyllable {
+  return parseSlice(entries, 0);
 }
 
-function learnedCarrier(
-  description: NucleusDescription,
-  oracle: ToneOracle,
-): number | null {
-  const candidates = [
-    oracle.signatureExact.get(signatureKeyExact(description)),
-    oracle.signatureClosed.get(signatureKeyClosed(description)),
-    oracle.signatureGeneric.get(signatureKeyGeneric(description)),
-  ];
-
-  for (const relative of candidates) {
-    if (relative === undefined || relative === null) continue;
-    return description.positions[relative] ?? null;
+function getActiveTone(entries: WordEntry[], start: number): {
+  tone: TelexTone | null;
+  index: number;
+} {
+  for (let i = start; i < entries.length; i++) {
+    if (entries[i].tone !== null) {
+      return { tone: entries[i].tone, index: i };
+    }
   }
-  return null;
+  return { tone: null, index: -1 };
 }
 
-function mechanicalCarrier(description: NucleusDescription): number | null {
-  if (description.positions.length === 0) return null;
-
-  for (let i = description.positions.length - 1; i >= 0; i--) {
-    const vowel = description.vowels[i];
-    if (SHAPED_VOWELS.has(vowel)) return description.positions[i];
+function clearTonesFrom(entries: WordEntry[], start: number): void {
+  for (let i = start; i < entries.length; i++) {
+    entries[i].tone = null;
   }
-  return description.positions[description.positions.length - 1];
+}
+
+function relocateToneIfValid(entries: WordEntry[]): void {
+  const parsed = parseWord(entries);
+  if (!parsed.canTransform || parsed.toneCarrierIndex === null) return;
+  const active = getActiveTone(entries, parsed.vStart);
+  if (active.tone === null) return;
+  if (active.index === parsed.toneCarrierIndex) return;
+  clearTonesFrom(entries, parsed.vStart);
+  entries[parsed.toneCarrierIndex].tone = active.tone;
+}
+
+function hasAnyVnMark(entries: WordEntry[]): boolean {
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.shape !== "plain" || e.barredD || e.tone !== null) return true;
+  }
+  return false;
+}
+
+function hasShortcutOrigin(entries: WordEntry[]): boolean {
+  for (let i = 0; i < entries.length; i++) {
+    const fk = entries[i].fromKey;
+    if (fk === "[" || fk === "]" || fk === "{" || fk === "}") return true;
+  }
+  return false;
+}
+
+function cloneEntries(entries: WordEntry[]): WordEntry[] {
+  return entries.map((e) => ({ ...e }));
+}
+
+function mechanicalToneIndex(entries: WordEntry[]): number | null {
+  let lastRunStart = -1;
+  let lastRunEnd = -1;
+  let i = entries.length - 1;
+  while (i >= 0 && !isVowelEntry(entries[i])) i--;
+  if (i < 0) return null;
+  lastRunEnd = i + 1;
+  while (i >= 0 && isVowelEntry(entries[i])) i--;
+  lastRunStart = i + 1;
+
+  for (let j = lastRunEnd - 1; j >= lastRunStart; j--) {
+    if (entries[j].shape !== "plain") return j;
+  }
+  return lastRunEnd - 1;
 }
 
 /**
- * Locate the tone-bearing vowel without requiring the text to be a valid
- * Vietnamese syllable.
- *
- * The lookup order is:
- *   1. exact broad-syllable behavior generated by the existing V7 API;
- *   2. an unambiguous rime signature learned from that same generated set;
- *   3. a documented mechanical fallback for a single contiguous nucleus.
- *
- * If an invalid token contains multiple disconnected vowel runs, fallback
- * behavior is deliberately local: only the last run is considered. This
- * mirrors active-composition behavior and keeps malformed/foreign words
- * deterministic without pretending the whole token is one Vietnamese syllable.
+ * Locate the tone-bearing vowel in a word using UniKey's classic Vietnamese
+ * tone-placement rules, with deterministic fallback for malformed input.
  */
 export function findTelexToneCarrier(text: string): TonePlacement {
-  const normalized = lowerVi(stripVietnameseTone(text));
-  const oracle = getToneOracle();
-
-  const exact = oracle.exactCarrier.get(normalized);
-  if (exact !== undefined) {
-    return { index: exact, source: "v7-broad-exact" };
+  const normalized = stripVietnameseTone(text).normalize("NFC");
+  const chars = Array.from(normalized);
+  if (chars.length === 0) return { index: null, source: "none" };
+  const entries = chars.map(entryFromChar);
+  const parsed = parseSlice(entries, 0);
+  if (parsed.canTransform && parsed.toneCarrierIndex !== null) {
+    return {
+      index: parsed.toneCarrierIndex,
+      source: parsed.isCompleteVn ? "v7-broad-exact" : "v7-broad-signature",
+    };
   }
-
-  const described = describeNucleus(normalized);
-  if (!described) {
-    return { index: null, source: "none" };
-  }
-  const description = lastNucleusRun(described);
-
-  const learned = learnedCarrier(description, oracle);
-  if (learned !== null) {
-    return { index: learned, source: "v7-broad-signature" };
-  }
-
-  const mechanical = mechanicalCarrier(description);
-  return mechanical === null
+  const fallback = mechanicalToneIndex(entries);
+  return fallback === null
     ? { index: null, source: "none" }
-    : { index: mechanical, source: "mechanical" };
+    : { index: fallback, source: "mechanical" };
 }
 
 /** Apply a tone to the carrier selected by findTelexToneCarrier(). */
@@ -451,807 +701,653 @@ export function applyTelexTone(text: string, tone: TelexTone): string {
   return chars.join("").normalize("NFC");
 }
 
-type CoreState = {
-  letters: string[];
-  activeStart: number;
-  tone: TelexTone | null;
-  toneAnchor: number | null;
-  /** True only for the temporary open `thuo`/`huo`/`khuo` + W -> `...uơ` state. */
-  pendingUoCompletion: boolean;
+type WordEngineState = {
+  entries: WordEntry[];
+  rawKeys: string[];
 };
 
-type CommandGroup = {
-  key: string;
-  before: CoreState;
-};
-
-type MutableState = CoreState & {
-  commandGroup: CommandGroup | null;
-};
-
-function createEmptyState(): MutableState {
-  return {
-    letters: [],
-    activeStart: 0,
-    tone: null,
-    toneAnchor: null,
-    pendingUoCompletion: false,
-    commandGroup: null,
-  };
+function createEmptyWordState(): WordEngineState {
+  return { entries: [], rawKeys: [] };
 }
 
-function hydrateStateFromToken(text: string): MutableState {
-  const state = createEmptyState();
-  const chars = Array.from(text.normalize("NFC"));
-  let foundTone: TelexTone | null = null;
-  let foundAnchor: number | null = null;
-
-  for (let i = 0; i < chars.length; i++) {
-    const tone = toneOfChar(chars[i]);
-    if (tone !== null) {
-      foundTone = tone;
-      foundAnchor = i;
-      state.letters.push(stripToneFromChar(chars[i]));
-    } else {
-      state.letters.push(chars[i]);
-    }
+function canCommitWithoutRestore(
+  state: WordEngineState,
+  options: Required<TelexOptions>,
+): boolean {
+  if (!options.autoRestoreNonVn) return true;
+  if (state.entries.length === 0) return true;
+  if (!hasAnyVnMark(state.entries)) return true;
+  // Words containing bracket shortcuts ([ ] { }) are not restored to brackets
+  // unless the bracket itself was escaped (handled immediately on key press).
+  if (hasShortcutOrigin(state.entries)) {
+    return true;
   }
+  const parsed = parseWord(state.entries);
+  if (parsed.isCompleteVn) return true;
 
-  state.tone = foundTone;
-  state.toneAnchor = foundAnchor;
-  return state;
-}
-
-function cloneCoreState(state: CoreState): CoreState {
-  return {
-    letters: [...state.letters],
-    activeStart: state.activeStart,
-    tone: state.tone,
-    toneAnchor: state.toneAnchor,
-    pendingUoCompletion: state.pendingUoCompletion,
-  };
-}
-
-function restoreCoreState(state: MutableState, snapshot: CoreState): void {
-  state.letters = [...snapshot.letters];
-  state.activeStart = snapshot.activeStart;
-  state.tone = snapshot.tone;
-  state.toneAnchor = snapshot.toneAnchor;
-  state.pendingUoCompletion = snapshot.pendingUoCompletion;
-}
-
-function activeText(state: CoreState): string {
-  return state.letters.slice(state.activeStart).join("").normalize("NFC");
-}
-
-function refreshToneAnchor(state: MutableState): void {
-  if (state.tone === null) {
-    state.toneAnchor = null;
-    return;
+  // Literal trailing `z` (tone-zero key when no tone was present) after a
+  // complete open Vietnamese syllable preserves the preceding Vietnamese word
+  // (e.g. `aaz` -> `âz`, `awz` -> `ăz`, `ddz` -> `đz`), whereas a closed
+  // syllable + `z` (e.g. `muowmz`) auto-restores.
+  const last = state.entries[state.entries.length - 1];
+  if (last.base === "z" && !last.barredD && state.entries.length > 1) {
+    const prefix = parseSlice(state.entries.slice(0, -1), 0);
+    if (prefix.isCompleteVn && prefix.c2.length === 0) return true;
   }
-
-  const active = activeText(state);
-  const described = describeNucleus(active);
-
-  // If the active token has split into multiple disconnected vowel runs
-  // (e.g. "syte" while typing "system"), never teleport an existing tone
-  // across a consonant onto a later vowel run.
-  if (
-    described &&
-    described.runCount > 1 &&
-    state.toneAnchor !== null &&
-    state.toneAnchor >= state.activeStart &&
-    state.toneAnchor < state.letters.length &&
-    isVowel(state.letters[state.toneAnchor])
-  ) {
-    return;
-  }
-
-  const placement = findTelexToneCarrier(active);
-  if (placement.index !== null) {
-    state.toneAnchor = state.activeStart + placement.index;
-    return;
-  }
-
-  if (
-    state.toneAnchor !== null &&
-    state.toneAnchor >= state.activeStart &&
-    state.toneAnchor < state.letters.length &&
-    isVowel(state.letters[state.toneAnchor])
-  ) {
-    return;
-  }
-
-  state.toneAnchor = null;
+  return false;
 }
 
-function commitTone(state: MutableState): void {
-  if (
-    state.tone !== null &&
-    state.toneAnchor !== null &&
-    state.toneAnchor >= 0 &&
-    state.toneAnchor < state.letters.length
-  ) {
-    state.letters[state.toneAnchor] = applyToneToChar(
-      state.letters[state.toneAnchor],
-      state.tone,
-    );
-  }
-  state.tone = null;
-  state.toneAnchor = null;
-}
-
-function completePendingUoAfterAppend(state: MutableState): void {
-  if (!state.pendingUoCompletion) return;
-
-  // The special open state (`thuơ`, `huơ`, `khuơ`) survives tone commands,
-  // but the first ordinary character after it decides whether the pending UƠ
-  // nucleus upgrades to ƯƠ (e.g. `thương`, `thước`, `hươu`, `hương`).
-  state.pendingUoCompletion = false;
-
-  const described = describeNucleus(activeText(state));
-  if (!described || described.runCount !== 1) {
-    return;
-  }
-
-  const positions = described.positions.map(
-    (position) => state.activeStart + position,
-  );
-  if (positions.length < 2) return;
-
-  // Find the adjacent `uơ` (or `ưo`) pair inside the nucleus (handles both
-  // consonant codas like `thươn`/`thươc` and vowel glides like `hươu`/`thươi`).
-  let pairIndex = -1;
-  for (let i = 0; i < positions.length - 1; i++) {
-    const leftPos = positions[i];
-    const rightPos = positions[i + 1];
-    if (rightPos !== leftPos + 1) continue;
-    const left = stripToneFromChar(state.letters[leftPos]).toLocaleLowerCase(
-      "vi",
-    );
-    const right = stripToneFromChar(state.letters[rightPos]).toLocaleLowerCase(
-      "vi",
-    );
-    if ((left === "u" && right === "ơ") || (left === "ư" && right === "o")) {
-      pairIndex = i;
-      break;
-    }
-  }
-  if (pairIndex < 0) return;
-
-  const leftPos = positions[pairIndex];
-  const rightPos = positions[pairIndex + 1];
-  const candidate = [...state.letters];
-  candidate[leftPos] = withCase(candidate[leftPos], "ư");
-  candidate[rightPos] = withCase(candidate[rightPos], "ơ");
-  const candidateActive = lowerVi(
-    stripVietnameseTone(candidate.slice(state.activeStart).join("")),
-  );
-
-  if (!getToneOracle().tonelessSyllables.has(candidateActive)) return;
-
-  state.letters[leftPos] = candidate[leftPos];
-  state.letters[rightPos] = candidate[rightPos];
-}
-
-function appendOrdinary(state: MutableState, char: string): void {
-  state.letters.push(char.normalize("NFC"));
-  state.commandGroup = null;
-  completePendingUoAfterAppend(state);
-  refreshToneAnchor(state);
-}
-
-function appendEscapedLiteral(state: MutableState, char: string): void {
-  commitTone(state);
-  state.letters.push(char.normalize("NFC"));
-  // A repeated-mark escape is an explicit declaration that the key is
-  // literal. Future Telex commands do not reach back across it.
-  state.activeStart = state.letters.length;
-  state.pendingUoCompletion = false;
-  state.commandGroup = null;
-}
-
-function renderState(state: CoreState): string {
-  const letters = [...state.letters];
-  if (
-    state.tone !== null &&
-    state.toneAnchor !== null &&
-    state.toneAnchor >= 0 &&
-    state.toneAnchor < letters.length
-  ) {
-    letters[state.toneAnchor] = applyToneToChar(
-      letters[state.toneAnchor],
-      state.tone,
-    );
-  }
-  return letters.join("").normalize("NFC");
-}
-
-function beginOrContinueGroup(
-  state: MutableState,
-  key: string,
-  beforeCurrentCommand: CoreState,
-): void {
-  if (state.commandGroup?.key === key) return;
-  state.commandGroup = { key, before: beforeCurrentCommand };
-}
-
-function escapeRepeatedCommand(state: MutableState, rawChar: string): void {
-  const group = state.commandGroup;
-  if (!group) {
-    appendOrdinary(state, rawChar);
-    return;
-  }
-  restoreCoreState(state, group.before);
-  appendEscapedLiteral(state, rawChar);
-}
-
-function replaceLetterWithCase(
-  state: MutableState,
-  index: number,
-  replacementLowercase: string,
-): void {
-  state.letters[index] = withCase(
-    stripToneFromChar(state.letters[index]),
-    replacementLowercase,
-  );
-  refreshToneAnchor(state);
-}
-
-function isPlainLetter(char: string, expectedLowercase: string): boolean {
-  return stripToneFromChar(char).toLocaleLowerCase("vi") === expectedLowercase;
-}
-
-function regionCandidateText(
-  state: CoreState,
-  changedIndex: number,
-  replacementLowercase: string,
+function finalizeWord(
+  state: WordEngineState,
+  options: Required<TelexOptions>,
+  allowAutoRestore: boolean,
 ): string {
-  const copy = [...state.letters];
-  copy[changedIndex] = withCase(
-    stripToneFromChar(copy[changedIndex]),
-    replacementLowercase,
-  );
-  return copy.slice(state.activeStart).join("").normalize("NFC");
+  if (state.entries.length === 0) return "";
+  if (allowAutoRestore && !canCommitWithoutRestore(state, options)) {
+    return state.rawKeys.join("").normalize("NFC");
+  }
+  return renderEntries(state.entries);
 }
 
-function scoreShapeCandidate(text: string): number {
-  const oracle = getToneOracle();
-  const lower = lowerVi(stripVietnameseTone(text));
-  if (oracle.tonelessSyllables.has(lower)) return 10_000;
-
-  const placement = findTelexToneCarrier(lower);
-  if (placement.source === "v7-broad-signature") return 1_000;
-  if (placement.source === "mechanical") return 100;
-  return 0;
+function tryUpgradeUoOnCoda(state: WordEngineState): void {
+  const entries = state.entries;
+  const parsed = parseSlice(entries, 0);
+  if (!parsed.canTransform || parsed.c2.length === 0) return;
+  if (parsed.vStr === "uơ" || parsed.vStr === "ưo") {
+    entries[parsed.vStart].shape = "horn";
+    entries[parsed.vStart + 1].shape = "horn";
+  }
 }
 
-function hasValidDelayedSyllableShape(state: CoreState): {
-  described: NucleusDescription | null;
-  hasCoda: boolean;
-  valid: boolean;
-} {
-  const active = activeText(state);
-  const described = describeNucleus(active);
-  if (!described) {
-    return { described: null, hasCoda: false, valid: false };
-  }
-  if (described.runCount !== 1) {
-    return { described, hasCoda: described.coda.length > 0, valid: false };
-  }
-  if (!VALID_VIETNAMESE_CODAS.has(described.coda)) {
-    return { described, hasCoda: described.coda.length > 0, valid: false };
-  }
-  return { described, hasCoda: described.coda.length > 0, valid: true };
+function appendLiteral(state: WordEngineState, ch: string): void {
+  state.entries.push(entryFromChar(ch));
+  state.rawKeys.push(ch);
+  tryUpgradeUoOnCoda(state);
+  relocateToneIfValid(state.entries);
 }
 
-function tryImmediateDoubleShape(state: MutableState, key: string): boolean {
-  const replacement = IMMEDIATE_SHAPE[key];
-  if (!replacement) return false;
-  if (state.letters.length <= state.activeStart) return false;
-
-  const index = state.letters.length - 1;
-  if (isPlainLetter(state.letters[index], key)) {
-    replaceLetterWithCase(state, index, replacement);
-    return true;
-  }
-
-  // Allow switching `ă` + `a` -> `â` or `ơ` + `o` -> `ô`.
-  const switchSpec = DOUBLE_SWITCH_SHAPE[key];
-  if (switchSpec && isPlainLetter(state.letters[index], switchSpec.from)) {
-    replaceLetterWithCase(state, index, switchSpec.to);
-    return true;
-  }
-
-  return false;
-}
-
-function tryDelayedShape(
-  state: MutableState,
-  key: string,
+function handleBracketKey(
+  state: WordEngineState,
+  ch: "[" | "]" | "{" | "}",
   options: Required<TelexOptions>,
-): boolean {
-  const replacement = IMMEDIATE_SHAPE[key];
-  if (!replacement || state.letters.length <= state.activeStart) return false;
+): TelexStepResult {
+  const spec = SHORTCUT_SPEC[ch];
+  const entries = state.entries;
 
-  const shapeCheck = hasValidDelayedSyllableShape(state);
-  if (!shapeCheck.valid) return false;
-
-  if (key === "d") {
-    if (!options.freeShapeMarks) return false;
-    const index = state.activeStart;
-    if (!isPlainLetter(state.letters[index], "d")) return false;
-    if (index >= state.letters.length - 1) return false;
-    replaceLetterWithCase(state, index, replacement);
-    return true;
-  }
-
-  // Post-coda delayed shape requires `freeShapeMarks`; nucleus-internal shapes
-  // like `toio` -> `tôi`, `caua` -> `câu`, `caya` -> `cây`, `tieue` -> `tiêu`
-  // have no coda and work in both modes.
-  if (shapeCheck.hasCoda && !options.freeShapeMarks) return false;
-
-  const switchSpec = DOUBLE_SWITCH_SHAPE[key];
-  const candidates: Array<{ index: number; to: string; score: number }> = [];
-  for (
-    let index = state.activeStart;
-    index < state.letters.length - 1;
-    index++
-  ) {
-    if (isPlainLetter(state.letters[index], key)) {
-      candidates.push({
-        index,
-        to: replacement,
-        score: scoreShapeCandidate(
-          regionCandidateText(state, index, replacement),
-        ),
-      });
-    } else if (
-      switchSpec &&
-      isPlainLetter(state.letters[index], switchSpec.from)
-    ) {
-      candidates.push({
-        index,
-        to: switchSpec.to,
-        score: scoreShapeCandidate(
-          regionCandidateText(state, index, switchSpec.to),
-        ),
-      });
-    }
-  }
-  if (candidates.length === 0) return false;
-
-  candidates.sort((a, b) => b.score - a.score || b.index - a.index);
-  replaceLetterWithCase(state, candidates[0].index, candidates[0].to);
-  return true;
-}
-
-function tryUndoActiveDoubleShape(
-  state: MutableState,
-  key: string,
-  rawChar: string,
-  options: Required<TelexOptions>,
-): boolean {
-  const shaped = IMMEDIATE_SHAPE[key];
-  if (!shaped || state.letters.length <= state.activeStart) return false;
-
-  if (key === "d") {
-    const index = state.activeStart;
-    if (!isPlainLetter(state.letters[index], "đ")) return false;
-    if (index < state.letters.length - 1) {
-      const check = hasValidDelayedSyllableShape(state);
-      if (!options.freeShapeMarks || !check.valid) return false;
-    }
-    replaceLetterWithCase(state, index, "d");
-    appendEscapedLiteral(state, rawChar);
-    return true;
-  }
-
-  const check = hasValidDelayedSyllableShape(state);
-  if (!check.valid || !check.described) return false;
-  if (check.hasCoda && !options.freeShapeMarks) return false;
-
-  for (let i = check.described.positions.length - 1; i >= 0; i--) {
-    const pos = state.activeStart + check.described.positions[i];
-    if (isPlainLetter(state.letters[pos], shaped)) {
-      replaceLetterWithCase(state, pos, REVERSE_IMMEDIATE_SHAPE[shaped]);
-      appendEscapedLiteral(state, rawChar);
-      return true;
-    }
-  }
-  return false;
-}
-
-function eligibleWPositions(state: CoreState): {
-  positions: number[];
-  switchPositions: number[];
-  hasCoda: boolean;
-  validCoda: boolean;
-  runCount: number;
-} | null {
-  const region = state.letters.slice(state.activeStart);
-  const described = describeNucleus(region.join(""));
-  if (!described) return null;
-  const description = lastNucleusRun(described);
-
-  const positions: number[] = [];
-  const switchPositions: number[] = [];
-
-  for (const relPos of description.positions) {
-    const position = state.activeStart + relPos;
-    const plain = stripToneFromChar(state.letters[position]).toLocaleLowerCase(
-      "vi",
-    );
-    if (W_SHAPE[plain] !== undefined) {
-      positions.push(position);
-    } else if (W_SWITCH_SHAPE[plain] !== undefined) {
-      switchPositions.push(position);
+  // Check immediate undo: last char is the exact same shaped vowel (and same case for [/{ and ]/})
+  if (entries.length > 0) {
+    const last = entries[entries.length - 1];
+    const sameVowel =
+      last.base === spec.base && last.shape === "horn" && last.upper === spec.upper;
+    if (sameVowel && (last.fromKey === ch || last.fromKey === "w")) {
+      // Undo the vowel back to literal bracket and immediately commit word + bracket!
+      entries.pop();
+      const prefix = renderEntries(entries);
+      state.entries = [];
+      state.rawKeys = [];
+      return {
+        committedWord: prefix,
+        committedSuffix: ch,
+        preedit: "",
+        terminated: true,
+        handled: true,
+      };
     }
   }
 
-  if (positions.length === 0 && switchPositions.length === 0) return null;
-  const lastNucleusPosition =
-    state.activeStart + description.positions[description.positions.length - 1];
+  // Test whether appending this vowel keeps a valid Vietnamese syllable.
+  const candidate: WordEntry = {
+    base: spec.base,
+    upper: spec.upper,
+    shape: "horn",
+    barredD: false,
+    tone: null,
+    fromKey: ch,
+  };
+  const nextEntries = [...cloneEntries(entries), candidate];
+  const parsed = parseSlice(nextEntries, 0);
+  if (parsed.canTransform && parsed.vStr.length > 0) {
+    state.entries.push(candidate);
+    // In ibus-unikey, bracket keys are NOT auto-restored to `[`/`]`/`{`/`}` on word break.
+    state.rawKeys.push(ch);
+    relocateToneIfValid(state.entries);
+    return {
+      committedWord: "",
+      committedSuffix: "",
+      preedit: renderEntries(state.entries),
+      terminated: false,
+      handled: true,
+    };
+  }
+
+  // Invalid position for bracket shortcut: terminate & commit word + literal bracket!
+  const committedWord = finalizeWord(state, options, true);
+  state.entries = [];
+  state.rawKeys = [];
   return {
-    positions,
-    switchPositions,
-    hasCoda: lastNucleusPosition < state.letters.length - 1,
-    validCoda: VALID_VIETNAMESE_CODAS.has(description.coda),
-    runCount: described.runCount,
+    committedWord,
+    committedSuffix: ch,
+    preedit: "",
+    terminated: true,
+    handled: true,
   };
 }
 
-function tryWShape(
-  state: MutableState,
-  options: Required<TelexOptions>,
-  allowStandalone: boolean,
-  standaloneSource = "w",
-): boolean {
-  const eligible = eligibleWPositions(state);
-
-  if (eligible) {
-    if (eligible.hasCoda && (!options.freeShapeMarks || !eligible.validCoda)) {
-      return false;
-    }
-    if (eligible.hasCoda && eligible.runCount > 1) {
-      return false;
-    }
-
-    if (eligible.positions.length > 0) {
-      // 1. Check for an adjacent `u` + `o` pair anywhere in the active nucleus
-      //    (handles `uo`, `uoi`, `uou` like `rượu`/`hươu`, `uong`, `uoc`, etc.).
-      for (let i = eligible.positions.length - 2; i >= 0; i--) {
-        const left = eligible.positions[i];
-        const right = eligible.positions[i + 1];
-        if (right !== left + 1) continue;
-        const leftBase = stripToneFromChar(
-          state.letters[left],
-        ).toLocaleLowerCase("vi");
-        const rightBase = stripToneFromChar(
-          state.letters[right],
-        ).toLocaleLowerCase("vi");
-
-        if (leftBase === "u" && rightBase === "o") {
-          const activePlain = lowerVi(stripVietnameseTone(activeText(state)));
-          if (!eligible.hasCoda && PENDING_UO_OPEN_BASES.has(activePlain)) {
-            replaceLetterWithCase(state, right, "ơ");
-            state.pendingUoCompletion = true;
-            return true;
-          }
-
-          replaceLetterWithCase(state, left, "ư");
-          replaceLetterWithCase(state, right, "ơ");
-          state.pendingUoCompletion = false;
-          return true;
-        }
-      }
-
-      // 2. Check for adjacent `u` + `a` (`mưa`, `cưa`, `chưa`, `nữa`) or
-      //    adjacent `u` + `u` (`lưu`, `cứu`, `hữu`). In both cases, `u` (the
-      //    first vowel) takes the horn, never `a` or the second `u`.
-      //    Note: `qu` onset `u` is already excluded by describeNucleus(), so
-      //    `quaw` only has `a` in eligible.positions and still produces `quă`.
-      for (let i = eligible.positions.length - 2; i >= 0; i--) {
-        const left = eligible.positions[i];
-        const right = eligible.positions[i + 1];
-        if (right !== left + 1) continue;
-        const leftBase = stripToneFromChar(
-          state.letters[left],
-        ).toLocaleLowerCase("vi");
-        const rightBase = stripToneFromChar(
-          state.letters[right],
-        ).toLocaleLowerCase("vi");
-
-        if (leftBase === "u" && (rightBase === "a" || rightBase === "u")) {
-          replaceLetterWithCase(state, left, "ư");
-          state.pendingUoCompletion = false;
-          return true;
-        }
-      }
-
-      // 3. Otherwise transform the rightmost eligible vowel (`oă` from `oa`,
-      //    single `a`/`o`/`u` -> `ă`/`ơ`/`ư`).
-      const index = eligible.positions[eligible.positions.length - 1];
-      const base = stripToneFromChar(state.letters[index]).toLocaleLowerCase(
-        "vi",
-      );
-      const replacement = W_SHAPE[base];
-      if (replacement) {
-        replaceLetterWithCase(state, index, replacement);
-        state.pendingUoCompletion = false;
-        return true;
-      }
-    }
-
-    // 4. Switch circumflex to breve/horn (`â` + `w` -> `ă`, `ô` + `w` -> `ơ`).
-    if (eligible.switchPositions.length > 0) {
-      const index =
-        eligible.switchPositions[eligible.switchPositions.length - 1];
-      const base = stripToneFromChar(state.letters[index]).toLocaleLowerCase(
-        "vi",
-      );
-      const replacement = W_SWITCH_SHAPE[base];
-      if (replacement) {
-        replaceLetterWithCase(state, index, replacement);
-        state.pendingUoCompletion = false;
-        return true;
-      }
-    }
-  }
-
-  if (!allowStandalone || options.mode !== "standard") return false;
-
-  const description = describeNucleus(activeText(state));
-  if (description !== null) return false;
-
-  state.letters.push(withCase(standaloneSource, "ư"));
-  state.pendingUoCompletion = false;
-  refreshToneAnchor(state);
-  return true;
-}
-
-function tryUndoActiveWShape(
-  state: MutableState,
-  rawChar: string,
-  options: Required<TelexOptions>,
-): boolean {
-  const check = hasValidDelayedSyllableShape(state);
-  if (!check.valid || !check.described) return false;
-  if (check.hasCoda && !options.freeShapeMarks) return false;
-
-  const positions = check.described.positions.map(
-    (position) => state.activeStart + position,
-  );
-
-  // Undo `ươ` pair together back to `uo`.
-  for (let i = positions.length - 2; i >= 0; i--) {
-    const left = positions[i];
-    const right = positions[i + 1];
-    if (right !== left + 1) continue;
-    const leftBase = stripToneFromChar(state.letters[left]).toLocaleLowerCase(
-      "vi",
-    );
-    const rightBase = stripToneFromChar(state.letters[right]).toLocaleLowerCase(
-      "vi",
-    );
-    if (leftBase === "ư" && rightBase === "ơ") {
-      replaceLetterWithCase(state, left, "u");
-      replaceLetterWithCase(state, right, "o");
-      appendEscapedLiteral(state, rawChar);
-      return true;
-    }
-  }
-
-  for (let i = positions.length - 1; i >= 0; i--) {
-    const pos = positions[i];
-    const base = stripToneFromChar(state.letters[pos]).toLocaleLowerCase("vi");
-    const plain = REVERSE_W_SHAPE[base];
-    if (plain) {
-      replaceLetterWithCase(state, pos, plain);
-      appendEscapedLiteral(state, rawChar);
-      return true;
-    }
-  }
-  return false;
-}
-
-function tryToneCommand(state: MutableState, tone: TelexTone): boolean {
-  const placement = findTelexToneCarrier(activeText(state));
-  if (placement.index === null) {
-    if (
-      state.tone !== null &&
-      state.toneAnchor !== null &&
-      state.toneAnchor >= state.activeStart
-    ) {
-      state.tone = tone;
-      return true;
-    }
-    return false;
-  }
-
-  state.tone = tone;
-  state.toneAnchor = state.activeStart + placement.index;
-  return true;
-}
-
-function tryClearTone(state: MutableState): boolean {
-  if (state.tone === null) return false;
-  state.tone = null;
-  state.toneAnchor = null;
-  return true;
-}
-
-function processStandardShortcut(
-  state: MutableState,
-  rawChar: string,
-): boolean {
-  const shortcutVowel = STANDARD_SHORTCUT_BY_CHAR[rawChar];
-  if (!shortcutVowel) return false;
-
-  const groupKey = `shortcut:${rawChar}`;
-  if (state.commandGroup?.key === groupKey) {
-    escapeRepeatedCommand(state, rawChar);
-    return true;
-  }
-
-  const before = cloneCoreState(state);
-  state.letters.push(shortcutVowel);
-  state.pendingUoCompletion = false;
-  refreshToneAnchor(state);
-  beginOrContinueGroup(state, groupKey, before);
-  return true;
-}
-
-function stepState(
-  state: MutableState,
-  rawChar: string,
+function handleToneKey(
+  state: WordEngineState,
+  ch: string,
+  tone: TelexTone,
   options: Required<TelexOptions>,
 ): void {
-  if (options.mode === "standard" && processStandardShortcut(state, rawChar)) {
-    return;
-  }
+  const entries = state.entries;
+  const parsed = parseWord(entries);
 
-  const key = rawChar.toLocaleLowerCase("en-US");
-
-  const tone = TONE_BY_KEY[key];
-  if (tone) {
-    // Pressing the same tone key that is already active on this word — whether
-    // immediately (`cass` -> `cas`, `casff` -> `caf`) or later in the word
-    // (`cases` -> `cases`, `server` -> `server`) — clears the tone and outputs
-    // the literal key.
-    if (state.tone === tone) {
-      state.tone = null;
-      state.toneAnchor = null;
-      appendEscapedLiteral(state, rawChar);
+  if (options.spellCheck) {
+    if (!parsed.canTransform || parsed.toneCarrierIndex === null) {
+      appendLiteral(state, ch);
       return;
     }
-
-    const before = cloneCoreState(state);
-    if (tryToneCommand(state, tone)) {
-      beginOrContinueGroup(state, key, before);
-    } else {
-      appendOrdinary(state, rawChar);
-    }
-    return;
-  }
-
-  if (key === "z") {
-    // Z is Telex tone zero, not "remove every mark". If a tone is present it
-    // is consumed and cleared. With no tone to clear, Z is an ordinary
-    // literal letter.
-    state.commandGroup = null;
-    if (!tryClearTone(state)) appendOrdinary(state, rawChar);
-    return;
-  }
-
-  if (key === "w") {
-    const sameGroup = state.commandGroup?.key === key;
-    if (sameGroup) {
-      // A second W can legitimately modify a second vowel (e.g. `thuoww`).
-      // Only escape when there is no additional shape operation available.
-      if (tryWShape(state, options, false, rawChar)) return;
-      escapeRepeatedCommand(state, rawChar);
-      return;
-    }
-
-    const before = cloneCoreState(state);
-    if (tryWShape(state, options, true, rawChar)) {
-      beginOrContinueGroup(state, key, before);
-      return;
-    }
-    if (tryUndoActiveWShape(state, rawChar, options)) {
-      return;
-    }
-    appendOrdinary(state, rawChar);
-    return;
-  }
-
-  if (IMMEDIATE_SHAPE[key] !== undefined) {
-    const sameGroup = state.commandGroup?.key === key;
-    if (sameGroup) {
-      if (tryDelayedShape(state, key, options)) return;
-      escapeRepeatedCommand(state, rawChar);
-      return;
-    }
-
-    const before = cloneCoreState(state);
     if (
-      tryImmediateDoubleShape(state, key) ||
-      tryDelayedShape(state, key, options)
+      STOP_CODAS.has(parsed.c2) &&
+      tone !== "acute" &&
+      tone !== "dot"
     ) {
-      beginOrContinueGroup(state, key, before);
+      appendLiteral(state, ch);
       return;
     }
-    if (tryUndoActiveDoubleShape(state, key, rawChar, options)) {
+    const active = getActiveTone(entries, parsed.vStart);
+    if (active.tone === tone) {
+      clearTonesFrom(entries, parsed.vStart);
+      appendLiteral(state, ch);
       return;
     }
-    appendOrdinary(state, rawChar);
+    clearTonesFrom(entries, parsed.vStart);
+    entries[parsed.toneCarrierIndex].tone = tone;
+    state.rawKeys.push(ch);
     return;
   }
 
-  appendOrdinary(state, rawChar);
-}
-
-function reduceToken(raw: string, options: Required<TelexOptions>): CoreState {
-  const state = createEmptyState();
-  for (const rawChar of Array.from(raw.normalize("NFC"))) {
-    stepState(state, rawChar, options);
+  // Non-spellCheck fallback
+  const carrier = mechanicalToneIndex(entries);
+  if (carrier === null) {
+    appendLiteral(state, ch);
+    return;
   }
-  return state;
+  const active = getActiveTone(entries, 0);
+  if (active.tone === tone) {
+    clearTonesFrom(entries, 0);
+    appendLiteral(state, ch);
+    return;
+  }
+  clearTonesFrom(entries, 0);
+  entries[carrier].tone = tone;
+  state.rawKeys.push(ch);
 }
 
-/** Convert one active, separator-free Telex composition. */
+function handleZKey(
+  state: WordEngineState,
+  ch: string,
+  options: Required<TelexOptions>,
+): void {
+  const parsed = parseWord(state.entries);
+  if (options.spellCheck && !parsed.canTransform) {
+    appendLiteral(state, ch);
+    return;
+  }
+  const searchStart = parsed.canTransform ? parsed.vStart : 0;
+  const active = getActiveTone(state.entries, searchStart);
+  if (active.tone !== null) {
+    clearTonesFrom(state.entries, searchStart);
+    state.rawKeys.push(ch);
+    return;
+  }
+  appendLiteral(state, ch);
+}
+
+function handleDKey(
+  state: WordEngineState,
+  ch: string,
+  options: Required<TelexOptions>,
+): void {
+  const entries = state.entries;
+  if (entries.length === 0) {
+    appendLiteral(state, ch);
+    return;
+  }
+
+  // Immediate `d` -> `đ` or `đ` -> `d`+`d` at the start of a word (or within a
+  // pure `d` run like `dd`, `ddd`, `dddd`, `ddddd`). Never bar a medial/final
+  // `dd` in English words like `add`, `address`, `middle`, `padding`, `reddit`.
+  const last = entries[entries.length - 1];
+  if (last.base === "d") {
+    if (last.barredD) {
+      last.barredD = false;
+      appendLiteral(state, ch);
+      return;
+    }
+    const allDs = entries.every((e) => e.base === "d");
+    if (allDs) {
+      last.barredD = true;
+      state.rawKeys.push(ch);
+      return;
+    }
+  }
+
+  // Delayed `d` affecting initial `d`/`đ` (e.g. `duongd` -> `đuong`, `ddud` -> `dud`)
+  if (options.freeShapeMarks && entries[0].base === "d") {
+    const parsed = parseSlice(entries, 0);
+    if (!options.spellCheck || parsed.canTransform) {
+      if (entries[0].barredD) {
+        entries[0].barredD = false;
+        appendLiteral(state, ch);
+        return;
+      }
+      entries[0].barredD = true;
+      state.rawKeys.push(ch);
+      return;
+    }
+  }
+
+  appendLiteral(state, ch);
+}
+
+function handleDoubleVowelKey(
+  state: WordEngineState,
+  ch: string,
+  key: "a" | "e" | "o",
+  options: Required<TelexOptions>,
+): void {
+  const entries = state.entries;
+  const parsed = parseWord(entries);
+
+  if (options.spellCheck && (!parsed.canTransform || parsed.vStr.length === 0)) {
+    appendLiteral(state, ch);
+    return;
+  }
+
+  const vStart = parsed.canTransform ? parsed.vStart : 0;
+  const vEnd = parsed.canTransform ? parsed.vEnd : entries.length;
+  const hasCoda = parsed.canTransform && parsed.c2.length > 0;
+  if (hasCoda && !options.freeShapeMarks) {
+    appendLiteral(state, ch);
+    return;
+  }
+
+  // Scan right-to-left in vowel nucleus for matching base vowel.
+  for (let i = vEnd - 1; i >= vStart; i--) {
+    const e = entries[i];
+    if (e.base !== key) continue;
+
+    if (e.shape === "circumflex") {
+      // Undo circumflex -> plain, relocate any tone on the unshaped vowel, then append literal key.
+      e.shape = "plain";
+      relocateToneIfValid(entries);
+      appendLiteral(state, ch);
+      return;
+    }
+
+    // Try applying circumflex (and for `ươ` + `o`, clear horn on `u` -> `uô`!).
+    const testEntries = cloneEntries(entries);
+    testEntries[i].shape = "circumflex";
+    if (
+      key === "o" &&
+      i > vStart &&
+      testEntries[i - 1].base === "u" &&
+      testEntries[i - 1].shape === "horn"
+    ) {
+      testEntries[i - 1].shape = "plain";
+    }
+
+    const nextParsed = parseSlice(testEntries, parsed.c1Start);
+    if (!options.spellCheck || (nextParsed.canTransform && nextParsed.vStr.length > 0)) {
+      entries[i].shape = "circumflex";
+      if (
+        key === "o" &&
+        i > vStart &&
+        entries[i - 1].base === "u" &&
+        entries[i - 1].shape === "horn"
+      ) {
+        entries[i - 1].shape = "plain";
+      }
+      state.rawKeys.push(ch);
+      relocateToneIfValid(entries);
+      return;
+    }
+  }
+
+  appendLiteral(state, ch);
+}
+
+function handleWKey(
+  state: WordEngineState,
+  ch: string,
+  options: Required<TelexOptions>,
+): void {
+  const entries = state.entries;
+  const isUpper = ch === "W";
+
+  // 1. Standalone `w` -> `ư` / `Ư` when there are no vowels yet and mode === "standard".
+  if (options.mode === "standard") {
+    const parsed0 = parseSlice(entries, 0);
+    if (entries.length === 0 || (parsed0.canTransform && parsed0.vStr.length === 0)) {
+      const candidate: WordEntry = {
+        base: "u",
+        upper: isUpper,
+        shape: "horn",
+        barredD: false,
+        tone: null,
+        fromKey: "w",
+      };
+      const testEntries = [...cloneEntries(entries), candidate];
+      const nextParsed = parseSlice(testEntries, 0);
+      if (nextParsed.canTransform && nextParsed.vStr.length > 0) {
+        entries.push(candidate);
+        state.rawKeys.push(ch);
+        return;
+      }
+      appendLiteral(state, ch);
+      return;
+    }
+  }
+
+  // 2. Undo standalone `w` immediately (`ww` -> `w`, `WW` -> `W`, `Ww` -> `Uw`, `wW` -> `uW`).
+  if (entries.length > 0) {
+    const last = entries[entries.length - 1];
+    if (last.fromKey === "w" && last.base === "u" && last.shape === "horn") {
+      if (last.upper === isUpper) {
+        // Same case: replace `ư` with literal `w`/`W`.
+        entries.pop();
+        appendLiteral(state, ch);
+        return;
+      }
+      // Different case: unhorn `Ư`/`ư` -> `U`/`u` and append literal `w`/`W`!
+      last.shape = "plain";
+      last.fromKey = null;
+      appendLiteral(state, ch);
+      return;
+    }
+  }
+
+  const parsed = parseWord(entries);
+  if (options.spellCheck && (!parsed.canTransform || parsed.vStr.length === 0)) {
+    appendLiteral(state, ch);
+    return;
+  }
+
+  const vStart = parsed.canTransform ? parsed.vStart : 0;
+  const vEnd = parsed.canTransform ? parsed.vEnd : entries.length;
+  const hasCoda = parsed.canTransform && parsed.c2.length > 0;
+  if (hasCoda && !options.freeShapeMarks) {
+    appendLiteral(state, ch);
+    return;
+  }
+
+  // 3. Check adjacent `u` + `o` family (`uo`, `uô`, `uơ`, `ưo`, `ươ`) inside the vowel nucleus.
+  for (let i = vEnd - 2; i >= vStart; i--) {
+    const left = entries[i];
+    const right = entries[i + 1];
+    if (left.base !== "u" || right.base !== "o") continue;
+
+    // Already `ươ` -> undo both horns back to `uo`, relocate tone, and append literal `w`.
+    if (left.shape === "horn" && right.shape === "horn") {
+      left.shape = "plain";
+      right.shape = "plain";
+      relocateToneIfValid(entries);
+      appendLiteral(state, ch);
+      return;
+    }
+
+    // `uơ` -> `ươ` (e.g. `thuoww` -> `thươ`)
+    if (left.shape === "plain" && right.shape === "horn") {
+      const testEntries = cloneEntries(entries);
+      testEntries[i].shape = "horn";
+      const nextParsed = parseSlice(testEntries, parsed.c1Start);
+      if (!options.spellCheck || nextParsed.canTransform) {
+        left.shape = "horn";
+        state.rawKeys.push(ch);
+        relocateToneIfValid(entries);
+        return;
+      }
+    }
+
+    // `ưo` -> `ươ`
+    if (left.shape === "horn" && right.shape === "plain") {
+      const testEntries = cloneEntries(entries);
+      testEntries[i + 1].shape = "horn";
+      const nextParsed = parseSlice(testEntries, parsed.c1Start);
+      if (!options.spellCheck || nextParsed.canTransform) {
+        right.shape = "horn";
+        state.rawKeys.push(ch);
+        relocateToneIfValid(entries);
+        return;
+      }
+    }
+
+    // `uo` or `uô` -> `thuơ` (only for open `th` + `uo`/`uô`) or `ươ`
+    if (left.shape === "plain" && (right.shape === "plain" || right.shape === "circumflex")) {
+      const isOpenThuo =
+        parsed.c1 === "th" && !hasCoda && vEnd - vStart === 2;
+      const testEntries = cloneEntries(entries);
+      if (isOpenThuo) {
+        testEntries[i + 1].shape = "horn";
+      } else {
+        testEntries[i].shape = "horn";
+        testEntries[i + 1].shape = "horn";
+      }
+      const nextParsed = parseSlice(testEntries, parsed.c1Start);
+      if (!options.spellCheck || nextParsed.canTransform) {
+        if (isOpenThuo) {
+          right.shape = "horn";
+        } else {
+          left.shape = "horn";
+          right.shape = "horn";
+        }
+        state.rawKeys.push(ch);
+        relocateToneIfValid(entries);
+        return;
+      }
+    }
+  }
+
+  // 4. Check `ua` / `ưa` and `uu` / `ưu` inside the vowel nucleus (horning the first `u`).
+  for (let i = vEnd - 2; i >= vStart; i--) {
+    const left = entries[i];
+    const right = entries[i + 1];
+    if (left.base === "u" && (right.base === "a" || right.base === "u") && right.shape === "plain") {
+      if (left.shape === "horn") {
+        // Undo `ưa`/`ưu` -> `ua`/`uu` + `w`
+        left.shape = "plain";
+        appendLiteral(state, ch);
+        return;
+      }
+      const testEntries = cloneEntries(entries);
+      testEntries[i].shape = "horn";
+      const nextParsed = parseSlice(testEntries, parsed.c1Start);
+      if (!options.spellCheck || nextParsed.canTransform) {
+        left.shape = "horn";
+        state.rawKeys.push(ch);
+        relocateToneIfValid(entries);
+        return;
+      }
+    }
+  }
+
+  // 5. Rightmost single modifiable vowel (`a`/`â` -> `ă`, `o`/`ô` -> `ơ`, `u` -> `ư`, or undo).
+  for (let i = vEnd - 1; i >= vStart; i--) {
+    const e = entries[i];
+    if (e.base !== "a" && e.base !== "o" && e.base !== "u") continue;
+
+    const targetShape: VowelShape = e.base === "a" ? "breve" : "horn";
+    if (e.shape === targetShape) {
+      e.shape = "plain";
+      e.fromKey = null;
+      appendLiteral(state, ch);
+      return;
+    }
+
+    const testEntries = cloneEntries(entries);
+    testEntries[i].shape = targetShape;
+    const nextParsed = parseSlice(testEntries, parsed.c1Start);
+    if (!options.spellCheck || nextParsed.canTransform) {
+      e.shape = targetShape;
+      state.rawKeys.push(ch);
+      relocateToneIfValid(entries);
+      return;
+    }
+  }
+
+  appendLiteral(state, ch);
+}
+
+function stepWordKey(
+  state: WordEngineState,
+  rawChar: string,
+  options: Required<TelexOptions>,
+): TelexStepResult {
+  const ch = rawChar.normalize("NFC");
+
+  // 1. Bracket shortcuts in standard mode.
+  if (options.mode === "standard" && isBracketShortcut(ch)) {
+    return handleBracketKey(state, ch, options);
+  }
+
+  // 2. Non-alphanumeric terminators (Space, Tab, Enter, punctuation).
+  if (!isAsciiLetter(ch) && !isAsciiDigit(ch) && !DECOMPOSE_VI_LETTER[stripToneFromChar(ch).toLocaleLowerCase("vi")]) {
+    const allowAutoRestore = !NO_RESTORE_TERMINATORS.has(ch);
+    const committedWord = finalizeWord(state, options, allowAutoRestore);
+    state.entries = [];
+    state.rawKeys = [];
+    return {
+      committedWord,
+      committedSuffix: ch,
+      preedit: "",
+      terminated: true,
+      handled: true,
+    };
+  }
+
+  // 3. Digits stay in preedit (causing auto-restore on subsequent word break if marks exist).
+  if (isAsciiDigit(ch)) {
+    appendLiteral(state, ch);
+    return {
+      committedWord: "",
+      committedSuffix: "",
+      preedit: renderEntries(state.entries),
+      terminated: false,
+      handled: true,
+    };
+  }
+
+  // 4. Telex command letters (ASCII only; precomposed Unicode letters append literally).
+  if (isAsciiLetter(ch)) {
+    const lower = ch.toLowerCase();
+    const tone = TONE_BY_KEY[lower];
+    if (tone) {
+      handleToneKey(state, ch, tone, options);
+    } else if (lower === "z") {
+      handleZKey(state, ch, options);
+    } else if (lower === "d") {
+      handleDKey(state, ch, options);
+    } else if (lower === "a" || lower === "e" || lower === "o") {
+      handleDoubleVowelKey(state, ch, lower, options);
+    } else if (lower === "w") {
+      handleWKey(state, ch, options);
+    } else {
+      appendLiteral(state, ch);
+    }
+  } else {
+    appendLiteral(state, ch);
+  }
+
+  return {
+    committedWord: "",
+    committedSuffix: "",
+    preedit: renderEntries(state.entries),
+    terminated: false,
+    handled: true,
+  };
+}
+
+function backspaceWord(state: WordEngineState): TelexStepResult {
+  if (state.entries.length === 0) {
+    return {
+      committedWord: "",
+      committedSuffix: "",
+      preedit: "",
+      terminated: false,
+      handled: false,
+    };
+  }
+  const popped = state.entries.pop()!;
+  const poppedRaw = state.rawKeys.length > 0 ? state.rawKeys.pop()! : "";
+  // If backspace deleted a character carrying a Vietnamese mark/tone, or
+  // deleted a trailing vowel of a marked nucleus (where the popped raw key was
+  // a modifier rather than that vowel, e.g. `tuys<BS>` or `suuw<BS>`), resync
+  // rawKeys so auto-restore never resurrects deleted letters.
+  const deletedMarkedNucleusTail =
+    isVowelEntry(popped) &&
+    poppedRaw.toLowerCase() !== popped.base &&
+    state.entries.length > 0 &&
+    isVowelEntry(state.entries[state.entries.length - 1]);
+  if (
+    deletedMarkedNucleusTail ||
+    popped.tone !== null ||
+    popped.shape !== "plain" ||
+    popped.barredD
+  ) {
+    state.rawKeys = Array.from(renderEntries(state.entries));
+  }
+  relocateToneIfValid(state.entries);
+  return {
+    committedWord: "",
+    committedSuffix: "",
+    preedit: renderEntries(state.entries),
+    terminated: false,
+    handled: true,
+  };
+}
+
+/** Convert one active, separator-free Telex composition (preedit view without trailing word break). */
 export function convertTelexToken(raw: string, options?: TelexOptions): string {
   const resolved = optionsWithDefaults(options);
-  return renderState(reduceToken(raw, resolved));
-}
-
-function isTokenCharacter(char: string, mode: TelexMode): boolean {
-  if (LETTER_RE.test(char)) return true;
-  return (
-    mode === "standard" &&
-    (char === "[" || char === "]" || char === "{" || char === "}")
-  );
+  const state = createEmptyWordState();
+  let committed = "";
+  for (const ch of Array.from(raw.normalize("NFC"))) {
+    const res = stepWordKey(state, ch, resolved);
+    if (res.terminated) {
+      committed += res.committedWord + res.committedSuffix;
+    }
+  }
+  return (committed + renderEntries(state.entries)).normalize("NFC");
 }
 
 /**
- * Convenience conversion for arbitrary text. Non-letter separators are copied
- * verbatim and independently terminate Telex composition regions.
+ * Convenience conversion for arbitrary text. Non-letter separators terminate
+ * words (triggering auto-restore for non-Vietnamese words when enabled).
  */
 export function convertTelex(input: string, options?: TelexOptions): string {
   const resolved = optionsWithDefaults(options);
-  let result = "";
-  let token = "";
-
-  const flush = () => {
-    if (token.length === 0) return;
-    result += convertTelexToken(token, resolved);
-    token = "";
-  };
-
-  for (const char of Array.from(input.normalize("NFC"))) {
-    if (isTokenCharacter(char, resolved.mode)) {
-      token += char;
-    } else {
-      flush();
-      result += char;
+  const state = createEmptyWordState();
+  let committed = "";
+  for (const ch of Array.from(input.normalize("NFC"))) {
+    const res = stepWordKey(state, ch, resolved);
+    if (res.terminated) {
+      committed += res.committedWord + res.committedSuffix;
     }
   }
-  flush();
-  return result.normalize("NFC");
+  return (committed + renderEntries(state.entries)).normalize("NFC");
 }
 
 /**
- * Incremental composition helper for an IME/editor integration.
- *
- * Maintains live active-token state so backspace intuitively deletes the last
- * visible character (rather than undoing a prior Telex keystroke) while still
- * keeping tone placement responsive as letters are added or removed.
+ * Stateful incremental Telex composer matching ibus-unikey semantics:
+ *   - Visible-character backspace with tone relocation & raw-key tracking
+ *   - Immediate commit on bracket escapes (`[[`, `[]`, `a[`)
+ *   - Auto-restore of non-Vietnamese words on word-break terminators
  */
 export class TelexComposer {
   private readonly options: Required<TelexOptions>;
   private committedPrefix = "";
-  private activeState: MutableState = createEmptyState();
+  private wordState: WordEngineState = createEmptyWordState();
   private rawBuffer = "";
   private rendered = "";
 
@@ -1267,70 +1363,54 @@ export class TelexComposer {
     return this.rendered;
   }
 
-  push(key: string): string {
+  get preedit(): string {
+    return renderEntries(this.wordState.entries);
+  }
+
+  /**
+   * Process one character and return the step result (suitable for Android IME
+   * InputConnection synchronization).
+   */
+  stepKey(key: string): TelexStepResult {
     const chars = Array.from(key.normalize("NFC"));
     if (chars.length !== 1) {
-      throw new TypeError("TelexComposer.push() expects exactly one character");
+      throw new TypeError("TelexComposer.stepKey() expects exactly one character");
     }
-    const char = chars[0];
-    this.rawBuffer += char;
-
-    if (isTokenCharacter(char, this.options.mode)) {
-      stepState(this.activeState, char, this.options);
-    } else {
-      if (this.activeState.letters.length > 0) {
-        this.committedPrefix += renderState(this.activeState);
-        this.activeState = createEmptyState();
-      }
-      this.committedPrefix += char;
+    const ch = chars[0];
+    this.rawBuffer += ch;
+    const res = stepWordKey(this.wordState, ch, this.options);
+    if (res.terminated) {
+      this.committedPrefix += res.committedWord + res.committedSuffix;
     }
-
     this.syncRendered();
+    return res;
+  }
+
+  /**
+   * Process Backspace on the active preedit (returning handled: false when
+   * preedit is empty so an IME can forward Backspace to the host editor).
+   */
+  stepBackspace(): TelexStepResult {
+    const res = backspaceWord(this.wordState);
+    if (res.handled) {
+      this.syncRendered();
+      this.rawBuffer = this.rendered;
+    }
+    return res;
+  }
+
+  push(key: string): string {
+    this.stepKey(key);
     return this.rendered;
   }
 
   backspace(): string {
-    if (this.activeState.letters.length > 0) {
-      const poppedIndex = this.activeState.letters.length - 1;
-      this.activeState.letters.pop();
-      this.activeState.commandGroup = null;
-      this.activeState.pendingUoCompletion = false;
-
-      if (this.activeState.toneAnchor === poppedIndex) {
-        // The deleted character itself carried the tone, so the tone is removed
-        // along with the character rather than jumping to another vowel.
-        this.activeState.tone = null;
-        this.activeState.toneAnchor = null;
-      } else {
-        refreshToneAnchor(this.activeState);
-      }
-
-      if (this.activeState.letters.length < this.activeState.activeStart) {
-        // User deleted back across an escaped literal; re-open the remaining
-        // token for normal composition without re-applying discarded marks.
-        this.activeState = hydrateStateFromToken(renderState(this.activeState));
-      }
-    } else if (this.committedPrefix.length > 0) {
+    const res = backspaceWord(this.wordState);
+    if (!res.handled && this.committedPrefix.length > 0) {
       const prefixChars = Array.from(this.committedPrefix);
       prefixChars.pop();
       this.committedPrefix = prefixChars.join("");
-
-      // If deleting a separator exposes a preceding word, re-hydrate it as the
-      // active token so subsequent edits and tone changes work naturally.
-      let splitAt = prefixChars.length;
-      while (
-        splitAt > 0 &&
-        isTokenCharacter(prefixChars[splitAt - 1], this.options.mode)
-      ) {
-        splitAt -= 1;
-      }
-      if (splitAt < prefixChars.length) {
-        const trailingToken = prefixChars.slice(splitAt).join("");
-        this.committedPrefix = prefixChars.slice(0, splitAt).join("");
-        this.activeState = hydrateStateFromToken(trailingToken);
-      }
     }
-
     this.syncRendered();
     this.rawBuffer = this.rendered;
     return this.rendered;
@@ -1346,20 +1426,21 @@ export class TelexComposer {
 
   clear(): void {
     this.committedPrefix = "";
-    this.activeState = createEmptyState();
+    this.wordState = createEmptyWordState();
     this.rawBuffer = "";
     this.rendered = "";
   }
 
-  commit(): string {
-    const text = this.rendered;
+  commit(allowAutoRestore = false): string {
+    const word = finalizeWord(this.wordState, this.options, allowAutoRestore);
+    const text = (this.committedPrefix + word).normalize("NFC");
     this.clear();
     return text;
   }
 
   private syncRendered(): void {
     this.rendered = (
-      this.committedPrefix + renderState(this.activeState)
+      this.committedPrefix + renderEntries(this.wordState.entries)
     ).normalize("NFC");
   }
 }
