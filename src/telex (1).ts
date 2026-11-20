@@ -7,10 +7,7 @@ export type TelexMode = "standard" | "simple";
 export type TelexTone = "acute" | "grave" | "hook" | "tilde" | "dot";
 
 export type TonePlacementSource =
-  | "v7-broad-exact"
-  | "v7-broad-signature"
-  | "mechanical"
-  | "none";
+  "v7-broad-exact" | "v7-broad-signature" | "mechanical" | "none";
 
 export type TonePlacement = {
   /** Unicode-code-point index in the supplied NFC string. */
@@ -123,11 +120,12 @@ const W_SWITCH_SHAPE: Readonly<Record<string, string>> = {
   ô: "ơ",
 };
 
-const DOUBLE_SWITCH_SHAPE: Readonly<Record<string, { from: string; to: string }>> =
-  {
-    a: { from: "ă", to: "â" },
-    o: { from: "ơ", to: "ô" },
-  };
+const DOUBLE_SWITCH_SHAPE: Readonly<
+  Record<string, { from: string; to: string }>
+> = {
+  a: { from: "ă", to: "â" },
+  o: { from: "ơ", to: "ô" },
+};
 
 const STANDARD_SHORTCUT_BY_CHAR: Readonly<Record<string, string>> = {
   "[": "ơ",
@@ -1109,10 +1107,7 @@ function stepState(
   rawChar: string,
   options: Required<TelexOptions>,
 ): void {
-  if (
-    options.mode === "standard" &&
-    processStandardShortcut(state, rawChar)
-  ) {
+  if (options.mode === "standard" && processStandardShortcut(state, rawChar)) {
     return;
   }
 
